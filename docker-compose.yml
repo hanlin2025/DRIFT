@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: drift-postgres
+    environment:
+      POSTGRES_DB: drift
+      POSTGRES_USER: drift
+      POSTGRES_PASSWORD: drift
+    ports:
+      - "5432:5432"
+    volumes:
+      - drift-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  drift-postgres-data:

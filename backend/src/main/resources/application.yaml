@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: drift-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/drift
+    username: drift
+    password: drift
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-to-a-very-long-secret-at-least-32-bytes}
+    expiration-ms: 3600000

@@ -1,0 +1,2 @@
+mkdir -p backend/src/main/resources/db/migration
+touch backend/src/main/resources/db/migration/.gitkeep
