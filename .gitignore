@@ -1,5 +1,21 @@
-# Compiled class file
+# Java
+backend/target/
 *.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Env
+.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
 
 # Log file
 *.log
