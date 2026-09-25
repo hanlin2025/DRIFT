@@ -1,13 +1,10 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
-import com.drift.backend.registration.account.RegisterRequest;
-import com.drift.backend.registration.account.RegisterResponse;
 
 import jakarta.validation.Valid;
 
