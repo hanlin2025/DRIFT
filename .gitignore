@@ -38,3 +38,8 @@ frontend/dist/
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Local commit preparation and browser test artifacts
+.commit-prep/
+frontend/test-results/
+frontend/playwright-report/

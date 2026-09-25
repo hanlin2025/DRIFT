@@ -54,16 +54,19 @@ password hashing, duplicate accounts and concurrent claims of one invitation.
 
 ## Existing development databases
 
-V1 is preserved exactly as it exists on this branch. Earlier branches rewrote V1; a database
-created from those revisions may have a different checksum. Do not delete its volume or
-blindly repair the migration history. Create a separate database instead:
+The application and Docker both use `drift` by default. Start the backend normally with
+`bash mvnw spring-boot:run` in `backend/`; no datasource environment variable is needed.
+
+Earlier branches rewrote V1. If your existing local `drift` database reports a Flyway
+checksum mismatch and its data is disposable, stop the backend and run these commands
+from the repository root. **This deletes all data in `drift`**, but leaves other databases
+and the Docker volume in place:
 
 ```bash
-docker compose exec postgres createdb -U drift drift_cdg17
-cd backend
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/drift_cdg17 bash mvnw spring-boot:run
+docker compose exec -T postgres dropdb -U drift drift
+docker compose exec -T postgres createdb -U drift drift
 ```
 
-Then pass `--database drift_cdg17` to the invitation script. This preserves the previous
-database for the branch that created it. A production rollout would require reconciling
-that historical schema explicitly.
+Start the backend again to apply the migrations and preset company records, then create
+new local invitations with the invitation helper. Do not reset a database whose data you
+need to keep; that database requires a deliberate schema reconciliation instead.

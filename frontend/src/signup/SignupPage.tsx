@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, registerAccount, resolveInvitation, type Invitation } from './api';
+import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account } from './api';
 import { passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
 
 const roleNames = { IMPORTER: 'Importer', FREIGHT_FORWARDER: 'Freight forwarder' };
 const emptyFields: SignupFields = { fullName: '', password: '', confirmation: '' };
 
-export function SignupPage() {
+export function SignupPage({ onRegistered }: { onRegistered?: (account: Account) => void }) {
+  useEffect(() => { document.title = "Create your account | DRIFT"; }, []);
   const [token, setToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? '');
   const [code, setCode] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -61,8 +62,9 @@ export function SignupPage() {
     }
     busy.current = true; setSubmitting(true);
     try {
-      await registerAccount({ fullName: fields.fullName.trim(), email: invitation.email, password: fields.password, invitationToken: token });
+      const account = await registerAccount({ fullName: fields.fullName.trim(), email: invitation.email, password: fields.password, invitationToken: token });
       setFields(emptyFields); setCreated(true);
+      onRegistered?.(account);
     } catch (reason) {
       if (reason instanceof ApiError) {
         const mapped: FieldErrors = {};
