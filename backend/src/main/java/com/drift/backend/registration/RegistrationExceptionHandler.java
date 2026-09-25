@@ -9,6 +9,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.drift.backend.registration.exception.DuplicateAccountException;
+import com.drift.backend.registration.exception.InvalidRegistrationException;
+
 @RestControllerAdvice(assignableTypes = RegistrationController.class)
 public class RegistrationExceptionHandler {
 
@@ -28,11 +31,6 @@ public class RegistrationExceptionHandler {
 	@ExceptionHandler(DuplicateAccountException.class)
 	public ResponseEntity<Map<String, String>> handleDuplicate(DuplicateAccountException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
-	}
-
-	@ExceptionHandler(IneligibleInvitationException.class)
-	public ResponseEntity<Map<String, String>> handleInvitation(IneligibleInvitationException ex) {
-		return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
 	}
 
 	private static Map<String, Object> body(String message, Map<String, String> errors) {

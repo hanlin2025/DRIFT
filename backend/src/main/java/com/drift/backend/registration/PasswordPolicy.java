@@ -1,5 +1,7 @@
 package com.drift.backend.registration;
 
+import com.drift.backend.registration.exception.InvalidRegistrationException;
+
 public final class PasswordPolicy {
 
 	public static final String MESSAGE =

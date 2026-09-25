@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.registration.account;
 
 import java.util.Locale;
 

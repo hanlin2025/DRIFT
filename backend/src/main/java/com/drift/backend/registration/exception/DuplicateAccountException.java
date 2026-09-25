@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.registration.exception;
 
 public class DuplicateAccountException extends RuntimeException {
 

@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.registration.account;
 
 public record RegisterResponse(Long id, String fullName, String email) {
 }
