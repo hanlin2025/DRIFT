@@ -34,13 +34,14 @@ public class RegistrationService {
 		UserAccount account = new UserAccount(
 				request.fullName(),
 				email,
-				passwordEncoder.encode(request.password()));
+				passwordEncoder.encode(request.password()),
+				request.role());
 		try {
 			account = users.saveAndFlush(account);
 		} catch (DataIntegrityViolationException ex) {
 			throw new DuplicateAccountException();
 		}
 
-		return new RegisterResponse(account.getId(), account.getFullName(), account.getEmail());
+		return new RegisterResponse(account.getId(), account.getFullName(), account.getEmail(), account.getRole());
 	}
 }

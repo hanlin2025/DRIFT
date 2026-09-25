@@ -4,6 +4,7 @@ import java.util.Locale;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
@@ -17,7 +18,10 @@ public record RegisterRequest(
 		String email,
 
 		@NotBlank(message = "Password is required")
-		String password) {
+		String password,
+
+		@NotNull(message = "Role is required")
+		Role role) {
 
 	public RegisterRequest {
 		fullName = fullName == null ? null : fullName.trim();
@@ -26,6 +30,6 @@ public record RegisterRequest(
 
 	@Override
 	public String toString() {
-		return "RegisterRequest[fullName=" + fullName + ", email=" + email + "]";
+		return "RegisterRequest[fullName=" + fullName + ", email=" + email + ", role=" + role + "]";
 	}
 }

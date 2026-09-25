@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -21,6 +22,17 @@ public class RegistrationExceptionHandler {
 		ex.getBindingResult().getFieldErrors().forEach(error ->
 				errors.putIfAbsent(error.getField(), error.getDefaultMessage()));
 		return ResponseEntity.badRequest().body(body("Registration information is missing or invalid", errors));
+	}
+
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
+		String detail = ex.getMessage() == null ? "" : ex.getMessage();
+		if (detail.contains("Role")) {
+			return ResponseEntity.badRequest().body(body(
+					"Role must be IMPORTER or FREIGHT_FORWARDER",
+					Map.of("role", "Role must be IMPORTER or FREIGHT_FORWARDER")));
+		}
+		return ResponseEntity.badRequest().body(body("Registration information is missing or invalid", Map.of()));
 	}
 
 	@ExceptionHandler(InvalidRegistrationException.class)
