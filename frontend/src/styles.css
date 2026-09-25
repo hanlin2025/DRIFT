@@ -122,3 +122,18 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 
 .login-fields { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
 .login-fields:disabled .primary-button { cursor: not-allowed; }
+.workspace { min-height: 100dvh; background: #f4f3ed; }
+.workspace-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 28px; background: #173e35; color: #f8f6ed; }
+.workspace-bar .wordmark { font-size: 22px; letter-spacing: 4px; }
+.sign-out { width: auto; margin: 0; min-height: 36px; padding: 8px 14px; border: 1px solid #b8c9bf55; border-radius: 4px; background: transparent; color: #f8f6ed; font-size: 11px; font-weight: 700; }
+.workspace-main { max-width: 720px; margin: 0 auto; padding: 48px 24px 64px; }
+.session-facts { display: grid; gap: 14px; margin: 8px 0 0; }
+.session-facts div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.session-facts dt { color: var(--muted); font-size: 11px; }
+.session-facts dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+@media (max-width: 760px) {
+  .workspace-bar { padding: 16px; }
+  .workspace-main { padding: 32px 16px 48px; }
+  .session-facts div { display: block; }
+  .session-facts dd { text-align: left; margin-top: 4px; }
+}

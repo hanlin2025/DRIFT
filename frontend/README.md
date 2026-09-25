@@ -37,8 +37,10 @@ confirmation, surfaces backend errors and prevents repeated submissions while pe
 A successful 201 response replaces the signup history entry with `/login`. No password
 or invitation is passed to the login route. Failed requests stay on signup.
 
-The login page is a destination for this story, not an authentication implementation.
-It displays the registration result and keeps login controls disabled until login is built.
+After registration, the login form accepts the work email and password. A successful
+login stores the session in the browser tab and opens the importer shipment overview
+or the freight-forwarder shipment portfolio. An expired or rejected session returns
+to `/login`. Signing out clears that session.
 
 ## Browser tests
 

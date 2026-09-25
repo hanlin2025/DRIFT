@@ -32,7 +32,7 @@ describe('registration routing', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
     expect(screen.getByLabelText('Work email')).toHaveValue(invitation.email);
     expect(screen.getByLabelText('Password')).toHaveValue('');
-    expect(screen.getByRole('button', { name: /Log in/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Log in/ })).toBeEnabled();
   });
   it('stays on signup when registration fails', async () => {
     vi.mocked(registerAccount).mockRejectedValue(new ApiError('Email already registered', 409));
