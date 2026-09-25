@@ -21,7 +21,7 @@ DRIFT/
 │   ├── mvnw                 # Maven Wrapper (Mac/Linux)
 │   ├── mvnw.cmd             # Maven Wrapper (Windows)
 │   └── src/main/resources/
-│       ├── application.yml
+│       ├── application.yaml
 │       └── db/migration/    # Flyway migrations go here
 ├── frontend/                # Placeholder for now
 ├── docker-compose.yml       # Local PostgreSQL
@@ -52,20 +52,22 @@ DRIFT/
 3. Run backend tests:
 
    ```bash
-   cd backend
-   ./mvnw test
+   bash scripts/test-backend.sh
    ```
 
    On Windows, use:
 
    ```bash
+   docker compose exec postgres createdb -U drift drift_test
+   cd backend
    mvnw.cmd test
    ```
 
-4. Run the backend:
+4. In a separate terminal, run the backend from the repository root:
 
    ```bash
-   ./mvnw spring-boot:run
+   cd backend
+   bash ./mvnw spring-boot:run
    ```
 
    On Windows:
@@ -103,10 +105,15 @@ All schema changes must go through Flyway.
 
 - **`Failed to determine a suitable driver class`**  
   Make sure PostgreSQL is running: `docker compose up -d`.  
-  Check that `backend/src/main/resources/application.yml` has the correct datasource configuration.
+  Check that `backend/src/main/resources/application.yaml` has the correct datasource configuration.
 
 - **`./mvnw: Permission denied`** (Mac/Linux)  
   Run `chmod +x mvnw` in the `backend/` directory.
 
 - **Windows PowerShell does not recognize `./mvnw`**  
   Use `mvnw.cmd` instead, or run the command from Git Bash.
+
+## Account Registration
+
+See [registration setup](docs/registration.md) for preset companies, local invitation links,
+API details, database migration notes, and registration integration tests.

@@ -1,28 +1,34 @@
 package com.drift.backend.registration;
 
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-
 import com.drift.backend.registration.account.RegisterRequest;
 import com.drift.backend.registration.account.RegisterResponse;
-
+import com.drift.backend.registration.invitation.InvitationRequest;
+import com.drift.backend.registration.invitation.InvitationResponse;
 import jakarta.validation.Valid;
 
 @RestController
 public class RegistrationController {
-
 	private final RegistrationService registrationService;
 
 	public RegistrationController(RegistrationService registrationService) {
 		this.registrationService = registrationService;
 	}
 
+	@PostMapping("/api/invitations/resolve")
+	public ResponseEntity<InvitationResponse> resolve(@Valid @RequestBody InvitationRequest request) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(registrationService.resolveInvitation(request.token()));
+	}
+
 	@PostMapping("/api/register")
-	@ResponseStatus(HttpStatus.CREATED)
-	public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
-		return registrationService.register(request);
+	public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore())
+				.body(registrationService.register(request));
 	}
 }

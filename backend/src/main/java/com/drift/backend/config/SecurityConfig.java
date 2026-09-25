@@ -21,7 +21,7 @@ public class SecurityConfig {
 				.formLogin(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers(HttpMethod.POST, "/api/register").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/register", "/api/invitations/resolve").permitAll()
 						.anyRequest().authenticated());
 		return http.build();
 	}
