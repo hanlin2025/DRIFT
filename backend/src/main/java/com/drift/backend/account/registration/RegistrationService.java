@@ -1,15 +1,13 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.drift.backend.registration.account.RegisterRequest;
-import com.drift.backend.registration.account.RegisterResponse;
-import com.drift.backend.registration.account.UserAccount;
-import com.drift.backend.registration.account.UserAccountRepository;
-import com.drift.backend.registration.exception.DuplicateAccountException;
+import com.drift.backend.account.UserAccount;
+import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.exception.DuplicateAccountException;
 
 @Service
 public class RegistrationService {
