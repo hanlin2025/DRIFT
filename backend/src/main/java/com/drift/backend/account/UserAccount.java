@@ -1,4 +1,4 @@
-package com.drift.backend.registration.account;
+package com.drift.backend.account;
 
 import java.time.Instant;
 

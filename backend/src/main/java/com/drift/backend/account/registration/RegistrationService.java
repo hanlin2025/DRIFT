@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import java.time.Instant;
 import org.hibernate.exception.ConstraintViolationException;
@@ -6,16 +6,16 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.drift.backend.registration.account.RegisterRequest;
-import com.drift.backend.registration.account.RegisterResponse;
-import com.drift.backend.registration.account.UserAccount;
-import com.drift.backend.registration.account.UserAccountRepository;
-import com.drift.backend.registration.exception.DuplicateAccountException;
-import com.drift.backend.registration.exception.IneligibleInvitationException;
-import com.drift.backend.registration.invitation.Invitation;
-import com.drift.backend.registration.invitation.InvitationRepository;
-import com.drift.backend.registration.invitation.InvitationResponse;
-import com.drift.backend.registration.invitation.InvitationToken;
+import com.drift.backend.account.registration.RegisterRequest;
+import com.drift.backend.account.registration.RegisterResponse;
+import com.drift.backend.account.UserAccount;
+import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.exception.DuplicateAccountException;
+import com.drift.backend.account.exception.IneligibleInvitationException;
+import com.drift.backend.account.registration.invitation.Invitation;
+import com.drift.backend.account.registration.invitation.InvitationRepository;
+import com.drift.backend.account.registration.invitation.InvitationResponse;
+import com.drift.backend.account.registration.invitation.InvitationToken;
 
 @Service
 public class RegistrationService {

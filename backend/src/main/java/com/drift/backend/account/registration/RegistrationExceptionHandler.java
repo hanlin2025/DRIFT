@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -10,9 +10,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.drift.backend.registration.exception.IneligibleInvitationException;
-import com.drift.backend.registration.exception.DuplicateAccountException;
-import com.drift.backend.registration.exception.InvalidRegistrationException;
+import com.drift.backend.account.exception.IneligibleInvitationException;
+import com.drift.backend.account.exception.DuplicateAccountException;
+import com.drift.backend.account.exception.InvalidRegistrationException;
 
 @RestControllerAdvice(assignableTypes = RegistrationController.class)
 public class RegistrationExceptionHandler {

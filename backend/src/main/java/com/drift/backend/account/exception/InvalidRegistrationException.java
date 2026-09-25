@@ -1,4 +1,4 @@
-package com.drift.backend.registration.exception;
+package com.drift.backend.account.exception;
 
 public class InvalidRegistrationException extends RuntimeException {
 

@@ -1,4 +1,4 @@
-package com.drift.backend.registration.account;
+package com.drift.backend.account.registration;
 
 import java.util.Locale;
 import jakarta.validation.constraints.Email;

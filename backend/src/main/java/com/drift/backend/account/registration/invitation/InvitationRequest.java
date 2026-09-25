@@ -1,4 +1,4 @@
-package com.drift.backend.registration.invitation;
+package com.drift.backend.account.registration.invitation;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

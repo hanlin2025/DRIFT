@@ -1,4 +1,4 @@
-package com.drift.backend.registration.account;
+package com.drift.backend.account;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

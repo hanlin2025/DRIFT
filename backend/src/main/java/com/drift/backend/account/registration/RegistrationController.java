@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -6,10 +6,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-import com.drift.backend.registration.account.RegisterRequest;
-import com.drift.backend.registration.account.RegisterResponse;
-import com.drift.backend.registration.invitation.InvitationRequest;
-import com.drift.backend.registration.invitation.InvitationResponse;
+import com.drift.backend.account.registration.RegisterRequest;
+import com.drift.backend.account.registration.RegisterResponse;
+import com.drift.backend.account.registration.invitation.InvitationRequest;
+import com.drift.backend.account.registration.invitation.InvitationResponse;
 import jakarta.validation.Valid;
 
 @RestController

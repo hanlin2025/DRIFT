@@ -1,6 +1,6 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
-import com.drift.backend.registration.exception.InvalidRegistrationException;
+import com.drift.backend.account.exception.InvalidRegistrationException;
 
 public final class PasswordPolicy {
 

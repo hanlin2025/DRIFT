@@ -1,8 +1,8 @@
-package com.drift.backend.registration.invitation;
+package com.drift.backend.account.registration.invitation;
 
 import java.time.Instant;
 import com.drift.backend.company.Company;
-import com.drift.backend.registration.account.Role;
+import com.drift.backend.account.Role;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

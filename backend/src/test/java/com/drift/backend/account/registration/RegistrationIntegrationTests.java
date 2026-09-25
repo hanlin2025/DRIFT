@@ -1,4 +1,4 @@
-package com.drift.backend.registration;
+package com.drift.backend.account.registration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.drift.backend.registration.invitation.InvitationToken;
+import com.drift.backend.account.registration.invitation.InvitationToken;
 
 @SpringBootTest
 @AutoConfigureMockMvc
