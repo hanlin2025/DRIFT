@@ -25,7 +25,7 @@ public final class PasswordPolicy {
 		boolean digit = false;
 		for (int i = 0; i < password.length(); ) {
 			int codePoint = password.codePointAt(i);
-			if (Character.isWhitespace(codePoint)) {
+			if (Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)) {
 				throw new InvalidRegistrationException("Password must not contain spaces");
 			} else if (Character.isUpperCase(codePoint)) {
 				upper = true;

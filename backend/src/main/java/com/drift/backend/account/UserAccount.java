@@ -2,6 +2,11 @@ package com.drift.backend.account;
 
 import java.time.Instant;
 
+import com.drift.backend.company.Company;
+
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -32,17 +37,22 @@ public class UserAccount {
 	@Column(nullable = false, length = 32)
 	private Role role;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "company_id")
+	private Company company;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
 	protected UserAccount() {
 	}
 
-	public UserAccount(String fullName, String email, String passwordHash, Role role) {
+	public UserAccount(String fullName, String email, String passwordHash, Role role, Company company) {
 		this.fullName = fullName;
 		this.email = email;
 		this.passwordHash = passwordHash;
 		this.role = role;
+		this.company = company;
 		this.createdAt = Instant.now();
 	}
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.drift.backend.account.exception.IneligibleInvitationException;
 import com.drift.backend.account.exception.DuplicateAccountException;
 import com.drift.backend.account.exception.InvalidRegistrationException;
 
@@ -26,13 +27,12 @@ public class RegistrationExceptionHandler {
 
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
-		String detail = ex.getMessage() == null ? "" : ex.getMessage();
-		if (detail.contains("Role")) {
-			return ResponseEntity.badRequest().body(body(
-					"Role must be IMPORTER or FREIGHT_FORWARDER",
-					Map.of("role", "Role must be IMPORTER or FREIGHT_FORWARDER")));
-		}
 		return ResponseEntity.badRequest().body(body("Registration information is missing or invalid", Map.of()));
+	}
+
+	@ExceptionHandler(IneligibleInvitationException.class)
+	public ResponseEntity<Map<String, Object>> handleInvitation(IneligibleInvitationException ex) {
+		return ResponseEntity.badRequest().body(body(ex.getMessage(), Map.of("invitationToken", ex.getMessage())));
 	}
 
 	@ExceptionHandler(InvalidRegistrationException.class)
