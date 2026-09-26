@@ -70,7 +70,12 @@ database on first initialisation. The backend already uses it in `application.ya
 no datasource environment variable is needed. The credentials are username `drift`,
 password `drift`, port `5432`.
 
+Login sessions are signed with `JWT_SECRET`. Set it in the same terminal before
+starting the backend. Use at least 32 bytes, and do not commit the value. The
+backend does not start when it is missing.
+
 ```bash
+export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
 cd backend
 bash ./mvnw spring-boot:run
 ```
@@ -120,6 +125,7 @@ For a clone stored on a Windows drive (not a WSL network path), use Windows Java
 PowerShell. After starting PostgreSQL, run in `backend/`:
 
 ```powershell
+$env:JWT_SECRET = 'replace-with-a-local-secret-at-least-32-bytes'
 .\mvnw.cmd spring-boot:run
 ```
 

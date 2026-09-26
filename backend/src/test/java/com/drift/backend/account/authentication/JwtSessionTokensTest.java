@@ -17,7 +17,7 @@ import com.drift.backend.account.exception.SessionEndedException;
 
 class JwtSessionTokensTest {
 
-	private static final String SECRET = "change-me-to-a-very-long-secret-at-least-32-bytes";
+	private static final String SECRET = "test-only-jwt-secret-not-used-outside-tests";
 
 	@Test
 	void issuesATokenThatCarriesTheAccountAndExpiry() throws Exception {
