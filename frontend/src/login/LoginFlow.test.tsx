@@ -77,7 +77,43 @@ describe('login and role routing', () => {
     writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
     expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
     expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it('clears an expired session when opening the home page', async () => {
+    writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
+    render(<MemoryRouter initialEntries={['/']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+    expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it('clears an expired session from an unknown path', async () => {
+    writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
+    render(<MemoryRouter initialEntries={['/not-a-page']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+  });
+
+  it('keeps a valid session when the server cannot be reached', async () => {
+    writeSession(session);
+    vi.mocked(loadSession).mockRejectedValueOnce(new ApiError('DRIFT returned an unexpected response. Please try again shortly.', 503));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /><Location /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('DRIFT returned an unexpected response. Please try again shortly.');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
+    expect(sessionStorage.getItem('drift.session')).toContain('session-token');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+  });
+
+  it('clears the session when the server rejects it', async () => {
+    writeSession(session);
+    vi.mocked(loadSession).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
   });
 
   it('sends a freight forwarder away from the importer page', async () => {

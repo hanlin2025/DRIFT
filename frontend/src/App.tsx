@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
-import { homePath, isExpired, readSession } from './session/session';
+import { clearSession, homePath, isExpired, readSession } from './session/session';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
 
@@ -15,6 +15,7 @@ function SignupRoute() {
 function HomeRedirect() {
   const saved = readSession();
   if (saved && !isExpired(saved.expiresAt)) return <Navigate to={homePath(saved.role)} replace />;
+  if (saved) clearSession();
   return <Navigate to="/login" replace />;
 }
 

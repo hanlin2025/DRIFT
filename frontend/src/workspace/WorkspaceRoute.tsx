@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, homePath, isExpired, readSession, writeSession, type Session } from '../session/session';
+import { ApiError } from '../signup/api';
 
 function Wordmark({ href }: { href: string }) {
   return (
@@ -45,6 +46,8 @@ export function WorkspacePage({ account, onSignOut }: { account: Session; onSign
 export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState<Session | null>(null);
+  const [problem, setProblem] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const saved = readSession();
@@ -55,6 +58,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       return;
     }
     let active = true;
+    setProblem('');
     loadSession(saved.token).then(current => {
       if (!active) return;
       const next = { ...current, token: saved.token };
@@ -64,15 +68,21 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
         return;
       }
       setAccount(next);
-    }).catch(() => {
+    }).catch((reason: unknown) => {
       if (!active) return;
-      clearSession();
-      navigate('/login', { replace: true, state: { expired: true } });
+      if (reason instanceof ApiError && reason.status === 401) {
+        clearSession();
+        navigate('/login', { replace: true, state: { expired: true } });
+        return;
+      }
+      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [navigate, role]);
+  }, [navigate, role, attempt]);
 
-  if (!account) return <div className="workspace"><main className="workspace-main"><div className="notice" role="status">Checking your session...</div></main></div>;
+  if (!account) return <div className="workspace"><main className="workspace-main">{problem
+    ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
+    : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
   return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} />;
 }
