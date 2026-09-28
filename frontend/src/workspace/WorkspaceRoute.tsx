@@ -43,6 +43,9 @@ export function WorkspacePage({ account, onSignOut }: { account: Session; onSign
   );
 }
 
+// setTimeout fires immediately for delays above 2^31 - 1 ms, so long sessions are re-checked in steps.
+const MAX_TIMER_DELAY = 2_147_483_647;
+
 export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState<Session | null>(null);
@@ -79,6 +82,21 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     });
     return () => { active = false; };
   }, [navigate, role, attempt]);
+
+  useEffect(() => {
+    if (!account) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      if (isExpired(account.expiresAt)) {
+        clearSession();
+        navigate('/login', { replace: true, state: { expired: true } });
+        return;
+      }
+      timer = setTimeout(check, Math.min(Date.parse(account.expiresAt) - Date.now(), MAX_TIMER_DELAY));
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [account, navigate]);
 
   if (!account) return <div className="workspace"><main className="workspace-main">{problem
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>

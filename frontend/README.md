@@ -52,5 +52,6 @@ npm run test:e2e
 ```
 
 Tests create and remove uniquely named fixtures in that database and cover desktop/mobile
-signup, validation, routing and invitation reuse against the real API. Set
+signup, login, role routing, validation, signed-out redirects, session expiry and invitation
+reuse against the real API. Set
 `DRIFT_E2E_DATABASE` to override the fixture database; the backend must use the same one.

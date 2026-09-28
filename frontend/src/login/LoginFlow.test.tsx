@@ -63,13 +63,13 @@ describe('login and role routing', () => {
   });
 
   it('stays on login when the credentials are rejected', async () => {
-    vi.mocked(login).mockRejectedValue(new ApiError('The email or password is incorrect.', 401));
+    vi.mocked(login).mockRejectedValue(new ApiError('Invalid email or password.', 401));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
     await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'wrong');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('The email or password is incorrect.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
   });
 
@@ -130,6 +130,64 @@ describe('login and role routing', () => {
     await user.click(await screen.findByRole('button', { name: 'Sign out' }));
     expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+  });
+});
+
+describe('login acceptance criteria', () => {
+  async function submit(email: string, password: string) {
+    const user = userEvent.setup();
+    if (email) await user.type(screen.getByLabelText('Work email'), email);
+    if (password) await user.type(screen.getByLabelText('Password'), password);
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+  }
+
+  it('does not create a session when the credentials are rejected', async () => {
+    vi.mocked(login).mockRejectedValue(new ApiError('Invalid email or password.', 401));
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
+    await submit('nobody@example.com', 'Example123');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.queryByText('Harbourline Logistics (Demo)')).not.toBeInTheDocument();
+  });
+
+  it('asks for the password when only the email is entered', async () => {
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await submit('alice@example.com', '');
+    expect(screen.getByText('Password is required')).toBeInTheDocument();
+    expect(screen.queryByText('Email is required')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toHaveFocus();
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it('asks for the email when it is blank', async () => {
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await submit('   ', 'Example123');
+    expect(screen.getByText('Email is required')).toBeInTheDocument();
+    expect(screen.getByLabelText('Work email')).toHaveFocus();
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it.each(['/importer', '/freight-forwarder'])('sends a signed-out visitor from %s to login without protected data', async path => {
+    render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Harbourline Logistics (Demo)')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+    expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it('asks the user to log in again when the session expires in an open workspace', async () => {
+    const expiresAt = new Date(Date.now() + 300).toISOString();
+    writeSession({ ...session, expiresAt });
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...session, expiresAt, token }));
+    render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /><Location /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+    expect(await screen.findByRole('alert', {}, { timeout: 2000 })).toHaveTextContent('Your session has ended. Log in again.');
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.queryByText('Harbourline Logistics (Demo)')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('drift.session')).toBeNull();
   });
 });

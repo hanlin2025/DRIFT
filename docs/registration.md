@@ -5,8 +5,10 @@ values submitted by the browser cannot grant membership or change the role.
 
 ## Local setup
 
-Start PostgreSQL with `docker compose up -d`, then run `bash mvnw spring-boot:run`
-in `backend/` (Windows: `mvnw.cmd spring-boot:run`). Flyway creates these demo companies:
+Start PostgreSQL with `docker compose up -d`, then set `JWT_SECRET` to a private
+value of at least 32 bytes and run `bash mvnw spring-boot:run` in `backend/`
+(Windows: `mvnw.cmd spring-boot:run`). The backend does not start without that
+secret. Flyway creates these demo companies:
 
 | Company code | Company name |
 | --- | --- |
@@ -56,6 +58,7 @@ password hashing, duplicate accounts and concurrent claims of one invitation.
 
 The application and Docker both use `drift` by default. Start the backend normally with
 `bash mvnw spring-boot:run` in `backend/`; no datasource environment variable is needed.
+`JWT_SECRET` is still required, as described above.
 
 Earlier branches rewrote V1. If your existing local `drift` database reports a Flyway
 checksum mismatch and its data is disposable, stop the backend and run these commands
