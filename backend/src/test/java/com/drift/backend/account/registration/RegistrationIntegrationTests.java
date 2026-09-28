@@ -100,27 +100,28 @@ class RegistrationIntegrationTests {
         mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors.fullName").exists())
                 .andExpect(jsonPath("$.errors.email").exists()).andExpect(jsonPath("$.errors.password").exists());
-        assertPending();
+        assertUnchanged();
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"short", "lowercase123", "UPPERCASE123", "NoDigitsHere", "Has space1", "NoSpace\u00a01"})
     void rejectsInvalidPasswords(String password) throws Exception {
         assertThat(register(request("Alice", email, password, token))).isEqualTo(400);
-        assertPending();
+        assertUnchanged();
     }
 
     @Test
     void rejectsPasswordBeyondBcryptByteLimit() throws Exception {
         assertThat(register(request("Alice", email, "Ab1" + "\u00e9".repeat(35), token))).isEqualTo(400);
-        assertPending();
+        assertUnchanged();
     }
 
     @Test
     void rejectsWrongEmailAndUnknownToken() throws Exception {
         assertThat(register(request("Alice", "other@example.com", "Example123", token))).isEqualTo(400);
         assertThat(register(request("Alice", email, "Example123", "z".repeat(43)))).isEqualTo(400);
-        assertPending();
+        assertUnchanged();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, "other@example.com")).isZero();
     }
 
     @ParameterizedTest
@@ -137,13 +138,25 @@ class RegistrationIntegrationTests {
         mvc.perform(post("/api/invitations/resolve").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"token\":\"" + token + "\"}")).andExpect(status().isBadRequest());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, email)).isZero();
+        String expectedStatus = switch (state) {
+            case "revoked" -> "REVOKED";
+            case "consumed" -> "CONSUMED";
+            default -> "PENDING";
+        };
+        assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, email)).isEqualTo(expectedStatus);
+        assertThat(jdbc.queryForObject("SELECT consumed_at IS NOT NULL FROM invitations WHERE email = ?", Boolean.class, email))
+                .isEqualTo("consumed".equals(state));
     }
 
     @Test
     void duplicateEmailDoesNotConsumeInvitation() throws Exception {
-        jdbc.update("INSERT INTO users (full_name, email, password_hash, role) VALUES ('Existing', ?, 'existing-hash', 'IMPORTER')", email.toUpperCase());
-        assertThat(register(request("Alice", email, "Example123", token))).isEqualTo(409);
+        jdbc.update("INSERT INTO users (full_name, email, password_hash, role) VALUES ('Existing', ?, 'existing-hash', 'IMPORTER')", email);
+        mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON)
+                .content(request("Alice", email.toUpperCase(), "Example123", token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("An account with this email already exists"));
         assertPending();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE LOWER(email) = ?", Integer.class, email)).isEqualTo(1);
     }
 
     @Test
@@ -163,6 +176,7 @@ class RegistrationIntegrationTests {
             assertThat(List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(201, 400);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, email)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, email)).isEqualTo("CONSUMED");
         } finally {
             jdbc.update("DELETE FROM invitations WHERE email = ?", email);
             jdbc.update("DELETE FROM users WHERE email = ?", email);
@@ -171,5 +185,11 @@ class RegistrationIntegrationTests {
 
     private void assertPending() {
         assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, email)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT consumed_at IS NOT NULL FROM invitations WHERE email = ?", Boolean.class, email)).isFalse();
+    }
+
+    private void assertUnchanged() {
+        assertPending();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, email)).isZero();
     }
 }
