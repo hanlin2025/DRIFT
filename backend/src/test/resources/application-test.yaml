@@ -3,3 +3,7 @@ spring:
     url: ${DRIFT_TEST_DATABASE_URL:jdbc:postgresql://localhost:5432/drift_test}
     username: ${DRIFT_TEST_DATABASE_USERNAME:drift}
     password: ${DRIFT_TEST_DATABASE_PASSWORD:drift}
+
+app:
+  jwt:
+    secret: test-only-jwt-secret-not-used-outside-tests

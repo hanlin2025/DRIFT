@@ -13,7 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function post(path: string, body: unknown): Promise<unknown> {
+export async function post(path: string, body: unknown): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, {

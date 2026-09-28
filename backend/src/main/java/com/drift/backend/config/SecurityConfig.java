@@ -9,20 +9,29 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.drift.backend.account.authentication.JwtSessionTokens;
+import com.drift.backend.account.authentication.SessionAuthenticationFilter;
+import com.drift.backend.account.exception.SessionEndedException;
 
 @Configuration
 public class SecurityConfig {
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens) throws Exception {
+		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens);
 		http
 				.csrf(AbstractHttpConfigurer::disable)
 				.httpBasic(AbstractHttpConfigurer::disable)
 				.formLogin(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers(HttpMethod.POST, "/api/register", "/api/invitations/resolve").permitAll()
-						.anyRequest().authenticated());
+						.requestMatchers(HttpMethod.POST, "/api/register", "/api/invitations/resolve", "/api/login").permitAll()
+						.anyRequest().authenticated())
+				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
+						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))
+				.addFilterBefore(sessions, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 
