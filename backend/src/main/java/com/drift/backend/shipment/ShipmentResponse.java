@@ -10,6 +10,7 @@ public record ShipmentResponse(
 		String shipmentReference,
 		String origin,
 		String destination,
+		String transshipmentPort,
 		String motherVessel,
 		OffsetDateTime plannedMotherArrivalAt,
 		String feederVessel,
@@ -24,7 +25,8 @@ public record ShipmentResponse(
 
 	static ShipmentResponse from(Shipment shipment, ConnectionWindow connectionWindow) {
 		return new ShipmentResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
-				shipment.getDestination(), shipment.getMotherVessel(), shipment.getPlannedMotherArrivalAt(),
+				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
+				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
 				connectionWindow);
 	}

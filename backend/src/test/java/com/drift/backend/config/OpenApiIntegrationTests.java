@@ -19,7 +19,7 @@ class OpenApiIntegrationTests {
 	@Autowired MockMvc mvc;
 
 	@Test
-	void swaggerUiAndOpenApiDocumentTheProtectedShipmentEndpoints() throws Exception {
+	void swaggerUiAndOpenApiDocumentTheProtectedShipmentEndpoint() throws Exception {
 		mvc.perform(get("/swagger-ui/index.html"))
 				.andExpect(status().isOk());
 
@@ -27,10 +27,6 @@ class OpenApiIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.paths['/api/shipments'].post.summary").value("Create a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments'].post.security[0].bearerAuth").exists())
-				.andExpect(jsonPath("$.paths['/api/shipments'].get.summary").value("List shipments"))
-				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404']").exists())
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
 				.andExpect(jsonPath("$.components.schemas.CreateShipmentRequest.required").isArray())

@@ -17,7 +17,6 @@ import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,7 +27,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
-@Tag(name = "Shipments", description = "Create and view shipments and their planned transshipment itineraries.")
+@Tag(name = "Shipments", description = "Create shipments and their planned transshipment itineraries.")
 public class ShipmentController {
 
 	private final ShipmentService shipmentService;
@@ -38,21 +37,7 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments")
-	@Operation(summary = "List shipments", description = "Lists the shipments of the authenticated user's active company, newest first.",
-			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
-	@ApiResponses({
-				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
-						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your session has ended. Please sign in again."}
-								"""))),
-				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your account must belong to an active company to view shipments"}
-								"""))) })
-	public ResponseEntity<List<ShipmentResponse>> list(
-			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user) {
+	public ResponseEntity<List<ShipmentResponse>> list(@AuthenticationPrincipal AuthenticatedUser user) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}

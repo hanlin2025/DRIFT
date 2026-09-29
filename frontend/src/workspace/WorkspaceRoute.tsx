@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
+import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentForm } from '../shipment/ShipmentForm';
-import { ShipmentDetail, ShipmentList } from '../shipment/ShipmentList';
 import { ApiError } from '../signup/api';
+import { ShipmentList } from './ShipmentList';
 
 function Wordmark({ href }: { href: string }) {
   return (
@@ -15,19 +16,20 @@ function Wordmark({ href }: { href: string }) {
   );
 }
 
-export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account: Session; onSignOut: () => void; onSessionEnded: () => void }) {
-  const importer = account.role === 'IMPORTER';
-  const { shipmentId } = useParams();
+export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
+  account: Session;
+  onSignOut: () => void;
+  onSessionEnded: () => void;
+}) {
   const [registered, setRegistered] = useState(0);
+  const importer = account.role === 'IMPORTER';
   return (
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark href={homePath(account.role)} />
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
-      {shipmentId ? <main className="workspace-main">
-        <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={homePath(account.role)} onSessionEnded={onSessionEnded} />
-      </main> : <main className="workspace-main">
+      <main className="workspace-main">
         <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
         <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
         <p className="intro">{importer
@@ -44,9 +46,9 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account:
           <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
           <div><dt>Email</dt><dd>{account.email}</dd></div>
         </dl>
-        <ShipmentList token={account.token} basePath={homePath(account.role)} refreshKey={registered} canRegister={!importer} onSessionEnded={onSessionEnded} />
+        <CompanyShipments token={account.token} refreshKey={registered} onSessionEnded={onSessionEnded} />
         {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
-      </main>}
+      </main>
     </div>
   );
 }
@@ -59,6 +61,10 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   const [account, setAccount] = useState<Session | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const sessionEnded = useCallback(() => {
+    endSession();
+    navigate('/login', { replace: true, state: { expired: true } });
+  }, [navigate]);
 
   useEffect(() => {
     const saved = readSession();
@@ -82,14 +88,13 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
-        endSession();
-        navigate('/login', { replace: true, state: { expired: true } });
+        sessionEnded();
         return;
       }
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [navigate, role, attempt]);
+  }, [navigate, role, attempt, sessionEnded]);
 
   useEffect(() => {
     if (!account) return;
@@ -106,14 +111,45 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     return () => clearTimeout(timer);
   }, [account, navigate]);
 
-  const sessionEnded = useCallback(() => {
-    endSession();
-    navigate('/login', { replace: true, state: { expired: true } });
-  }, [navigate]);
-
   if (!account) return <div className="workspace"><main className="workspace-main">{problem
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
   return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
+}
+
+function CompanyShipments({ token, refreshKey, onSessionEnded }: {
+  token: string;
+  refreshKey: number;
+  onSessionEnded: () => void;
+}) {
+  const [shipments, setShipments] = useState<Shipment[] | null>(null);
+  const [problem, setProblem] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setProblem('');
+    setShipments(null);
+    listShipments(token).then(found => {
+      if (active) setShipments(found);
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionEnded();
+        return;
+      }
+      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
+    });
+    return () => { active = false; };
+  }, [token, refreshKey, attempt, onSessionEnded]);
+
+  if (problem) {
+    return <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>;
+  }
+  if (shipments === null) return <div className="notice">Loading shipments...</div>;
+  if (shipments.length === 0) {
+    return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
+  }
+  return <ShipmentList shipments={shipments} />;
 }
