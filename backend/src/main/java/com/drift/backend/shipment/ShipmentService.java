@@ -16,6 +16,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @Service
 public class ShipmentService {
@@ -39,6 +40,14 @@ public class ShipmentService {
 		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
 				.map(this::respond)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public ShipmentResponse get(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.map(ShipmentResponse::from)
+				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
 	@Transactional

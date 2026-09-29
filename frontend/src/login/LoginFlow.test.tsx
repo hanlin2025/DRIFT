@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -5,9 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { ApiError } from '../signup/api';
 import { clearSession, writeSession, type Session } from '../session/session';
+import { listShipments } from '../shipment/api';
 import { loadSession, login } from './api';
 
 vi.mock('./api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn() }));
 
 const session: Session = {
   token: 'session-token',
@@ -26,6 +29,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(login).mockResolvedValue(session);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...session, token }));
+  vi.mocked(listShipments).mockResolvedValue([]);
 });
 
 describe('login and role routing', () => {
@@ -76,6 +80,14 @@ describe('login and role routing', () => {
   it('sends an expired session back to login', async () => {
     writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+    expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it('still shows the ended-session message when the check runs twice', async () => {
+    writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
+    render(<StrictMode><MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter></StrictMode>);
     expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(sessionStorage.getItem('drift.session')).toBeNull();
     expect(loadSession).not.toHaveBeenCalled();
