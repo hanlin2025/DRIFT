@@ -68,7 +68,7 @@ public class ShipmentController {
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipment found", content = @Content(
-						mediaType = "application/json", schema = @Schema(implementation = ShipmentResponse.class))),
+						mediaType = "application/json", schema = @Schema(implementation = ShipmentDetailResponse.class))),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
@@ -81,7 +81,7 @@ public class ShipmentController {
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment not found"}
 								"""))) })
-	public ResponseEntity<ShipmentResponse> get(
+	public ResponseEntity<ShipmentDetailResponse> get(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long shipmentId) {
 		if (user == null) {
