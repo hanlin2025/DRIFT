@@ -1,5 +1,7 @@
 package com.drift.backend.shipment;
 
+import java.util.List;
+
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 
 @Service
@@ -25,6 +28,14 @@ public class ShipmentService {
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users) {
 		this.shipments = shipments;
 		this.users = users;
+	}
+
+	@Transactional(readOnly = true)
+	public List<ShipmentResponse> list(AuthenticatedUser principal) {
+		Company company = activeCompany(principal);
+		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
+				.map(ShipmentResponse::from)
+				.toList();
 	}
 
 	@Transactional
@@ -67,5 +78,14 @@ public class ShipmentService {
 			cause = cause.getCause();
 		}
 		return false;
+	}
+
+	private Company activeCompany(AuthenticatedUser principal) {
+		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		Company company = account.getCompany();
+		if (company == null || !company.isActive()) {
+			throw new ShipmentAccessForbiddenException();
+		}
+		return company;
 	}
 }
