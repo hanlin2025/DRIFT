@@ -6,11 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { ApiError } from '../signup/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { listShipments } from '../shipment/api';
 import { loadSession, login } from './api';
 
 vi.mock('./api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn() }));
 
 const session: Session = {
   token: 'session-token',
@@ -29,7 +27,6 @@ beforeEach(() => {
   clearSession();
   vi.mocked(login).mockResolvedValue(session);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...session, token }));
-  vi.mocked(listShipments).mockResolvedValue([]);
 });
 
 describe('login and role routing', () => {
