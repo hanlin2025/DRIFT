@@ -179,6 +179,7 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+		// TODO: when GET /api/shipments/{id} returns, also expect 403 and this message for an inactive company.
 	}
 
 	private org.springframework.test.web.servlet.ResultActions list(String bearerToken) throws Exception {
