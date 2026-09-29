@@ -1,0 +1,193 @@
+package com.drift.backend.shipment;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
+import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.jayway.jsonpath.JsonPath;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Transactional
+class ShipmentCreationIntegrationTests {
+
+	@Autowired MockMvc mvc;
+	@Autowired JdbcTemplate jdbc;
+	@Autowired PasswordEncoder passwords;
+
+	private String email;
+	private Long companyId;
+	private Long accountId;
+	private String token;
+
+	@BeforeEach
+	void account() throws Exception {
+		email = "cdg75-" + UUID.randomUUID() + "@example.com";
+		companyId = companyId("HARBOURLINE_DEMO");
+		createAccount(email, companyId);
+		accountId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+		token = tokenFor(email);
+	}
+
+	@Test
+	void createsShipmentForTheAuthenticatedUsersCompanyAndPersistsIt() throws Exception {
+		MvcResult result = create(token, shipment("HBL-2026-001"))
+				.andExpect(status().isCreated())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.id").isNumber())
+				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-001"))
+				.andExpect(jsonPath("$.origin").value("Shanghai, CN"))
+				.andExpect(jsonPath("$.destination").value("Jakarta, ID"))
+				.andExpect(jsonPath("$.createdAt").isNotEmpty())
+				.andReturn();
+
+		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+		Long shipmentId = responseId.longValue();
+		assertThat(jdbc.queryForMap("""
+				SELECT company_id, created_by_user_id, shipment_reference, mother_vessel, feeder_vessel
+				FROM shipments WHERE id = ?
+				""", shipmentId))
+				.containsEntry("company_id", companyId)
+				.containsEntry("created_by_user_id", accountId)
+				.containsEntry("shipment_reference", "HBL-2026-001")
+				.containsEntry("mother_vessel", "MV Pacific Horizon")
+				.containsEntry("feeder_vessel", "MV Strait Runner");
+	}
+
+	@Test
+	void rejectsMissingRequiredFields() throws Exception {
+		create(token, "{}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Shipment information is missing or invalid"))
+				.andExpect(jsonPath("$.errors.shipmentReference").value("Shipment reference is required"))
+				.andExpect(jsonPath("$.errors.origin").value("Origin is required"))
+				.andExpect(jsonPath("$.errors.destination").value("Destination is required"))
+				.andExpect(jsonPath("$.errors.motherVessel").value("Mother vessel is required"))
+				.andExpect(jsonPath("$.errors.plannedMotherArrivalAt").value("Planned mother-vessel arrival is required"))
+				.andExpect(jsonPath("$.errors.feederVessel").value("Feeder vessel is required"))
+				.andExpect(jsonPath("$.errors.plannedFeederDepartureAt").value("Planned feeder-vessel departure is required"));
+		assertThat(countShipments()).isZero();
+	}
+
+	@Test
+	void rejectsAFeederDepartureThatIsNotAfterMotherArrival() throws Exception {
+		create(token, shipmentWithTimes("HBL-2026-002", "2026-10-15T08:00:00+08:00", "2026-10-15T08:00:00+08:00"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidItineraryException.MESSAGE))
+				.andExpect(jsonPath("$.errors.plannedFeederDepartureAt").value(InvalidItineraryException.MESSAGE));
+		assertThat(countShipments()).isZero();
+	}
+
+	@Test
+	void rejectsDuplicateReferencesWithinTheSameCompanyIgnoringCase() throws Exception {
+		create(token, shipment("HBL-2026-003")).andExpect(status().isCreated());
+
+		String colleague = "cdg75-colleague-" + UUID.randomUUID() + "@example.com";
+		createAccount(colleague, companyId);
+		create(tokenFor(colleague), shipment("hbl-2026-003"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(DuplicateShipmentReferenceException.MESSAGE));
+		assertThat(countShipments()).isEqualTo(1);
+	}
+
+	@Test
+	void permitsTheSameReferenceForAnotherCompany() throws Exception {
+		create(token, shipment("HBL-2026-004")).andExpect(status().isCreated());
+
+		String otherEmail = "cdg75-other-" + UUID.randomUUID() + "@example.com";
+		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		create(tokenFor(otherEmail), shipment("hbl-2026-004")).andExpect(status().isCreated());
+		assertThat(countShipments()).isEqualTo(2);
+	}
+
+	@Test
+	void rejectsAuthenticatedAccountsWithoutACompany() throws Exception {
+		String unassigned = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role)
+				VALUES ('Unassigned User', ?, ?, 'FREIGHT_FORWARDER')
+				""", unassigned, passwords.encode("Example123"));
+
+		create(tokenFor(unassigned), shipment("HBL-2026-005"))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentCreationForbiddenException.MESSAGE));
+		assertThat(countShipments()).isZero();
+	}
+
+	@Test
+	void requiresAnAuthenticatedSession() throws Exception {
+		mvc.perform(post("/api/shipments").contentType(MediaType.APPLICATION_JSON).content(shipment("HBL-2026-006")))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions create(String bearerToken, String body) throws Exception {
+		return mvc.perform(post("/api/shipments")
+				.header("Authorization", "Bearer " + bearerToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body));
+	}
+
+	private void createAccount(String accountEmail, Long accountCompanyId) {
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role, company_id)
+				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				""", accountEmail, passwords.encode("Example123"), accountCompanyId);
+	}
+
+	private String tokenFor(String accountEmail) throws Exception {
+		MvcResult result = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"%s\",\"password\":\"Example123\"}".formatted(accountEmail)))
+				.andExpect(status().isOk())
+				.andReturn();
+		return JsonPath.read(result.getResponse().getContentAsString(), "$.token");
+	}
+
+	private Long companyId(String code) {
+		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
+	}
+
+	private int countShipments() {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM shipments", Integer.class);
+	}
+
+	private static String shipment(String reference) {
+		return shipmentWithTimes(reference, "2026-10-15T08:00:00+08:00", "2026-10-16T12:00:00+08:00");
+	}
+
+	private static String shipmentWithTimes(String reference, String motherArrival, String feederDeparture) {
+		return """
+				{
+				  "shipmentReference": "%s",
+				  "origin": "Shanghai, CN",
+				  "destination": "Jakarta, ID",
+				  "motherVessel": "MV Pacific Horizon",
+				  "plannedMotherArrivalAt": "%s",
+				  "feederVessel": "MV Strait Runner",
+				  "plannedFeederDepartureAt": "%s"
+				}
+				""".formatted(reference, motherArrival, feederDeparture);
+	}
+}
