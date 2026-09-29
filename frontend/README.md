@@ -42,6 +42,14 @@ login stores the session in the browser tab and opens the importer shipment over
 or the freight-forwarder shipment portfolio. An expired or rejected session returns
 to `/login`. Signing out clears that session.
 
+## Shipment list handoff
+
+`frontend/src/workspace/ShipmentList.tsx` renders Reference, Origin, Destination, Mother vessel, and Feeder vessel in that order. It uses the existing `Shipment` type from `frontend/src/shipment/api.ts` and keeps the array order it is given.
+
+`WorkspacePage` shows that table only for a freight forwarder, and only when `shipments` is passed. The live route does not pass it, so the table stays hidden and the registration form is unchanged. `[]` shows the five headers and no rows. A populated array shows those rows.
+
+CDG-58 should pass the company's shipments into `WorkspacePage`. It should not mount another list. Loading, errors, an empty-state message, and session expiry while fetching belong to CDG-58. This table does not call the API.
+
 ## Browser tests
 
 With the backend running on port 8080 against the default `drift` database:

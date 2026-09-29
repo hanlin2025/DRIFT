@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
+import { type Shipment } from '../shipment/api';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
+import { ShipmentList } from './ShipmentList';
 
 function Wordmark({ href }: { href: string }) {
   return (
@@ -14,7 +16,12 @@ function Wordmark({ href }: { href: string }) {
   );
 }
 
-export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account: Session; onSignOut: () => void; onSessionEnded: () => void }) {
+export function WorkspacePage({ account, onSignOut, onSessionEnded, shipments }: {
+  account: Session;
+  onSignOut: () => void;
+  onSessionEnded: () => void;
+  shipments?: Shipment[];
+}) {
   const importer = account.role === 'IMPORTER';
   return (
     <div className="workspace">
@@ -39,6 +46,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account:
           <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
           <div><dt>Email</dt><dd>{account.email}</dd></div>
         </dl>
+        {!importer && shipments !== undefined && <ShipmentList shipments={shipments} />}
         {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} />}
       </main>
     </div>
