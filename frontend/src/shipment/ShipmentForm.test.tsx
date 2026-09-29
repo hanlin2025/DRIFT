@@ -88,7 +88,7 @@ describe('shipment registration', () => {
     vi.mocked(loadSession).mockImplementation(async token => ({ ...forwarder, token }));
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.getByText('This shipment is registered for Harbourline Logistics (Demo).')).toBeInTheDocument();
   });
 
