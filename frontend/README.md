@@ -61,7 +61,36 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Tests create and remove uniquely named fixtures in that database and cover desktop/mobile
-signup, login, role routing, validation, signed-out redirects, session expiry and invitation
-reuse against the real API. Set
-`DRIFT_E2E_DATABASE` to override the fixture database; the backend must use the same one.
+That command covers desktop and mobile signup, login, role routing, validation, signed-out
+redirects, session expiry, and invitation reuse against the real API. It does not run the
+shipment retrieval spec below. Set `DRIFT_E2E_DATABASE` only when the backend uses that same
+database.
+
+### Shipment retrieval
+
+`e2e/shipment-retrieval.spec.ts` signs in a disposable freight forwarder, confirms Harbourline
+has no shipments, submits one shipment through the form, and checks the 201 response, the
+automatic list refresh, the six displayed fields, and the same row after reload. It uses the
+real shipment API. It refuses `drift`, `drift_test`, and an unset database.
+
+Choose a new database name. From the repository root, after PostgreSQL is accepting connections, continue only when the name query prints nothing:
+
+```bash
+export DRIFT_E2E_DATABASE=drift_cdg59_your_suffix
+docker compose exec -T postgres psql -U drift -d postgres -Atc "SELECT datname FROM pg_database WHERE datname = '${DRIFT_E2E_DATABASE}'"
+docker compose exec -T postgres psql -U drift -d postgres -c "CREATE DATABASE ${DRIFT_E2E_DATABASE}"
+export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
+export AIS_ENABLED=false
+export SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/${DRIFT_E2E_DATABASE}"
+cd backend && bash ./mvnw spring-boot:run
+```
+
+Flyway migrates that database on startup. In `frontend/`, export the same database name and run:
+
+```bash
+export DRIFT_E2E_DATABASE=drift_cdg59_your_suffix
+npx playwright test --grep @disposable-database --project=desktop
+```
+
+Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
+open a shipment detail page.
