@@ -9,13 +9,15 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import com.drift.backend.ais.position.AisPositionParser;
+import com.drift.backend.ais.position.exception.InvalidAisPositionMessageException;
+
 import tools.jackson.core.JacksonException;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -30,18 +32,22 @@ public class AisStreamConnectionService {
 
 	private final AisStreamProperties properties;
 	private final ObjectMapper objectMapper;
+	private final AisPositionParser positionParser;
 	private final HttpClient httpClient;
 	private final AtomicBoolean firstPositionLogged = new AtomicBoolean();
 
 	private volatile WebSocket webSocket;
 
-	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper) {
-		this(properties, objectMapper, HttpClient.newHttpClient());
+	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
+			AisPositionParser positionParser) {
+		this(properties, objectMapper, positionParser, HttpClient.newHttpClient());
 	}
 
-	AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper, HttpClient httpClient) {
+	AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
+			AisPositionParser positionParser, HttpClient httpClient) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
+		this.positionParser = positionParser;
 		this.httpClient = httpClient;
 	}
 
@@ -107,19 +113,15 @@ public class AisStreamConnectionService {
 
 	private void handleMessage(String payload) {
 		try {
-			JsonNode message = objectMapper.readTree(payload);
-			String messageType = message.path("MessageType").asText();
-			if ("SubscriptionConfirmation".equals(messageType)) {
-				System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
-						"AIS stream subscription confirmed.");
-			} else if (POSITION_REPORT.equals(messageType) && firstPositionLogged.compareAndSet(false, true)) {
-				long mmsi = message.path("MetaData").path("MMSI").asLong();
-				System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
-						"Received the first AIS position report for MMSI " + mmsi + ".");
-			}
-		} catch (JacksonException ex) {
+			positionParser.parse(payload).ifPresent(position -> {
+				if (firstPositionLogged.compareAndSet(false, true)) {
+					System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
+							"Received the first AIS position report for MMSI " + position.mmsi() + ".");
+				}
+			});
+		} catch (InvalidAisPositionMessageException ex) {
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
-					"Received an unreadable AIS stream message.", ex);
+					"Ignoring an invalid AIS position report.", ex);
 		}
 	}
 

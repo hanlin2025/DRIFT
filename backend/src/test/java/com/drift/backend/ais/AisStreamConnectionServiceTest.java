@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 
 import org.junit.jupiter.api.Test;
+import com.drift.backend.ais.position.AisPositionParser;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -18,7 +19,8 @@ class AisStreamConnectionServiceTest {
 		AisStreamProperties properties = new AisStreamProperties(true,
 				URI.create("wss://stream.aisstream.io/v0/stream"), "test-api-key",
 				1.20, 103.60, 1.50, 104.00);
-		AisStreamConnectionService service = new AisStreamConnectionService(properties, objectMapper);
+		AisStreamConnectionService service = new AisStreamConnectionService(properties, objectMapper,
+				new AisPositionParser(objectMapper));
 
 		JsonNode subscription = objectMapper.readTree(service.subscriptionPayload());
 		assertThat(subscription.path("APIKey").asText()).isEqualTo("test-api-key");
