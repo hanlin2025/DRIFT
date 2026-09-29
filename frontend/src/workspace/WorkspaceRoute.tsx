@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
-import { ShipmentForm } from '../shipment/ShipmentForm';
-import { ShipmentDetail, ShipmentList } from '../shipment/ShipmentList';
+import { clearSession, homePath, isExpired, readSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 
 function Wordmark({ href }: { href: string }) {
@@ -15,19 +13,15 @@ function Wordmark({ href }: { href: string }) {
   );
 }
 
-export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account: Session; onSignOut: () => void; onSessionEnded: () => void }) {
+export function WorkspacePage({ account, onSignOut }: { account: Session; onSignOut: () => void }) {
   const importer = account.role === 'IMPORTER';
-  const { shipmentId } = useParams();
-  const [registered, setRegistered] = useState(0);
   return (
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark href={homePath(account.role)} />
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
-      {shipmentId ? <main className="workspace-main">
-        <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={homePath(account.role)} onSessionEnded={onSessionEnded} />
-      </main> : <main className="workspace-main">
+      <main className="workspace-main">
         <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
         <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
         <p className="intro">{importer
@@ -44,9 +38,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account:
           <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
           <div><dt>Email</dt><dd>{account.email}</dd></div>
         </dl>
-        <ShipmentList token={account.token} basePath={homePath(account.role)} refreshKey={registered} canRegister={!importer} onSessionEnded={onSessionEnded} />
-        {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
-      </main>}
+      </main>
     </div>
   );
 }
@@ -63,8 +55,8 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   useEffect(() => {
     const saved = readSession();
     if (!saved || isExpired(saved.expiresAt)) {
-      const expired = Boolean(saved) || sessionHasEnded();
-      if (saved) endSession();
+      const expired = Boolean(saved);
+      clearSession();
       navigate('/login', { replace: true, state: expired ? { expired: true } : undefined });
       return;
     }
@@ -82,7 +74,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
-        endSession();
+        clearSession();
         navigate('/login', { replace: true, state: { expired: true } });
         return;
       }
@@ -96,7 +88,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       if (isExpired(account.expiresAt)) {
-        endSession();
+        clearSession();
         navigate('/login', { replace: true, state: { expired: true } });
         return;
       }
@@ -106,14 +98,9 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     return () => clearTimeout(timer);
   }, [account, navigate]);
 
-  const sessionEnded = useCallback(() => {
-    endSession();
-    navigate('/login', { replace: true, state: { expired: true } });
-  }, [navigate]);
-
   if (!account) return <div className="workspace"><main className="workspace-main">{problem
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
+  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} />;
 }
