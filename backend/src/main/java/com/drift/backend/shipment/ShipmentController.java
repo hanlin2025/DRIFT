@@ -45,7 +45,7 @@ public class ShipmentController {
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your session has ended. Please sign in again."}
+								{"message":"Your session has ended. Log in again."}
 								"""))),
 				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
@@ -70,7 +70,7 @@ public class ShipmentController {
 						mediaType = "application/json", schema = @Schema(implementation = ShipmentResponse.class))),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your session has ended. Please sign in again."}
+								{"message":"Your session has ended. Log in again."}
 								"""))),
 				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
@@ -108,7 +108,7 @@ public class ShipmentController {
 										""") })),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your session has ended. Please sign in again."}
+								{"message":"Your session has ended. Log in again."}
 								"""))),
 				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
