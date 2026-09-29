@@ -5,6 +5,7 @@ const valid: ShipmentFields = {
   shipmentReference: ' HL-1001 ',
   origin: 'Singapore',
   destination: 'Jakarta',
+  transshipmentPort: 'Singapore',
   motherVessel: 'Ever Steady',
   plannedMotherArrivalAt: '2026-10-02T08:00',
   feederVessel: 'Straits Feeder',
@@ -21,6 +22,7 @@ describe('shipment validation', () => {
       shipmentReference: ' ',
       origin: '',
       destination: '',
+      transshipmentPort: '',
       motherVessel: '',
       plannedMotherArrivalAt: '',
       feederVessel: '',
@@ -29,6 +31,7 @@ describe('shipment validation', () => {
       shipmentReference: 'Shipment reference is required',
       origin: 'Origin is required',
       destination: 'Destination is required',
+      transshipmentPort: 'Transshipment port is required',
       motherVessel: 'Mother vessel is required',
       plannedMotherArrivalAt: 'Planned mother-vessel arrival is required',
       feederVessel: 'Feeder vessel is required',
@@ -44,6 +47,11 @@ describe('shipment validation', () => {
   it('rejects a reference longer than the column allows', () => {
     expect(validateShipment({ ...valid, shipmentReference: 'R'.repeat(101) }).shipmentReference)
       .toBe('Shipment reference must be at most 100 characters');
+  });
+
+  it('rejects a transshipment port longer than the column allows', () => {
+    expect(validateShipment({ ...valid, transshipmentPort: 'P'.repeat(201) }).transshipmentPort)
+      .toBe('Transshipment port must be at most 200 characters');
   });
 
   it('keeps the same instant when the local time is sent to the API', () => {
