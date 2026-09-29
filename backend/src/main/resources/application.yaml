@@ -26,3 +26,11 @@ app:
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: 3600000
+  ais:
+    enabled: ${AIS_ENABLED:false}
+    stream-uri: wss://stream.aisstream.io/v0/stream
+    api-key: ${AISSTREAM_API_KEY:}
+    southwest-latitude: ${AIS_SOUTHWEST_LATITUDE:}
+    southwest-longitude: ${AIS_SOUTHWEST_LONGITUDE:}
+    northeast-latitude: ${AIS_NORTHEAST_LATITUDE:}
+    northeast-longitude: ${AIS_NORTHEAST_LONGITUDE:}

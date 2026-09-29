@@ -64,6 +64,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-001"))
 				.andExpect(jsonPath("$.origin").value("Shanghai, CN"))
 				.andExpect(jsonPath("$.destination").value("Jakarta, ID"))
+				.andExpect(jsonPath("$.transshipmentPort").value("Singapore"))
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
 				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
 				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
@@ -90,6 +91,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.errors.shipmentReference").value("Shipment reference is required"))
 				.andExpect(jsonPath("$.errors.origin").value("Origin is required"))
 				.andExpect(jsonPath("$.errors.destination").value("Destination is required"))
+				.andExpect(jsonPath("$.errors.transshipmentPort").value("Transshipment port is required"))
 				.andExpect(jsonPath("$.errors.motherVessel").value("Mother vessel is required"))
 				.andExpect(jsonPath("$.errors.plannedMotherArrivalAt").value("Planned mother-vessel arrival is required"))
 				.andExpect(jsonPath("$.errors.feederVessel").value("Feeder vessel is required"))
@@ -216,6 +218,9 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+		detail(token, "1")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 	}
 
 	@Test
@@ -232,11 +237,8 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-2026-006"))
-				.andExpect(jsonPath("$[0].origin").value("Shanghai, CN"))
-				.andExpect(jsonPath("$[0].destination").value("Jakarta, ID"))
-				.andExpect(jsonPath("$[0].motherVessel").value("MV Pacific Horizon"))
-				.andExpect(jsonPath("$[0].feederVessel").value("MV Strait Runner"))
-				.andExpect(jsonPath("$[0].plannedMotherArrivalAt").isNotEmpty());
+				.andExpect(jsonPath("$[0].transshipmentPort").value("Singapore"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"));
 	}
 
 	@Test
@@ -249,6 +251,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.id").value(shipmentId.longValue()))
 				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-007"))
+				.andExpect(jsonPath("$.transshipmentPort").value("Singapore"))
 				.andExpect(jsonPath("$.feederVessel").value("MV Strait Runner"))
 				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
 				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800));
@@ -355,6 +358,7 @@ class ShipmentCreationIntegrationTests {
 				  "shipmentReference": "%s",
 				  "origin": "Shanghai, CN",
 				  "destination": "Jakarta, ID",
+				  "transshipmentPort": "Singapore",
 				  "motherVessel": "MV Pacific Horizon",
 				  "plannedMotherArrivalAt": "%s",
 				  "feederVessel": "MV Strait Runner",

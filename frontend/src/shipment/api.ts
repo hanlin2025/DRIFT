@@ -11,6 +11,7 @@ export type Shipment = {
   shipmentReference: string;
   origin: string;
   destination: string;
+  transshipmentPort: string;
   motherVessel: string;
   plannedMotherArrivalAt: string;
   feederVessel: string;
@@ -23,14 +24,17 @@ const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shor
 
 export async function listShipments(token: string): Promise<Shipment[]> {
   const data = await send('/api/shipments', token);
-  if (!Array.isArray(data) || !data.every(isShipment)) throw new ApiError(UNEXPECTED, 502);
-  return data;
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  const shipments = data.map(asShipment);
+  if (shipments.some(shipment => shipment === null)) throw new ApiError(UNEXPECTED, 502);
+  return shipments as Shipment[];
 }
 
 export async function getShipment(token: string, shipmentId: string): Promise<Shipment> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}`, token);
-  if (!isShipment(data)) throw new ApiError(UNEXPECTED, 502);
-  return data;
+  const shipment = asShipment(data);
+  if (!shipment) throw new ApiError(UNEXPECTED, 502);
+  return shipment;
 }
 
 export async function createShipment(token: string, shipment: ShipmentFields): Promise<Shipment> {
@@ -39,8 +43,9 @@ export async function createShipment(token: string, shipment: ShipmentFields): P
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(shipment),
   });
-  if (!isShipment(data)) throw new ApiError(UNEXPECTED, 502);
-  return data;
+  const created = asShipment(data);
+  if (!created) throw new ApiError(UNEXPECTED, 502);
+  return created;
 }
 
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
@@ -85,10 +90,23 @@ function isConnectionWindow(value: unknown): value is ConnectionWindow {
     && Number.isFinite(value.totalSeconds);
 }
 
-function isShipment(value: unknown): value is Shipment {
-  if (!isRecord(value) || !('connectionWindow' in value)) return false;
-  const text = ['shipmentReference', 'origin', 'destination', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
-  return typeof value.id === 'number'
-    && text.every(key => typeof value[key] === 'string')
-    && (value.connectionWindow === null || isConnectionWindow(value.connectionWindow));
+function asShipment(value: unknown): Shipment | null {
+  if (!isRecord(value) || typeof value.id !== 'number') return null;
+  const text = ['shipmentReference', 'origin', 'destination', 'transshipmentPort', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
+  if (!text.every(key => typeof value[key] === 'string')) return null;
+  const window = value.connectionWindow;
+  if (window != null && !isConnectionWindow(window)) return null;
+  return {
+    id: value.id,
+    shipmentReference: value.shipmentReference as string,
+    origin: value.origin as string,
+    destination: value.destination as string,
+    transshipmentPort: value.transshipmentPort as string,
+    motherVessel: value.motherVessel as string,
+    plannedMotherArrivalAt: value.plannedMotherArrivalAt as string,
+    feederVessel: value.feederVessel as string,
+    plannedFeederDepartureAt: value.plannedFeederDepartureAt as string,
+    createdAt: value.createdAt as string,
+    connectionWindow: window ?? null,
+  };
 }

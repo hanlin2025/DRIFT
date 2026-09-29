@@ -26,8 +26,7 @@ npm test
 ```
 
 For deployment, serve the frontend and `/api` under the same origin and configure the
-web server to return `index.html` for client routes such as `/signup`, `/login` and
-`/importer/shipments/:id`.
+web server to return `index.html` for client routes such as `/signup` and `/login`.
 `vite preview` previews static assets only; it is not the production API gateway.
 
 ## Signup and login routing
@@ -45,17 +44,11 @@ to `/login`. Signing out clears that session.
 
 ## Company shipments
 
-Both workspaces list the shipments registered for the signed-in user's company, newest
-first, from `GET /api/shipments`. Each row shows the shipment reference, origin and
-destination, mother and feeder vessels, and the planned mother-vessel arrival. The list
-is loaded from the API each time the workspace opens, so it survives a browser refresh,
-and it reloads after the freight-forwarder form registers a shipment. With no shipments,
-an empty state is shown; the freight-forwarder one links to the registration form.
+Both the importer overview and the freight-forwarder portfolio load `GET /api/shipments` for the signed-in company and show the result in one table: Reference, Origin, Destination, Transshipment port, Mother vessel, and Feeder vessel. The table keeps the API order, which is newest `createdAt` first. The page says it is loading while the request is in progress. A failure shows the error and **Try again**. A successful empty response says the company has no shipments yet. A 401 ends the session and returns to `/login`.
 
-Selecting a shipment opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`,
-loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window:
-the time available between the mother-vessel arrival and the feeder-vessel departure.
-A shipment of another company returns 404, so it is reported as not found.
+The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
+
+The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A shipment of another company returns 404, so it is reported as not found.
 
 ## Browser tests
 

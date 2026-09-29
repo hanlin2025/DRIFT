@@ -21,7 +21,7 @@ class OpenApiIntegrationTests {
 	@Autowired MockMvc mvc;
 
 	@Test
-	void swaggerUiAndOpenApiDocumentTheProtectedShipmentEndpoints() throws Exception {
+	void swaggerUiAndOpenApiDocumentTheProtectedShipmentEndpoint() throws Exception {
 		mvc.perform(get("/swagger-ui/index.html"))
 				.andExpect(status().isOk());
 
