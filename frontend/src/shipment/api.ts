@@ -13,13 +13,36 @@ export type Shipment = {
   createdAt: string;
 };
 
+const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
+
+export async function listShipments(token: string): Promise<Shipment[]> {
+  const data = await send('/api/shipments', token);
+  if (!Array.isArray(data) || !data.every(isShipment)) throw new ApiError(UNEXPECTED, 502);
+  return data;
+}
+
+export async function getShipment(token: string, shipmentId: string): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}`, token);
+  if (!isShipment(data)) throw new ApiError(UNEXPECTED, 502);
+  return data;
+}
+
 export async function createShipment(token: string, shipment: ShipmentFields): Promise<Shipment> {
+  const data = await send('/api/shipments', token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(shipment),
+  });
+  if (!isShipment(data)) throw new ApiError(UNEXPECTED, 502);
+  return data;
+}
+
+async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch('/api/shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(shipment),
+    response = await fetch(path, {
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(15000),
       cache: 'no-store',
     });
@@ -31,7 +54,7 @@ export async function createShipment(token: string, shipment: ShipmentFields): P
   }
   if (response.status === 401) throw new ApiError('Your session has ended. Log in again.', 401);
   if (!response.headers.get('content-type')?.includes('application/json')) {
-    throw new ApiError('DRIFT returned an unexpected response. Please try again shortly.', response.status);
+    throw new ApiError(UNEXPECTED, response.status);
   }
   const data: unknown = await response.json();
   if (!response.ok) {
@@ -41,7 +64,6 @@ export async function createShipment(token: string, shipment: ShipmentFields): P
     }
     throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
   }
-  if (!isShipment(data)) throw new ApiError('DRIFT returned an unexpected response. Please try again shortly.', 502);
   return data;
 }
 

@@ -15,7 +15,7 @@ const emptyFields: ShipmentFields = {
 
 const fieldOrder = Object.keys(emptyFields) as (keyof ShipmentFields)[];
 
-export function ShipmentForm({ token, companyName, onSessionEnded }: { token: string; companyName: string | null; onSessionEnded: () => void }) {
+export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered }: { token: string; companyName: string | null; onSessionEnded: () => void; onRegistered?: (shipment: Shipment) => void }) {
   const [fields, setFields] = useState<ShipmentFields>(emptyFields);
   const [errors, setErrors] = useState<ShipmentErrors>({});
   const [problem, setProblem] = useState('');
@@ -75,6 +75,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
       setFields(emptyFields);
       setErrors({});
       setCreated(shipment);
+      onRegistered?.(shipment);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
@@ -126,17 +127,23 @@ function RegisteredShipment({ shipment }: { shipment: Shipment }) {
       <span className="overline">REGISTERED</span>
       <strong>{shipment.shipmentReference}</strong>
       <p className="shipment-route">{shipment.origin} to {shipment.destination}</p>
-      <dl>
-        <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
-        <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
-        <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
-        <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
-      </dl>
+      <ShipmentFacts shipment={shipment} />
     </article>
   );
 }
 
-function formatWhen(value: string) {
+export function ShipmentFacts({ shipment }: { shipment: Shipment }) {
+  return (
+    <dl>
+      <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
+      <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
+      <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
+      <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
+    </dl>
+  );
+}
+
+export function formatWhen(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
