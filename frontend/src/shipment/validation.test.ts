@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateShipment, type ShipmentFields } from './validation';
+import { toOffsetDateTime, validateShipment, type ShipmentFields } from './validation';
 
 const valid: ShipmentFields = {
   shipmentReference: ' HL-1001 ',
@@ -44,5 +44,11 @@ describe('shipment validation', () => {
   it('rejects a reference longer than the column allows', () => {
     expect(validateShipment({ ...valid, shipmentReference: 'R'.repeat(101) }).shipmentReference)
       .toBe('Shipment reference must be at most 100 characters');
+  });
+
+  it('keeps the same instant when the local time is sent to the API', () => {
+    const offset = toOffsetDateTime(valid.plannedMotherArrivalAt);
+    expect(offset).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+    expect(Date.parse(offset)).toBe(Date.parse(valid.plannedMotherArrivalAt));
   });
 });
