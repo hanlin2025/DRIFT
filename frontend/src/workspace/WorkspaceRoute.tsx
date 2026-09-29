@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, homePath, isExpired, readSession, writeSession, type Session } from '../session/session';
+import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 
 function Wordmark({ href }: { href: string }) {
@@ -38,6 +39,7 @@ export function WorkspacePage({ account, onSignOut }: { account: Session; onSign
           <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
           <div><dt>Email</dt><dd>{account.email}</dd></div>
         </dl>
+        {importer ? null : <ShipmentForm companyName={account.company?.name ?? null} />}
       </main>
     </div>
   );

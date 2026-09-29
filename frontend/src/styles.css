@@ -131,9 +131,15 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .session-facts div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
 .session-facts dt { color: var(--muted); font-size: 11px; }
 .session-facts dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+.shipment-panel { margin-top: 28px; border-top: 1px solid var(--line); }
+.shipment-panel h3 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-size: 28px; letter-spacing: -.6px; margin: 28px 0 8px; }
+.shipment-panel .intro { margin-bottom: 18px; }
+.pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
   .session-facts div { display: block; }
   .session-facts dd { text-align: left; margin-top: 4px; }
+  .pair-grid { grid-template-columns: 1fr; }
+  .shipment-panel h3 { font-size: 24px; }
 }
