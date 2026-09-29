@@ -7,3 +7,5 @@ spring:
 app:
   jwt:
     secret: test-only-jwt-secret-not-used-outside-tests
+  ais:
+    enabled: false

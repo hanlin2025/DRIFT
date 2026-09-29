@@ -28,7 +28,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
 @RestController
-@Tag(name = "Shipments", description = "Create and view shipments and their planned transshipment itineraries.")
+@Tag(name = "Shipments", description = "Create shipments and their planned transshipment itineraries.")
 public class ShipmentController {
 
 	private final ShipmentService shipmentService;
@@ -38,7 +38,8 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments")
-	@Operation(summary = "List shipments", description = "Lists the shipments of the authenticated user's active company, newest first.",
+	@Operation(summary = "List shipments", description = "Lists the shipments of the authenticated user's active company, newest first. "
+			+ "Each shipment includes the planned connection window calculated from its stored schedule.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(

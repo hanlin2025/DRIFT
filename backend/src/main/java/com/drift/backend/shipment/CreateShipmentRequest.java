@@ -21,6 +21,10 @@ public record CreateShipmentRequest(
 		@NotBlank(message = "Destination is required")
 		@Size(max = 200, message = "Destination must be at most 200 characters")
 		String destination,
+		@Schema(description = "Port where the shipment transfers from the mother vessel to the feeder vessel.", example = "Singapore", requiredMode = Schema.RequiredMode.REQUIRED)
+		@NotBlank(message = "Transshipment port is required")
+		@Size(max = 200, message = "Transshipment port must be at most 200 characters")
+		String transshipmentPort,
 		@Schema(description = "Vessel carrying the shipment to the transshipment port.", example = "MV Pacific Horizon", requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotBlank(message = "Mother vessel is required")
 		@Size(max = 200, message = "Mother vessel must be at most 200 characters")

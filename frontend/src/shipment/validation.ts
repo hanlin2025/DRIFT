@@ -2,6 +2,7 @@ export type ShipmentFields = {
   shipmentReference: string;
   origin: string;
   destination: string;
+  transshipmentPort: string;
   motherVessel: string;
   plannedMotherArrivalAt: string;
   feederVessel: string;
@@ -10,10 +11,11 @@ export type ShipmentFields = {
 
 export type ShipmentErrors = Partial<Record<keyof ShipmentFields, string>>;
 
-const TEXT_LIMITS: Record<'shipmentReference' | 'origin' | 'destination' | 'motherVessel' | 'feederVessel', number> = {
+const TEXT_LIMITS: Record<'shipmentReference' | 'origin' | 'destination' | 'transshipmentPort' | 'motherVessel' | 'feederVessel', number> = {
   shipmentReference: 100,
   origin: 200,
   destination: 200,
+  transshipmentPort: 200,
   motherVessel: 200,
   feederVessel: 200,
 };
@@ -22,6 +24,7 @@ const TEXT_LABELS = {
   shipmentReference: 'Shipment reference',
   origin: 'Origin',
   destination: 'Destination',
+  transshipmentPort: 'Transshipment port',
   motherVessel: 'Mother vessel',
   feederVessel: 'Feeder vessel',
 } as const;
