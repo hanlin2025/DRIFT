@@ -1,6 +1,11 @@
 import { ApiError } from '../signup/api';
 import { type ShipmentFields } from './validation';
 
+export type ConnectionWindow = {
+  duration: string;
+  totalSeconds: number;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -11,6 +16,7 @@ export type Shipment = {
   feederVessel: string;
   plannedFeederDepartureAt: string;
   createdAt: string;
+  connectionWindow: ConnectionWindow | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -71,8 +77,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isConnectionWindow(value: unknown): value is ConnectionWindow {
+  return isRecord(value)
+    && typeof value.duration === 'string'
+    && value.duration.trim().length > 0
+    && typeof value.totalSeconds === 'number'
+    && Number.isFinite(value.totalSeconds);
+}
+
 function isShipment(value: unknown): value is Shipment {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value) || !('connectionWindow' in value)) return false;
   const text = ['shipmentReference', 'origin', 'destination', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
-  return typeof value.id === 'number' && text.every(key => typeof value[key] === 'string');
+  return typeof value.id === 'number'
+    && text.every(key => typeof value[key] === 'string')
+    && (value.connectionWindow === null || isConnectionWindow(value.connectionWindow));
 }

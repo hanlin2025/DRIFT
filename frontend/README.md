@@ -53,8 +53,9 @@ and it reloads after the freight-forwarder form registers a shipment. With no sh
 an empty state is shown; the freight-forwarder one links to the registration form.
 
 Selecting a shipment opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`,
-loaded from `GET /api/shipments/{id}`. A shipment of another company returns 404, so it is
-reported as not found.
+loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window:
+the time available between the mother-vessel arrival and the feeder-vessel departure.
+A shipment of another company returns 404, so it is reported as not found.
 
 ## Browser tests
 

@@ -37,6 +37,7 @@ beforeEach(() => {
     id: 9,
     createdAt: '2026-09-29T04:00:00Z',
     ...shipment,
+    connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
   }));
 });
 

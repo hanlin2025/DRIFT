@@ -112,6 +112,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
               <article className="shipment-record" aria-label={`Shipment ${shipment.shipmentReference}`}>
                 <ShipmentFacts shipment={shipment} />
                 <dl>
+                  <div>
+                    <dt>Connection window</dt>
+                    <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
+                  </div>
                   <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
                 </dl>
               </article>

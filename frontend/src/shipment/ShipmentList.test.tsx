@@ -33,6 +33,7 @@ const shipment: Shipment = {
   feederVessel: 'Straits Feeder',
   plannedFeederDepartureAt: '2026-10-03T10:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
 };
 
 function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }
@@ -58,6 +59,7 @@ describe('company shipment list', () => {
     expect(within(row).getByText('Ever Steady')).toBeInTheDocument();
     expect(within(row).getByText('Straits Feeder')).toBeInTheDocument();
     expect(within(row).getByText(/Arrives/)).toBeInTheDocument();
+    expect(within(row).queryByText('1 day 10 hours')).not.toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('importer-token');
   });
 
@@ -132,10 +134,20 @@ describe('shipment details', () => {
     const record = screen.getByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getByText('Ever Steady')).toBeInTheDocument();
     expect(within(record).getByText('Planned departure')).toBeInTheDocument();
+    expect(within(record).getByText('Connection window')).toBeInTheDocument();
+    expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: /All shipments/ }));
     expect(screen.getByTestId('location')).toHaveTextContent('/importer');
     expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
+  });
+
+  it('shows when the shipment has no planned connection window', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, connectionWindow: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('Connection window')).toBeInTheDocument();
+    expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
   });
 
   it('explains when a shipment is not available to the company', async () => {
