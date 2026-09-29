@@ -175,3 +175,18 @@ API details, database migration notes, and registration integration tests.
 In a second terminal, run `cd frontend`, `npm ci`, then `npm run dev`.
 Open http://localhost:5173/signup using a link from the invitation helper.
 See [frontend setup](frontend/README.md) for tests and login-route scope.
+
+## Optional AIS Stream Connection
+
+CDG-64 can open a backend-only connection to AIS Stream when it is explicitly enabled. Create an AIS Stream API key, then set the key and the two corners of a focused geographic bounding box in the same terminal as the backend:
+
+```bash
+export AIS_ENABLED=true
+export AISSTREAM_API_KEY='your-ais-stream-key'
+export AIS_SOUTHWEST_LATITUDE='your-southwest-latitude'
+export AIS_SOUTHWEST_LONGITUDE='your-southwest-longitude'
+export AIS_NORTHEAST_LATITUDE='your-northeast-latitude'
+export AIS_NORTHEAST_LONGITUDE='your-northeast-longitude'
+```
+
+The connector subscribes only to `PositionReport` messages. It remains disabled by default and does not persist received messages until the later AIS persistence subtasks are implemented.
