@@ -26,8 +26,7 @@ npm test
 ```
 
 For deployment, serve the frontend and `/api` under the same origin and configure the
-web server to return `index.html` for client routes such as `/signup`, `/login` and
-`/importer/shipments/:id`.
+web server to return `index.html` for client routes such as `/signup` and `/login`.
 `vite preview` previews static assets only; it is not the production API gateway.
 
 ## Signup and login routing
@@ -42,19 +41,6 @@ After registration, the login form accepts the work email and password. A succes
 login stores the session in the browser tab and opens the importer shipment overview
 or the freight-forwarder shipment portfolio. An expired or rejected session returns
 to `/login`. Signing out clears that session.
-
-## Company shipments
-
-Both workspaces list the shipments registered for the signed-in user's company, newest
-first, from `GET /api/shipments`. Each row shows the shipment reference, origin and
-destination, mother and feeder vessels, and the planned mother-vessel arrival. The list
-is loaded from the API each time the workspace opens, so it survives a browser refresh,
-and it reloads after the freight-forwarder form registers a shipment. With no shipments,
-an empty state is shown; the freight-forwarder one links to the registration form.
-
-Selecting a shipment opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`,
-loaded from `GET /api/shipments/{id}`. A shipment of another company returns 404, so it is
-reported as not found.
 
 ## Browser tests
 

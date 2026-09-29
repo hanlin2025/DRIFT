@@ -6,10 +6,10 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { createShipment, listShipments } from './api';
+import { createShipment } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn() }));
+vi.mock('./api', () => ({ createShipment: vi.fn() }));
 
 const forwarder: Session = {
   token: 'session-token',
@@ -32,7 +32,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...forwarder, token }));
-  vi.mocked(listShipments).mockResolvedValue([]);
   vi.mocked(createShipment).mockImplementation(async (_token, shipment) => ({
     id: 9,
     createdAt: '2026-09-29T04:00:00Z',

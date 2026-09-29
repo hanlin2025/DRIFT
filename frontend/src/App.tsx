@@ -24,9 +24,7 @@ export function AppRoutes() {
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
-    <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/freight-forwarder" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
-    <Route path="/freight-forwarder/shipments/:shipmentId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
     <Route path="*" element={<HomeRedirect />} />
   </Routes>;
 }
