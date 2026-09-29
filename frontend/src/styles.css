@@ -131,41 +131,9 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .session-facts div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
 .session-facts dt { color: var(--muted); font-size: 11px; }
 .session-facts dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
-.shipment-panel { margin-top: 28px; border-top: 1px solid var(--line); }
-.shipment-panel h3 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-size: 28px; letter-spacing: -.6px; margin: 28px 0 8px; }
-.shipment-panel .intro { margin-bottom: 18px; }
-.pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-.shipment-record { background: #e8ede2; border: 1px solid #c8d9bf; border-radius: 5px; padding: 16px 16px 4px; margin: 0 0 22px; }
-.shipment-record strong { display: block; font-size: 16px; margin: 4px 0 6px; }
-.shipment-route { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
-.shipment-record dl { margin: 0; }
-.shipment-record dl div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #d5e0cc; padding: 10px 0; }
-.shipment-record dt { color: var(--muted); font-size: 11px; }
-.shipment-record dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
-.shipment-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.shipment-row { display: grid; gap: 6px; padding: 14px 16px; background: #fcfcf8; border: 1px solid var(--line); border-radius: 5px; text-decoration: none; transition: border-color .18s, background .18s; }
-.shipment-row:hover { border-color: #54775f; background: #f9faf4; }
-.shipment-row-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
-.shipment-row-heading strong { font-size: 14px; overflow-wrap: anywhere; }
-.shipment-arrival { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.shipment-row .shipment-route { margin: 0; }
-.shipment-vessels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 12px; font-weight: 700; }
-.shipment-vessels .overline { margin-bottom: 3px; }
-.empty-shipments { padding: 22px; border: 1px dashed #ccd5cb; border-radius: 5px; background: #f9faf4; text-align: center; }
-.empty-shipments strong { font-size: 13px; }
-.empty-shipments p { color: var(--muted); font-size: 11px; line-height: 1.8; margin: 6px 0 0; }
-.secondary-button { display: inline-flex; align-items: center; min-height: 40px; margin-top: 14px; padding: 9px 16px; border: 1px solid var(--green); border-radius: 4px; color: var(--green); font-size: 11px; font-weight: 700; text-decoration: none; }
-.secondary-button:hover { background: #e8ede2; }
-.back-link { display: inline-flex; gap: 8px; align-items: center; margin-bottom: 28px; color: var(--muted); font-size: 11px; font-weight: 700; text-decoration: none; }
-.back-link:hover { color: var(--ink); }
 @media (max-width: 760px) {
-  .shipment-row-heading { display: block; }
-  .shipment-arrival { display: block; margin-top: 4px; }
-  .shipment-vessels { grid-template-columns: 1fr; gap: 10px; }
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
-  .session-facts div, .shipment-record dl div { display: block; }
-  .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
-  .pair-grid { grid-template-columns: 1fr; }
-  .shipment-panel h3 { font-size: 24px; }
+  .session-facts div { display: block; }
+  .session-facts dd { text-align: left; margin-top: 4px; }
 }

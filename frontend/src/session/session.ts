@@ -1,7 +1,6 @@
 import type { Role } from '../signup/api';
 
 const KEY = 'drift.session';
-const ENDED = 'drift.session.ended';
 
 export type Company = { id: number; code: string; name: string };
 export type Session = {
@@ -32,16 +31,6 @@ export function writeSession(session: Session) {
 
 export function clearSession() {
   sessionStorage.removeItem(KEY);
-  sessionStorage.removeItem(ENDED);
-}
-
-export function endSession() {
-  clearSession();
-  sessionStorage.setItem(ENDED, '1');
-}
-
-export function sessionHasEnded() {
-  return sessionStorage.getItem(ENDED) === '1';
 }
 
 export function isExpired(expiresAt: string, now = Date.now()) {

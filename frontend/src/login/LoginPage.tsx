@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../signup/api';
-import { homePath, sessionHasEnded, writeSession } from '../session/session';
+import { homePath, writeSession } from '../session/session';
 import { login } from './api';
 
 function registrationState(value: unknown): { registered: boolean; email: string } {
@@ -23,13 +23,12 @@ export function LoginPage() {
   const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [error, setError] = useState(expiredState(location.state) || sessionHasEnded() ? 'Your session has ended. Log in again.' : '');
+  const [error, setError] = useState(expiredState(location.state) ? 'Your session has ended. Log in again.' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const busy = useRef(false);
 
   useEffect(() => { document.title = 'Log in | DRIFT'; }, []);
-  useEffect(() => { sessionStorage.removeItem('drift.session.ended'); }, []);
 
   function validate(next = { email, password }) {
     const result: { email?: string; password?: string } = {};
