@@ -18,6 +18,10 @@ public record ShipmentResponse(
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow) {
 
+	static ShipmentResponse from(Shipment shipment) {
+		return from(shipment, null);
+	}
+
 	static ShipmentResponse from(Shipment shipment, ConnectionWindow connectionWindow) {
 		return new ShipmentResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getMotherVessel(), shipment.getPlannedMotherArrivalAt(),
