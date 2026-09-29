@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -76,6 +77,14 @@ describe('login and role routing', () => {
   it('sends an expired session back to login', async () => {
     writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+    expect(loadSession).not.toHaveBeenCalled();
+  });
+
+  it('still shows the ended-session message when the check runs twice', async () => {
+    writeSession({ ...session, expiresAt: '2020-01-01T00:00:00Z' });
+    render(<StrictMode><MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter></StrictMode>);
     expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(sessionStorage.getItem('drift.session')).toBeNull();
     expect(loadSession).not.toHaveBeenCalled();

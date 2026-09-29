@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, homePath, isExpired, readSession, writeSession, type Session } from '../session/session';
+import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 
@@ -57,8 +57,8 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   useEffect(() => {
     const saved = readSession();
     if (!saved || isExpired(saved.expiresAt)) {
-      const expired = Boolean(saved);
-      clearSession();
+      const expired = Boolean(saved) || sessionHasEnded();
+      if (saved) endSession();
       navigate('/login', { replace: true, state: expired ? { expired: true } : undefined });
       return;
     }
@@ -76,7 +76,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
-        clearSession();
+        endSession();
         navigate('/login', { replace: true, state: { expired: true } });
         return;
       }
@@ -90,7 +90,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       if (isExpired(account.expiresAt)) {
-        clearSession();
+        endSession();
         navigate('/login', { replace: true, state: { expired: true } });
         return;
       }
@@ -104,5 +104,5 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={() => { clearSession(); navigate('/login', { replace: true, state: { expired: true } }); }} />;
+  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={() => { endSession(); navigate('/login', { replace: true, state: { expired: true } }); }} />;
 }

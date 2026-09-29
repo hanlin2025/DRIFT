@@ -107,6 +107,19 @@ describe('shipment registration', () => {
     expect(screen.getByLabelText('Shipment reference')).toHaveValue('');
   });
 
+  it('replaces the saved shipment when the next registration fails', async () => {
+    await openPortfolio();
+    const user = await fillItinerary();
+    await user.click(screen.getByRole('button', { name: /Register shipment/ }));
+    expect(await screen.findByRole('status')).toHaveTextContent('HL-1001');
+    vi.mocked(createShipment).mockRejectedValueOnce(new ApiError('A shipment with this reference already exists for your company', 409));
+    await fillItinerary();
+    await user.click(screen.getByRole('button', { name: /Register shipment/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A shipment with this reference already exists for your company');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('drift.session')).toContain('session-token');
+  });
+
   it('shows a duplicate reference on the field and keeps the session', async () => {
     vi.mocked(createShipment).mockRejectedValue(new ApiError('A shipment with this reference already exists for your company', 409));
     await openPortfolio();

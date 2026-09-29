@@ -59,6 +59,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
       if (first instanceof HTMLElement) first.focus();
       return;
     }
+    setCreated(null);
     busy.current = true;
     setSubmitting(true);
     try {
