@@ -96,6 +96,15 @@ describe('workspace shipment retrieval', () => {
     expect(within(rows[1]).getByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(within(rows[1]).getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token');
+    expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' }));
+    const route = screen.getByRole('figure', { name: 'Planned route' });
+    expect(within(route).getByText('DEPARTURE Busan, KR')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    await user.click(within(rows[1]).getByRole('link', { name: 'HBL-NEWER' }));
+    expect(within(screen.getByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
   });
 
   it('shows a loading state until the list arrives', async () => {

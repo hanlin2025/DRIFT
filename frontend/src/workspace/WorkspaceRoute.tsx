@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
+import { RouteMap } from '../shipment/RouteMap';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
@@ -124,6 +125,7 @@ function CompanyShipments({ token, refreshKey, onSessionEnded }: {
   onSessionEnded: () => void;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
 
@@ -151,5 +153,12 @@ function CompanyShipments({ token, refreshKey, onSessionEnded }: {
   if (shipments.length === 0) {
     return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
-  return <ShipmentList shipments={shipments} />;
+  const chosen = selectedId === null ? undefined : shipments.find(shipment => shipment.id === selectedId);
+  return <>
+    <ShipmentList shipments={shipments} selectedId={chosen?.id} onSelect={shipment => setSelectedId(shipment.id)} />
+    {chosen && <>
+      <button type="button" className="back-link" onClick={() => setSelectedId(null)}><span aria-hidden="true">&#8592;</span> Back</button>
+      <RouteMap shipment={chosen} />
+    </>}
+  </>;
 }
