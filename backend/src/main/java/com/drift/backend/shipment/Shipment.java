@@ -41,6 +41,9 @@ public class Shipment {
 	@Column(nullable = false, length = 200)
 	private String destination;
 
+	@Column(name = "transshipment_port", nullable = false, length = 200)
+	private String transshipmentPort;
+
 	@Column(name = "mother_vessel", nullable = false, length = 200)
 	private String motherVessel;
 
@@ -60,13 +63,14 @@ public class Shipment {
 	}
 
 	public Shipment(Company company, UserAccount createdBy, String shipmentReference, String origin,
-			String destination, String motherVessel, OffsetDateTime plannedMotherArrivalAt,
+			String destination, String transshipmentPort, String motherVessel, OffsetDateTime plannedMotherArrivalAt,
 			String feederVessel, OffsetDateTime plannedFeederDepartureAt) {
 		this.company = company;
 		this.createdBy = createdBy;
 		this.shipmentReference = shipmentReference;
 		this.origin = origin;
 		this.destination = destination;
+		this.transshipmentPort = transshipmentPort;
 		this.motherVessel = motherVessel;
 		this.plannedMotherArrivalAt = plannedMotherArrivalAt;
 		this.feederVessel = feederVessel;
@@ -78,6 +82,7 @@ public class Shipment {
 	public String getShipmentReference() { return shipmentReference; }
 	public String getOrigin() { return origin; }
 	public String getDestination() { return destination; }
+	public String getTransshipmentPort() { return transshipmentPort; }
 	public String getMotherVessel() { return motherVessel; }
 	public OffsetDateTime getPlannedMotherArrivalAt() { return plannedMotherArrivalAt; }
 	public String getFeederVessel() { return feederVessel; }
