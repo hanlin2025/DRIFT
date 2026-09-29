@@ -92,5 +92,13 @@ export DRIFT_E2E_DATABASE=drift_cdg59_your_suffix
 npx playwright test --grep @disposable-database --project=desktop
 ```
 
+After the Playwright run, stop the backend with Ctrl+C in its terminal. Then return
+to the repository root from `frontend/` and drop the disposable database:
+
+```bash
+cd ..
+docker compose exec -T postgres psql -U drift -d postgres -c "DROP DATABASE ${DRIFT_E2E_DATABASE}"
+```
+
 Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
 open a shipment detail page.
