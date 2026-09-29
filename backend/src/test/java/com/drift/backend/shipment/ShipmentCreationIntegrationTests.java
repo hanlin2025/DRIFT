@@ -87,6 +87,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.errors.shipmentReference").value("Shipment reference is required"))
 				.andExpect(jsonPath("$.errors.origin").value("Origin is required"))
 				.andExpect(jsonPath("$.errors.destination").value("Destination is required"))
+				.andExpect(jsonPath("$.errors.transshipmentPort").value("Transshipment port is required"))
 				.andExpect(jsonPath("$.errors.motherVessel").value("Mother vessel is required"))
 				.andExpect(jsonPath("$.errors.plannedMotherArrivalAt").value("Planned mother-vessel arrival is required"))
 				.andExpect(jsonPath("$.errors.feederVessel").value("Feeder vessel is required"))
@@ -178,6 +179,9 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+		detail(token, "1")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions list(String bearerToken) throws Exception {
@@ -225,6 +229,7 @@ class ShipmentCreationIntegrationTests {
 				  "shipmentReference": "%s",
 				  "origin": "Shanghai, CN",
 				  "destination": "Jakarta, ID",
+				  "transshipmentPort": "Singapore",
 				  "motherVessel": "MV Pacific Horizon",
 				  "plannedMotherArrivalAt": "%s",
 				  "feederVessel": "MV Strait Runner",
