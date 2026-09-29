@@ -1,6 +1,6 @@
 import { type Shipment } from '../shipment/api';
 
-const columns = ['Reference', 'Origin', 'Destination', 'Mother vessel', 'Feeder vessel'] as const;
+const columns = ['Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel'] as const;
 
 export function ShipmentList({ shipments }: { shipments: Shipment[] }) {
   return (
@@ -16,6 +16,7 @@ export function ShipmentList({ shipments }: { shipments: Shipment[] }) {
               <td>{shipment.shipmentReference}</td>
               <td>{shipment.origin}</td>
               <td>{shipment.destination}</td>
+              <td>{shipment.transshipmentPort}</td>
               <td>{shipment.motherVessel}</td>
               <td>{shipment.feederVessel}</td>
             </tr>

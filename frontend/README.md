@@ -42,13 +42,15 @@ login stores the session in the browser tab and opens the importer shipment over
 or the freight-forwarder shipment portfolio. An expired or rejected session returns
 to `/login`. Signing out clears that session.
 
-## Shipment list handoff
+## Company shipments
 
-`frontend/src/workspace/ShipmentList.tsx` renders Reference, Origin, Destination, Mother vessel, and Feeder vessel in that order. It uses the existing `Shipment` type from `frontend/src/shipment/api.ts` and keeps the array order it is given.
+Both the importer overview and the freight-forwarder portfolio load `GET /api/shipments` for the signed-in company and show the result in one table: Reference, Origin, Destination, Transshipment port, Mother vessel, and Feeder vessel. The table keeps the API order, which is newest `createdAt` first. The page says it is loading while the request is in progress. A failure shows the error and **Try again**. A successful empty response says the company has no shipments yet. A 401 ends the session and returns to `/login`.
 
-`WorkspacePage` shows that table only for a freight forwarder, and only when `shipments` is passed. The live route does not pass it, so the table stays hidden and the registration form is unchanged. `[]` shows the five headers and no rows. A populated array shows those rows.
+The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
 
-CDG-58 should pass the company's shipments into `WorkspacePage`. It should not mount another list. Loading, errors, an empty-state message, and session expiry while fetching belong to CDG-58. This table does not call the API.
+These review requests overlap CDG-58, which was opened to integrate the dashboard with the shipment API. The list, loading, errors, empty company, and session expiry on fetch now live in this page so the team can reconcile that ticket’s ownership.
+
+The page does not open a shipment detail route. Browser end-to-end tests still write fixtures to the configured database, so they are not a substitute for the mocked workspace tests.
 
 ## Browser tests
 
