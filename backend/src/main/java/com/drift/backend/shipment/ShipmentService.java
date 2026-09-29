@@ -65,7 +65,8 @@ public class ShipmentService {
 		}
 
 		Shipment shipment = new Shipment(company, creator, shipmentReference, request.origin().strip(),
-				request.destination().strip(), request.motherVessel().strip(), request.plannedMotherArrivalAt(),
+				request.destination().strip(), request.transshipmentPort().strip(), request.motherVessel().strip(),
+				request.plannedMotherArrivalAt(),
 				request.feederVessel().strip(), request.plannedFeederDepartureAt());
 		try {
 			return ShipmentResponse.from(shipments.saveAndFlush(shipment));
