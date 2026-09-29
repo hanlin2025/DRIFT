@@ -43,10 +43,10 @@ public class ShipmentService {
 	}
 
 	@Transactional(readOnly = true)
-	public ShipmentResponse get(AuthenticatedUser principal, Long shipmentId) {
+	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
 		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
-				.map(ShipmentResponse::from)
+				.map(ShipmentDetailResponse::from)
 				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
