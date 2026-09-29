@@ -58,17 +58,16 @@ class AisPositionParserTest {
 	}
 
 	@Test
-	void preservesMissingOptionalFieldsAndUsesPositionReportCoordinatesAsFallback() {
+	void preservesMissingOptionalFieldsAndUsesMetadataCoordinatesAsFallback() {
 		AisPosition position = parser.parse("""
 				{
 				  "MessageType": "PositionReport",
-				  "MetaData": { "MMSI": 368207620 },
-				  "Message": {
-				    "PositionReport": {
-				      "Latitude": 1.3,
-				      "Longitude": 103.8
-				    }
-				  }
+				  "MetaData": {
+				    "MMSI": 368207620,
+				    "Latitude": 1.3,
+				    "Longitude": 103.8
+				  },
+				  "Message": { "PositionReport": {} }
 				}
 				""").orElseThrow();
 
@@ -81,6 +80,43 @@ class AisPositionParserTest {
 		assertThat(position.navigationalStatus()).isNull();
 		assertThat(position.positionValid()).isNull();
 		assertThat(position.aisUtcSecond()).isNull();
+	}
+
+	@Test
+	void usesPositionReportCoordinatesWhenBothLocationsArePresent() {
+		AisPosition position = parser.parse("""
+				{
+				  "MessageType": "PositionReport",
+				  "MetaData": { "MMSI": 368207620, "Latitude": 25.7617, "Longitude": -80.1918 },
+				  "Message": {
+				    "PositionReport": { "Latitude": 1.3, "Longitude": 103.8 }
+				  }
+				}
+				""").orElseThrow();
+
+		assertThat(position.latitude()).isEqualByComparingTo("1.3");
+		assertThat(position.longitude()).isEqualByComparingTo("103.8");
+	}
+
+	@Test
+	void mapsUnavailableSpeedOverGroundToNull() {
+		AisPosition position = parser.parse(positionReportWithMovement("\"Sog\": 102.3")).orElseThrow();
+
+		assertThat(position.speedOverGroundKnots()).isNull();
+	}
+
+	@Test
+	void mapsUnavailableCourseOverGroundToNull() {
+		AisPosition position = parser.parse(positionReportWithMovement("\"Cog\": 360")).orElseThrow();
+
+		assertThat(position.courseOverGroundDegrees()).isNull();
+	}
+
+	@Test
+	void mapsUnavailableTrueHeadingToNull() {
+		AisPosition position = parser.parse(positionReportWithMovement("\"TrueHeading\": 511")).orElseThrow();
+
+		assertThat(position.trueHeadingDegrees()).isNull();
 	}
 
 	@Test
@@ -109,4 +145,15 @@ class AisPositionParserTest {
 				.isInstanceOf(InvalidAisPositionMessageException.class)
 				.hasMessage("AIS position report must contain a numeric Latitude.");
 	}
+
+	private static String positionReportWithMovement(String movementField) {
+		return """
+				{
+				  "MessageType": "PositionReport",
+				  "MetaData": { "MMSI": 368207620, "Latitude": 1.3, "Longitude": 103.8 },
+				  "Message": { "PositionReport": { %s } }
+				}
+				""".formatted(movementField);
+	}
+
 }
