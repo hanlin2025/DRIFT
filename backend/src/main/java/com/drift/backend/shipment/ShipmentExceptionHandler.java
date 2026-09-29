@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 
 @RestControllerAdvice(assignableTypes = ShipmentController.class)
@@ -48,6 +49,12 @@ public class ShipmentExceptionHandler {
 
 	@ExceptionHandler(ShipmentCreationForbiddenException.class)
 	public ResponseEntity<Map<String, String>> handleForbidden(ShipmentCreationForbiddenException ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(ShipmentAccessForbiddenException.class)
+	public ResponseEntity<Map<String, String>> handleAccessForbidden(ShipmentAccessForbiddenException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}

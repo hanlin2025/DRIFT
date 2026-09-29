@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -36,6 +38,7 @@ class ShipmentCreationIntegrationTests {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired PasswordEncoder passwords;
+	@Autowired jakarta.persistence.EntityManager entityManager;
 
 	private String email;
 	private Long companyId;
@@ -141,6 +144,45 @@ class ShipmentCreationIntegrationTests {
 		mvc.perform(post("/api/shipments").contentType(MediaType.APPLICATION_JSON).content(shipment("HBL-2026-006")))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+	}
+
+	@Test
+	void listsOnlyTheCallersCompanyNewestFirst() throws Exception {
+		create(token, shipment("HBL-OLDER")).andExpect(status().isCreated());
+		create(token, shipment("HBL-NEWER")).andExpect(status().isCreated());
+		jdbc.update("UPDATE shipments SET created_at = created_at - INTERVAL '1 hour' WHERE shipment_reference = 'HBL-OLDER'");
+
+		String otherEmail = "cdg56-other-" + UUID.randomUUID() + "@example.com";
+		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		create(tokenFor(otherEmail), shipment("HBL-OTHER")).andExpect(status().isCreated());
+
+		list(token)
+				.andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.length()").value(2))
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-NEWER"))
+				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"));
+	}
+
+	@Test
+	void returnsAnEmptyListWhenTheCompanyHasNoShipments() throws Exception {
+		list(token)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(0));
+	}
+
+	@Test
+	void rejectsListingForAnInactiveCompany() throws Exception {
+		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", companyId);
+		entityManager.clear();
+		list(token)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions list(String bearerToken) throws Exception {
+		return mvc.perform(get("/api/shipments")
+				.header("Authorization", "Bearer " + bearerToken));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions create(String bearerToken, String body) throws Exception {
