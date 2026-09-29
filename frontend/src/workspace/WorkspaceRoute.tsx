@@ -14,7 +14,7 @@ function Wordmark({ href }: { href: string }) {
   );
 }
 
-export function WorkspacePage({ account, onSignOut }: { account: Session; onSignOut: () => void }) {
+export function WorkspacePage({ account, onSignOut, onSessionEnded }: { account: Session; onSignOut: () => void; onSessionEnded: () => void }) {
   const importer = account.role === 'IMPORTER';
   return (
     <div className="workspace">
@@ -39,7 +39,7 @@ export function WorkspacePage({ account, onSignOut }: { account: Session; onSign
           <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
           <div><dt>Email</dt><dd>{account.email}</dd></div>
         </dl>
-        {importer ? null : <ShipmentForm companyName={account.company?.name ?? null} />}
+        {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} />}
       </main>
     </div>
   );
@@ -104,5 +104,5 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} />;
+  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={() => { clearSession(); navigate('/login', { replace: true, state: { expired: true } }); }} />;
 }

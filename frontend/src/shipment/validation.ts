@@ -44,6 +44,16 @@ export function validateShipment(fields: ShipmentFields): ShipmentErrors {
   return errors;
 }
 
+export function toOffsetDateTime(value: string): string {
+  const date = parseLocal(value);
+  if (!date) throw new Error('Invalid date');
+  const pad = (part: number) => String(part).padStart(2, '0');
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const absolute = Math.abs(offset);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
+}
+
 function parseLocal(value: string): Date | null {
   if (!value.trim()) return null;
   const date = new Date(value);
