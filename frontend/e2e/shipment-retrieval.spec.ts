@@ -5,14 +5,17 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const database = process.env.DRIFT_E2E_DATABASE ?? '';
+const ownerToken = process.env.DRIFT_E2E_OWNER_TOKEN ?? '';
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 
-function assertDisposableDatabase() {
-  if (!/^[a-z][a-z0-9_]{0,62}$/.test(database) || blocked.has(database)) {
-    throw new Error('Set DRIFT_E2E_DATABASE to a disposable database. This test does not create or delete fixtures in drift or drift_test.');
+function assertOwnedDatabase() {
+  if (blocked.has(database) || !/^drift_cdg59_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken)) {
+    throw new Error('Run this spec through npm run test:e2e:shipment. A database name is not proof that this run created the database.');
   }
-  if (sql('SELECT current_database();') !== database) {
-    throw new Error('The fixture connection is not the requested disposable database.');
+  const current = sql('SELECT current_database();');
+  const comment = sql("SELECT coalesce(pg_catalog.shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = current_database();");
+  if (current !== database || comment !== ownerToken) {
+    throw new Error('This database has no matching ownership record from the shipment retrieval runner. Refusing to write fixtures.');
   }
 }
 
@@ -39,7 +42,7 @@ async function registerFreightForwarder(request: APIRequestContext, email: strin
 
 test('a freight forwarder sees one created shipment after refresh and reload', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'The retrieval flow is covered once on desktop.');
-  assertDisposableDatabase();
+  assertOwnedDatabase();
   const email = `cdg59-e2e-${randomBytes(8).toString('hex')}@example.com`;
   const shipment = {
     shipmentReference: `CDG59-${randomBytes(4).toString('hex')}`,

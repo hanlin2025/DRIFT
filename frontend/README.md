@@ -71,34 +71,32 @@ database.
 `e2e/shipment-retrieval.spec.ts` signs in a disposable freight forwarder, confirms Harbourline
 has no shipments, submits one shipment through the form, and checks the 201 response, the
 automatic list refresh, the six displayed fields, and the same row after reload. It uses the
-real shipment API. It refuses `drift`, `drift_test`, and an unset database.
+real shipment API.
 
-Choose a new database name. From the repository root, after PostgreSQL is accepting connections, continue only when the name query prints nothing:
-
-```bash
-export DRIFT_E2E_DATABASE=drift_cdg59_your_suffix
-docker compose exec -T postgres psql -U drift -d postgres -Atc "SELECT datname FROM pg_database WHERE datname = '${DRIFT_E2E_DATABASE}'"
-docker compose exec -T postgres psql -U drift -d postgres -c "CREATE DATABASE ${DRIFT_E2E_DATABASE}"
-export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
-export AIS_ENABLED=false
-export SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:5432/${DRIFT_E2E_DATABASE}"
-cd backend && bash ./mvnw spring-boot:run
-```
-
-Flyway migrates that database on startup. In `frontend/`, export the same database name and run:
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
 
 ```bash
-export DRIFT_E2E_DATABASE=drift_cdg59_your_suffix
-npx playwright test --grep @disposable-database --project=desktop
+npx playwright install chromium
+npm run test:e2e:shipment
 ```
 
-After the Playwright run, stop the backend with Ctrl+C in its terminal. Then return
-to the repository root from `frontend/` and drop the disposable database:
+That command runs `scripts/run-shipment-retrieval.mjs`. The runner generates a database name,
+creates that database, and records ownership only after creation succeeds. It then starts a
+backend with `SPRING_DATASOURCE_URL` and `SPRING_FLYWAY_URL` set to that database, so Flyway
+migrates only the database it just created. The spec receives the same name and writes fixtures
+only when the database comment matches the ownership record. A supplied name is not enough.
+`AIS_ENABLED` is false, and the JWT secret stays in the backend process.
 
-```bash
-cd ..
-docker compose exec -T postgres psql -U drift -d postgres -c "DROP DATABASE ${DRIFT_E2E_DATABASE}"
-```
+If port 8080 is already in use, the runner stops before creating a database and does not stop
+the other process. After the spec, a failed spec, or a backend that exits before it is ready,
+the runner stops only the backend it started and drops only the database it created. It does
+not drop `drift`, `drift_test`, or a database that already existed. Cleanup is not guaranteed
+if the runner is killed in a way it cannot catch, or if a second interrupt arrives during
+cleanup. The runner reports a drop or shutdown failure instead of ignoring it.
+
+Running the spec file directly, including `npx playwright test` with only `DRIFT_E2E_DATABASE`
+set, stops before any fixture write. `npm run test:e2e` still runs the signup and login specs
+and does not run this one.
 
 Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
 open a shipment detail page.
