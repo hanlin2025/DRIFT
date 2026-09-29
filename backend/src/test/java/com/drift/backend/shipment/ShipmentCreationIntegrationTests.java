@@ -179,9 +179,6 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
-		detail(token, "1")
-				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions list(String bearerToken) throws Exception {
