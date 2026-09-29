@@ -61,7 +61,8 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company. "
+	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company, "
+			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure. "
 			+ "A shipment of another company is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -91,7 +92,8 @@ public class ShipmentController {
 
 	@PostMapping("/api/shipments")
 	@Operation(summary = "Create a shipment", description = "Creates a shipment for the authenticated user's active company. "
-			+ "Shipment references are unique within that company, ignoring letter case.",
+			+ "Shipment references are unique within that company, ignoring letter case. "
+			+ "The response includes the planned connection window, calculated from the stored mother-vessel arrival and feeder-vessel departure.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "201", description = "Shipment created", content = @Content(

@@ -30,11 +30,19 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.summary").value("List shipments"))
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.description")
+						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure. A shipment of another company is reported as not found."))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404']").exists())
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
 				.andExpect(jsonPath("$.components.schemas.CreateShipmentRequest.required").isArray())
 				.andExpect(jsonPath("$.components.schemas.CreateShipmentRequest.properties.shipmentReference.example")
-						.value("HBL-2026-001"));
+						.value("HBL-2026-001"))
+				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.connectionWindow.$ref")
+						.value("#/components/schemas/ConnectionWindow"))
+				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.duration.example")
+						.value("1 day 4 hours"))
+				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.totalSeconds.example")
+						.value("100800"));
 	}
 }

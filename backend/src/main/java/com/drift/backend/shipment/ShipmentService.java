@@ -25,17 +25,20 @@ public class ShipmentService {
 
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
+	private final ConnectionWindowService connectionWindows;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users) {
+	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
+			ConnectionWindowService connectionWindows) {
 		this.shipments = shipments;
 		this.users = users;
+		this.connectionWindows = connectionWindows;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
 		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
-				.map(ShipmentResponse::from)
+				.map(this::respond)
 				.toList();
 	}
 
@@ -43,7 +46,7 @@ public class ShipmentService {
 	public ShipmentResponse get(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
 		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
-				.map(ShipmentResponse::from)
+				.map(this::respond)
 				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
@@ -68,7 +71,7 @@ public class ShipmentService {
 				request.destination().strip(), request.motherVessel().strip(), request.plannedMotherArrivalAt(),
 				request.feederVessel().strip(), request.plannedFeederDepartureAt());
 		try {
-			return ShipmentResponse.from(shipments.saveAndFlush(shipment));
+			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -87,6 +90,11 @@ public class ShipmentService {
 			cause = cause.getCause();
 		}
 		return false;
+	}
+
+	private ShipmentResponse respond(Shipment shipment) {
+		return ShipmentResponse.from(shipment, connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt()).window());
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

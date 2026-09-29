@@ -65,6 +65,8 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.origin").value("Shanghai, CN"))
 				.andExpect(jsonPath("$.destination").value("Jakarta, ID"))
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
 				.andReturn();
 
 		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
@@ -162,7 +164,42 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.length()").value(2))
 				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-NEWER"))
-				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"));
+				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"))
+				.andExpect(jsonPath("$[1].connectionWindow.duration").value("1 day 4 hours"));
+	}
+
+	@Test
+	void calculatesTheConnectionWindowFromTheStoredScheduleAndRecalculatesWhenATimeChanges() throws Exception {
+		create(token, shipmentWithTimes("HBL-WINDOW", "2026-10-15T20:00:00+08:00", "2026-10-16T02:30:00Z"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("14 hours 30 minutes"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(52200));
+
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'shipments' AND column_name = 'connection_window'
+				""", Integer.class)).isZero();
+
+		jdbc.update("""
+				UPDATE shipments SET planned_feeder_departure_at = '2026-10-16T04:30:00Z'
+				WHERE shipment_reference = 'HBL-WINDOW'
+				""");
+		entityManager.clear();
+		list(token)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-WINDOW"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("16 hours 30 minutes"))
+				.andExpect(jsonPath("$[0].connectionWindow.totalSeconds").value(59400));
+
+		jdbc.update("""
+				UPDATE shipments SET planned_mother_arrival_at = '2026-10-15T22:00:00+08:00'
+				WHERE shipment_reference = 'HBL-WINDOW'
+				""");
+		entityManager.clear();
+		list(token)
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("14 hours 30 minutes"))
+				.andExpect(jsonPath("$[0].connectionWindow.totalSeconds").value(52200));
 	}
 
 	@Test
@@ -212,7 +249,32 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.id").value(shipmentId.longValue()))
 				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-007"))
-				.andExpect(jsonPath("$.feederVessel").value("MV Strait Runner"));
+				.andExpect(jsonPath("$.feederVessel").value("MV Strait Runner"))
+				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800));
+	}
+
+	@Test
+	void recalculatesTheShipmentDetailWindowWhenTheStoredScheduleChanges() throws Exception {
+		MvcResult created = create(token, shipmentWithTimes("HBL-DETAIL", "2026-10-15T20:00:00+08:00", "2026-10-16T02:30:00Z"))
+				.andExpect(status().isCreated())
+				.andReturn();
+		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		detail(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("14 hours 30 minutes"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(52200));
+
+		jdbc.update("""
+				UPDATE shipments SET planned_mother_arrival_at = '2026-10-15T22:00:00+08:00'
+				WHERE id = ?
+				""", shipmentId.longValue());
+		entityManager.clear();
+
+		detail(token, shipmentId.toString())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("12 hours 30 minutes"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(45000));
 	}
 
 	@Test
