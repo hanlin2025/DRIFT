@@ -129,12 +129,15 @@ function waitForBackend(child, owned) {
       clearTimeout(timer);
       clearInterval(check);
       child.off('exit', onExit);
+      child.off('error', onError);
       if (error) reject(error);
       else resolve();
     };
     const timer = setTimeout(() => finish(new Error('The backend did not start within 180 seconds.')), 180000);
     const onExit = code => finish(new Error(`The backend exited before it started (status ${code ?? 'unknown'}).`));
+    const onError = error => finish(error);
     child.on('exit', onExit);
+    child.on('error', onError);
     check = setInterval(() => {
       if (!log.includes('Started BackendApplication')) return;
       const urls = log.match(/jdbc:postgresql:\S+/g) ?? [];
@@ -166,32 +169,53 @@ function runPlaywright(owned, args) {
     stdio: 'inherit',
   });
   activePlaywright = child;
-  return new Promise(resolve => {
-    child.on('exit', code => {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, code) => {
+      if (settled) return;
+      settled = true;
+      child.off('error', onError);
+      child.off('exit', onExit);
       activePlaywright = null;
-      resolve(code ?? 1);
-    });
+      if (error) reject(error);
+      else resolve(code ?? 1);
+    };
+    const onError = error => finish(error);
+    const onExit = code => finish(null, code);
+    child.on('error', onError);
+    child.on('exit', onExit);
   });
 }
 
 async function stopProcessGroup(child) {
-  if (!child || child.exitCode !== null || child.signalCode) return;
+  if (!child?.pid || child.exitCode !== null || child.signalCode) return;
   const exited = new Promise(resolve => {
     if (child.exitCode !== null || child.signalCode) resolve(true);
     else child.once('exit', () => resolve(true));
+  });
+  const waitForExit = timeout => new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(false), timeout);
+    exited.then(() => finish(true));
   });
   try {
     process.kill(-child.pid, 'SIGTERM');
   } catch (error) {
     if (error.code !== 'ESRCH') throw error;
   }
-  const stopped = await Promise.race([exited, new Promise(resolve => setTimeout(() => resolve(false), 15000))]);
-  if (stopped) return;
+  if (await waitForExit(15000)) return;
   try {
     process.kill(-child.pid, 'SIGKILL');
   } catch (error) {
     if (error.code !== 'ESRCH') throw error;
   }
+  if (await waitForExit(5000)) return;
   throw new Error('A process this runner started did not exit after it was signalled.');
 }
 
