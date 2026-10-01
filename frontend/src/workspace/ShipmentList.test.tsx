@@ -156,7 +156,7 @@ describe('workspace shipment retrieval', () => {
 
     openWorkspace();
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
-    expect(screen.getByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
   });
 
