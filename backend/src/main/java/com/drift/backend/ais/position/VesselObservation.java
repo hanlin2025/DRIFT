@@ -74,4 +74,9 @@ public class VesselObservation {
 		this.ingestedAt = position.ingestedAt();
 		this.source = position.source();
 	}
+
+	public AisPosition toPosition() {
+		return new AisPosition(mmsi, vesselName, latitude, longitude, speedOverGroundKnots, courseOverGroundDegrees,
+				trueHeadingDegrees, navigationalStatus, positionValid, aisUtcSecond, ingestedAt, source);
+	}
 }

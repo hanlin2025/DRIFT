@@ -60,7 +60,6 @@ class ShipmentCreationIntegrationTests {
 		createAccount(email, companyId);
 		accountId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
 		token = tokenFor(email);
-		latestPositions.clear();
 	}
 
 	@Test
@@ -284,6 +283,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.motherVesselPosition.latitude").value(1.264))
 				.andExpect(jsonPath("$.motherVesselPosition.longitude").value(103.82))
 				.andExpect(jsonPath("$.motherVesselPosition.speedOverGroundKnots").value(12.4))
+				.andExpect(jsonPath("$.motherVesselPosition.source").value("AIS_STREAM"))
 				.andExpect(jsonPath("$.feederVesselPosition.mmsi").value("563009999"))
 				.andExpect(jsonPath("$.feederVesselPosition.vesselName").value("MV Strait Runner"))
 				.andExpect(jsonPath("$.feederVesselPosition.latitude").value(1.25));
