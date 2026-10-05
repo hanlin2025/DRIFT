@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
-import { RouteMap } from '../shipment/RouteMap';
-import { formatWhen, ShipmentForm } from '../shipment/ShipmentForm';
+import { ShipmentDetail } from '../shipment/ShipmentDetail';
+import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
@@ -162,70 +162,4 @@ function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
     return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
   return <ShipmentList shipments={shipments} basePath={basePath} />;
-}
-
-function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
-  token: string;
-  shipmentId: string;
-  basePath: string;
-  onSessionEnded: () => void;
-}) {
-  const [shipments, setShipments] = useState<Shipment[] | null>(null);
-  const [problem, setProblem] = useState('');
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    setProblem('');
-    setShipments(null);
-    listShipments(token).then(found => {
-      if (active) setShipments(found);
-    }).catch((reason: unknown) => {
-      if (!active) return;
-      if (reason instanceof ApiError && reason.status === 401) {
-        onSessionEnded();
-        return;
-      }
-      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
-    });
-    return () => { active = false; };
-  }, [token, attempt, onSessionEnded]);
-
-  const shipment = shipments?.find(item => String(item.id) === shipmentId);
-  return <>
-    <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
-    {problem
-      ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
-      : shipments === null
-        ? <div className="notice">Loading shipment...</div>
-        : shipment
-          ? <section className="shipment-detail">
-            <p className="eyebrow">SHIPMENT</p>
-            <h2>{shipment.shipmentReference}</h2>
-            <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
-            <RouteMap shipment={shipment} />
-            <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
-              <dl>
-                <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
-                <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
-                <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
-                <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
-                <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel)}</dd></div>
-                <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
-                <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
-                <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
-              </dl>
-            </article>
-          </section>
-          : <div className="error-notice" role="alert">This shipment is not available.</div>}
-  </>;
-}
-
-function recorded(value: string) {
-  const text = value.trim();
-  return text || 'Not recorded';
-}
-
-function missing(value: string) {
-  return value.trim() ? undefined : 'is-missing';
 }

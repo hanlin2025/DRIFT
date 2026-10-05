@@ -11,11 +11,13 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @Service
 public class ShipmentService {
@@ -24,18 +26,31 @@ public class ShipmentService {
 
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
+	private final ConnectionWindowService connectionWindows;
+	private final LatestAisPositions latestPositions;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users) {
+	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions) {
 		this.shipments = shipments;
 		this.users = users;
+		this.connectionWindows = connectionWindows;
+		this.latestPositions = latestPositions;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
 		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
-				.map(ShipmentResponse::from)
+				.map(this::respond)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.map(this::detail)
+				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
 	@Transactional
@@ -60,7 +75,7 @@ public class ShipmentService {
 				request.plannedMotherArrivalAt(),
 				request.feederVessel().strip(), request.plannedFeederDepartureAt());
 		try {
-			return ShipmentResponse.from(shipments.saveAndFlush(shipment));
+			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -79,6 +94,41 @@ public class ShipmentService {
 			cause = cause.getCause();
 		}
 		return false;
+	}
+
+	private ShipmentResponse respond(Shipment shipment) {
+		return ShipmentResponse.from(shipment, window(shipment));
+	}
+
+	private ShipmentDetailResponse detail(Shipment shipment) {
+		return ShipmentDetailResponse.from(shipment, window(shipment),
+				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
+	}
+
+	private VesselPosition livePosition(String vesselName) {
+		return latestPositions.findByVesselName(vesselName)
+				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
+				.map(VesselPosition::from)
+				.orElse(null);
+	}
+
+	private static String withoutVesselPrefix(String vesselName) {
+		if (vesselName == null) {
+			return null;
+		}
+		String stripped = vesselName.strip();
+		if (stripped.length() > 3 && stripped.regionMatches(true, 0, "MV ", 0, 3)) {
+			return stripped.substring(3);
+		}
+		if (stripped.length() > 4 && stripped.regionMatches(true, 0, "M/V ", 0, 4)) {
+			return stripped.substring(4);
+		}
+		return stripped;
+	}
+
+	private ConnectionWindow window(Shipment shipment) {
+		return connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt()).window();
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

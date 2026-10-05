@@ -14,6 +14,9 @@ const shipment: Shipment = {
   feederVessel: 'MV Strait Runner',
   plannedFeederDepartureAt: '2026-10-05T00:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  connectionWindow: null,
+  motherVesselPosition: null,
+  feederVesselPosition: null,
 };
 
 function routeText() {
