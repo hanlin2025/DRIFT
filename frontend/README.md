@@ -61,7 +61,42 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Tests create and remove uniquely named fixtures in that database and cover desktop/mobile
-signup, login, role routing, validation, signed-out redirects, session expiry and invitation
-reuse against the real API. Set
-`DRIFT_E2E_DATABASE` to override the fixture database; the backend must use the same one.
+That command covers desktop and mobile signup, login, role routing, validation, signed-out
+redirects, session expiry, and invitation reuse against the real API. It does not run the
+shipment retrieval spec below. Set `DRIFT_E2E_DATABASE` only when the backend uses that same
+database.
+
+### Shipment retrieval
+
+`e2e/shipment-retrieval.spec.ts` signs in a disposable freight forwarder, confirms Harbourline
+has no shipments, submits one shipment through the form, and checks the 201 response, the
+automatic list refresh, the six displayed fields, and the same row after reload. It uses the
+real shipment API.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:shipment
+```
+
+That command runs `scripts/run-shipment-retrieval.mjs`. The runner generates a database name,
+creates that database, and records ownership only after creation succeeds. It then starts a
+backend with `SPRING_DATASOURCE_URL` and `SPRING_FLYWAY_URL` set to that database, so Flyway
+migrates only the database it just created. The spec receives the same name and writes fixtures
+only when the database comment matches the ownership record. A supplied name is not enough.
+`AIS_ENABLED` is false, and the JWT secret stays in the backend process.
+
+If port 8080 is already in use, the runner stops before creating a database and does not stop
+the other process. After the spec, a failed spec, or a backend that exits before it is ready,
+the runner stops only the backend it started and drops only the database it created. It does
+not drop `drift`, `drift_test`, or a database that already existed. Cleanup is not guaranteed
+if the runner is killed in a way it cannot catch, or if a second interrupt arrives during
+cleanup. The runner reports a drop or shutdown failure instead of ignoring it.
+
+Running the spec file directly, including `npx playwright test` with only `DRIFT_E2E_DATABASE`
+set, stops before any fixture write. `npm run test:e2e` still runs the signup and login specs
+and does not run this one.
+
+Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
+open a shipment detail page.
