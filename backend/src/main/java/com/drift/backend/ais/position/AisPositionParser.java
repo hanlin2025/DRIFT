@@ -57,7 +57,8 @@ public class AisPositionParser {
 				optionalInteger(positionReport, "NavigationalStatus"),
 				optionalBoolean(positionReport, "Valid"),
 				aisUtcSecond(positionReport),
-				clock.instant()));
+				clock.instant(),
+				AisPositionSource.AIS_STREAM));
 	}
 
 	private JsonNode readEnvelope(String rawMessage) {

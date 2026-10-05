@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -14,6 +15,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionParser;
 import com.drift.backend.ais.position.LatestAisPositions;
 
@@ -114,17 +116,28 @@ public class AisStreamConnectionService {
 	}
 
 	void ingest(String payload) {
+		Optional<AisPosition> position;
 		try {
-			positionParser.parse(payload).ifPresent(position -> {
-				latestPositions.record(position);
-				if (firstPositionLogged.compareAndSet(false, true)) {
-					System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
-							"Received the first AIS position report for MMSI " + position.mmsi() + ".");
-				}
-			});
+			position = positionParser.parse(payload);
 		} catch (RuntimeException ex) {
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
 					"Ignoring an invalid AIS position report.", ex);
+			return;
+		}
+		position.ifPresent(this::store);
+	}
+
+	private void store(AisPosition position) {
+		try {
+			latestPositions.record(position);
+		} catch (RuntimeException ex) {
+			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.ERROR,
+					"Unable to store the AIS position report for MMSI " + position.mmsi() + ".", ex);
+			return;
+		}
+		if (firstPositionLogged.compareAndSet(false, true)) {
+			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
+					"Received the first AIS position report for MMSI " + position.mmsi() + ".");
 		}
 	}
 

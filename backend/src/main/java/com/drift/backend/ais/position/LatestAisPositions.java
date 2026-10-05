@@ -9,10 +9,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class LatestAisPositions {
 
+	private final VesselObservationRepository observations;
 	private final ConcurrentHashMap<String, AisPosition> byMmsi = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, String> mmsiByVesselName = new ConcurrentHashMap<>();
 
+	public LatestAisPositions(VesselObservationRepository observations) {
+		this.observations = observations;
+	}
+
 	public void record(AisPosition position) {
+		observations.save(new VesselObservation(position));
 		AisPosition stored = byMmsi.merge(position.mmsi(), position, (current, incoming) ->
 				incoming.ingestedAt().isBefore(current.ingestedAt()) ? current : incoming);
 		if (stored == position && position.vesselName() != null) {
