@@ -48,9 +48,7 @@ Both the importer overview and the freight-forwarder portfolio load `GET /api/sh
 
 The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
 
-These review requests overlap CDG-58, which was opened to integrate the dashboard with the shipment API. The list, loading, errors, empty company, and session expiry on fetch now live in this page so the team can reconcile that ticket’s ownership.
-
-The page does not open a shipment detail route. Browser end-to-end tests still write fixtures to the configured database, so they are not a substitute for the mocked workspace tests.
+The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A shipment of another company returns 404, so it is reported as not found.
 
 ## Browser tests
 

@@ -147,11 +147,10 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-list th, .shipment-list td { text-align: left; white-space: nowrap; padding: 12px 16px 12px 0; border-top: 1px solid var(--line); }
 .shipment-list th { color: var(--muted); font-size: 11px; font-weight: 750; }
 .shipment-list tbody tr { position: relative; }
-.shipment-list tr.is-selected td { background: #e8ede2; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
-.back-link { display: inline-flex; gap: 8px; align-items: center; margin: 18px 0 0; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: none; }
+.back-link { display: inline-flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; text-decoration: none; }
 .back-link:hover { color: var(--ink); }
 .route-chart { position: relative; margin: 22px 0 18px; border-radius: 6px; overflow: hidden; background: #102820; }
 .route-chart-stage { height: 460px; }

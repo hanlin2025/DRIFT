@@ -55,7 +55,7 @@ test('a freight forwarder signs in to the managed shipment portfolio', async ({ 
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/freight-forwarder');
   await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
-  await expect(page.getByText('Harbourline Logistics (Demo)')).toBeVisible();
+  await expect(page.getByText('Harbourline Logistics (Demo)', { exact: true })).toBeVisible();
 });
 
 test('wrong passwords and unknown accounts are refused without a session', async ({ page, request }) => {
@@ -95,6 +95,7 @@ test('an expired session must sign in again', async ({ page, request }) => {
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/freight-forwarder');
+  await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
   await page.evaluate(() => {
     const saved = JSON.parse(sessionStorage.getItem('drift.session') ?? '{}');
     sessionStorage.setItem('drift.session', JSON.stringify({ ...saved, expiresAt: '2020-01-01T00:00:00Z' }));

@@ -38,7 +38,7 @@ test('invited user registers, reaches login and cannot reuse the invitation', as
     await page.getByRole('button', { name: /Create account/ }).click();
     await expect(page).toHaveURL('/login');
     await expect(page.getByText('Account created successfully.')).toBeVisible();
-    await expect(page.getByLabel('Password')).toHaveValue('');
+    await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
     expect(sql("SELECT status FROM invitations WHERE email = :'email';", { email })).toBe('CONSUMED');
     const reused = await request.post('/api/invitations/resolve', { data: { token } });
     expect(reused.status()).toBe(400);

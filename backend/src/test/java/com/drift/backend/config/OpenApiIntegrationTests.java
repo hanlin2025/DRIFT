@@ -11,6 +11,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.drift.backend.account.exception.SessionEndedException;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -52,6 +54,12 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.duration.example")
 						.value("1 day 4 hours"))
 				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.totalSeconds.example")
-						.value("100800"));
+						.value("100800"))
+				.andExpect(jsonPath("$.paths['/api/shipments'].get.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments'].post.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE));
 	}
 }
