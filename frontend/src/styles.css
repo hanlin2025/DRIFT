@@ -152,22 +152,32 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
 .back-link { display: inline-flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; text-decoration: none; }
 .back-link:hover { color: var(--ink); }
-.route-chart { position: relative; margin: 22px 0 18px; border-radius: 6px; overflow: hidden; background: #102820; }
-.route-chart-stage { height: 460px; }
-.route-chart-stage.maplibregl-map { font-family: inherit; }
-.route-unmapped { margin: 0; padding: 10px 14px 12px; color: #b8c9bf; font-size: 11px; background: #173e35; }
-.globe-pin { display: flex; flex-direction: column; align-items: center; width: 108px; pointer-events: none; }
-.globe-dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid #173e35; box-shadow: 0 0 0 4px #173e3580; }
+.workspace-main:has(.shipment-detail) { max-width: 920px; }
+.shipment-detail .back-link { margin: 0 0 28px; }
+.shipment-detail .intro { margin-bottom: 18px; }
+.route-chart { position: relative; margin: 0 0 18px; border-radius: 8px; overflow: hidden; background: #e7eef2; border: 1px solid #c8d9bf; }
+.route-chart-stage { height: 480px; }
+.route-chart-stage.maplibregl-map { font-family: 'Manrope Variable', sans-serif; }
+.route-chart .maplibregl-ctrl-attrib { background: #f8f6edcc; color: var(--muted); font-size: 10px; }
+.route-chart .maplibregl-ctrl-attrib a { color: var(--green); }
+.route-unmapped { margin: 0; padding: 10px 16px 12px; color: var(--muted); font-size: 11px; background: #e8ede2; border-top: 1px solid #c8d9bf; }
+.globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
+.globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
 .globe-pin.destination .globe-dot { background: #e07a5f; }
-.globe-pin.transshipment .globe-dot { width: 13px; height: 13px; background: var(--accent); box-shadow: 0 0 0 7px #ddb66d33; }
-.globe-pin.mother .globe-dot, .globe-pin.feeder .globe-dot { width: 8px; height: 8px; border-radius: 1px; transform: rotate(45deg); }
-.globe-pin.mother .globe-dot { background: #c9b6f2; }
-.globe-pin.feeder .globe-dot { background: #7dcea0; }
-.globe-copy { margin-top: 8px; text-align: center; color: #f8f6ed; text-shadow: 0 1px 2px #102820; }
-.globe-copy .overline { color: #e4efe6; }
+.globe-pin.transshipment .globe-dot { width: 14px; height: 14px; background: var(--accent); box-shadow: 0 0 0 4px #ddb66d55; }
+.globe-pin.mother .globe-dot, .globe-pin.feeder .globe-dot { width: 9px; height: 9px; border-radius: 2px; }
+.globe-pin.mother .globe-dot { background: #c9b6f2; transform: translate(-50%, -50%) rotate(45deg); }
+.globe-pin.feeder .globe-dot { background: #7dcea0; transform: translate(-50%, -50%) rotate(45deg); }
+.globe-copy { position: absolute; width: 128px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #f8f6ed; text-align: center; color: var(--ink); box-shadow: 0 1px 2px #223e3618; }
+.globe-pin.departure .globe-copy, .globe-pin.transshipment .globe-copy, .globe-pin.destination .globe-copy { bottom: 16px; left: 0; transform: translateX(-50%); }
+.globe-pin.mother .globe-copy { top: 14px; left: 0; transform: translateX(-78%); text-align: right; }
+.globe-pin.feeder .globe-copy { top: 14px; left: 0; transform: translateX(-22%); text-align: left; }
+.globe-copy .overline { color: var(--muted); }
 .globe-copy strong { display: block; margin: 0; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
-.globe-copy strong.is-missing { color: #b8c9bf; font-weight: 500; }
+.globe-copy strong.is-missing { color: var(--muted); font-weight: 500; }
+.route-facts { margin-top: 0; }
+.route-facts dd.is-missing { color: var(--muted); font-weight: 500; }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
@@ -175,5 +185,5 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .pair-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }
-  .route-chart-stage { height: 320px; }
+  .route-chart-stage { height: 340px; }
 }

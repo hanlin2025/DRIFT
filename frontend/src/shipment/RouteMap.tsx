@@ -73,7 +73,7 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
       if (disposed) return;
       const globe = new maplibre.Map({
         container: node,
-        style: 'https://tiles.openfreemap.org/styles/dark',
+        style: 'https://tiles.openfreemap.org/styles/liberty',
         center: plotted[0]?.at ?? [103.82, 1.26],
         zoom: 1.3,
         attributionControl: { compact: true },
@@ -92,7 +92,7 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
             id: 'planned-route',
             type: 'line',
             source: 'planned-route',
-            paint: { 'line-color': '#ddb66d', 'line-width': 2, 'line-dasharray': [1.2, 1.4] },
+            paint: { 'line-color': '#214e40', 'line-width': 2.4, 'line-dasharray': [1.2, 1.2] },
           });
         }
         for (const stop of plotted) {
