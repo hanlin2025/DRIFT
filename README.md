@@ -189,4 +189,4 @@ export AIS_NORTHEAST_LATITUDE='your-northeast-latitude'
 export AIS_NORTHEAST_LONGITUDE='your-northeast-longitude'
 ```
 
-The connector subscribes only to `PositionReport` messages. It remains disabled by default. While the backend is running with AIS enabled, each valid report is kept in memory and can be read by MMSI or vessel name through `LatestAisPositions`. Restarting the backend clears that set. Database persistence is a later AIS subtask.
+The connector subscribes only to `PositionReport` messages. It remains disabled by default. While the backend is running with AIS enabled, each valid report is kept in memory and can be read by MMSI or vessel name through `LatestAisPositions`. Shipment detail reads that set for the mother vessel and the feeder vessel. A stored name with an `MV` or `M/V` prefix also matches the AIS name without that prefix. The planned connection window stays the gap in the stored schedule. Restarting the backend clears the retained positions. Database persistence is a later AIS subtask.

@@ -20,6 +20,10 @@ class LatestAisPositionsTest {
 		AisPosition latest = positions.findByVesselName("ever steady").orElseThrow();
 		assertThat(latest.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T02:00:00Z"));
 		assertThat(positions.findByMmsi("368207620").orElseThrow()).isEqualTo(latest);
+
+		positions.clear();
+		assertThat(positions.findByMmsi("368207620")).isEmpty();
+		assertThat(positions.findByVesselName("ever steady")).isEmpty();
 	}
 
 	private static AisPosition position(String mmsi, String name, Instant ingestedAt) {
