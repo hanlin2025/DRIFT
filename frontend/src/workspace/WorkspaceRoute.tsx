@@ -202,21 +202,26 @@ function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
           ? <>
             <p className="eyebrow">SHIPMENT</p>
             <h2>{shipment.shipmentReference}</h2>
-            <p className="intro">{shipment.origin} to {shipment.destination}</p>
+            <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
             <RouteMap shipment={shipment} />
             <article className="shipment-record" aria-label={`Shipment ${shipment.shipmentReference}`}>
               <dl>
-                <div><dt>Origin</dt><dd>{shipment.origin}</dd></div>
-                <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
-                <div><dt>Destination</dt><dd>{shipment.destination}</dd></div>
-                <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
+                <div><dt>Origin</dt><dd>{recorded(shipment.origin)}</dd></div>
+                <div><dt>Mother vessel</dt><dd>{recorded(shipment.motherVessel)}</dd></div>
                 <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
-                <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
+                <div><dt>Transshipment port</dt><dd>{recorded(shipment.transshipmentPort)}</dd></div>
+                <div><dt>Feeder vessel</dt><dd>{recorded(shipment.feederVessel)}</dd></div>
                 <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
+                <div><dt>Destination</dt><dd>{recorded(shipment.destination)}</dd></div>
                 <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
               </dl>
             </article>
           </>
           : <div className="error-notice" role="alert">This shipment is not available.</div>}
   </>;
+}
+
+function recorded(value: string) {
+  const text = value.trim();
+  return text || 'Not recorded';
 }

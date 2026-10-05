@@ -125,12 +125,23 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('Planned arrival')).toBeInTheDocument();
     expect(within(details).getByText('Planned departure')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
+    expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
+      'Origin', 'Mother vessel', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Planned departure', 'Destination', 'Registered',
+    ]);
 
     cleanup();
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/99');
     expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/freight-forwarder');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+  });
+
+  it('shows a blank transshipment port as not recorded', async () => {
+    vi.mocked(listShipments).mockResolvedValue([{ ...newer, transshipmentPort: '  ' }]);
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
+    const details = await screen.findByRole('article', { name: 'Shipment HBL-NEWER' });
+    expect(within(details).getByText('Not recorded')).toBeInTheDocument();
+    expect(screen.getByText('TRANSSHIPMENT Not recorded')).toBeInTheDocument();
   });
 
   it('shows a loading state until the list arrives', async () => {
