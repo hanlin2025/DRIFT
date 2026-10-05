@@ -6,6 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { getShipment, listShipments, type Shipment } from '../shipment/api';
+import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
@@ -79,16 +80,17 @@ describe('shipment list', () => {
   it('maps each shipment field to its column and keeps the supplied order', () => {
     render(<MemoryRouter><ShipmentList shipments={[newer, older]} basePath="/freight-forwarder" /></MemoryRouter>);
     expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual([
-      'Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel',
+      'Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival',
     ]);
     const rows = screen.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
-      'HBL-NEWER', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner',
+      'HBL-NEWER', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner', formatWhen('2026-10-04T00:00:00Z'),
     ]);
     expect(within(rows[1]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
-      'HBL-OLDER', 'Busan, KR', 'Singapore, SG', 'Singapore', 'MV Northern Light', 'MV Harbour Link',
+      'HBL-OLDER', 'Busan, KR', 'Singapore, SG', 'Singapore', 'MV Northern Light', 'MV Harbour Link', formatWhen('2026-10-02T00:00:00Z'),
     ]);
+    expect(rows[0].querySelector('time')).toHaveAttribute('datetime', '2026-10-04T00:00:00Z');
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/freight-forwarder/shipments/2');
     expect(screen.queryByText('1 day')).not.toBeInTheDocument();
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
@@ -96,7 +98,7 @@ describe('shipment list', () => {
 
   it('renders no shipment rows for an empty list', () => {
     render(<MemoryRouter><ShipmentList shipments={[]} basePath="/importer" /></MemoryRouter>);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(6);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(7);
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
   });
 });
@@ -246,6 +248,7 @@ describe('workspace shipment retrieval', () => {
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/importer/shipments/2');
     expect(screen.getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: formatWhen(newer.plannedMotherArrivalAt) })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     cleanup();
 

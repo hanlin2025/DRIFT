@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
 import { type Shipment } from '../shipment/api';
+import { formatWhen } from '../shipment/ShipmentForm';
 
-const columns = ['Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel'] as const;
+const columns = ['Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival'] as const;
 
 export function ShipmentList({ shipments, basePath }: { shipments: Shipment[]; basePath: string }) {
   return (
@@ -20,6 +21,7 @@ export function ShipmentList({ shipments, basePath }: { shipments: Shipment[]; b
               <td>{shipment.transshipmentPort}</td>
               <td>{shipment.motherVessel}</td>
               <td>{shipment.feederVessel}</td>
+              <td><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></td>
             </tr>
           ))}
         </tbody>
