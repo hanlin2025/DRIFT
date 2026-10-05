@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { getShipment, type Shipment, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
+import { formatWhen } from './ShipmentForm';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
@@ -28,9 +29,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         onSessionEnded();
         return;
       }
+      const missing = reason instanceof ApiError && reason.status === 404;
       setProblem({
-        message: reason instanceof Error ? reason.message : UNREACHABLE,
-        retry: !(reason instanceof ApiError && reason.status === 404),
+        message: missing ? 'This shipment is not available.' : reason instanceof Error ? reason.message : UNREACHABLE,
+        retry: !missing,
       });
     });
     return () => { active = false; };
@@ -38,7 +40,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
 
   return (
     <>
-      <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> All shipments</Link>
+      <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
       {problem
         ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
         : shipment === null
@@ -56,7 +58,9 @@ function ShipmentRecord({ shipment }: { shipment: Shipment }) {
       <p className="intro">{shipment.origin} to {shipment.destination}</p>
       <article className="shipment-record" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
+          <div><dt>Origin</dt><dd>{shipment.origin}</dd></div>
           <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
+          <div><dt>Destination</dt><dd>{shipment.destination}</dd></div>
           <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
@@ -67,6 +71,7 @@ function ShipmentRecord({ shipment }: { shipment: Shipment }) {
             <dt>Connection window</dt>
             <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
           </div>
+          <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
       <RouteMap shipment={shipment} />
@@ -79,10 +84,4 @@ function formatLive(position: VesselPosition | null) {
   const name = position.vesselName?.trim() || position.mmsi;
   const speed = position.speedOverGroundKnots == null ? '' : ` · ${position.speedOverGroundKnots} kn`;
   return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
-}
-
-function formatWhen(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }

@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
@@ -58,14 +58,21 @@ beforeEach(() => {
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...account('FREIGHT_FORWARDER'), token }));
   vi.mocked(listShipments).mockResolvedValue([newer, older]);
+  vi.mocked(getShipment).mockImplementation(async (_token, id) => {
+    const found = [older, newer].find(row => String(row.id) === id);
+    if (!found) throw new ApiError('Shipment not found', 404);
+    return found;
+  });
 });
 
-function openWorkspace(role: Session['role'] = 'FREIGHT_FORWARDER') {
+function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }
+
+function openWorkspace(role: Session['role'] = 'FREIGHT_FORWARDER', path?: string) {
   const current = account(role);
   writeSession(current);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...current, token }));
-  const path = role === 'IMPORTER' ? '/importer' : '/freight-forwarder';
-  render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>);
+  const entry = path ?? (role === 'IMPORTER' ? '/importer' : '/freight-forwarder');
+  render(<MemoryRouter initialEntries={[entry]}><AppRoutes /><Location /></MemoryRouter>);
 }
 
 describe('shipment list', () => {
@@ -105,23 +112,47 @@ describe('workspace shipment retrieval', () => {
     expect(within(rows[1]).getByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(within(rows[1]).getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token');
+    expect(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' })).toHaveAttribute('href', '/freight-forwarder/shipments/1');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
-    vi.mocked(getShipment).mockImplementation(async (_token, id) => {
-      const found = [older, newer].find(row => String(row.id) === id);
-      if (!found) throw new Error(`No shipment ${id}`);
-      return found;
-    });
     const user = userEvent.setup();
     await user.click(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/1');
     const route = await screen.findByRole('figure', { name: 'Planned route' });
     expect(within(route).getByText('DEPARTURE Busan, KR')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'HBL-OLDER' })).toBeInTheDocument();
     expect(screen.getByText('No planned connection window')).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: /All shipments/ }));
+    expect(getShipment).toHaveBeenCalledWith('session-token', '1');
+    await user.click(screen.getByRole('link', { name: 'Back' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     await user.click(await screen.findByRole('link', { name: 'HBL-NEWER' }));
     expect(within(await screen.findByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
     expect(screen.getByText('1 day')).toBeInTheDocument();
+  });
+
+  it('opens a shipment address directly and explains a missing shipment', async () => {
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
+    expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/2');
+    expect(within(screen.getByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
+    const details = screen.getByRole('article', { name: 'Shipment HBL-NEWER' });
+    expect(within(details).getByText('Shanghai, CN')).toBeInTheDocument();
+    expect(within(details).getByText('Tanjung Pelepas')).toBeInTheDocument();
+    expect(within(details).getByText('Jakarta, ID')).toBeInTheDocument();
+    expect(within(details).getByText('MV Pacific Horizon')).toBeInTheDocument();
+    expect(within(details).getByText('MV Strait Runner')).toBeInTheDocument();
+    expect(within(details).getByText('Planned arrival')).toBeInTheDocument();
+    expect(within(details).getByText('Planned departure')).toBeInTheDocument();
+    expect(within(details).getByText('Connection window')).toBeInTheDocument();
+    expect(within(details).getByText('1 day')).toBeInTheDocument();
+    expect(within(details).getByText('Registered')).toBeInTheDocument();
+
+    cleanup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/99');
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/freight-forwarder');
+    expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
   });
 
   it('shows a loading state until the list arrives', async () => {
@@ -167,6 +198,7 @@ describe('workspace shipment retrieval', () => {
     openWorkspace('IMPORTER');
     expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/importer/shipments/2');
     expect(screen.getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     cleanup();

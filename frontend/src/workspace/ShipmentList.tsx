@@ -14,7 +14,7 @@ export function ShipmentList({ shipments, basePath }: { shipments: Shipment[]; b
         <tbody>
           {shipments.map(shipment => (
             <tr key={shipment.id}>
-              <td><Link to={`${basePath}/shipments/${shipment.id}`}>{shipment.shipmentReference}</Link></td>
+              <td><Link className="shipment-row-link" to={`${basePath}/shipments/${shipment.id}`}>{shipment.shipmentReference}</Link></td>
               <td>{shipment.origin}</td>
               <td>{shipment.destination}</td>
               <td>{shipment.transshipmentPort}</td>

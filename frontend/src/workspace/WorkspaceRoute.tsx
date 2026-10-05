@@ -22,48 +22,39 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
   onSignOut: () => void;
   onSessionEnded: () => void;
 }) {
-  const [registered, setRegistered] = useState(0);
   const { shipmentId } = useParams();
+  const [registered, setRegistered] = useState(0);
   const importer = account.role === 'IMPORTER';
-  const home = homePath(account.role);
-  if (shipmentId) {
-    return (
-      <div className="workspace">
-        <header className="workspace-bar">
-          <Wordmark href={home} />
-          <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
-        </header>
-        <main className="workspace-main">
-          <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={home} onSessionEnded={onSessionEnded} />
-        </main>
-      </div>
-    );
-  }
+  const basePath = homePath(account.role);
   return (
     <div className="workspace">
       <header className="workspace-bar">
-        <Wordmark href={home} />
+        <Wordmark href={basePath} />
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">
-        <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
-        <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
-        <p className="intro">{importer
-          ? 'You are signed in to the shipments your company is authorised to follow.'
-          : 'You are signed in to the shipment plans you register and maintain.'}</p>
-        <div className="company-card">
-          <span className="company-symbol" aria-hidden="true">&#9637;</span>
-          <div>
-            <span className="overline">COMPANY</span>
-            <strong>{account.company?.name ?? 'No company assigned'}</strong>
-          </div>
-        </div>
-        <dl className="session-facts">
-          <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
-          <div><dt>Email</dt><dd>{account.email}</dd></div>
-        </dl>
-        <CompanyShipments token={account.token} refreshKey={registered} basePath={home} onSessionEnded={onSessionEnded} />
-        {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+        {shipmentId
+          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
+          : <>
+            <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
+            <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
+            <p className="intro">{importer
+              ? 'You are signed in to the shipments your company is authorised to follow.'
+              : 'You are signed in to the shipment plans you register and maintain.'}</p>
+            <div className="company-card">
+              <span className="company-symbol" aria-hidden="true">&#9637;</span>
+              <div>
+                <span className="overline">COMPANY</span>
+                <strong>{account.company?.name ?? 'No company assigned'}</strong>
+              </div>
+            </div>
+            <dl className="session-facts">
+              <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
+              <div><dt>Email</dt><dd>{account.email}</dd></div>
+            </dl>
+            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
+            {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+          </>}
       </main>
     </div>
   );
@@ -74,6 +65,7 @@ const MAX_TIMER_DELAY = 2_147_483_647;
 
 export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   const navigate = useNavigate();
+  const { shipmentId } = useParams();
   const [account, setAccount] = useState<Session | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -97,7 +89,8 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       const next = { ...current, token: saved.token };
       writeSession(next);
       if (next.role !== role) {
-        navigate(homePath(next.role), { replace: true });
+        const home = homePath(next.role);
+        navigate(shipmentId ? `${home}/shipments/${shipmentId}` : home, { replace: true });
         return;
       }
       setAccount(next);
@@ -110,7 +103,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [navigate, role, attempt, sessionEnded]);
+  }, [navigate, role, attempt, sessionEnded, shipmentId]);
 
   useEffect(() => {
     if (!account) return;
@@ -134,10 +127,10 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, refreshKey, basePath, onSessionEnded }: {
+function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
   token: string;
-  refreshKey: number;
   basePath: string;
+  refreshKey: number;
   onSessionEnded: () => void;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);

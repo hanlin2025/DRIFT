@@ -75,13 +75,16 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
     const record = screen.getByRole('article', { name: 'Shipment HL-1001' });
-    expect(within(record).getByText('Singapore')).toBeInTheDocument();
+    expect(within(record).getAllByText('Singapore')).toHaveLength(2);
+    expect(within(record).getByText('Origin')).toBeInTheDocument();
+    expect(within(record).getByText('Destination')).toBeInTheDocument();
+    expect(within(record).getByText('Registered')).toBeInTheDocument();
     expect(within(record).getByText('Connection window')).toBeInTheDocument();
     expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
     expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: /All shipments/ }));
+    await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
   });
@@ -96,13 +99,13 @@ describe('connection window on the shipment detail', () => {
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
-    expect(screen.getByRole('link', { name: /All shipments/ })).toHaveAttribute('href', '/importer');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/importer');
   });
 
   it('reports a missing shipment without a retry', async () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(importer, '/importer/shipments/99');
-    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found');
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
@@ -124,9 +127,10 @@ describe('connection window on the shipment detail', () => {
     expect(sessionStorage.getItem('drift.session')).toBeNull();
   });
 
-  it("sends another role's shipment link back to that role's workspace", async () => {
+  it("sends another role's shipment link to that role's shipment address", async () => {
     open(importer, '/freight-forwarder/shipments/7');
-    expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/importer');
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/importer/shipments/7');
+    expect(getShipment).toHaveBeenCalledWith('importer-token', '7');
   });
 });
