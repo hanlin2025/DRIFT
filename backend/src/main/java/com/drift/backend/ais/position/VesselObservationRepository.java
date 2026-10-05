@@ -11,11 +11,11 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 	Optional<VesselObservation> findFirstByMmsiOrderByIngestedAtDescIdDesc(String mmsi);
 
 	@Query(value = """
-			SELECT *
+			SELECT mmsi
 			FROM vessel_observations
 			WHERE UPPER(BTRIM(REGEXP_REPLACE(vessel_name, '\\s+', ' ', 'g'))) = :vesselName
 			ORDER BY ingested_at DESC, id DESC
 			LIMIT 1
 			""", nativeQuery = true)
-	Optional<VesselObservation> findLatestByVesselName(@Param("vesselName") String vesselName);
+	Optional<String> findLatestMmsiByVesselName(@Param("vesselName") String vesselName);
 }

@@ -100,6 +100,20 @@ class LatestAisPositionsIntegrationTests {
 	}
 
 	@Test
+	void findsTheNewestObservationForANamedVesselEvenWhenItIsNameless() {
+		positions.record(position("563001234", "PACIFIC HORIZON", new BigDecimal("1.20"),
+				Instant.parse("2026-10-05T01:00:00Z")));
+		positions.record(position("563001234", "PACIFIC HORIZON", new BigDecimal("1.20"),
+				Instant.parse("2026-10-05T02:00:00Z")));
+		positions.record(position("563001234", null, new BigDecimal("1.30"), Instant.parse("2026-10-05T03:00:00Z")));
+
+		AisPosition latest = positions.findByVesselName(" pacific   horizon ").orElseThrow();
+		assertThat(latest.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
+		assertThat(latest.latitude()).isEqualByComparingTo("1.30");
+		assertThat(latest).isEqualTo(positions.findByMmsi("563001234").orElseThrow());
+	}
+
+	@Test
 	void findsNothingForAnUnknownOrBlankVessel() {
 		positions.record(position("368207620", "Ever Steady", Instant.parse("2026-10-05T01:00:00Z")));
 
@@ -114,7 +128,11 @@ class LatestAisPositionsIntegrationTests {
 	}
 
 	private static AisPosition position(String mmsi, String name, Instant ingestedAt) {
-		return new AisPosition(mmsi, name, new BigDecimal("1.3"), new BigDecimal("103.8"),
+		return position(mmsi, name, new BigDecimal("1.3"), ingestedAt);
+	}
+
+	private static AisPosition position(String mmsi, String name, BigDecimal latitude, Instant ingestedAt) {
+		return new AisPosition(mmsi, name, latitude, new BigDecimal("103.8"),
 				null, null, null, null, null, null, ingestedAt, AisPositionSource.AIS_STREAM);
 	}
 }

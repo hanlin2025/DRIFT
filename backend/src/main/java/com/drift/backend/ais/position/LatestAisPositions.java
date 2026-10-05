@@ -30,7 +30,8 @@ public class LatestAisPositions {
 		if (vesselName == null || vesselName.isBlank()) {
 			return Optional.empty();
 		}
-		return observations.findLatestByVesselName(normalize(vesselName))
+		return observations.findLatestMmsiByVesselName(normalize(vesselName))
+				.flatMap(observations::findFirstByMmsiOrderByIngestedAtDescIdDesc)
 				.map(VesselObservation::toPosition);
 	}
 
