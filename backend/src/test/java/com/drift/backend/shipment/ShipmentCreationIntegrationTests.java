@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.ais.position.AisPosition;
+import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
@@ -387,7 +388,7 @@ class ShipmentCreationIntegrationTests {
 	private static AisPosition position(String mmsi, String name, String latitude, String longitude, String speed) {
 		return new AisPosition(mmsi, name, new BigDecimal(latitude), new BigDecimal(longitude),
 				new BigDecimal(speed), new BigDecimal("175.0"), 176, 0, true, 42,
-				Instant.parse("2026-10-05T03:00:00Z"));
+				Instant.parse("2026-10-05T03:00:00Z"), AisPositionSource.AIS_STREAM);
 	}
 
 	private static String shipment(String reference) {

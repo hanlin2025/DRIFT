@@ -55,6 +55,7 @@ class AisPositionParserTest {
 		assertThat(position.positionValid()).isTrue();
 		assertThat(position.aisUtcSecond()).isEqualTo(42);
 		assertThat(position.ingestedAt()).isEqualTo(INGESTED_AT);
+		assertThat(position.source()).isEqualTo(AisPositionSource.AIS_STREAM);
 	}
 
 	@Test

@@ -14,5 +14,6 @@ public record AisPosition(
 		Integer navigationalStatus,
 		Boolean positionValid,
 		Integer aisUtcSecond,
-		Instant ingestedAt) {
+		Instant ingestedAt,
+		AisPositionSource source) {
 }
