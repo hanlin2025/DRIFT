@@ -3,6 +3,8 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record ShipmentResponse(
 		Long id,
 		String shipmentReference,
@@ -13,12 +15,19 @@ public record ShipmentResponse(
 		OffsetDateTime plannedMotherArrivalAt,
 		String feederVessel,
 		OffsetDateTime plannedFeederDepartureAt,
-		Instant createdAt) {
+		Instant createdAt,
+		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
+		ConnectionWindow connectionWindow) {
 
 	static ShipmentResponse from(Shipment shipment) {
+		return from(shipment, null);
+	}
+
+	static ShipmentResponse from(Shipment shipment, ConnectionWindow connectionWindow) {
 		return new ShipmentResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
-				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt());
+				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
+				connectionWindow);
 	}
 }

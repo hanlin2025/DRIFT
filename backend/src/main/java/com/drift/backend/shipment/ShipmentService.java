@@ -16,6 +16,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @Service
 public class ShipmentService {
@@ -24,18 +25,29 @@ public class ShipmentService {
 
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
+	private final ConnectionWindowService connectionWindows;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users) {
+	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
+			ConnectionWindowService connectionWindows) {
 		this.shipments = shipments;
 		this.users = users;
+		this.connectionWindows = connectionWindows;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
 		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
-				.map(ShipmentResponse::from)
+				.map(this::respond)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.map(ShipmentDetailResponse::from)
+				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
 	@Transactional
@@ -60,7 +72,7 @@ public class ShipmentService {
 				request.plannedMotherArrivalAt(),
 				request.feederVessel().strip(), request.plannedFeederDepartureAt());
 		try {
-			return ShipmentResponse.from(shipments.saveAndFlush(shipment));
+			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -79,6 +91,11 @@ public class ShipmentService {
 			cause = cause.getCause();
 		}
 		return false;
+	}
+
+	private ShipmentResponse respond(Shipment shipment) {
+		return ShipmentResponse.from(shipment, connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt()).window());
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

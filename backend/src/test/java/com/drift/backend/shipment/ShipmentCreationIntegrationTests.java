@@ -27,6 +27,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
@@ -63,7 +64,10 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-001"))
 				.andExpect(jsonPath("$.origin").value("Shanghai, CN"))
 				.andExpect(jsonPath("$.destination").value("Jakarta, ID"))
+				.andExpect(jsonPath("$.transshipmentPort").value("Singapore"))
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
 				.andReturn();
 
 		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
@@ -162,7 +166,42 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.length()").value(2))
 				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-NEWER"))
-				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"));
+				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"))
+				.andExpect(jsonPath("$[1].connectionWindow.duration").value("1 day 4 hours"));
+	}
+
+	@Test
+	void calculatesTheConnectionWindowFromTheStoredScheduleAndRecalculatesWhenATimeChanges() throws Exception {
+		create(token, shipmentWithTimes("HBL-WINDOW", "2026-10-15T20:00:00+08:00", "2026-10-16T02:30:00Z"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.connectionWindow.duration").value("14 hours 30 minutes"))
+				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(52200));
+
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM information_schema.columns
+				WHERE table_schema = 'public' AND table_name = 'shipments' AND column_name = 'connection_window'
+				""", Integer.class)).isZero();
+
+		jdbc.update("""
+				UPDATE shipments SET planned_feeder_departure_at = '2026-10-16T04:30:00Z'
+				WHERE shipment_reference = 'HBL-WINDOW'
+				""");
+		entityManager.clear();
+		list(token)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-WINDOW"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("16 hours 30 minutes"))
+				.andExpect(jsonPath("$[0].connectionWindow.totalSeconds").value(59400));
+
+		jdbc.update("""
+				UPDATE shipments SET planned_mother_arrival_at = '2026-10-15T22:00:00+08:00'
+				WHERE shipment_reference = 'HBL-WINDOW'
+				""");
+		entityManager.clear();
+		list(token)
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("14 hours 30 minutes"))
+				.andExpect(jsonPath("$[0].connectionWindow.totalSeconds").value(52200));
 	}
 
 	@Test
@@ -180,6 +219,72 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 		// TODO: when GET /api/shipments/{id} returns, also expect 403 and this message for an inactive company.
+	}
+
+	@Test
+	void listsTheCompanysShipmentsForAnImporterColleague() throws Exception {
+		create(token, shipment("HBL-2026-006")).andExpect(status().isCreated());
+
+		String importer = "cdg24-importer-" + UUID.randomUUID() + "@example.com";
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role, company_id)
+				VALUES ('Ivan Lim', ?, ?, 'IMPORTER', ?)
+				""", importer, passwords.encode("Example123"), companyId);
+
+		list(tokenFor(importer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-2026-006"))
+				.andExpect(jsonPath("$[0].transshipmentPort").value("Singapore"))
+				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"));
+	}
+
+	@Test
+	void returnsOneOfTheCompanysShipments() throws Exception {
+		MvcResult created = create(token, shipment("HBL-2026-007")).andExpect(status().isCreated()).andReturn();
+		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		detail(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.id").value(shipmentId.longValue()))
+				.andExpect(jsonPath("$.shipmentReference").value("HBL-2026-007"))
+				.andExpect(jsonPath("$.transshipmentPort").value("Singapore"))
+				.andExpect(jsonPath("$.feederVessel").value("MV Strait Runner"))
+				.andExpect(jsonPath("$.connectionWindow").doesNotExist());
+	}
+
+	@Test
+	void hidesAnotherCompanysShipmentAndUnknownIds() throws Exception {
+		String otherEmail = "cdg24-other-" + UUID.randomUUID() + "@example.com";
+		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-2026-008")).andExpect(status().isCreated()).andReturn();
+		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		detail(token, otherShipmentId.toString())
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+		detail(token, "999999999")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+		detail(token, "not-a-number")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+	}
+
+	@Test
+	void rejectsListingAndDetailWithoutASession() throws Exception {
+		mvc.perform(get("/api/shipments"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+		mvc.perform(get("/api/shipments/1"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions detail(String bearerToken, String shipmentId) throws Exception {
+		return mvc.perform(get("/api/shipments/" + shipmentId)
+				.header("Authorization", "Bearer " + bearerToken));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions list(String bearerToken) throws Exception {

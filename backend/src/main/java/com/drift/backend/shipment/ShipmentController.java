@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,9 +45,39 @@ public class ShipmentController {
 				.body(shipmentService.list(user));
 	}
 
+	@GetMapping("/api/shipments/{shipmentId}")
+	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company. "
+			+ "A shipment of another company is reported as not found.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Shipment found", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = ShipmentDetailResponse.class))),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Please sign in again."}
+								"""))),
+				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your account must belong to an active company to view shipments"}
+								"""))),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id belongs to the authenticated user's company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))) })
+	public ResponseEntity<ShipmentDetailResponse> get(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable Long shipmentId) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(shipmentService.get(user, shipmentId));
+	}
+
 	@PostMapping("/api/shipments")
 	@Operation(summary = "Create a shipment", description = "Creates a shipment for the authenticated user's active company. "
-			+ "Shipment references are unique within that company, ignoring letter case.",
+			+ "Shipment references are unique within that company, ignoring letter case. "
+			+ "The response includes the planned connection window, calculated from the stored mother-vessel arrival and feeder-vessel departure.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "201", description = "Shipment created", content = @Content(
