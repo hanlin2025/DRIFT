@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { '/api': { target: 'http://localhost:8080', changeOrigin: true } },
+    proxy: { '/api': { target: process.env.DRIFT_API_ORIGIN ?? 'http://localhost:8080', changeOrigin: true } },
   },
   test: {
     environment: 'jsdom',

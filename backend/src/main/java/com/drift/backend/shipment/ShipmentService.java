@@ -11,6 +11,7 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
@@ -26,12 +27,14 @@ public class ShipmentService {
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
+	private final LatestAisPositions latestPositions;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
-			ConnectionWindowService connectionWindows) {
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
+		this.latestPositions = latestPositions;
 	}
 
 	@Transactional(readOnly = true)
@@ -98,7 +101,29 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, window(shipment));
+		return ShipmentDetailResponse.from(shipment, window(shipment),
+				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
+	}
+
+	private VesselPosition livePosition(String vesselName) {
+		return latestPositions.findByVesselName(vesselName)
+				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
+				.map(VesselPosition::from)
+				.orElse(null);
+	}
+
+	private static String withoutVesselPrefix(String vesselName) {
+		if (vesselName == null) {
+			return null;
+		}
+		String stripped = vesselName.strip();
+		if (stripped.length() > 3 && stripped.regionMatches(true, 0, "MV ", 0, 3)) {
+			return stripped.substring(3);
+		}
+		if (stripped.length() > 4 && stripped.regionMatches(true, 0, "M/V ", 0, 4)) {
+			return stripped.substring(4);
+		}
+		return stripped;
 	}
 
 	private ConnectionWindow window(Shipment shipment) {

@@ -63,7 +63,8 @@ public class ShipmentController {
 
 	@GetMapping("/api/shipments/{shipmentId}")
 	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company, "
-			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure. "
+			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
+			+ "and the latest retained AIS position for each vessel name. "
 			+ "A shipment of another company is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
