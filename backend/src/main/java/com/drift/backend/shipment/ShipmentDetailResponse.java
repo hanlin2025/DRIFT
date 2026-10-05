@@ -18,9 +18,9 @@ public record ShipmentDetailResponse(
 		Instant createdAt,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow,
-		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
+		@Schema(description = "Latest stored AIS observation whose vessel name matches the mother vessel. Null when none has been stored.")
 		VesselPosition motherVesselPosition,
-		@Schema(description = "Latest retained AIS position whose vessel name matches the feeder vessel. Null when the livestream has not retained one.")
+		@Schema(description = "Latest stored AIS observation whose vessel name matches the feeder vessel. Null when none has been stored.")
 		VesselPosition feederVesselPosition) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindow connectionWindow,

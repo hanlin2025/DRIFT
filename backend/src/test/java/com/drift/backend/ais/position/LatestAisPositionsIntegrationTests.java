@@ -8,7 +8,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,12 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 class LatestAisPositionsIntegrationTests {
 
 	@Autowired LatestAisPositions positions;
+	@Autowired VesselObservationRepository observations;
 	@Autowired JdbcTemplate jdbc;
-
-	@BeforeEach
-	void clear() {
-		positions.clear();
-	}
 
 	@Test
 	void storesEachObservationWithItsSourceAndMetadata() {
@@ -64,18 +59,54 @@ class LatestAisPositionsIntegrationTests {
 	}
 
 	@Test
-	void keepsTheNewerReportForTheSameVessel() {
+	void returnsTheNewestStoredObservationForAVessel() {
 		positions.record(position("368207620", "Ever Steady", Instant.parse("2026-10-05T01:00:00Z")));
 		positions.record(position("368207620", "EVER   STEADY", Instant.parse("2026-10-05T02:00:00Z")));
 		positions.record(position("368207620", "Ever Steady", Instant.parse("2026-10-05T00:30:00Z")));
 
-		AisPosition latest = positions.findByVesselName("ever steady").orElseThrow();
+		AisPosition latest = positions.findByMmsi(" 368207620 ").orElseThrow();
 		assertThat(latest.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T02:00:00Z"));
-		assertThat(positions.findByMmsi("368207620").orElseThrow()).isEqualTo(latest);
+		assertThat(latest.vesselName()).isEqualTo("EVER   STEADY");
+		assertThat(latest.source()).isEqualTo(AisPositionSource.AIS_STREAM);
+		assertThat(positions.findByVesselName(" ever steady ").orElseThrow()).isEqualTo(latest);
+	}
 
-		positions.clear();
-		assertThat(positions.findByMmsi("368207620")).isEmpty();
-		assertThat(positions.findByVesselName("ever steady")).isEmpty();
+	@Test
+	void readsStoredObservationsWithoutTheInstanceThatRecordedThem() {
+		positions.record(new AisPosition("368207620", "EVER STEADY", new BigDecimal("1.3"), new BigDecimal("103.8"),
+				new BigDecimal("12.4"), new BigDecimal("86.7"), 87, 5, true, 42,
+				Instant.parse("2026-10-05T01:00:00Z"), AisPositionSource.AIS_STREAM));
+
+		AisPosition stored = new LatestAisPositions(observations).findByMmsi("368207620").orElseThrow();
+		assertThat(stored.speedOverGroundKnots()).isEqualByComparingTo("12.4");
+		assertThat(stored.courseOverGroundDegrees()).isEqualByComparingTo("86.7");
+		assertThat(stored.trueHeadingDegrees()).isEqualTo(87);
+		assertThat(stored.navigationalStatus()).isEqualTo(5);
+		assertThat(stored.positionValid()).isTrue();
+		assertThat(stored.aisUtcSecond()).isEqualTo(42);
+	}
+
+	@Test
+	void reportsWhetherTheNewestObservationIsLiveOrSeeded() {
+		positions.record(position("563001234", "PACIFIC HORIZON", Instant.parse("2026-10-05T01:00:00Z")));
+		jdbc.update("""
+				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, ingested_at, source)
+				VALUES ('563001234', 'PACIFIC HORIZON', 1.25, 103.7, '2026-10-05T02:00:00Z', 'SEEDED')
+				""");
+
+		AisPosition latest = positions.findByVesselName("Pacific Horizon").orElseThrow();
+		assertThat(latest.source()).isEqualTo(AisPositionSource.SEEDED);
+		assertThat(latest.latitude()).isEqualByComparingTo("1.25");
+	}
+
+	@Test
+	void findsNothingForAnUnknownOrBlankVessel() {
+		positions.record(position("368207620", "Ever Steady", Instant.parse("2026-10-05T01:00:00Z")));
+
+		assertThat(positions.findByMmsi("563009999")).isEmpty();
+		assertThat(positions.findByVesselName("Strait Runner")).isEmpty();
+		assertThat(positions.findByMmsi(" ")).isEmpty();
+		assertThat(positions.findByVesselName(null)).isEmpty();
 	}
 
 	private int countObservations(String mmsi) {
