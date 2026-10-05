@@ -35,6 +35,17 @@ const shipment: Shipment = {
   plannedFeederDepartureAt: '2026-10-03T10:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
   connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
+  motherVesselPosition: {
+    mmsi: '563001234',
+    vesselName: 'PACIFIC HORIZON',
+    latitude: 1.264,
+    longitude: 103.82,
+    speedOverGroundKnots: 12.4,
+    courseOverGroundDegrees: 175,
+    trueHeadingDegrees: 176,
+    ingestedAt: '2026-10-05T03:00:00Z',
+  },
+  feederVesselPosition: null,
 };
 
 function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }
@@ -67,16 +78,24 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('Singapore')).toBeInTheDocument();
     expect(within(record).getByText('Connection window')).toBeInTheDocument();
     expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+    expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
+    expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /All shipments/ }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
   });
 
   it('shows when the shipment has no planned connection window', async () => {
-    vi.mocked(getShipment).mockResolvedValue({ ...shipment, connectionWindow: null });
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      connectionWindow: null,
+      motherVesselPosition: null,
+    });
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
+    expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
     expect(screen.getByRole('link', { name: /All shipments/ })).toHaveAttribute('href', '/importer');
   });
 

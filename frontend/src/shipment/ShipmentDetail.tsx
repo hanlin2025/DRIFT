@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
-import { getShipment, type Shipment } from './api';
+import { getShipment, type Shipment, type VesselPosition } from './api';
+import { RouteMap } from './RouteMap';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
@@ -57,8 +58,10 @@ function ShipmentRecord({ shipment }: { shipment: Shipment }) {
         <dl>
           <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
           <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
+          <div><dt>Mother vessel position</dt><dd>{formatLive(shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
+          <div><dt>Feeder vessel position</dt><dd>{formatLive(shipment.feederVesselPosition)}</dd></div>
           <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
           <div>
             <dt>Connection window</dt>
@@ -66,8 +69,16 @@ function ShipmentRecord({ shipment }: { shipment: Shipment }) {
           </div>
         </dl>
       </article>
+      <RouteMap shipment={shipment} />
     </>
   );
+}
+
+function formatLive(position: VesselPosition | null) {
+  if (!position) return 'No live AIS position';
+  const name = position.vesselName?.trim() || position.mmsi;
+  const speed = position.speedOverGroundKnots == null ? '' : ` · ${position.speedOverGroundKnots} kn`;
+  return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
 }
 
 function formatWhen(value: string) {

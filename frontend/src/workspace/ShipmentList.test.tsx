@@ -5,12 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { listShipments, type Shipment } from '../shipment/api';
+import { getShipment, listShipments, type Shipment } from '../shipment/api';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), getShipment: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -24,6 +24,8 @@ const newer: Shipment = {
   plannedFeederDepartureAt: '2026-10-05T00:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
+  motherVesselPosition: null,
+  feederVesselPosition: null,
 };
 const older: Shipment = {
   id: 1,
@@ -37,6 +39,8 @@ const older: Shipment = {
   plannedFeederDepartureAt: '2026-10-03T00:00:00Z',
   createdAt: '2026-09-28T04:00:00Z',
   connectionWindow: null,
+  motherVesselPosition: null,
+  feederVesselPosition: null,
 };
 
 const account = (role: Session['role']): Session => ({
@@ -102,14 +106,22 @@ describe('workspace shipment retrieval', () => {
     expect(within(rows[1]).getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    vi.mocked(getShipment).mockImplementation(async (_token, id) => {
+      const found = [older, newer].find(row => String(row.id) === id);
+      if (!found) throw new Error(`No shipment ${id}`);
+      return found;
+    });
     const user = userEvent.setup();
     await user.click(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' }));
-    const route = screen.getByRole('figure', { name: 'Planned route' });
+    const route = await screen.findByRole('figure', { name: 'Planned route' });
     expect(within(route).getByText('DEPARTURE Busan, KR')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('heading', { name: 'HBL-OLDER' })).toBeInTheDocument();
+    expect(screen.getByText('No planned connection window')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: /All shipments/ }));
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
-    await user.click(within(rows[1]).getByRole('link', { name: 'HBL-NEWER' }));
-    expect(within(screen.getByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
+    await user.click(await screen.findByRole('link', { name: 'HBL-NEWER' }));
+    expect(within(await screen.findByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
+    expect(screen.getByText('1 day')).toBeInTheDocument();
   });
 
   it('shows a loading state until the list arrives', async () => {

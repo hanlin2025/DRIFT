@@ -6,6 +6,17 @@ export type ConnectionWindow = {
   totalSeconds: number;
 };
 
+export type VesselPosition = {
+  mmsi: string;
+  vesselName: string | null;
+  latitude: number;
+  longitude: number;
+  speedOverGroundKnots: number | null;
+  courseOverGroundDegrees: number | null;
+  trueHeadingDegrees: number | null;
+  ingestedAt: string;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -18,6 +29,8 @@ export type Shipment = {
   plannedFeederDepartureAt: string;
   createdAt: string;
   connectionWindow: ConnectionWindow | null;
+  motherVesselPosition: VesselPosition | null;
+  feederVesselPosition: VesselPosition | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -90,12 +103,37 @@ function isConnectionWindow(value: unknown): value is ConnectionWindow {
     && Number.isFinite(value.totalSeconds);
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isOptionalFiniteNumber(value: unknown): value is number | null {
+  return value == null || isFiniteNumber(value);
+}
+
+function isVesselPosition(value: unknown): value is VesselPosition {
+  return isRecord(value)
+    && typeof value.mmsi === 'string'
+    && value.mmsi.trim().length > 0
+    && (value.vesselName == null || typeof value.vesselName === 'string')
+    && isFiniteNumber(value.latitude)
+    && isFiniteNumber(value.longitude)
+    && isOptionalFiniteNumber(value.speedOverGroundKnots)
+    && isOptionalFiniteNumber(value.courseOverGroundDegrees)
+    && isOptionalFiniteNumber(value.trueHeadingDegrees)
+    && typeof value.ingestedAt === 'string';
+}
+
 function asShipment(value: unknown): Shipment | null {
   if (!isRecord(value) || typeof value.id !== 'number') return null;
   const text = ['shipmentReference', 'origin', 'destination', 'transshipmentPort', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
   if (!text.every(key => typeof value[key] === 'string')) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
+  const motherVesselPosition = value.motherVesselPosition;
+  const feederVesselPosition = value.feederVesselPosition;
+  if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
+  if (feederVesselPosition != null && !isVesselPosition(feederVesselPosition)) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -108,5 +146,7 @@ function asShipment(value: unknown): Shipment | null {
     plannedFeederDepartureAt: value.plannedFeederDepartureAt as string,
     createdAt: value.createdAt as string,
     connectionWindow: window ?? null,
+    motherVesselPosition: motherVesselPosition ?? null,
+    feederVesselPosition: feederVesselPosition ?? null,
   };
 }
