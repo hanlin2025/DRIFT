@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
 import { RouteMap } from '../shipment/RouteMap';
-import { ShipmentForm } from '../shipment/ShipmentForm';
+import { formatWhen, ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
@@ -22,33 +22,39 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
   onSignOut: () => void;
   onSessionEnded: () => void;
 }) {
+  const { shipmentId } = useParams();
   const [registered, setRegistered] = useState(0);
   const importer = account.role === 'IMPORTER';
+  const basePath = homePath(account.role);
   return (
     <div className="workspace">
       <header className="workspace-bar">
-        <Wordmark href={homePath(account.role)} />
+        <Wordmark href={basePath} />
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">
-        <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
-        <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
-        <p className="intro">{importer
-          ? 'You are signed in to the shipments your company is authorised to follow.'
-          : 'You are signed in to the shipment plans you register and maintain.'}</p>
-        <div className="company-card">
-          <span className="company-symbol" aria-hidden="true">&#9637;</span>
-          <div>
-            <span className="overline">COMPANY</span>
-            <strong>{account.company?.name ?? 'No company assigned'}</strong>
-          </div>
-        </div>
-        <dl className="session-facts">
-          <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
-          <div><dt>Email</dt><dd>{account.email}</dd></div>
-        </dl>
-        <CompanyShipments token={account.token} refreshKey={registered} onSessionEnded={onSessionEnded} />
-        {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+        {shipmentId
+          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
+          : <>
+            <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
+            <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
+            <p className="intro">{importer
+              ? 'You are signed in to the shipments your company is authorised to follow.'
+              : 'You are signed in to the shipment plans you register and maintain.'}</p>
+            <div className="company-card">
+              <span className="company-symbol" aria-hidden="true">&#9637;</span>
+              <div>
+                <span className="overline">COMPANY</span>
+                <strong>{account.company?.name ?? 'No company assigned'}</strong>
+              </div>
+            </div>
+            <dl className="session-facts">
+              <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
+              <div><dt>Email</dt><dd>{account.email}</dd></div>
+            </dl>
+            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
+            {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+          </>}
       </main>
     </div>
   );
@@ -59,6 +65,7 @@ const MAX_TIMER_DELAY = 2_147_483_647;
 
 export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   const navigate = useNavigate();
+  const { shipmentId } = useParams();
   const [account, setAccount] = useState<Session | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -82,7 +89,8 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       const next = { ...current, token: saved.token };
       writeSession(next);
       if (next.role !== role) {
-        navigate(homePath(next.role), { replace: true });
+        const home = homePath(next.role);
+        navigate(shipmentId ? `${home}/shipments/${shipmentId}` : home, { replace: true });
         return;
       }
       setAccount(next);
@@ -95,7 +103,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [navigate, role, attempt, sessionEnded]);
+  }, [navigate, role, attempt, sessionEnded, shipmentId]);
 
   useEffect(() => {
     if (!account) return;
@@ -119,13 +127,13 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
   return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, refreshKey, onSessionEnded }: {
+function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
   token: string;
+  basePath: string;
   refreshKey: number;
   onSessionEnded: () => void;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
 
@@ -153,12 +161,62 @@ function CompanyShipments({ token, refreshKey, onSessionEnded }: {
   if (shipments.length === 0) {
     return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
-  const chosen = selectedId === null ? undefined : shipments.find(shipment => shipment.id === selectedId);
+  return <ShipmentList shipments={shipments} basePath={basePath} />;
+}
+
+function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
+  token: string;
+  shipmentId: string;
+  basePath: string;
+  onSessionEnded: () => void;
+}) {
+  const [shipments, setShipments] = useState<Shipment[] | null>(null);
+  const [problem, setProblem] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setProblem('');
+    setShipments(null);
+    listShipments(token).then(found => {
+      if (active) setShipments(found);
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionEnded();
+        return;
+      }
+      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
+    });
+    return () => { active = false; };
+  }, [token, attempt, onSessionEnded]);
+
+  const shipment = shipments?.find(item => String(item.id) === shipmentId);
   return <>
-    <ShipmentList shipments={shipments} selectedId={chosen?.id} onSelect={shipment => setSelectedId(shipment.id)} />
-    {chosen && <>
-      <button type="button" className="back-link" onClick={() => setSelectedId(null)}><span aria-hidden="true">&#8592;</span> Back</button>
-      <RouteMap shipment={chosen} />
-    </>}
+    <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
+    {problem
+      ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
+      : shipments === null
+        ? <div className="notice">Loading shipment...</div>
+        : shipment
+          ? <>
+            <p className="eyebrow">SHIPMENT</p>
+            <h2>{shipment.shipmentReference}</h2>
+            <p className="intro">{shipment.origin} to {shipment.destination}</p>
+            <RouteMap shipment={shipment} />
+            <article className="shipment-record" aria-label={`Shipment ${shipment.shipmentReference}`}>
+              <dl>
+                <div><dt>Origin</dt><dd>{shipment.origin}</dd></div>
+                <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
+                <div><dt>Destination</dt><dd>{shipment.destination}</dd></div>
+                <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
+                <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
+                <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
+                <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
+                <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
+              </dl>
+            </article>
+          </>
+          : <div className="error-notice" role="alert">This shipment is not available.</div>}
   </>;
 }

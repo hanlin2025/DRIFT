@@ -1,12 +1,9 @@
+import { Link } from 'react-router-dom';
 import { type Shipment } from '../shipment/api';
 
 const columns = ['Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel'] as const;
 
-export function ShipmentList({ shipments, selectedId, onSelect }: {
-  shipments: Shipment[];
-  selectedId?: number;
-  onSelect?: (shipment: Shipment) => void;
-}) {
+export function ShipmentList({ shipments, basePath }: { shipments: Shipment[]; basePath?: string }) {
   return (
     <div className="shipment-list">
       <table>
@@ -16,9 +13,9 @@ export function ShipmentList({ shipments, selectedId, onSelect }: {
         </thead>
         <tbody>
           {shipments.map(shipment => (
-            <tr key={shipment.id} className={shipment.id === selectedId ? 'is-selected' : undefined}>
-              <td>{onSelect
-                ? <a className="shipment-row-link" href={`#shipment-${shipment.id}`} aria-current={shipment.id === selectedId ? 'true' : undefined} onClick={event => { event.preventDefault(); onSelect(shipment); }}>{shipment.shipmentReference}</a>
+            <tr key={shipment.id}>
+              <td>{basePath
+                ? <Link className="shipment-row-link" to={`${basePath}/shipments/${shipment.id}`}>{shipment.shipmentReference}</Link>
                 : shipment.shipmentReference}</td>
               <td>{shipment.origin}</td>
               <td>{shipment.destination}</td>
