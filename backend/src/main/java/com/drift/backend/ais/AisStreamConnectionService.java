@@ -5,9 +5,13 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,41 +35,70 @@ import jakarta.annotation.PreDestroy;
 public class AisStreamConnectionService {
 
 	private static final String POSITION_REPORT = "PositionReport";
+	private static final Duration RECONNECT_DELAY = Duration.ofSeconds(10);
 
 	private final AisStreamProperties properties;
 	private final ObjectMapper objectMapper;
 	private final AisPositionParser positionParser;
 	private final LatestAisPositions latestPositions;
 	private final HttpClient httpClient;
+	private final ScheduledExecutorService reconnects;
+	private final Duration reconnectDelay;
 	private final AtomicBoolean firstPositionLogged = new AtomicBoolean();
+	private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
 
 	private volatile WebSocket webSocket;
+	private volatile boolean stopping;
 
 	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
 			AisPositionParser positionParser, LatestAisPositions latestPositions) {
-		this(properties, objectMapper, positionParser, latestPositions, HttpClient.newHttpClient());
+		this(properties, objectMapper, positionParser, latestPositions, HttpClient.newHttpClient(),
+				Executors.newSingleThreadScheduledExecutor(), RECONNECT_DELAY);
 	}
 
 	AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
-			AisPositionParser positionParser, LatestAisPositions latestPositions, HttpClient httpClient) {
+			AisPositionParser positionParser, LatestAisPositions latestPositions, HttpClient httpClient,
+			ScheduledExecutorService reconnects, Duration reconnectDelay) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
 		this.positionParser = positionParser;
 		this.latestPositions = latestPositions;
 		this.httpClient = httpClient;
+		this.reconnects = reconnects;
+		this.reconnectDelay = reconnectDelay;
 	}
 
 	@EventListener(ApplicationReadyEvent.class)
 	void connect() {
 		validateConfiguration();
+		open();
+	}
+
+	private void open() {
+		if (stopping) {
+			return;
+		}
 		httpClient.newWebSocketBuilder()
 				.buildAsync(properties.streamUri(), new AisStreamListener())
 				.whenComplete((socket, error) -> {
 					if (error != null) {
 						System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.ERROR,
 								"Unable to connect to the AIS stream.", error);
+						reconnect();
 					}
 				});
+	}
+
+	private void reconnect() {
+		if (stopping || !reconnectScheduled.compareAndSet(false, true)) {
+			return;
+		}
+		System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
+				"Reconnecting to the AIS stream in " + reconnectDelay.toSeconds() + " seconds.");
+		reconnects.schedule(() -> {
+			reconnectScheduled.set(false);
+			open();
+		}, reconnectDelay.toMillis(), TimeUnit.MILLISECONDS);
 	}
 
 	String subscriptionPayload() {
@@ -109,6 +142,8 @@ public class AisStreamConnectionService {
 
 	@PreDestroy
 	void close() {
+		stopping = true;
+		reconnects.shutdownNow();
 		WebSocket currentSocket = webSocket;
 		if (currentSocket != null) {
 			currentSocket.sendClose(WebSocket.NORMAL_CLOSURE, "DRIFT service stopping");
@@ -178,6 +213,7 @@ public class AisStreamConnectionService {
 		public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
 					"AIS stream closed with status " + statusCode + ": " + reason);
+			reconnect();
 			return CompletableFuture.completedFuture(null);
 		}
 
@@ -185,6 +221,7 @@ public class AisStreamConnectionService {
 		public void onError(WebSocket socket, Throwable error) {
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.ERROR,
 					"AIS stream error.", error);
+			reconnect();
 		}
 	}
 }

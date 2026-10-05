@@ -3,14 +3,28 @@ package com.drift.backend.ais;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 import com.drift.backend.ais.position.AisPositionParser;
@@ -82,6 +96,93 @@ class AisStreamConnectionServiceTest {
 		service.ingest(POSITION_REPORT);
 
 		verify(observations, times(2)).save(any(VesselObservation.class));
+	}
+
+	@Test
+	void subscribesWhenTheStreamOpensAndKeepsReadingAfterAnInvalidMessage() {
+		VesselObservationRepository observations = mock(VesselObservationRepository.class);
+		WebSocket.Builder builder = webSocketBuilder();
+		AisStreamConnectionService service = connectingService(observations, builder);
+		WebSocket socket = mock(WebSocket.class);
+		when(socket.sendText(any(), anyBoolean())).thenReturn(CompletableFuture.completedFuture(socket));
+
+		service.connect();
+		WebSocket.Listener listener = listener(builder);
+		listener.onOpen(socket);
+		listener.onBinary(socket, utf8("not-json"), true);
+		listener.onBinary(socket, utf8(POSITION_REPORT.substring(0, 20)), false);
+		listener.onBinary(socket, utf8(POSITION_REPORT.substring(20)), true);
+
+		verify(socket).sendText(service.subscriptionPayload(), true);
+		verify(socket, times(4)).request(1);
+		verify(observations, times(1)).save(any(VesselObservation.class));
+		service.close();
+	}
+
+	@Test
+	void reconnectsAfterAFailedConnectionAttempt() {
+		WebSocket.Builder builder = mock(WebSocket.Builder.class);
+		when(builder.buildAsync(any(), any()))
+				.thenReturn(CompletableFuture.failedFuture(new ConnectException("AIS stream unavailable")))
+				.thenReturn(new CompletableFuture<>());
+		AisStreamConnectionService service = connectingService(mock(VesselObservationRepository.class), builder);
+
+		service.connect();
+
+		verify(builder, timeout(1000).times(2)).buildAsync(eq(PROPERTIES.streamUri()), any());
+		service.close();
+	}
+
+	@Test
+	void reconnectsWhenTheStreamClosesOrFails() {
+		WebSocket.Builder builder = webSocketBuilder();
+		AisStreamConnectionService service = connectingService(mock(VesselObservationRepository.class), builder);
+
+		service.connect();
+		WebSocket.Listener listener = listener(builder);
+		listener.onClose(mock(WebSocket.class), WebSocket.NORMAL_CLOSURE, "server restarting");
+		verify(builder, timeout(1000).times(2)).buildAsync(any(), any());
+		listener.onError(mock(WebSocket.class), new IOException("connection reset"));
+		verify(builder, timeout(1000).times(3)).buildAsync(any(), any());
+		service.close();
+	}
+
+	@Test
+	void doesNotReconnectAfterTheServiceStops() {
+		WebSocket.Builder builder = webSocketBuilder();
+		AisStreamConnectionService service = connectingService(mock(VesselObservationRepository.class), builder);
+
+		service.connect();
+		WebSocket.Listener listener = listener(builder);
+		service.close();
+		listener.onClose(mock(WebSocket.class), WebSocket.NORMAL_CLOSURE, "DRIFT service stopping");
+
+		verify(builder, after(200).times(1)).buildAsync(any(), any());
+	}
+
+	private static WebSocket.Builder webSocketBuilder() {
+		WebSocket.Builder builder = mock(WebSocket.Builder.class);
+		when(builder.buildAsync(any(), any())).thenAnswer(invocation -> new CompletableFuture<WebSocket>());
+		return builder;
+	}
+
+	private static WebSocket.Listener listener(WebSocket.Builder builder) {
+		ArgumentCaptor<WebSocket.Listener> listener = ArgumentCaptor.forClass(WebSocket.Listener.class);
+		verify(builder).buildAsync(eq(PROPERTIES.streamUri()), listener.capture());
+		return listener.getValue();
+	}
+
+	private static ByteBuffer utf8(String text) {
+		return ByteBuffer.wrap(text.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private AisStreamConnectionService connectingService(VesselObservationRepository observations,
+			WebSocket.Builder builder) {
+		HttpClient httpClient = mock(HttpClient.class);
+		when(httpClient.newWebSocketBuilder()).thenReturn(builder);
+		return new AisStreamConnectionService(PROPERTIES, objectMapper, new AisPositionParser(objectMapper),
+				new LatestAisPositions(observations), httpClient, Executors.newSingleThreadScheduledExecutor(),
+				Duration.ZERO);
 	}
 
 	private AisStreamConnectionService service(VesselObservationRepository observations) {
