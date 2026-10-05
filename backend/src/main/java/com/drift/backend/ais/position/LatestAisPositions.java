@@ -35,6 +35,11 @@ public class LatestAisPositions {
 		return mmsi == null ? Optional.empty() : findByMmsi(mmsi);
 	}
 
+	public void clear() {
+		byMmsi.clear();
+		mmsiByVesselName.clear();
+	}
+
 	static String normalize(String vesselName) {
 		return vesselName.strip().replaceAll("\\s+", " ").toUpperCase(Locale.ROOT);
 	}
