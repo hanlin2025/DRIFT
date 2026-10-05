@@ -7,6 +7,7 @@ const emptyFields: ShipmentFields = {
   shipmentReference: '',
   origin: '',
   destination: '',
+  transshipmentPort: '',
   motherVessel: '',
   plannedMotherArrivalAt: '',
   feederVessel: '',
@@ -15,7 +16,12 @@ const emptyFields: ShipmentFields = {
 
 const fieldOrder = Object.keys(emptyFields) as (keyof ShipmentFields)[];
 
-export function ShipmentForm({ token, companyName, onSessionEnded }: { token: string; companyName: string | null; onSessionEnded: () => void }) {
+export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered }: {
+  token: string;
+  companyName: string | null;
+  onSessionEnded: () => void;
+  onRegistered?: (shipment: Shipment) => void;
+}) {
   const [fields, setFields] = useState<ShipmentFields>(emptyFields);
   const [errors, setErrors] = useState<ShipmentErrors>({});
   const [problem, setProblem] = useState('');
@@ -67,6 +73,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
         shipmentReference: fields.shipmentReference.trim(),
         origin: fields.origin.trim(),
         destination: fields.destination.trim(),
+        transshipmentPort: fields.transshipmentPort.trim(),
         motherVessel: fields.motherVessel.trim(),
         plannedMotherArrivalAt: toOffsetDateTime(fields.plannedMotherArrivalAt),
         feederVessel: fields.feederVessel.trim(),
@@ -75,6 +82,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
       setFields(emptyFields);
       setErrors({});
       setCreated(shipment);
+      onRegistered?.(shipment);
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
@@ -96,7 +104,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
   return (
     <section className="shipment-panel" aria-labelledby="register-shipment">
       <h3 id="register-shipment">Register a shipment</h3>
-      <p className="intro">Save the mother vessel, the feeder vessel, and the planned connection between them.</p>
+      <p className="intro">Save the transshipment port, the mother vessel, the feeder vessel, and the planned connection between them.</p>
       {problem && <div className="error-notice" role="alert">{problem}</div>}
       {created && <RegisteredShipment shipment={created} />}
       <form onSubmit={submit} className="shipment-form" noValidate aria-busy={submitting}>
@@ -105,6 +113,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded }: { token: st
           <TextField id="origin" name="origin" label="Origin" placeholder="e.g. Singapore" hint="Port where the mother vessel starts." value={fields.origin} error={errors.origin} maxLength={200} autoComplete="off" disabled={submitting} onChange={change} onBlur={blur} />
           <TextField id="destination" name="destination" label="Destination" placeholder="e.g. Jakarta" hint="Port where the feeder vessel finishes." value={fields.destination} error={errors.destination} maxLength={200} autoComplete="off" disabled={submitting} onChange={change} onBlur={blur} />
         </div>
+        <TextField id="transshipment-port" name="transshipmentPort" label="Transshipment port" placeholder="e.g. Singapore" hint="Port where the shipment transfers from the mother vessel to the feeder vessel." value={fields.transshipmentPort} error={errors.transshipmentPort} maxLength={200} autoComplete="off" disabled={submitting} onChange={change} onBlur={blur} />
         <div className="pair-grid">
           <TextField id="mother-vessel" name="motherVessel" label="Mother vessel" placeholder="e.g. Ever Steady" value={fields.motherVessel} error={errors.motherVessel} maxLength={200} autoComplete="off" disabled={submitting} onChange={change} onBlur={blur} />
           <TextField id="feeder-vessel" name="feederVessel" label="Feeder vessel" placeholder="e.g. Straits Feeder" value={fields.feederVessel} error={errors.feederVessel} maxLength={200} autoComplete="off" disabled={submitting} onChange={change} onBlur={blur} />
@@ -127,6 +136,7 @@ function RegisteredShipment({ shipment }: { shipment: Shipment }) {
       <strong>{shipment.shipmentReference}</strong>
       <p className="shipment-route">{shipment.origin} to {shipment.destination}</p>
       <dl>
+        <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
         <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
         <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
         <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>

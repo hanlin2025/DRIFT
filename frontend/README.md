@@ -42,6 +42,16 @@ login stores the session in the browser tab and opens the importer shipment over
 or the freight-forwarder shipment portfolio. An expired or rejected session returns
 to `/login`. Signing out clears that session.
 
+## Company shipments
+
+Both the importer overview and the freight-forwarder portfolio load `GET /api/shipments` for the signed-in company and show the result in one table: Reference, Origin, Destination, Transshipment port, Mother vessel, and Feeder vessel. The table keeps the API order, which is newest `createdAt` first. The page says it is loading while the request is in progress. A failure shows the error and **Try again**. A successful empty response says the company has no shipments yet. A 401 ends the session and returns to `/login`.
+
+The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
+
+These review requests overlap CDG-58, which was opened to integrate the dashboard with the shipment API. The list, loading, errors, empty company, and session expiry on fetch now live in this page so the team can reconcile that ticket’s ownership.
+
+The page does not open a shipment detail route. Browser end-to-end tests still write fixtures to the configured database, so they are not a substitute for the mocked workspace tests.
+
 ## Browser tests
 
 With the backend running on port 8080 against the default `drift` database:
@@ -51,7 +61,42 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Tests create and remove uniquely named fixtures in that database and cover desktop/mobile
-signup, login, role routing, validation, signed-out redirects, session expiry and invitation
-reuse against the real API. Set
-`DRIFT_E2E_DATABASE` to override the fixture database; the backend must use the same one.
+That command covers desktop and mobile signup, login, role routing, validation, signed-out
+redirects, session expiry, and invitation reuse against the real API. It does not run the
+shipment retrieval spec below. Set `DRIFT_E2E_DATABASE` only when the backend uses that same
+database.
+
+### Shipment retrieval
+
+`e2e/shipment-retrieval.spec.ts` signs in a disposable freight forwarder, confirms Harbourline
+has no shipments, submits one shipment through the form, and checks the 201 response, the
+automatic list refresh, the six displayed fields, and the same row after reload. It uses the
+real shipment API.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:shipment
+```
+
+That command runs `scripts/run-shipment-retrieval.mjs`. The runner generates a database name,
+creates that database, and records ownership only after creation succeeds. It then starts a
+backend with `SPRING_DATASOURCE_URL` and `SPRING_FLYWAY_URL` set to that database, so Flyway
+migrates only the database it just created. The spec receives the same name and writes fixtures
+only when the database comment matches the ownership record. A supplied name is not enough.
+`AIS_ENABLED` is false, and the JWT secret stays in the backend process.
+
+If port 8080 is already in use, the runner stops before creating a database and does not stop
+the other process. After the spec, a failed spec, or a backend that exits before it is ready,
+the runner stops only the backend it started and drops only the database it created. It does
+not drop `drift`, `drift_test`, or a database that already existed. Cleanup is not guaranteed
+if the runner is killed in a way it cannot catch, or if a second interrupt arrives during
+cleanup. The runner reports a drop or shutdown failure instead of ignoring it.
+
+Running the spec file directly, including `npx playwright test` with only `DRIFT_E2E_DATABASE`
+set, stops before any fixture write. `npm run test:e2e` still runs the signup and login specs
+and does not run this one.
+
+Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
+open a shipment detail page.
