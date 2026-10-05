@@ -20,6 +20,10 @@ public class AisPositionParser {
 	private static final BigDecimal UNAVAILABLE_SPEED_OVER_GROUND = new BigDecimal("102.3");
 	private static final BigDecimal UNAVAILABLE_COURSE_OVER_GROUND = new BigDecimal("360");
 	private static final int UNAVAILABLE_TRUE_HEADING = 511;
+	private static final int TIMESTAMP_NOT_AVAILABLE = 60;
+	private static final int TIMESTAMP_MANUAL = 61;
+	private static final int TIMESTAMP_ESTIMATED = 62;
+	private static final int TIMESTAMP_INOPERATIVE = 63;
 
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
@@ -52,7 +56,7 @@ public class AisPositionParser {
 				optionalInteger(positionReport, "TrueHeading", UNAVAILABLE_TRUE_HEADING),
 				optionalInteger(positionReport, "NavigationalStatus"),
 				optionalBoolean(positionReport, "Valid"),
-				optionalInteger(positionReport, "Timestamp"),
+				aisUtcSecond(positionReport),
 				clock.instant()));
 	}
 
@@ -116,19 +120,31 @@ public class AisPositionParser {
 		if (!value.isIntegralNumber()) {
 			throw new InvalidAisPositionMessageException("AIS " + field + " must be an integer when present.");
 		}
-		return value.asInt();
+		try {
+			return value.decimalValue().intValueExact();
+		} catch (ArithmeticException ex) {
+			throw new InvalidAisPositionMessageException("AIS " + field + " must be an integer when present.", ex);
+		}
+	}
+
+	private static Integer aisUtcSecond(JsonNode positionReport) {
+		Integer second = optionalInteger(positionReport, "Timestamp");
+		if (second == null) {
+			return null;
+		}
+		if (second == TIMESTAMP_NOT_AVAILABLE || second == TIMESTAMP_MANUAL || second == TIMESTAMP_ESTIMATED
+				|| second == TIMESTAMP_INOPERATIVE) {
+			return null;
+		}
+		if (second < 0 || second > 59) {
+			throw new InvalidAisPositionMessageException("AIS Timestamp is outside its valid range.");
+		}
+		return second;
 	}
 
 	private static Integer optionalInteger(JsonNode object, String field, int unavailableValue) {
-		JsonNode value = object.path(field);
-		if (value.isMissingNode() || value.isNull()) {
-			return null;
-		}
-		if (!value.isIntegralNumber()) {
-			throw new InvalidAisPositionMessageException("AIS " + field + " must be an integer when present.");
-		}
-		int integer = value.asInt();
-		return integer == unavailableValue ? null : integer;
+		Integer integer = optionalInteger(object, field);
+		return integer != null && integer == unavailableValue ? null : integer;
 	}
 
 	private static Boolean optionalBoolean(JsonNode object, String field) {

@@ -15,7 +15,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import com.drift.backend.ais.position.AisPositionParser;
-import com.drift.backend.ais.position.exception.InvalidAisPositionMessageException;
+import com.drift.backend.ais.position.LatestAisPositions;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -33,21 +33,23 @@ public class AisStreamConnectionService {
 	private final AisStreamProperties properties;
 	private final ObjectMapper objectMapper;
 	private final AisPositionParser positionParser;
+	private final LatestAisPositions latestPositions;
 	private final HttpClient httpClient;
 	private final AtomicBoolean firstPositionLogged = new AtomicBoolean();
 
 	private volatile WebSocket webSocket;
 
 	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
-			AisPositionParser positionParser) {
-		this(properties, objectMapper, positionParser, HttpClient.newHttpClient());
+			AisPositionParser positionParser, LatestAisPositions latestPositions) {
+		this(properties, objectMapper, positionParser, latestPositions, HttpClient.newHttpClient());
 	}
 
 	AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
-			AisPositionParser positionParser, HttpClient httpClient) {
+			AisPositionParser positionParser, LatestAisPositions latestPositions, HttpClient httpClient) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
 		this.positionParser = positionParser;
+		this.latestPositions = latestPositions;
 		this.httpClient = httpClient;
 	}
 
@@ -111,18 +113,23 @@ public class AisStreamConnectionService {
 		}
 	}
 
-	private void handleMessage(String payload) {
+	void ingest(String payload) {
 		try {
 			positionParser.parse(payload).ifPresent(position -> {
+				latestPositions.record(position);
 				if (firstPositionLogged.compareAndSet(false, true)) {
 					System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.INFO,
 							"Received the first AIS position report for MMSI " + position.mmsi() + ".");
 				}
 			});
-		} catch (InvalidAisPositionMessageException ex) {
+		} catch (RuntimeException ex) {
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
 					"Ignoring an invalid AIS position report.", ex);
 		}
+	}
+
+	private void handleMessage(String payload) {
+		ingest(payload);
 	}
 
 	private final class AisStreamListener implements WebSocket.Listener {

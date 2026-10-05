@@ -120,6 +120,37 @@ class AisPositionParserTest {
 	}
 
 	@Test
+	void mapsUnavailableTimestampSentinelsToNull() {
+		assertThat(second("60")).isNull();
+		assertThat(second("61")).isNull();
+		assertThat(second("62")).isNull();
+		assertThat(second("63")).isNull();
+		assertThat(second("42")).isEqualTo(42);
+	}
+
+	@Test
+	void rejectsAnIntegerThatDoesNotFitInAnInt() {
+		assertThatThrownBy(() -> parser.parse(positionReportWithMovement("\"TrueHeading\": 2147483648")))
+				.isInstanceOf(InvalidAisPositionMessageException.class)
+				.hasMessage("AIS TrueHeading must be an integer when present.");
+	}
+
+	@Test
+	void rejectsATimestampOutsideTheAisRange() {
+		assertThatThrownBy(() -> parser.parse(positionReportWithMovement("\"Timestamp\": 64")))
+				.isInstanceOf(InvalidAisPositionMessageException.class)
+				.hasMessage("AIS Timestamp is outside its valid range.");
+	}
+
+	private AisPosition secondPosition(String timestamp) {
+		return parser.parse(positionReportWithMovement("\"Timestamp\": " + timestamp)).orElseThrow();
+	}
+
+	private Integer second(String timestamp) {
+		return secondPosition(timestamp).aisUtcSecond();
+	}
+
+	@Test
 	void ignoresMessagesThatAreNotPositionReports() {
 		assertThat(parser.parse("""
 				{"MessageType":"SubscriptionConfirmation","Message":{"CompressionEnabled":true}}
