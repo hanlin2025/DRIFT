@@ -189,4 +189,4 @@ export AIS_NORTHEAST_LATITUDE='your-northeast-latitude'
 export AIS_NORTHEAST_LONGITUDE='your-northeast-longitude'
 ```
 
-The connector subscribes only to `PositionReport` messages. It remains disabled by default and does not persist received messages until the later AIS persistence subtasks are implemented.
+The connector subscribes only to `PositionReport` messages. It remains disabled by default. While the backend is running with AIS enabled, each valid report is kept in memory and can be read by MMSI or vessel name through `LatestAisPositions`. Restarting the backend clears that set. Database persistence is a later AIS subtask.
