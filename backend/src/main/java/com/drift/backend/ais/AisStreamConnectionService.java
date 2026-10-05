@@ -47,7 +47,7 @@ public class AisStreamConnectionService {
 	private final AtomicBoolean firstPositionLogged = new AtomicBoolean();
 	private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
 
-	private volatile WebSocket webSocket;
+	private WebSocket webSocket;
 	private volatile boolean stopping;
 
 	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
@@ -141,13 +141,35 @@ public class AisStreamConnectionService {
 	}
 
 	@PreDestroy
-	void close() {
+	synchronized void close() {
 		stopping = true;
 		reconnects.shutdownNow();
 		WebSocket currentSocket = webSocket;
+		webSocket = null;
 		if (currentSocket != null) {
 			currentSocket.sendClose(WebSocket.NORMAL_CLOSURE, "DRIFT service stopping");
 		}
+	}
+
+	private synchronized boolean adopt(WebSocket socket) {
+		if (stopping) {
+			return false;
+		}
+		webSocket = socket;
+		return true;
+	}
+
+	private synchronized boolean release(WebSocket socket) {
+		if (stopping || webSocket != socket) {
+			return false;
+		}
+		webSocket = null;
+		return true;
+	}
+
+	private static void ignoreObsoleteSocket() {
+		System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.DEBUG,
+				"Ignoring a callback from an AIS stream that is no longer current.");
 	}
 
 	void ingest(String payload) {
@@ -186,7 +208,10 @@ public class AisStreamConnectionService {
 
 		@Override
 		public void onOpen(WebSocket socket) {
-			webSocket = socket;
+			if (!adopt(socket)) {
+				socket.sendClose(WebSocket.NORMAL_CLOSURE, "DRIFT service stopping");
+				return;
+			}
 			socket.sendText(subscriptionPayload(), true).whenComplete((ignored, error) -> {
 				if (error != null) {
 					System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.ERROR,
@@ -211,6 +236,10 @@ public class AisStreamConnectionService {
 
 		@Override
 		public CompletionStage<?> onClose(WebSocket socket, int statusCode, String reason) {
+			if (!release(socket)) {
+				ignoreObsoleteSocket();
+				return CompletableFuture.completedFuture(null);
+			}
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.WARNING,
 					"AIS stream closed with status " + statusCode + ": " + reason);
 			reconnect();
@@ -219,6 +248,10 @@ public class AisStreamConnectionService {
 
 		@Override
 		public void onError(WebSocket socket, Throwable error) {
+			if (!release(socket)) {
+				ignoreObsoleteSocket();
+				return;
+			}
 			System.getLogger(AisStreamConnectionService.class.getName()).log(System.Logger.Level.ERROR,
 					"AIS stream error.", error);
 			reconnect();
