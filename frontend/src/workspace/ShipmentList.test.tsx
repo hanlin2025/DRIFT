@@ -140,8 +140,43 @@ describe('workspace shipment retrieval', () => {
     vi.mocked(listShipments).mockResolvedValue([{ ...newer, transshipmentPort: '  ' }]);
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
     const details = await screen.findByRole('article', { name: 'Shipment HBL-NEWER' });
-    expect(within(details).getByText('Not recorded')).toBeInTheDocument();
+    expect(within(details).getByText('Not recorded')).toHaveClass('is-missing');
     expect(screen.getByText('TRANSSHIPMENT Not recorded')).toBeInTheDocument();
+  });
+
+  it('sends a shipment opened on the other role to that role\'s own address', async () => {
+    openWorkspace('FREIGHT_FORWARDER', '/importer/shipments/2');
+    expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/2');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/freight-forwarder');
+  });
+
+  it('returns an importer from a shipment to the importer overview', async () => {
+    openWorkspace('IMPORTER', '/importer/shipments/2');
+    expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Back' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/importer');
+    expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+  });
+
+  it('retries a shipment page that could not be loaded', async () => {
+    vi.mocked(listShipments)
+      .mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0))
+      .mockResolvedValueOnce([newer]);
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
+    expect(await screen.findByRole('alert')).toHaveTextContent('We could not reach DRIFT. Check your connection and try again.');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledTimes(2);
+  });
+
+  it('ends the session when a shipment page is rejected', async () => {
+    vi.mocked(listShipments).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
   });
 
   it('shows a loading state until the list arrives', async () => {

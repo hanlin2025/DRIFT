@@ -199,24 +199,24 @@ function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
       : shipments === null
         ? <div className="notice">Loading shipment...</div>
         : shipment
-          ? <>
+          ? <section className="shipment-detail">
             <p className="eyebrow">SHIPMENT</p>
             <h2>{shipment.shipmentReference}</h2>
             <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
             <RouteMap shipment={shipment} />
-            <article className="shipment-record" aria-label={`Shipment ${shipment.shipmentReference}`}>
+            <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
               <dl>
-                <div><dt>Origin</dt><dd>{recorded(shipment.origin)}</dd></div>
-                <div><dt>Mother vessel</dt><dd>{recorded(shipment.motherVessel)}</dd></div>
+                <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
+                <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
                 <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
-                <div><dt>Transshipment port</dt><dd>{recorded(shipment.transshipmentPort)}</dd></div>
-                <div><dt>Feeder vessel</dt><dd>{recorded(shipment.feederVessel)}</dd></div>
+                <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
+                <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel)}</dd></div>
                 <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
-                <div><dt>Destination</dt><dd>{recorded(shipment.destination)}</dd></div>
+                <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
                 <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
               </dl>
             </article>
-          </>
+          </section>
           : <div className="error-notice" role="alert">This shipment is not available.</div>}
   </>;
 }
@@ -224,4 +224,8 @@ function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
 function recorded(value: string) {
   const text = value.trim();
   return text || 'Not recorded';
+}
+
+function missing(value: string) {
+  return value.trim() ? undefined : 'is-missing';
 }

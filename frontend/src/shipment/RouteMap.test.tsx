@@ -44,4 +44,11 @@ describe('shipment route display', () => {
     ]);
     expect(screen.getByText('Not placed on the globe: Not A Port')).toBeInTheDocument();
   });
+
+  it('names every unknown place that cannot be drawn', () => {
+    render(<RouteMap shipment={{ ...shipment, origin: 'Not A Port', destination: 'Atlantis' }} />);
+    expect(screen.getByText('Not placed on the globe: Not A Port, Atlantis')).toBeInTheDocument();
+    expect(routeText()[0]).toBe('DEPARTURE Not A Port');
+    expect(routeText()[4]).toBe('DESTINATION Atlantis');
+  });
 });
