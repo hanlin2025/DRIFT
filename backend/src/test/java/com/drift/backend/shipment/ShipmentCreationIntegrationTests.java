@@ -343,6 +343,76 @@ class ShipmentCreationIntegrationTests {
 		mvc.perform(get("/api/shipments/1"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+		mvc.perform(get("/api/shipments/1/tracking"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+	}
+
+	@Test
+	void returnsTheLatestAisFixForEachVesselOnTheShipment() throws Exception {
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "1.264000", "103.820000", "12.4"));
+		latestPositions.record(position("563009999", "MV Strait Runner", "1.250000", "103.700000", "8.1"));
+
+		MvcResult created = create(token, shipment("HBL-TRACK")).andExpect(status().isCreated()).andReturn();
+		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		tracking(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.motherVesselName").value("MV Pacific Horizon"))
+				.andExpect(jsonPath("$.motherVessel.mmsi").value("563001234"))
+				.andExpect(jsonPath("$.motherVessel.vesselName").value("PACIFIC HORIZON"))
+				.andExpect(jsonPath("$.motherVessel.latitude").value(1.264))
+				.andExpect(jsonPath("$.motherVessel.longitude").value(103.82))
+				.andExpect(jsonPath("$.motherVessel.speedOverGroundKnots").value(12.4))
+				.andExpect(jsonPath("$.motherVessel.courseOverGroundDegrees").value(175.0))
+				.andExpect(jsonPath("$.motherVessel.trueHeadingDegrees").value(176))
+				.andExpect(jsonPath("$.motherVessel.ingestedAt").value("2026-10-05T03:00:00Z"))
+				.andExpect(jsonPath("$.feederVesselName").value("MV Strait Runner"))
+				.andExpect(jsonPath("$.feederVessel.mmsi").value("563009999"))
+				.andExpect(jsonPath("$.feederVessel.latitude").value(1.25))
+				.andExpect(jsonPath("$.feederVessel.speedOverGroundKnots").value(8.1));
+	}
+
+	@Test
+	void returnsNullPositionsWhenNoAisReportIsRetained() throws Exception {
+		MvcResult created = create(token, shipment("HBL-TRACK-NONE")).andExpect(status().isCreated()).andReturn();
+		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		tracking(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherVesselName").value("MV Pacific Horizon"))
+				.andExpect(jsonPath("$.motherVessel").value(nullValue()))
+				.andExpect(jsonPath("$.feederVesselName").value("MV Strait Runner"))
+				.andExpect(jsonPath("$.feederVessel").value(nullValue()));
+	}
+
+	@Test
+	void hidesTrackingForAnotherCompanyAndRejectsAnInactiveCompany() throws Exception {
+		String otherEmail = "cdg102-other-" + UUID.randomUUID() + "@example.com";
+		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-TRACK-OTHER")).andExpect(status().isCreated()).andReturn();
+		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		tracking(token, otherShipmentId.toString())
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+		tracking(token, "not-a-number")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+
+		MvcResult own = create(token, shipment("HBL-TRACK-OWN")).andExpect(status().isCreated()).andReturn();
+		Number ownShipmentId = JsonPath.read(own.getResponse().getContentAsString(), "$.id");
+		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", companyId);
+		entityManager.clear();
+		tracking(token, ownShipmentId.toString())
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions tracking(String bearerToken, String shipmentId) throws Exception {
+		return mvc.perform(get("/api/shipments/" + shipmentId + "/tracking")
+				.header("Authorization", "Bearer " + bearerToken));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions detail(String bearerToken, String shipmentId) throws Exception {

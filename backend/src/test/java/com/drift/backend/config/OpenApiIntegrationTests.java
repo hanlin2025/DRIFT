@@ -60,6 +60,16 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].post.responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['401'].content['application/json'].example.message")
-						.value(SessionEndedException.MESSAGE));
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.summary")
+						.value("Get shipment vessel tracking"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.security[0].bearerAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['200'].content['application/json'].schema.$ref")
+						.value("#/components/schemas/ShipmentTrackingResponse"))
+				.andExpect(jsonPath("$.components.schemas.ShipmentTrackingResponse.properties.motherVessel.$ref")
+						.value("#/components/schemas/VesselPosition"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists());
 	}
 }
