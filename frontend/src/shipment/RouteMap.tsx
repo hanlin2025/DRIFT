@@ -86,6 +86,28 @@ function pin(stop: Stop) {
   return root;
 }
 
+type MapLibre = typeof import('maplibre-gl');
+
+type LiveGlobe = {
+  map: InstanceType<MapLibre['Map']>;
+  maplibre: MapLibre;
+  markers: InstanceType<MapLibre['Marker']>[];
+  ports: LngLat[];
+};
+
+function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
+  for (const marker of handle.markers) marker.remove();
+  handle.markers = fixes.map(fix => new handle.maplibre.Marker({ element: livePin(fix), anchor: 'center' })
+    .setLngLat([fix.position.longitude, fix.position.latitude])
+    .addTo(handle.map));
+  const framed = [...handle.ports, ...fixes.map(fix => [fix.position.longitude, fix.position.latitude] as LngLat)];
+  if (framed.length > 1) {
+    const bounds = new handle.maplibre.LngLatBounds(framed[0], framed[0]);
+    for (const point of framed) bounds.extend(point);
+    handle.map.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
+  }
+}
+
 function livePin(fix: LiveFix) {
   const root = document.createElement('div');
   root.className = `globe-pin live ${fix.id}`;
@@ -98,30 +120,35 @@ function livePin(fix: LiveFix) {
 
 export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?: ShipmentTracking | null }) {
   const stage = useRef<HTMLDivElement>(null);
+  const globeRef = useRef<LiveGlobe | null>(null);
+  const fixesRef = useRef<LiveFix[]>([]);
   const stops = stopsFor(shipment);
   const fixes = liveFixes(tracking);
+  fixesRef.current = fixes;
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
 
   useEffect(() => {
     const node = stage.current;
     if (!node) return;
     let disposed = false;
-    let map: { remove: () => void } | undefined;
+    let created: { remove: () => void } | undefined;
     const plotted = stops.filter((stop): stop is Stop & { at: LngLat } => stop.at !== null);
     const line = track(stops);
-    const livePoints = fixes.map(fix => [fix.position.longitude, fix.position.latitude] as LngLat);
+    const ports = plotted.map(stop => stop.at);
 
     void import('maplibre-gl').then(maplibre => {
       if (disposed) return;
       const globe = new maplibre.Map({
         container: node,
         style: 'https://tiles.openfreemap.org/styles/liberty',
-        center: plotted[0]?.at ?? livePoints[0] ?? [103.82, 1.26],
+        center: ports[0] ?? [103.82, 1.26],
         zoom: 1.3,
         attributionControl: { compact: true },
         cooperativeGestures: true,
       });
-      map = globe;
+      created = globe;
+      const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports };
+      globeRef.current = handle;
       globe.on('load', () => {
         if (disposed) return;
         globe.setProjection({ type: 'globe' });
@@ -140,25 +167,22 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
         for (const stop of plotted) {
           new maplibre.Marker({ element: pin(stop), anchor: 'center' }).setLngLat(stop.at).addTo(globe);
         }
-        for (const fix of fixes) {
-          new maplibre.Marker({ element: livePin(fix), anchor: 'center' })
-            .setLngLat([fix.position.longitude, fix.position.latitude])
-            .addTo(globe);
-        }
-        const framed = [...plotted.map(stop => stop.at), ...livePoints];
-        if (framed.length > 1) {
-          const bounds = new maplibre.LngLatBounds(framed[0], framed[0]);
-          for (const point of framed) bounds.extend(point);
-          globe.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
-        }
+        placeLive(handle, fixesRef.current);
       });
     }).catch(() => undefined);
 
     return () => {
       disposed = true;
-      map?.remove();
+      globeRef.current = null;
+      created?.remove();
     };
-  }, [shipment, tracking]);
+  }, [shipment]);
+
+  useEffect(() => {
+    const handle = globeRef.current;
+    if (!handle?.map.loaded()) return;
+    placeLive(handle, fixes);
+  }, [tracking]);
 
   return (
     <figure className="route-chart" aria-label="Planned route">
