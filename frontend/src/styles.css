@@ -164,10 +164,6 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .route-live { list-style: none; margin: 0; padding: 10px 16px 12px; background: #f8f6ed; border-top: 1px solid #c8d9bf; }
 .route-live li { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
 .route-live li + li { margin-top: 4px; }
-.globe-pin.live { z-index: 2; }
-.globe-pin.live .globe-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 5px #214e4044; }
-.globe-pin.live.mother .globe-dot { background: #3d2a6d; transform: translate(-50%, -50%); }
-.globe-pin.live.feeder .globe-dot { background: #1e6b45; transform: translate(-50%, -50%); }
 .globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
@@ -176,6 +172,18 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .globe-pin.mother .globe-dot, .globe-pin.feeder .globe-dot { width: 9px; height: 9px; border-radius: 2px; }
 .globe-pin.mother .globe-dot { background: #c9b6f2; transform: translate(-50%, -50%) rotate(45deg); }
 .globe-pin.feeder .globe-dot { background: #7dcea0; transform: translate(-50%, -50%) rotate(45deg); }
+.globe-pin.live { z-index: 2; pointer-events: auto; }
+.globe-pin.live.mother .globe-dot,
+.globe-pin.live.feeder .globe-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #f8f6ed;
+  box-shadow: 0 0 0 5px #214e4044;
+  transform: translate(-50%, -50%);
+}
+.globe-pin.live.mother .globe-dot { background: #3d2a6d; }
+.globe-pin.live.feeder .globe-dot { background: #1e6b45; }
 .globe-copy { position: absolute; width: 128px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #f8f6ed; text-align: center; color: var(--ink); box-shadow: 0 1px 2px #223e3618; }
 .globe-pin.departure .globe-copy, .globe-pin.transshipment .globe-copy, .globe-pin.destination .globe-copy { bottom: 16px; left: 0; transform: translateX(-50%); }
 .globe-pin.mother .globe-copy { top: 14px; left: 0; transform: translateX(-78%); text-align: right; }

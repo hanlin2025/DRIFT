@@ -106,11 +106,24 @@ describe('connection window on the shipment detail', () => {
       connectionWindow: null,
       motherVesselPosition: null,
     });
+    vi.mocked(getShipmentTracking).mockResolvedValue({
+      motherVesselName: shipment.motherVessel,
+      motherVessel: null,
+      feederVesselName: shipment.feederVessel,
+      feederVessel: null,
+    });
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/importer');
+  });
+
+  it('keeps the detail position on the map when tracking cannot be loaded', async () => {
+    vi.mocked(getShipmentTracking).mockRejectedValue(new ApiError('Shipment not found', 404));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
+    expect(screen.getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
   });
 
   it('reports a missing shipment without a retry', async () => {
