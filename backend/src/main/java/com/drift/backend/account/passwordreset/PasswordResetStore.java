@@ -51,6 +51,19 @@ public class PasswordResetStore {
 		tokens.deleteByTokenId(tokenId);
 	}
 
+	@Transactional
+	public boolean complete(String rawToken, String encodedPassword) {
+		PasswordResetToken token = tokens.findForReset(ResetTokens.hash(rawToken)).orElse(null);
+		Instant now = Instant.now();
+		if (token == null || token.getUsedAt() != null || !token.getExpiresAt().isAfter(now)) {
+			return false;
+		}
+		token.getUser().replacePassword(encodedPassword);
+		token.markUsed(now);
+		tokens.saveAndFlush(token);
+		return true;
+	}
+
 	public record IssuedReset(Long id, Long userId, String rawToken) {
 	}
 }

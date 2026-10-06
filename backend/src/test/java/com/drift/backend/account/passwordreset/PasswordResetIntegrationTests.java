@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.persistence.EntityManager;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +25,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.drift.backend.account.registration.PasswordPolicy;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +41,8 @@ class PasswordResetIntegrationTests {
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
+	@Autowired EntityManager entityManager;
+	@Autowired PasswordEncoder passwords;
 	@Autowired CapturingPasswordResetMailer mailer;
 
 	private String email;
@@ -157,10 +164,120 @@ class PasswordResetIntegrationTests {
 		assertThat(countTokens(email)).isZero();
 	}
 
+	@Test
+	void replacesThePasswordWhenTheLinkIsUnusedAndUnexpired() throws Exception {
+		String token = issuedToken();
+		String password = "NewPass1";
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, password)))
+				.andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ResetPasswordResponse.MESSAGE))
+				.andExpect(jsonPath("$.password").doesNotExist())
+				.andExpect(jsonPath("$.token").doesNotExist());
+
+		String hash = passwordHash();
+		assertThat(passwords.matches(password, hash)).isTrue();
+		assertThat(passwords.matches("hash", hash)).isFalse();
+		assertThat(usedAt()).isNotNull();
+		assertThat(mailer.links).hasSize(1);
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "OtherPass2")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidResetTokenException.MESSAGE))
+				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE));
+		assertThat(passwordHash()).isEqualTo(hash);
+	}
+
+	@Test
+	void rejectsAnExpiredOrUnknownLinkWithoutChangingThePassword() throws Exception {
+		String token = issuedToken();
+		jdbc.update("""
+				UPDATE password_reset_tokens AS t
+				SET expires_at = now() - interval '1 day'
+				FROM users AS u
+				WHERE u.id = t.user_id AND u.email = ?
+				""", email);
+		entityManager.clear();
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidResetTokenException.MESSAGE));
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+
+		String tampered = token.substring(0, token.length() - 1) + (token.endsWith("a") ? "b" : "a");
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(tampered, "NewPass1")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE));
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+	}
+
+	@Test
+	void rejectsAPasswordThatBreaksThePolicyAndKeepsTheLinkUnused() throws Exception {
+		String token = issuedToken();
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "short1A")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.password").value("Password must be at least 8 characters"));
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "Password")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.password").value(PasswordPolicy.MESSAGE));
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void rejectsAMissingOrMalformedReset() throws Exception {
+		String token = issuedToken();
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"password\":\"NewPass1\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.token").value("Reset link is required"));
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"token\":\"%s\"}".formatted(token)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.password").value("Password is required"));
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody("not-a-reset-link", "NewPass1")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE));
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+	}
+
 	private void request(String accountEmail) throws Exception {
 		mvc.perform(post("/api/auth/forgot-password").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"%s\"}".formatted(accountEmail)))
 				.andExpect(status().isOk());
+	}
+
+	private String issuedToken() throws Exception {
+		request(email);
+		return tokenFrom(mailer.links.get(mailer.links.size() - 1));
+	}
+
+	private static String resetBody(String token, String password) {
+		return "{\"token\":\"%s\",\"password\":\"%s\"}".formatted(token, password);
+	}
+
+	private String passwordHash() {
+		return jdbc.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, email);
+	}
+
+	private Instant usedAt() {
+		return jdbc.queryForObject("""
+				SELECT t.used_at FROM password_reset_tokens t
+				JOIN users u ON u.id = t.user_id
+				WHERE u.email = ?
+				""", Instant.class, email);
 	}
 
 	private int countTokens(String accountEmail) {

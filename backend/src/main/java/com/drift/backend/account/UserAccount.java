@@ -72,6 +72,10 @@ public class UserAccount {
 		return passwordHash;
 	}
 
+	public void replacePassword(String passwordHash) {
+		this.passwordHash = passwordHash;
+	}
+
 	public Role getRole() {
 		return role;
 	}
