@@ -89,20 +89,10 @@ function pin(stop: Stop) {
 function livePin(fix: LiveFix) {
   const root = document.createElement('div');
   root.className = `globe-pin live ${fix.id}`;
+  root.title = `${fix.kicker} ${fix.name}. Last updated ${formatWhen(fix.position.ingestedAt)}`;
   const dot = document.createElement('span');
   dot.className = 'globe-dot';
-  const copy = document.createElement('span');
-  copy.className = 'globe-copy';
-  const kicker = document.createElement('span');
-  kicker.className = 'overline';
-  kicker.textContent = fix.kicker;
-  const name = document.createElement('strong');
-  name.textContent = fix.name;
-  const when = document.createElement('span');
-  when.className = 'globe-when';
-  when.textContent = `Last updated ${formatWhen(fix.position.ingestedAt)}`;
-  copy.append(kicker, name, when);
-  root.append(dot, copy);
+  root.append(dot);
   return root;
 }
 
