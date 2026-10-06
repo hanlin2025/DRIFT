@@ -75,7 +75,18 @@ class LatestAisPositionsIntegrationTests {
 
 		positions.clear();
 		assertThat(positions.findByMmsi("368207620")).isEmpty();
-		assertThat(positions.findByVesselName("ever steady")).isEmpty();
+		assertThat(positions.findByVesselName("ever steady").orElseThrow().ingestedAt())
+				.isEqualTo(Instant.parse("2026-10-05T02:00:00Z"));
+	}
+
+	@Test
+	void keepsTheNewestPositionWhenTwoMmsisShareAVesselName() {
+		positions.record(position("563001234", "PACIFIC HORIZON", Instant.parse("2026-10-05T03:00:00Z")));
+		positions.record(position("563009999", "Pacific   Horizon", Instant.parse("2026-10-05T01:00:00Z")));
+
+		AisPosition latest = positions.findByVesselName("pacific horizon").orElseThrow();
+		assertThat(latest.mmsi()).isEqualTo("563001234");
+		assertThat(latest.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
 	}
 
 	private int countObservations(String mmsi) {

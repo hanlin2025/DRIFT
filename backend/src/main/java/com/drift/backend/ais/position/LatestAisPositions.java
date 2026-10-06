@@ -22,7 +22,7 @@ public class LatestAisPositions {
 		AisPosition stored = byMmsi.merge(position.mmsi(), position, (current, incoming) ->
 				incoming.ingestedAt().isBefore(current.ingestedAt()) ? current : incoming);
 		if (stored == position && position.vesselName() != null) {
-			mmsiByVesselName.put(normalize(position.vesselName()), position.mmsi());
+			rememberNewestName(position);
 		}
 	}
 
@@ -37,8 +37,32 @@ public class LatestAisPositions {
 		if (vesselName == null || vesselName.isBlank()) {
 			return Optional.empty();
 		}
-		String mmsi = mmsiByVesselName.get(normalize(vesselName));
-		return mmsi == null ? Optional.empty() : findByMmsi(mmsi);
+		String normalized = normalize(vesselName);
+		String mmsi = mmsiByVesselName.get(normalized);
+		Optional<AisPosition> inMemory = mmsi == null ? Optional.empty() : findByMmsi(mmsi);
+		Optional<AisPosition> stored = observations.findLatestByNormalizedVesselName(normalized)
+				.map(VesselObservation::toAisPosition);
+		if (inMemory.isEmpty()) {
+			return stored;
+		}
+		if (stored.isEmpty() || !inMemory.get().ingestedAt().isBefore(stored.get().ingestedAt())) {
+			return inMemory;
+		}
+		return stored;
+	}
+
+	private void rememberNewestName(AisPosition position) {
+		String normalized = normalize(position.vesselName());
+		mmsiByVesselName.compute(normalized, (name, currentMmsi) -> {
+			if (currentMmsi == null || currentMmsi.equals(position.mmsi())) {
+				return position.mmsi();
+			}
+			AisPosition current = byMmsi.get(currentMmsi);
+			if (current == null || !position.ingestedAt().isBefore(current.ingestedAt())) {
+				return position.mmsi();
+			}
+			return currentMmsi;
+		});
 	}
 
 	public void clear() {

@@ -375,6 +375,30 @@ class ShipmentCreationIntegrationTests {
 	}
 
 	@Test
+	void keepsTheNewerSharedNameAndTheStoredObservationAfterMemoryIsCleared() throws Exception {
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "1.264000", "103.820000", "12.4"));
+		latestPositions.record(new AisPosition("563009999", "Pacific Horizon", new BigDecimal("1.100000"),
+				new BigDecimal("103.100000"), new BigDecimal("4.0"), new BigDecimal("10.0"), 11, 0, true, 1,
+				Instant.parse("2026-10-05T01:00:00Z"), AisPositionSource.AIS_STREAM));
+
+		MvcResult created = create(token, shipment("HBL-TRACK-SHARED")).andExpect(status().isCreated()).andReturn();
+		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+		tracking(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherVessel.mmsi").value("563001234"))
+				.andExpect(jsonPath("$.motherVessel.ingestedAt").value("2026-10-05T03:00:00Z"));
+
+		latestPositions.clear();
+
+		tracking(token, shipmentId.toString())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherVessel.mmsi").value("563001234"))
+				.andExpect(jsonPath("$.motherVessel.latitude").value(1.264))
+				.andExpect(jsonPath("$.motherVessel.ingestedAt").value("2026-10-05T03:00:00Z"));
+	}
+
+	@Test
 	void returnsNullPositionsWhenNoAisReportIsRetained() throws Exception {
 		MvcResult created = create(token, shipment("HBL-TRACK-NONE")).andExpect(status().isCreated()).andReturn();
 		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");

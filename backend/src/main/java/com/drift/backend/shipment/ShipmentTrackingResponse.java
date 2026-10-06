@@ -6,8 +6,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public record ShipmentTrackingResponse(
 		@Schema(example = "MV Pacific Horizon")
 		String motherVesselName,
+		@Schema(description = "Latest retained AIS fix for the mother vessel. Null when no report is retained for that name.",
+				types = { "object", "null" }, implementation = VesselPosition.class)
 		VesselPosition motherVessel,
 		@Schema(example = "MV Strait Runner")
 		String feederVesselName,
+		@Schema(description = "Latest retained AIS fix for the feeder vessel. Null when no report is retained for that name.",
+				types = { "object", "null" }, implementation = VesselPosition.class)
 		VesselPosition feederVessel) {
 }
