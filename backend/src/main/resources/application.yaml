@@ -19,6 +19,14 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail.smtp.connectiontimeout: 3000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 3000
+
 server:
   port: 8080
 
@@ -26,6 +34,10 @@ app:
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: 3600000
+  password-reset:
+    link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
+    ttl: ${PASSWORD_RESET_TTL:1h}
+    from: ${PASSWORD_RESET_FROM:noreply@localhost}
   ais:
     enabled: ${AIS_ENABLED:false}
     stream-uri: wss://stream.aisstream.io/v0/stream
