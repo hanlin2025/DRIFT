@@ -12,7 +12,7 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 			SELECT *
 			FROM vessel_observations
 			WHERE vessel_name IS NOT NULL
-				AND regexp_replace(upper(btrim(vessel_name)), '[[:space:]]+', ' ', 'g') = :normalizedName
+				AND btrim(regexp_replace(upper(vessel_name), '[[:space:]]+', ' ', 'g')) = :normalizedName
 			ORDER BY ingested_at DESC, id DESC
 			LIMIT 1
 			""", nativeQuery = true)

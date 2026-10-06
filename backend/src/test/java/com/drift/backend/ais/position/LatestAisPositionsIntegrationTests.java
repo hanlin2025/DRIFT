@@ -89,6 +89,35 @@ class LatestAisPositionsIntegrationTests {
 		assertThat(latest.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
 	}
 
+	@Test
+	void keepsTheRequestedNameWhenAVesselIsRenamed() {
+		positions.record(position("563001234", "PACIFIC HORIZON", Instant.parse("2026-10-05T01:00:00Z")));
+		positions.record(position("563009999", "Pacific Horizon", Instant.parse("2026-10-05T02:00:00Z")));
+		positions.record(position("563001234", "PACIFIC STAR", Instant.parse("2026-10-05T03:00:00Z")));
+
+		AisPosition horizon = positions.findByVesselName("pacific horizon").orElseThrow();
+		assertThat(horizon.mmsi()).isEqualTo("563009999");
+		assertThat(horizon.vesselName()).isEqualTo("Pacific Horizon");
+		assertThat(horizon.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T02:00:00Z"));
+
+		AisPosition star = positions.findByVesselName("pacific star").orElseThrow();
+		assertThat(star.mmsi()).isEqualTo("563001234");
+		assertThat(star.ingestedAt()).isEqualTo(Instant.parse("2026-10-05T03:00:00Z"));
+	}
+
+	@Test
+	void findsAStoredNameWithBoundaryTabsAfterMemoryIsCleared() {
+		positions.record(position("563001234", "\tPacific\tHorizon\t", Instant.parse("2026-10-05T03:00:00Z")));
+		positions.clear();
+
+		AisPosition latest = positions.findByVesselName("pacific horizon").orElseThrow();
+		assertThat(latest.mmsi()).isEqualTo("563001234");
+		assertThat(latest.vesselName()).isEqualTo("\tPacific\tHorizon\t");
+		assertThat(jdbc.queryForObject("""
+				SELECT indexdef FROM pg_indexes WHERE indexname = 'vessel_observations_vessel_name_latest'
+				""", String.class)).contains("ingested_at DESC", "id DESC");
+	}
+
 	private int countObservations(String mmsi) {
 		return jdbc.queryForObject("SELECT COUNT(*) FROM vessel_observations WHERE mmsi = ?", Integer.class, mmsi);
 	}
