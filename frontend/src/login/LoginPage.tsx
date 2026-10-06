@@ -16,10 +16,18 @@ function expiredState(value: unknown) {
   return typeof value === 'object' && value !== null && 'expired' in value && value.expired === true;
 }
 
+function passwordResetMessage(value: unknown) {
+  if (typeof value === 'object' && value !== null && 'passwordReset' in value && typeof value.passwordReset === 'string') {
+    return value.passwordReset;
+  }
+  return '';
+}
+
 export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { registered, email: invitedEmail } = registrationState(location.state);
+  const passwordReset = passwordResetMessage(location.state);
   const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -76,6 +84,7 @@ export function LoginPage() {
     <h2>Welcome to DRIFT.</h2>
     <p className="intro">Your workspace starts with a shared view.</p>
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
+    {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}
     {error && <div className="error-notice" role="alert">{error}</div>}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
@@ -84,7 +93,10 @@ export function LoginPage() {
         {errors.email && <p className="field-error" id="login-email-error">{errors.email}</p>}
       </div>
       <div className="field">
-        <label htmlFor="login-password">Password</label>
+        <div className="field-label-row">
+          <label htmlFor="login-password">Password</label>
+          <Link to="/forgot-password">Forgot password?</Link>
+        </div>
         <div className="password-input">
           <input id="login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} placeholder="Enter your password" onChange={event => setPassword(event.target.value)} disabled={submitting} aria-invalid={Boolean(errors.password)} aria-describedby={errors.password ? 'login-password-error' : undefined} />
           <button type="button" className="visibility-button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button>

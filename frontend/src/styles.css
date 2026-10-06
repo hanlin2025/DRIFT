@@ -63,6 +63,9 @@ h2 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-si
 .verified-tag { margin-left: auto; font-size: 9px; background: #d6e3ce; border-radius: 20px; padding: 5px 9px; }
 .field { margin-bottom: 17px; }
 label { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 750; margin-bottom: 8px; }
+.field-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.field-label-row label { margin-bottom: 8px; }
+.field-label-row a { margin-bottom: 8px; font-size: 11px; font-weight: 750; text-underline-offset: 3px; }
 .locked-label { color: #7b8379; font-size: 7px; letter-spacing: .8px; font-weight: 500; }
 input { width: 100%; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 12px 13px; color: var(--ink); font-size: 12px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
 input::placeholder { color: #8b948a; }
