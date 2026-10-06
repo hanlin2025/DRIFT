@@ -1,7 +1,33 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteMap } from './RouteMap';
 import type { Shipment, ShipmentTracking } from './api';
+
+const mapCalls = vi.hoisted(() => ({
+  jumpTo: vi.fn(),
+  fitBounds: vi.fn(),
+}));
+
+vi.mock('maplibre-gl', () => ({
+  Map: class Map {
+    on(_event: string, callback: () => void) { callback(); }
+    setProjection() {}
+    addSource() {}
+    addLayer() {}
+    loaded() { return true; }
+    remove() {}
+    jumpTo(options: unknown) { mapCalls.jumpTo(options); }
+    fitBounds(bounds: unknown, options: unknown) { mapCalls.fitBounds(bounds, options); }
+  },
+  Marker: class Marker {
+    setLngLat() { return this; }
+    addTo() { return this; }
+    remove() {}
+  },
+  LngLatBounds: class LngLatBounds {
+    extend() { return this; }
+  },
+}));
 
 const shipment: Shipment = {
   id: 2,
@@ -23,7 +49,28 @@ function routeText() {
   return screen.getAllByRole('listitem').map(item => item.textContent?.replace(/\s+/g, ' ').trim());
 }
 
+const loneTracking: ShipmentTracking = {
+  motherVesselName: 'MV Pacific Horizon',
+  motherVessel: {
+    mmsi: '563001234',
+    vesselName: 'PACIFIC HORIZON',
+    latitude: 1.264,
+    longitude: 103.82,
+    speedOverGroundKnots: 12.4,
+    courseOverGroundDegrees: 175,
+    trueHeadingDegrees: 176,
+    ingestedAt: '2026-10-05T03:00:00Z',
+  },
+  feederVesselName: 'MV Strait Runner',
+  feederVessel: null,
+};
+
 describe('shipment route display', () => {
+  beforeEach(() => {
+    mapCalls.jumpTo.mockClear();
+    mapCalls.fitBounds.mockClear();
+  });
+
   it('lists the stored route in connection order', () => {
     render(<RouteMap shipment={shipment} />);
     expect(routeText()).toEqual([
@@ -48,7 +95,7 @@ describe('shipment route display', () => {
     expect(screen.getByText('Not placed on the globe: Not A Port')).toBeInTheDocument();
   });
 
-  it('places a live vessel on the planned route and shows when the fix was ingested', () => {
+  it('places a live vessel on the planned route and shows when the fix was ingested', async () => {
     const tracking: ShipmentTracking = {
       motherVesselName: 'MV Pacific Horizon',
       motherVessel: {
@@ -74,6 +121,19 @@ describe('shipment route display', () => {
     ]);
     expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
+    await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalled());
+    expect(mapCalls.jumpTo).not.toHaveBeenCalled();
+  });
+
+  it('centers the globe on a single live position when no port can be placed', async () => {
+    render(<RouteMap shipment={{
+      ...shipment,
+      origin: 'Not A Port',
+      destination: 'Atlantis',
+      transshipmentPort: 'Nowhere',
+    }} tracking={loneTracking} />);
+    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
+    expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
 
   it('names every unknown place that cannot be drawn', () => {

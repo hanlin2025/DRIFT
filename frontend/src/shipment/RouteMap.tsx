@@ -105,6 +105,8 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
     const bounds = new handle.maplibre.LngLatBounds(framed[0], framed[0]);
     for (const point of framed) bounds.extend(point);
     handle.map.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
+  } else if (framed.length === 1) {
+    handle.map.jumpTo({ center: framed[0], zoom: 3.4 });
   }
 }
 
