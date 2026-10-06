@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Shipment } from './api';
+import type { Shipment, ShipmentTracking, VesselPosition } from './api';
+import { formatWhen } from './ShipmentForm';
 import { along, arc, locate, type LngLat } from './places';
 
 type Stop = {
@@ -38,6 +39,35 @@ function track(stops: Stop[]): LngLat[] {
   return line;
 }
 
+type LiveFix = {
+  id: 'mother' | 'feeder';
+  kicker: string;
+  name: string;
+  position: VesselPosition;
+};
+
+function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
+  if (!tracking) return [];
+  const fixes: LiveFix[] = [];
+  if (tracking.motherVessel) {
+    fixes.push({
+      id: 'mother',
+      kicker: 'MOTHER LIVE',
+      name: tracking.motherVessel.vesselName?.trim() || tracking.motherVesselName,
+      position: tracking.motherVessel,
+    });
+  }
+  if (tracking.feederVessel) {
+    fixes.push({
+      id: 'feeder',
+      kicker: 'FEEDER LIVE',
+      name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName,
+      position: tracking.feederVessel,
+    });
+  }
+  return fixes;
+}
+
 function pin(stop: Stop) {
   const root = document.createElement('div');
   root.className = `globe-pin ${stop.id}`;
@@ -56,9 +86,30 @@ function pin(stop: Stop) {
   return root;
 }
 
-export function RouteMap({ shipment }: { shipment: Shipment }) {
+function livePin(fix: LiveFix) {
+  const root = document.createElement('div');
+  root.className = `globe-pin live ${fix.id}`;
+  const dot = document.createElement('span');
+  dot.className = 'globe-dot';
+  const copy = document.createElement('span');
+  copy.className = 'globe-copy';
+  const kicker = document.createElement('span');
+  kicker.className = 'overline';
+  kicker.textContent = fix.kicker;
+  const name = document.createElement('strong');
+  name.textContent = fix.name;
+  const when = document.createElement('span');
+  when.className = 'globe-when';
+  when.textContent = `Last updated ${formatWhen(fix.position.ingestedAt)}`;
+  copy.append(kicker, name, when);
+  root.append(dot, copy);
+  return root;
+}
+
+export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?: ShipmentTracking | null }) {
   const stage = useRef<HTMLDivElement>(null);
   const stops = stopsFor(shipment);
+  const fixes = liveFixes(tracking);
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
 
   useEffect(() => {
@@ -68,13 +119,14 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
     let map: { remove: () => void } | undefined;
     const plotted = stops.filter((stop): stop is Stop & { at: LngLat } => stop.at !== null);
     const line = track(stops);
+    const livePoints = fixes.map(fix => [fix.position.longitude, fix.position.latitude] as LngLat);
 
     void import('maplibre-gl').then(maplibre => {
       if (disposed) return;
       const globe = new maplibre.Map({
         container: node,
         style: 'https://tiles.openfreemap.org/styles/liberty',
-        center: plotted[0]?.at ?? [103.82, 1.26],
+        center: plotted[0]?.at ?? livePoints[0] ?? [103.82, 1.26],
         zoom: 1.3,
         attributionControl: { compact: true },
         cooperativeGestures: true,
@@ -98,9 +150,15 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
         for (const stop of plotted) {
           new maplibre.Marker({ element: pin(stop), anchor: 'center' }).setLngLat(stop.at).addTo(globe);
         }
-        if (plotted.length > 1) {
-          const bounds = new maplibre.LngLatBounds(plotted[0].at, plotted[0].at);
-          for (const stop of plotted) bounds.extend(stop.at);
+        for (const fix of fixes) {
+          new maplibre.Marker({ element: livePin(fix), anchor: 'center' })
+            .setLngLat([fix.position.longitude, fix.position.latitude])
+            .addTo(globe);
+        }
+        const framed = [...plotted.map(stop => stop.at), ...livePoints];
+        if (framed.length > 1) {
+          const bounds = new maplibre.LngLatBounds(framed[0], framed[0]);
+          for (const point of framed) bounds.extend(point);
           globe.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
         }
       });
@@ -110,7 +168,7 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
       disposed = true;
       map?.remove();
     };
-  }, [shipment]);
+  }, [shipment, tracking]);
 
   return (
     <figure className="route-chart" aria-label="Planned route">
@@ -118,6 +176,17 @@ export function RouteMap({ shipment }: { shipment: Shipment }) {
       <ol className="sr-only">
         {stops.map(stop => <li key={stop.id}>{stop.kicker} {stop.name}</li>)}
       </ol>
+      {fixes.length > 0 && (
+        <ul className="route-live">
+          {fixes.map(fix => (
+            <li key={fix.id}>
+              {fix.kicker} {fix.name} · {fix.position.latitude}, {fix.position.longitude}
+              {fix.position.speedOverGroundKnots == null ? '' : ` · ${fix.position.speedOverGroundKnots} kn`}
+              {' · '}Last updated {formatWhen(fix.position.ingestedAt)}
+            </li>
+          ))}
+        </ul>
+      )}
       {unmapped.length > 0 && <p className="route-unmapped">Not placed on the globe: {unmapped.join(', ')}</p>}
     </figure>
   );

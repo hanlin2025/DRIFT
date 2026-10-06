@@ -6,10 +6,10 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, listShipments, type Shipment } from './api';
+import { getShipment, getShipmentTracking, listShipments, type Shipment, type ShipmentTracking } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn() }));
+vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -56,11 +56,19 @@ function open(account: Session, path: string) {
   return render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /></MemoryRouter>);
 }
 
+const tracking: ShipmentTracking = {
+  motherVesselName: shipment.motherVessel,
+  motherVessel: shipment.motherVesselPosition,
+  feederVesselName: shipment.feederVessel,
+  feederVessel: shipment.feederVesselPosition,
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(listShipments).mockResolvedValue([shipment]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
+  vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
 });
 
 describe('connection window on the shipment detail', () => {
@@ -74,6 +82,7 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
+    expect(getShipmentTracking).toHaveBeenCalledWith('forwarder-token', '7');
     const record = screen.getByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getAllByText('Singapore')).toHaveLength(2);
     expect(within(record).getByText('Origin')).toBeInTheDocument();
@@ -84,6 +93,8 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
+    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();

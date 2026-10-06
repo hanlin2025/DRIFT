@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { RouteMap } from './RouteMap';
-import type { Shipment } from './api';
+import type { Shipment, ShipmentTracking } from './api';
 
 const shipment: Shipment = {
   id: 2,
@@ -46,6 +46,34 @@ describe('shipment route display', () => {
       'DESTINATION Jakarta, ID',
     ]);
     expect(screen.getByText('Not placed on the globe: Not A Port')).toBeInTheDocument();
+  });
+
+  it('places a live vessel on the planned route and shows when the fix was ingested', () => {
+    const tracking: ShipmentTracking = {
+      motherVesselName: 'MV Pacific Horizon',
+      motherVessel: {
+        mmsi: '563001234',
+        vesselName: 'PACIFIC HORIZON',
+        latitude: 1.264,
+        longitude: 103.82,
+        speedOverGroundKnots: 12.4,
+        courseOverGroundDegrees: 175,
+        trueHeadingDegrees: 176,
+        ingestedAt: '2026-10-05T03:00:00Z',
+      },
+      feederVesselName: 'MV Strait Runner',
+      feederVessel: null,
+    };
+    render(<RouteMap shipment={shipment} tracking={tracking} />);
+    expect(routeText().slice(0, 5)).toEqual([
+      'DEPARTURE Shanghai, CN',
+      'MOTHER MV Pacific Horizon',
+      'TRANSSHIPMENT Singapore',
+      'FEEDER MV Strait Runner',
+      'DESTINATION Jakarta, ID',
+    ]);
+    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
   });
 
   it('names every unknown place that cannot be drawn', () => {

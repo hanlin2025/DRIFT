@@ -50,6 +50,20 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   return shipment;
 }
 
+export type ShipmentTracking = {
+  motherVesselName: string;
+  motherVessel: VesselPosition | null;
+  feederVesselName: string;
+  feederVessel: VesselPosition | null;
+};
+
+export async function getShipmentTracking(token: string, shipmentId: string): Promise<ShipmentTracking> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/tracking`, token);
+  const tracking = asTracking(data);
+  if (!tracking) throw new ApiError(UNEXPECTED, 502);
+  return tracking;
+}
+
 export async function createShipment(token: string, shipment: ShipmentFields): Promise<Shipment> {
   const data = await send('/api/shipments', token, {
     method: 'POST',
@@ -122,6 +136,18 @@ function isVesselPosition(value: unknown): value is VesselPosition {
     && isOptionalFiniteNumber(value.courseOverGroundDegrees)
     && isOptionalFiniteNumber(value.trueHeadingDegrees)
     && typeof value.ingestedAt === 'string';
+}
+
+function asTracking(value: unknown): ShipmentTracking | null {
+  if (!isRecord(value) || typeof value.motherVesselName !== 'string' || typeof value.feederVesselName !== 'string') return null;
+  if (value.motherVessel != null && !isVesselPosition(value.motherVessel)) return null;
+  if (value.feederVessel != null && !isVesselPosition(value.feederVessel)) return null;
+  return {
+    motherVesselName: value.motherVesselName,
+    motherVessel: value.motherVessel ?? null,
+    feederVesselName: value.feederVesselName,
+    feederVessel: value.feederVessel ?? null,
+  };
 }
 
 function asShipment(value: unknown): Shipment | null {
