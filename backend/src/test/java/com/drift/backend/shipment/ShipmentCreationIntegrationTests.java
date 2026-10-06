@@ -91,6 +91,38 @@ class ShipmentCreationIntegrationTests {
 				.containsEntry("feeder_vessel", "MV Strait Runner");
 	}
 
+
+	@Test
+	void persistsInitialUpdateAuditAndManagesTheOptimisticLockVersion() throws Exception {
+		MvcResult result = create(token, shipment("HBL-2026-AUDIT"))
+				.andExpect(status().isCreated())
+				.andReturn();
+		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+		Long shipmentId = responseId.longValue();
+
+		entityManager.clear();
+		Shipment persisted = entityManager.find(Shipment.class, shipmentId);
+		assertThat(persisted.getUpdatedAt()).isEqualTo(persisted.getCreatedAt());
+		assertThat(persisted.getUpdatedBy().getId()).isEqualTo(accountId);
+		assertThat(persisted.getVersion()).isZero();
+
+		Instant updatedAt = persisted.getCreatedAt().plusSeconds(60);
+		persisted.markUpdated(entityManager.getReference(com.drift.backend.account.UserAccount.class, accountId), updatedAt);
+		entityManager.flush();
+		entityManager.clear();
+
+		Shipment updated = entityManager.find(Shipment.class, shipmentId);
+		assertThat(updated.getUpdatedAt()).isEqualTo(updatedAt);
+		assertThat(updated.getUpdatedBy().getId()).isEqualTo(accountId);
+		assertThat(updated.getVersion()).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*)
+				FROM shipments shipment
+				JOIN users updater ON updater.id = shipment.updated_by_user_id
+				WHERE shipment.id = ?
+				""", Integer.class, shipmentId)).isEqualTo(1);
+	}
+
 	@Test
 	void rejectsMissingRequiredFields() throws Exception {
 		create(token, "{}")
