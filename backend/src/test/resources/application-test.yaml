@@ -7,5 +7,9 @@ spring:
 app:
   jwt:
     secret: test-only-jwt-secret-not-used-outside-tests
+  password-reset:
+    rate-limit:
+      email: 1000
+      ip: 1000
   ais:
     enabled: false

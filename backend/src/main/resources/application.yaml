@@ -36,8 +36,12 @@ app:
     expiration-ms: 3600000
   password-reset:
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
-    ttl: ${PASSWORD_RESET_TTL:1h}
+    ttl: ${PASSWORD_RESET_TTL:15m}
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
+    rate-limit:
+      email: ${PASSWORD_RESET_EMAIL_LIMIT:5}
+      ip: ${PASSWORD_RESET_IP_LIMIT:20}
+      window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   ais:
     enabled: ${AIS_ENABLED:false}
     stream-uri: wss://stream.aisstream.io/v0/stream

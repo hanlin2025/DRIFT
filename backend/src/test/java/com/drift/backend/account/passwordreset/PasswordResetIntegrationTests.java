@@ -1,6 +1,7 @@
 package com.drift.backend.account.passwordreset;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -28,9 +29,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.exception.InvalidCredentialsException;
+import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.account.registration.PasswordPolicy;
+import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -81,8 +86,8 @@ class PasswordResetIntegrationTests {
 				JOIN users u ON u.id = t.user_id
 				WHERE u.email = ? AND t.used_at IS NULL
 				""", Instant.class, email);
-		assertThat(expiresAt).isAfter(before.plus(Duration.ofMinutes(59)));
-		assertThat(expiresAt).isBefore(before.plus(Duration.ofMinutes(61)));
+		assertThat(expiresAt).isAfter(before.plus(Duration.ofMinutes(14)));
+		assertThat(expiresAt).isBefore(before.plus(Duration.ofMinutes(16)));
 		assertThat(jdbc.queryForObject("SELECT token_hash = ? FROM password_reset_tokens WHERE token_hash = ?",
 				Boolean.class, token, hash)).isFalse();
 	}
@@ -235,6 +240,41 @@ class PasswordResetIntegrationTests {
 	}
 
 	@Test
+	void aSuccessfulResetEndsSessionsIssuedBeforeIt() throws Exception {
+		jdbc.update("UPDATE users SET password_hash = ? WHERE email = ?", passwords.encode("Example123"), email);
+		entityManager.clear();
+		String first = loginToken("Example123");
+		String second = loginToken("Example123");
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + first))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.email").value(email));
+
+		String token = issuedToken();
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isOk());
+		entityManager.clear();
+		assertThat(jdbc.queryForObject("SELECT password_changed_at FROM users WHERE email = ?", Instant.class, email))
+				.isNotNull();
+
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + first))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+		mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + second))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+
+		String renewed = loginToken("NewPass1");
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + renewed))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.email").value(email));
+		mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content(loginBody(email, "Example123")))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(InvalidCredentialsException.MESSAGE));
+	}
+
+	@Test
 	void rejectsAMissingOrMalformedReset() throws Exception {
 		String token = issuedToken();
 		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
@@ -251,6 +291,18 @@ class PasswordResetIntegrationTests {
 				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE));
 		assertThat(passwordHash()).isEqualTo("hash");
 		assertThat(usedAt()).isNull();
+	}
+
+	private String loginToken(String password) throws Exception {
+		MvcResult result = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content(loginBody(email, password)))
+				.andExpect(status().isOk())
+				.andReturn();
+		return JsonPath.read(result.getResponse().getContentAsString(), "$.token");
+	}
+
+	private static String loginBody(String accountEmail, String password) {
+		return "{\"email\":\"%s\",\"password\":\"%s\"}".formatted(accountEmail, password);
 	}
 
 	private void request(String accountEmail) throws Exception {

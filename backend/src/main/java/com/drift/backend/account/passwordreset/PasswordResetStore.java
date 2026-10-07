@@ -58,7 +58,7 @@ public class PasswordResetStore {
 		if (token == null || token.getUsedAt() != null || !token.getExpiresAt().isAfter(now)) {
 			return false;
 		}
-		token.getUser().replacePassword(encodedPassword);
+		token.getUser().replacePassword(encodedPassword, now);
 		token.markUsed(now);
 		tokens.saveAndFlush(token);
 		return true;

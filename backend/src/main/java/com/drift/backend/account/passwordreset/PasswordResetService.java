@@ -19,26 +19,31 @@ public class PasswordResetService {
 	private final PasswordResetStore store;
 	private final PasswordEncoder passwordEncoder;
 	private final PasswordResetMailer mailer;
+	private final PasswordResetRateLimiter rateLimiter;
 	private final String linkBaseUrl;
 	private final Duration ttl;
 
 	public PasswordResetService(PasswordResetStore store, PasswordEncoder passwordEncoder, PasswordResetMailer mailer,
+			PasswordResetRateLimiter rateLimiter,
 			@Value("${app.password-reset.link-base-url}") String linkBaseUrl,
 			@Value("${app.password-reset.ttl}") Duration ttl) {
 		this.store = store;
 		this.passwordEncoder = passwordEncoder;
 		this.mailer = mailer;
+		this.rateLimiter = rateLimiter;
 		this.linkBaseUrl = linkBaseUrl;
 		this.ttl = ttl;
 	}
 
-	public ForgotPasswordResponse request(ForgotPasswordRequest request) {
+	public ForgotPasswordResponse request(ForgotPasswordRequest request, String clientAddress) {
+		rateLimiter.allowForgotPassword(request.email(), clientAddress);
 		Optional<PasswordResetStore.IssuedReset> issued = store.issue(request.email());
 		issued.ifPresent(token -> deliver(request.email(), token));
 		return ForgotPasswordResponse.generic();
 	}
 
-	public ResetPasswordResponse reset(ResetPasswordRequest request) {
+	public ResetPasswordResponse reset(ResetPasswordRequest request, String clientAddress) {
+		rateLimiter.allowReset(clientAddress);
 		PasswordPolicy.check(request.password());
 		if (!store.complete(request.token(), passwordEncoder.encode(request.password()))) {
 			throw new InvalidResetTokenException();

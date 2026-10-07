@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -28,6 +29,12 @@ public class PasswordResetExceptionHandler {
 	public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
 		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 				.body(body("Password reset information is missing or invalid", Map.of()));
+	}
+
+	@ExceptionHandler(PasswordResetRateLimitException.class)
+	public ResponseEntity<Map<String, Object>> handleRateLimit(PasswordResetRateLimitException ex) {
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).cacheControl(CacheControl.noStore())
+				.body(body(ex.getMessage(), Map.of()));
 	}
 
 	@ExceptionHandler(InvalidResetTokenException.class)

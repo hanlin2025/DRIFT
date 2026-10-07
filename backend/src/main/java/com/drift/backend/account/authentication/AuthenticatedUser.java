@@ -4,5 +4,5 @@ import java.time.Instant;
 
 import com.drift.backend.account.Role;
 
-public record AuthenticatedUser(Long id, String email, Role role, Instant expiresAt) {
+public record AuthenticatedUser(Long id, String email, Role role, Instant expiresAt, int sessionVersion) {
 }

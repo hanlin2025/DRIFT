@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 @RestController
@@ -18,12 +19,24 @@ public class PasswordResetController {
 	}
 
 	@PostMapping("/api/auth/forgot-password")
-	public ResponseEntity<ForgotPasswordResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwordResetService.request(request));
+	public ResponseEntity<ForgotPasswordResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+			HttpServletRequest http) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(passwordResetService.request(request, clientAddress(http)));
 	}
 
 	@PostMapping("/api/auth/reset-password")
-	public ResponseEntity<ResetPasswordResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwordResetService.reset(request));
+	public ResponseEntity<ResetPasswordResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request,
+			HttpServletRequest http) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(passwordResetService.reset(request, clientAddress(http)));
+	}
+
+	static String clientAddress(HttpServletRequest request) {
+		String address = request.getRemoteAddr();
+		if (address == null || address.isBlank()) {
+			return "unknown";
+		}
+		return address;
 	}
 }
