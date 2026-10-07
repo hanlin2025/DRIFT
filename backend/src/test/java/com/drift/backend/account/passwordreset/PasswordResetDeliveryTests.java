@@ -77,6 +77,7 @@ class PasswordResetDeliveryTests {
 	@Test
 	void anOverlappingRequestKeepsTheLaterEmailedLink() throws Exception {
 		CountDownLatch arrived = new CountDownLatch(2);
+		CountDownLatch published = new CountDownLatch(1);
 		AtomicBoolean snapshotted = new AtomicBoolean();
 		List<Map<String, Object>> duringSend = new ArrayList<>();
 		mailer.duringSend = () -> {
@@ -90,7 +91,20 @@ class PasswordResetDeliveryTests {
 				throw new IllegalStateException(ex);
 			}
 			if (snapshotted.compareAndSet(false, true)) {
-				duringSend.addAll(unusedTokens());
+				try {
+					duringSend.addAll(unusedTokens());
+				} finally {
+					published.countDown();
+				}
+			} else {
+				try {
+					if (!published.await(10, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("the unused-token snapshot was not published");
+					}
+				} catch (InterruptedException ex) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(ex);
+				}
 			}
 		};
 
