@@ -10,6 +10,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.drift.backend.account.UserAccount;
+import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.exception.SessionEndedException;
 
 import jakarta.servlet.FilterChain;
@@ -22,9 +24,11 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 	static final String BEARER = "Bearer ";
 
 	private final JwtSessionTokens tokens;
+	private final UserAccountRepository users;
 
-	public SessionAuthenticationFilter(JwtSessionTokens tokens) {
+	public SessionAuthenticationFilter(JwtSessionTokens tokens, UserAccountRepository users) {
 		this.tokens = tokens;
+		this.users = users;
 	}
 
 	@Override
@@ -37,6 +41,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 		}
 		try {
 			AuthenticatedUser user = tokens.parse(header.substring(BEARER.length()).trim());
+			rejectRevoked(user);
 			var authentication = new UsernamePasswordAuthenticationToken(user, null,
 					List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())));
 			SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -44,6 +49,13 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 		} catch (SessionEndedException ex) {
 			SecurityContextHolder.clearContext();
 			unauthorized(response, ex.getMessage());
+		}
+	}
+
+	private void rejectRevoked(AuthenticatedUser user) {
+		UserAccount account = users.findById(user.id()).orElseThrow(SessionEndedException::new);
+		if (user.sessionVersion() != account.getSessionVersion()) {
+			throw new SessionEndedException();
 		}
 	}
 

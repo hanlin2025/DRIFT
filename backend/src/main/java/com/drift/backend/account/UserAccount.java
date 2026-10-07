@@ -44,6 +44,12 @@ public class UserAccount {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	@Column(name = "password_changed_at")
+	private Instant passwordChangedAt;
+
+	@Column(name = "session_version", nullable = false)
+	private int sessionVersion;
+
 	protected UserAccount() {
 	}
 
@@ -72,8 +78,18 @@ public class UserAccount {
 		return passwordHash;
 	}
 
-	public void replacePassword(String passwordHash) {
+	public void replacePassword(String passwordHash, Instant changedAt) {
 		this.passwordHash = passwordHash;
+		this.passwordChangedAt = changedAt;
+		this.sessionVersion++;
+	}
+
+	public Instant getPasswordChangedAt() {
+		return passwordChangedAt;
+	}
+
+	public int getSessionVersion() {
+		return sessionVersion;
 	}
 
 	public Role getRole() {

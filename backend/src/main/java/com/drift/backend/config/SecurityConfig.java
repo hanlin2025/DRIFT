@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.JwtSessionTokens;
 import com.drift.backend.account.authentication.SessionAuthenticationFilter;
 import com.drift.backend.account.exception.SessionEndedException;
@@ -19,8 +20,9 @@ import com.drift.backend.account.exception.SessionEndedException;
 public class SecurityConfig {
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens) throws Exception {
-		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens);
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens,
+			UserAccountRepository users) throws Exception {
+		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens, users);
 		http
 				.csrf(AbstractHttpConfigurer::disable)
 				.httpBasic(AbstractHttpConfigurer::disable)
