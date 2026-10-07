@@ -25,11 +25,11 @@ public class LatestAisPositions {
 		if (stored != position) {
 			return;
 		}
-		if (previous != null && sameName(previous) && position.vesselName() != null
+		if (previous != null && hasName(previous) && hasName(position)
 				&& !normalize(previous.vesselName()).equals(normalize(position.vesselName()))) {
 			mmsiByVesselName.remove(normalize(previous.vesselName()), position.mmsi());
 		}
-		if (position.vesselName() != null) {
+		if (hasName(position)) {
 			rememberNewestName(position);
 		}
 	}
@@ -48,7 +48,8 @@ public class LatestAisPositions {
 		String normalized = normalize(vesselName);
 		Optional<AisPosition> inMemory = indexedPosition(normalized);
 		Optional<AisPosition> stored = observations.findLatestByNormalizedVesselName(normalized)
-				.map(VesselObservation::toAisPosition);
+				.map(VesselObservation::toAisPosition)
+				.filter(position -> !memoryHasCurrentFix(position));
 		if (inMemory.isEmpty()) {
 			return stored;
 		}
@@ -58,13 +59,18 @@ public class LatestAisPositions {
 		return stored;
 	}
 
+	private boolean memoryHasCurrentFix(AisPosition stored) {
+		AisPosition current = byMmsi.get(stored.mmsi());
+		return current != null && !current.ingestedAt().isBefore(stored.ingestedAt());
+	}
+
 	private Optional<AisPosition> indexedPosition(String normalized) {
 		String mmsi = mmsiByVesselName.get(normalized);
 		if (mmsi == null) {
 			return Optional.empty();
 		}
 		AisPosition current = byMmsi.get(mmsi);
-		if (current == null || !reportsName(current, normalized)) {
+		if (current == null || (hasName(current) && !normalize(current.vesselName()).equals(normalized))) {
 			return Optional.empty();
 		}
 		return Optional.of(current);
@@ -85,12 +91,12 @@ public class LatestAisPositions {
 		});
 	}
 
-	private static boolean sameName(AisPosition position) {
+	private static boolean hasName(AisPosition position) {
 		return position.vesselName() != null && !position.vesselName().isBlank();
 	}
 
 	private static boolean reportsName(AisPosition position, String normalized) {
-		return sameName(position) && normalize(position.vesselName()).equals(normalized);
+		return hasName(position) && normalize(position.vesselName()).equals(normalized);
 	}
 
 	public void clear() {
