@@ -14,7 +14,7 @@ vi.mock('maplibre-gl', () => ({
     setProjection() {}
     addSource() {}
     addLayer() {}
-    loaded() { return true; }
+    loaded() { return false; }
     remove() {}
     jumpTo(options: unknown) { mapCalls.jumpTo(options); }
     fitBounds(bounds: unknown, options: unknown) { mapCalls.fitBounds(bounds, options); }
@@ -134,6 +134,14 @@ describe('shipment route display', () => {
     }} tracking={loneTracking} />);
     await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
     expect(mapCalls.fitBounds).not.toHaveBeenCalled();
+  });
+
+  it('places a live marker that arrives after the map has loaded', async () => {
+    const quiet = { ...shipment, origin: 'Not A Port', destination: 'Atlantis', transshipmentPort: 'Nowhere' };
+    const { rerender } = render(<RouteMap shipment={quiet} />);
+    await waitFor(() => expect(mapCalls.jumpTo).not.toHaveBeenCalled());
+    rerender(<RouteMap shipment={quiet} tracking={loneTracking} />);
+    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
   });
 
   it('names every unknown place that cannot be drawn', () => {

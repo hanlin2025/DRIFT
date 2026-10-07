@@ -124,6 +124,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
   const stage = useRef<HTMLDivElement>(null);
   const globeRef = useRef<LiveGlobe | null>(null);
   const fixesRef = useRef<LiveFix[]>([]);
+  const mapReadyRef = useRef(false);
   const stops = stopsFor(shipment);
   const fixes = liveFixes(tracking);
   fixesRef.current = fixes;
@@ -134,6 +135,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
     if (!node) return;
     let disposed = false;
     let created: { remove: () => void } | undefined;
+    mapReadyRef.current = false;
     const plotted = stops.filter((stop): stop is Stop & { at: LngLat } => stop.at !== null);
     const line = track(stops);
     const ports = plotted.map(stop => stop.at);
@@ -153,6 +155,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
       globeRef.current = handle;
       globe.on('load', () => {
         if (disposed) return;
+        mapReadyRef.current = true;
         globe.setProjection({ type: 'globe' });
         if (line.length > 1) {
           globe.addSource('planned-route', {
@@ -175,6 +178,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
 
     return () => {
       disposed = true;
+      mapReadyRef.current = false;
       globeRef.current = null;
       created?.remove();
     };
@@ -182,7 +186,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
 
   useEffect(() => {
     const handle = globeRef.current;
-    if (!handle?.map.loaded()) return;
+    if (!handle || !mapReadyRef.current) return;
     placeLive(handle, fixes);
   }, [tracking]);
 

@@ -119,11 +119,12 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/importer');
   });
 
-  it('keeps the detail position on the map when tracking cannot be loaded', async () => {
+  it('keeps the recorded position in the facts when tracking cannot be loaded', async () => {
     vi.mocked(getShipmentTracking).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(forwarder, '/freight-forwarder/shipments/7');
-    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
-    expect(screen.getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(await screen.findByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(screen.queryByText(/MOTHER LIVE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
   });
 
   it('reports a missing shipment without a retry', async () => {
