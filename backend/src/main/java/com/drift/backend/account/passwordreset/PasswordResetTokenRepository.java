@@ -10,7 +10,7 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
 	@Modifying(flushAutomatically = true)
 	@Query("""
 			delete from PasswordResetToken token
-			where token.user.id = :userId and token.usedAt is null and token.id <> :keepId
+			where token.user.id = :userId and token.usedAt is null and token.id < :keepId
 			""")
 	int deleteOtherUnused(@Param("userId") Long userId, @Param("keepId") Long keepId);
 
