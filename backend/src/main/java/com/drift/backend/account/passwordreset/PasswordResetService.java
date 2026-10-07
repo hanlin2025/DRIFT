@@ -49,10 +49,15 @@ public class PasswordResetService {
 	private void deliver(String email, PasswordResetStore.IssuedReset issued) {
 		try {
 			mailer.sendResetLink(email, ResetTokens.link(linkBaseUrl, issued.rawToken()), ttl);
-			store.deleteOlderUnusedLinks(issued.userId(), issued.id());
 		} catch (RuntimeException ex) {
 			store.discard(issued.id());
 			log.error("Password reset email could not be sent", ex);
+			return;
+		}
+		try {
+			store.deleteOlderUnusedLinks(issued.userId(), issued.id());
+		} catch (RuntimeException ex) {
+			log.error("Older password reset links could not be removed", ex);
 		}
 	}
 }
