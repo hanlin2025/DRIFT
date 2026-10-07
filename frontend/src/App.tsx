@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
+import { ForgotPasswordPage } from './passwordreset/ForgotPasswordPage';
+import { ResetPasswordPage } from './passwordreset/ResetPasswordPage';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
@@ -23,6 +25,8 @@ export function AppRoutes() {
   return <Routes>
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+    <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordPage /></AuthLayout>} />
+    <Route path="/reset-password" element={<AuthLayout><ResetPasswordPage /></AuthLayout>} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/freight-forwarder/shipments/:shipmentId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
