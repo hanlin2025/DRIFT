@@ -7,6 +7,7 @@ import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, listShipments, type Shipment, type ShipmentTracking } from './api';
+import { TRACKING_POLL_MS } from './ShipmentDetail';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
@@ -157,5 +158,31 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/importer/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('importer-token', '7');
+  });
+
+  it('refreshes the vessel position without leaving the detail page', async () => {
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracking)
+      .mockResolvedValueOnce({
+        ...tracking,
+        motherVessel: { ...tracking.motherVessel!, latitude: 2.5 },
+      });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipmentTracking).toHaveBeenCalledTimes(2);
+  });
+
+  it('polls tracking while the detail page stays open', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(getShipmentTracking).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+    expect(getShipmentTracking).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });

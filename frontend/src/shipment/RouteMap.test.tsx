@@ -16,9 +16,11 @@ vi.mock('maplibre-gl', () => ({
     addLayer() {}
     loaded() { return false; }
     remove() {}
+    addControl() {}
     jumpTo(options: unknown) { mapCalls.jumpTo(options); }
     fitBounds(bounds: unknown, options: unknown) { mapCalls.fitBounds(bounds, options); }
   },
+  NavigationControl: class NavigationControl {},
   Marker: class Marker {
     setLngLat() { return this; }
     addTo() { return this; }
@@ -142,6 +144,19 @@ describe('shipment route display', () => {
     await waitFor(() => expect(mapCalls.jumpTo).not.toHaveBeenCalled());
     rerender(<RouteMap shipment={quiet} tracking={loneTracking} />);
     await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
+  });
+
+  it('keeps the framed view when a later tracking update arrives', async () => {
+    const quiet = { ...shipment, origin: 'Not A Port', destination: 'Atlantis', transshipmentPort: 'Nowhere' };
+    const { rerender } = render(<RouteMap shipment={quiet} tracking={loneTracking} />);
+    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledTimes(1));
+    rerender(<RouteMap shipment={quiet} tracking={{
+      ...loneTracking,
+      motherVessel: { ...loneTracking.motherVessel!, latitude: 8.5, longitude: 110 },
+    }} />);
+    await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 8.5, 110/);
+    expect(mapCalls.jumpTo).toHaveBeenCalledTimes(1);
+    expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
 
   it('names every unknown place that cannot be drawn', () => {
