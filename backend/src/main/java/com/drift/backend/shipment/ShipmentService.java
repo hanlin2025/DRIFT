@@ -47,10 +47,14 @@ public class ShipmentService {
 
 	@Transactional(readOnly = true)
 	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
-		Company company = activeCompany(principal);
-		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
-				.map(this::detail)
-				.orElseThrow(ShipmentNotFoundException::new);
+		return detail(visibleShipment(principal, shipmentId));
+	}
+
+	@Transactional(readOnly = true)
+	public ShipmentTrackingResponse tracking(AuthenticatedUser principal, Long shipmentId) {
+		Shipment shipment = visibleShipment(principal, shipmentId);
+		return new ShipmentTrackingResponse(shipment.getMotherVessel(), livePosition(shipment.getMotherVessel()),
+				shipment.getFeederVessel(), livePosition(shipment.getFeederVessel()));
 	}
 
 	@Transactional
@@ -98,6 +102,12 @@ public class ShipmentService {
 
 	private ShipmentResponse respond(Shipment shipment) {
 		return ShipmentResponse.from(shipment, window(shipment));
+	}
+
+	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.orElseThrow(ShipmentNotFoundException::new);
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
