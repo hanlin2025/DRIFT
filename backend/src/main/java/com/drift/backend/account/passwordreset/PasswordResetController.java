@@ -21,4 +21,9 @@ public class PasswordResetController {
 	public ResponseEntity<ForgotPasswordResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwordResetService.request(request));
 	}
+
+	@PostMapping("/api/auth/reset-password")
+	public ResponseEntity<ResetPasswordResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(passwordResetService.reset(request));
+	}
 }

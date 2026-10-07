@@ -10,6 +10,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.drift.backend.account.exception.InvalidRegistrationException;
+
 @RestControllerAdvice(assignableTypes = PasswordResetController.class)
 public class PasswordResetExceptionHandler {
 
@@ -26,6 +28,18 @@ public class PasswordResetExceptionHandler {
 	public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException ex) {
 		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 				.body(body("Password reset information is missing or invalid", Map.of()));
+	}
+
+	@ExceptionHandler(InvalidResetTokenException.class)
+	public ResponseEntity<Map<String, Object>> handleToken(InvalidResetTokenException ex) {
+		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+				.body(body(ex.getMessage(), Map.of("token", ex.getMessage())));
+	}
+
+	@ExceptionHandler(InvalidRegistrationException.class)
+	public ResponseEntity<Map<String, Object>> handlePassword(InvalidRegistrationException ex) {
+		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+				.body(body(ex.getMessage(), Map.of("password", ex.getMessage())));
 	}
 
 	private static Map<String, Object> body(String message, Map<String, String> errors) {
