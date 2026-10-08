@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
@@ -16,11 +17,15 @@ import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
+import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @Service
 public class ShipmentService {
+
+	public static final String REMOVED_MESSAGE = "Shipment removed successfully";
 
 	private static final String REFERENCE_UNIQUE_CONSTRAINT = "shipments_company_reference_key";
 
@@ -40,9 +45,27 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
-		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
+		return shipments.findByCompanyIdAndStatusOrderByCreatedAtDesc(company.getId(), Shipment.ACTIVE).stream()
 				.map(this::respond)
 				.toList();
+	}
+
+	@Transactional
+	public void archive(AuthenticatedUser principal, Long shipmentId) {
+		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		Company company = account.getCompany();
+		if (company == null || !company.isActive()) {
+			throw new ShipmentAccessForbiddenException();
+		}
+		Shipment shipment = shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.orElseThrow(ShipmentNotFoundException::new);
+		if (account.getRole() != Role.ADMIN && account.getRole() != Role.LOGISTICS_MANAGER) {
+			throw new ShipmentArchiveForbiddenException();
+		}
+		if (Shipment.ARCHIVED.equals(shipment.getStatus())) {
+			throw new ShipmentAlreadyArchivedException();
+		}
+		shipment.archive();
 	}
 
 	@Transactional(readOnly = true)

@@ -59,6 +59,12 @@ public class Shipment {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	public static final String ACTIVE = "ACTIVE";
+	public static final String ARCHIVED = "ARCHIVED";
+
+	@Column(nullable = false, length = 16)
+	private String status;
+
 	protected Shipment() {
 	}
 
@@ -76,6 +82,11 @@ public class Shipment {
 		this.feederVessel = feederVessel;
 		this.plannedFeederDepartureAt = plannedFeederDepartureAt;
 		this.createdAt = Instant.now();
+		this.status = ACTIVE;
+	}
+
+	public void archive() {
+		this.status = ARCHIVED;
 	}
 
 	public Long getId() { return id; }
@@ -88,4 +99,5 @@ public class Shipment {
 	public String getFeederVessel() { return feederVessel; }
 	public OffsetDateTime getPlannedFeederDepartureAt() { return plannedFeederDepartureAt; }
 	public Instant getCreatedAt() { return createdAt; }
+	public String getStatus() { return status; }
 }

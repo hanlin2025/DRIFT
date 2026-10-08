@@ -12,10 +12,15 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
+import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
@@ -61,10 +66,34 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler({ ShipmentNotFoundException.class, MethodArgumentTypeMismatchException.class })
+	@ExceptionHandler(ShipmentArchiveForbiddenException.class)
+	public ResponseEntity<Map<String, String>> handleArchiveForbidden(ShipmentArchiveForbiddenException ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(ShipmentNotFoundException.class)
 	public ResponseEntity<Map<String, String>> handleNotFound() {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException exception,
+			HttpServletRequest request) {
+		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
+				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(Map.of("message", InvalidShipmentIdException.MESSAGE));
+		}
+		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
+	}
+
+	@ExceptionHandler(ShipmentAlreadyArchivedException.class)
+	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ShipmentAlreadyArchivedException.MESSAGE));
 	}
 
 	@ExceptionHandler(SessionEndedException.class)
