@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
@@ -21,14 +21,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
   const [attempt, setAttempt] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const requestSeq = useRef(0);
 
   const reloadTracking = useCallback(async () => {
+    const requestId = ++requestSeq.current;
     setRefreshing(true);
     try {
       const found = await getShipmentTracking(token, shipmentId);
+      if (requestId !== requestSeq.current) return;
       setTracking(found);
       setRefreshNote(null);
     } catch (reason: unknown) {
+      if (requestId !== requestSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
         return;
@@ -39,15 +43,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
       }
       setRefreshNote(REFRESH_NOTE);
     } finally {
-      setRefreshing(false);
+      if (requestId === requestSeq.current) setRefreshing(false);
     }
   }, [token, shipmentId, onSessionEnded]);
 
   useEffect(() => {
     let active = true;
+    const requestId = ++requestSeq.current;
     setShipment(null);
     setTracking(null);
     setProblem(null);
+    setRefreshNote(null);
+    setRefreshing(false);
     getShipment(token, shipmentId).then(found => {
       if (active) setShipment(found);
     }).catch((reason: unknown) => {
@@ -63,10 +70,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
       });
     });
     getShipmentTracking(token, shipmentId).then(found => {
-      if (!active) return;
+      if (!active || requestId !== requestSeq.current) return;
       setTracking(found);
     }).catch((reason: unknown) => {
-      if (!active) return;
+      if (!active || requestId !== requestSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
       }
@@ -113,11 +120,11 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
           <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
-          <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
+          <div><dt>Mother vessel position</dt><dd>{formatLive(tracking?.motherVessel ?? shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel)}</dd></div>
-          <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
+          <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking?.feederVessel ?? shipment.feederVesselPosition)}</dd></div>
           <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
           <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
           <div>
