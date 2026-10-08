@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { type Shipment } from '../shipment/api';
-import { formatWhen } from '../shipment/ShipmentForm';
+import { formatWhen, PENDING_ASSIGNMENT } from '../shipment/ShipmentForm';
 
 const columns = ['Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival'] as const;
 
@@ -20,7 +20,7 @@ export function ShipmentList({ shipments, basePath }: { shipments: Shipment[]; b
               <td>{shipment.destination}</td>
               <td>{shipment.transshipmentPort}</td>
               <td>{shipment.motherVessel}</td>
-              <td>{shipment.feederVessel}</td>
+              <td className={shipment.feederVessel ? undefined : 'is-missing'}>{shipment.feederVessel || PENDING_ASSIGNMENT}</td>
               <td><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></td>
             </tr>
           ))}
