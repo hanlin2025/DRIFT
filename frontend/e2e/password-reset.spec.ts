@@ -37,6 +37,20 @@ async function requestReset(page: Page, email: string) {
   await page.getByRole('button', { name: /Send reset link/ }).click();
 }
 
+async function signIn(page: Page, email: string, secret: string) {
+  await page.goto('/login');
+  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(secret);
+  await page.getByRole('button', { name: /Log in/ }).click();
+}
+
+async function expectSignedOut(page: Page) {
+  if (page.url().endsWith('/freight-forwarder')) await page.reload();
+  else await page.goto('/freight-forwarder');
+  await expect(page).toHaveURL('/login');
+  await expect(page.getByRole('alert')).toHaveText('Your session has ended. Log in again.');
+}
+
 async function resetMail(email: string) {
   let subject = '';
   let text = '';
@@ -76,49 +90,56 @@ test('an unregistered email gets the same confirmation and no reset email', asyn
   expect(body.messages ?? []).toHaveLength(0);
 });
 
-test('a reset email sets a new password and ends the previous session', async ({ page, request }) => {
+test('a reset email sets a new password, ends every open session, and cannot be reused', async ({ page, request, browser }) => {
   const email = await registeredAccount(request);
-  await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByRole('button', { name: /Log in/ }).click();
+  await signIn(page, email, password);
   await expect(page).toHaveURL('/freight-forwarder');
+  const other = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  const otherPage = await other.newPage();
+  try {
+    await signIn(otherPage, email, password);
+    await expect(otherPage).toHaveURL('/freight-forwarder');
 
-  await requestReset(page, email);
-  await expect(page.getByRole('status')).toHaveText(sent);
-  const mail = await resetMail(email);
-  expect(mail.subject).toBe('Reset your DRIFT password');
-  expect(mail.text).toContain('15 minutes');
+    await requestReset(page, email);
+    await expect(page.getByRole('status')).toHaveText(sent);
+    const mail = await resetMail(email);
+    expect(mail.subject).toBe('Reset your DRIFT password');
+    expect(mail.text).toContain('15 minutes');
 
-  await page.goto(`/reset-password#token=${mail.token}`);
-  await page.getByLabel('New password').fill('short1A');
-  await page.getByLabel('Confirm password').fill('short1A');
-  await page.getByRole('button', { name: /Reset password/ }).click();
-  await expect(page.getByText('Password must be at least 8 characters')).toBeVisible();
-  await page.getByLabel('New password').fill(replacement);
-  await page.getByLabel('Confirm password').fill(password);
-  await page.getByRole('button', { name: /Reset password/ }).click();
-  await expect(page.getByText('Passwords do not match')).toBeVisible();
-  await page.getByLabel('Confirm password').fill(replacement);
-  await page.getByRole('button', { name: /Reset password/ }).click();
-  await expect(page).toHaveURL('/login');
-  await expect(page.getByRole('status')).toHaveText('Your password has been reset');
+    await page.goto(`/reset-password#token=${mail.token}`);
+    await page.getByLabel('New password').fill('short1A');
+    await page.getByLabel('Confirm password').fill('short1A');
+    await page.getByRole('button', { name: /Reset password/ }).click();
+    await expect(page.getByText('Password must be at least 8 characters')).toBeVisible();
+    await page.getByLabel('New password').fill(replacement);
+    await page.getByLabel('Confirm password').fill(password);
+    await page.getByRole('button', { name: /Reset password/ }).click();
+    await expect(page.getByText('Passwords do not match')).toBeVisible();
+    await page.getByLabel('Confirm password').fill(replacement);
+    await page.getByRole('button', { name: /Reset password/ }).click();
+    await expect(page).toHaveURL('/login');
+    await expect(page.getByRole('status')).toHaveText('Your password has been reset');
 
-  await page.goto('/freight-forwarder');
-  await expect(page).toHaveURL('/login');
-  await expect(page.getByRole('alert')).toHaveText('Your session has ended. Log in again.');
+    await expectSignedOut(page);
+    await expectSignedOut(otherPage);
 
-  await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(replacement);
-  await page.getByRole('button', { name: /Log in/ }).click();
-  await expect(page).toHaveURL('/freight-forwarder');
-  await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page).toHaveURL('/login');
-  await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.getByRole('button', { name: /Log in/ }).click();
-  await expect(page.getByRole('alert')).toHaveText('Invalid email or password.');
+    await page.goto(`/reset-password#token=${mail.token}`);
+    await page.getByLabel('New password').fill('OtherPass1');
+    await page.getByLabel('Confirm password').fill('OtherPass1');
+    await page.getByRole('button', { name: /Reset password/ }).click();
+    await expect(page.getByRole('alert')).toHaveText(invalidLink);
+    await expect(page.getByLabel('New password')).toHaveCount(0);
+
+    await signIn(page, email, replacement);
+    await expect(page).toHaveURL('/freight-forwarder');
+    await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL('/login');
+    await signIn(page, email, password);
+    await expect(page.getByRole('alert')).toHaveText('Invalid email or password.');
+  } finally {
+    await other.close();
+  }
 });
 
 test('an invalid or expired reset link cannot change the password', async ({ page, request }) => {
