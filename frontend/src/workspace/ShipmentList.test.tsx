@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { getShipment, listShipments, type Shipment } from '../shipment/api';
+import { getShipment, getShipmentTracking, listShipments, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), getShipment: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -63,6 +63,15 @@ beforeEach(() => {
     const found = [older, newer].find(row => String(row.id) === id);
     if (!found) throw new ApiError('Shipment not found', 404);
     return found;
+  });
+  vi.mocked(getShipmentTracking).mockImplementation(async (_token, id) => {
+    const found = [older, newer].find(row => String(row.id) === id);
+    return {
+      motherVesselName: found?.motherVessel ?? '',
+      motherVessel: null,
+      feederVesselName: found?.feederVessel ?? '',
+      feederVessel: null,
+    };
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
-import { getShipment, type Shipment, type VesselPosition } from './api';
+import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
 import { formatWhen } from './ShipmentForm';
 
@@ -14,12 +14,14 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
   onSessionEnded: () => void;
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
+  const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
   const [problem, setProblem] = useState<{ message: string; retry: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
     setShipment(null);
+    setTracking(null);
     setProblem(null);
     getShipment(token, shipmentId).then(found => {
       if (active) setShipment(found);
@@ -35,6 +37,15 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         retry: !missing,
       });
     });
+    getShipmentTracking(token, shipmentId).then(found => {
+      if (!active) return;
+      setTracking(found);
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionEnded();
+      }
+    });
     return () => { active = false; };
   }, [token, shipmentId, attempt, onSessionEnded]);
 
@@ -45,18 +56,21 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
         : shipment === null
           ? <div className="notice">Loading shipment...</div>
-          : <ShipmentRecord shipment={shipment} />}
+          : <ShipmentRecord shipment={shipment} tracking={tracking} />}
     </section>
   );
 }
 
-function ShipmentRecord({ shipment }: { shipment: Shipment }) {
+function ShipmentRecord({ shipment, tracking }: {
+  shipment: Shipment;
+  tracking: ShipmentTracking | null;
+}) {
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
       <h2>{shipment.shipmentReference}</h2>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
-      <RouteMap shipment={shipment} />
+      <RouteMap shipment={shipment} tracking={tracking} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>

@@ -92,6 +92,38 @@ public class ShipmentController {
 				.body(shipmentService.get(user, shipmentId));
 	}
 
+	@GetMapping("/api/shipments/{shipmentId}/tracking")
+	@Operation(summary = "Get shipment vessel tracking", description = "Returns the latest retained AIS position for the mother vessel and the feeder vessel "
+			+ "of one shipment belonging to the authenticated user's active company. "
+			+ "Each position includes coordinates, speed, course, heading, and the time it was ingested. "
+			+ "A missing position is null. This is a live fix, not an arrival estimate. "
+			+ "A shipment of another company is reported as not found.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Tracking for the shipment, with a null position where no AIS report is retained", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = ShipmentTrackingResponse.class))),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Log in again."}
+								"""))),
+				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your account must belong to an active company to view shipments"}
+								"""))),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id belongs to the authenticated user's company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))) })
+	public ResponseEntity<ShipmentTrackingResponse> tracking(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable Long shipmentId) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(shipmentService.tracking(user, shipmentId));
+	}
+
 	@PostMapping("/api/shipments")
 	@Operation(summary = "Create a shipment", description = "Creates a shipment for the authenticated user's active company. "
 			+ "Shipment references are unique within that company, ignoring letter case. "
