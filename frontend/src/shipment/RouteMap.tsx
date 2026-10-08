@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Shipment, ShipmentTracking, VesselPosition } from './api';
 import { formatWhen } from './ShipmentForm';
+import { trackingNotice } from './positionNotice';
 import { along, arc, locate, type LngLat } from './places';
 
 type Stop = {
@@ -127,6 +128,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
   const mapReadyRef = useRef(false);
   const stops = stopsFor(shipment);
   const fixes = liveFixes(tracking);
+  const notice = trackingNotice(tracking);
   fixesRef.current = fixes;
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
 
@@ -207,6 +209,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
           ))}
         </ul>
       )}
+      {notice && <p className="route-warning" role="status">{notice}</p>}
       {unmapped.length > 0 && <p className="route-unmapped">Not placed on the globe: {unmapped.join(', ')}</p>}
     </figure>
   );
