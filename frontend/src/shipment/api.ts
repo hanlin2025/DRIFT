@@ -91,6 +91,32 @@ export async function listImporterOrganisations(token: string, query?: string): 
   return organisations as ImporterOrganisation[];
 }
 
+export type ShipmentImportResult = {
+  id: number;
+  imported: number;
+  failed: number;
+  summary: string;
+};
+
+export async function downloadShipmentTemplate(token: string): Promise<Blob> {
+  return sendFile('/api/shipment-imports/template', token);
+}
+
+export async function downloadImportErrors(token: string, importId: number): Promise<Blob> {
+  return sendFile(`/api/shipment-imports/${importId}/errors`, token);
+}
+
+export async function importShipments(token: string, file: File): Promise<ShipmentImportResult> {
+  const body = new FormData();
+  body.append('file', file);
+  const data = await send('/api/shipment-imports', token, { method: 'POST', body });
+  if (!isRecord(data) || typeof data.id !== 'number' || typeof data.imported !== 'number'
+    || typeof data.failed !== 'number' || typeof data.summary !== 'string') {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+  return { id: data.id, imported: data.imported, failed: data.failed, summary: data.summary };
+}
+
 export async function linkShipmentImporter(token: string, shipmentId: string, importerCompanyId: number | null): Promise<Shipment> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/importer`, token, {
     method: 'PUT',
@@ -102,10 +128,28 @@ export async function linkShipmentImporter(token: string, shipmentId: string, im
   return shipment;
 }
 
+async function sendFile(path: string, token: string): Promise<Blob> {
+  const response = await fetchAuthed(path, token);
+  if (!response.ok) throw await errorFrom(response);
+  return response.blob();
+}
+
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
-  let response: Response;
+  const response = await fetchAuthed(path, token, init);
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+    if (response.status === 401) throw new ApiError('Your session has ended. Log in again.', 401);
+    if (!response.headers.get('content-type')?.includes('application/json')) {
+      throw new ApiError(UNEXPECTED, response.status);
+    }
+  }
+  const data: unknown = await response.json();
+  if (!response.ok) throw errorBody(data, response.status);
+  return data;
+}
+
+async function fetchAuthed(path: string, token: string, init: RequestInit = {}): Promise<Response> {
   try {
-    response = await fetch(path, {
+    return await fetch(path, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(15000),
@@ -117,19 +161,22 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
     }
     throw error;
   }
-  if (response.status === 401) throw new ApiError('Your session has ended. Log in again.', 401);
+}
+
+async function errorFrom(response: Response): Promise<ApiError> {
+  if (response.status === 401) return new ApiError('Your session has ended. Log in again.', 401);
   if (!response.headers.get('content-type')?.includes('application/json')) {
-    throw new ApiError(UNEXPECTED, response.status);
+    return new ApiError(UNEXPECTED, response.status);
   }
-  const data: unknown = await response.json();
-  if (!response.ok) {
-    const fields: Record<string, string> = {};
-    if (isRecord(data) && isRecord(data.errors)) {
-      for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
-    }
-    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
+  return errorBody(await response.json(), response.status);
+}
+
+function errorBody(data: unknown, status: number): ApiError {
+  const fields: Record<string, string> = {};
+  if (isRecord(data) && isRecord(data.errors)) {
+    for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
   }
-  return data;
+  return new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', status, fields);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

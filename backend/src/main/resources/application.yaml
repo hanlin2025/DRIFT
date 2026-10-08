@@ -19,6 +19,11 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1MB
+
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}

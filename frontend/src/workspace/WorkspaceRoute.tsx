@@ -6,6 +6,7 @@ import { listShipments, type Shipment } from '../shipment/api';
 import { ImporterLink } from '../shipment/ImporterLink';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
+import { ShipmentImport } from '../shipment/ShipmentImport';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
@@ -57,7 +58,10 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
             <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
-            {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+            {importer ? null : <>
+              <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />
+              <ShipmentImport token={account.token} onSessionEnded={onSessionEnded} onImported={() => setRegistered(value => value + 1)} />
+            </>}
           </>}
       </main>
     </div>
