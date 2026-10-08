@@ -17,6 +17,12 @@ export type VesselPosition = {
   ingestedAt: string;
 };
 
+export type ImporterOrganisation = {
+  id: number;
+  code: string;
+  name: string;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -31,6 +37,7 @@ export type Shipment = {
   connectionWindow: ConnectionWindow | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
+  importerOrganisation?: ImporterOrganisation | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -64,7 +71,7 @@ export async function getShipmentTracking(token: string, shipmentId: string): Pr
   return tracking;
 }
 
-export async function createShipment(token: string, shipment: ShipmentFields): Promise<Shipment> {
+export async function createShipment(token: string, shipment: ShipmentFields & { importerCompanyId?: number }): Promise<Shipment> {
   const data = await send('/api/shipments', token, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -73,6 +80,26 @@ export async function createShipment(token: string, shipment: ShipmentFields): P
   const created = asShipment(data);
   if (!created) throw new ApiError(UNEXPECTED, 502);
   return created;
+}
+
+export async function listImporterOrganisations(token: string, query?: string): Promise<ImporterOrganisation[]> {
+  const path = query ? `/api/importer-organisations?q=${encodeURIComponent(query)}` : '/api/importer-organisations';
+  const data = await send(path, token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  const organisations = data.map(asImporterOrganisation);
+  if (organisations.some(organisation => organisation === null)) throw new ApiError(UNEXPECTED, 502);
+  return organisations as ImporterOrganisation[];
+}
+
+export async function linkShipmentImporter(token: string, shipmentId: string, importerCompanyId: number | null): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/importer`, token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ importerCompanyId }),
+  });
+  const shipment = asShipment(data);
+  if (!shipment) throw new ApiError(UNEXPECTED, 502);
+  return shipment;
 }
 
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
@@ -160,6 +187,11 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
   if (feederVesselPosition != null && !isVesselPosition(feederVesselPosition)) return null;
+  let importerOrganisation: ImporterOrganisation | null = null;
+  if ('importerOrganisation' in value && value.importerOrganisation != null) {
+    importerOrganisation = asImporterOrganisation(value.importerOrganisation);
+    if (!importerOrganisation) return null;
+  }
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -174,5 +206,12 @@ function asShipment(value: unknown): Shipment | null {
     connectionWindow: window ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
+    importerOrganisation,
   };
+}
+
+function asImporterOrganisation(value: unknown): ImporterOrganisation | null {
+  if (!isRecord(value) || !isFiniteNumber(value.id) || typeof value.code !== 'string' || typeof value.name !== 'string') return null;
+  if (!value.code.trim() || !value.name.trim()) return null;
+  return { id: value.id, code: value.code, name: value.name };
 }

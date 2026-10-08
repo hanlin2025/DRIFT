@@ -14,9 +14,9 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 a { color: inherit; }
-button, a, input { -webkit-tap-highlight-color: transparent; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .65; }
 :focus-visible { outline: 3px solid #b78635; outline-offset: 4px; }
@@ -64,11 +64,11 @@ h2 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-si
 .field { margin-bottom: 17px; }
 label { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 750; margin-bottom: 8px; }
 .locked-label { color: #7b8379; font-size: 7px; letter-spacing: .8px; font-weight: 500; }
-input { width: 100%; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 12px 13px; color: var(--ink); font-size: 12px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
+input, select { width: 100%; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 12px 13px; color: var(--ink); font-size: 12px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
 input::placeholder { color: #8b948a; }
-input:focus { outline: none; border-color: #54775f; box-shadow: 0 0 0 3px #54775f15; }
+input:focus, select:focus { outline: none; border-color: #54775f; box-shadow: 0 0 0 3px #54775f15; }
 input[readonly] { background: #eceee7; color: #60705f; border-color: #e0e4da; cursor: default; }
-input[aria-invalid=true] { border-color: var(--error); }
+input[aria-invalid=true], select[aria-invalid=true] { border-color: var(--error); }
 .field-hint { margin: 7px 0 0; color: #7a8376; font-size: 9px; line-height: 1.6; }
 .field-error { color: var(--error); font-size: 10px; line-height: 1.5; margin: 7px 0 0; }
 .password-input { position: relative; }
@@ -111,7 +111,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .form-panel { padding: 24px 18px 10px; }
   .panel-topline { font-size: 7px; letter-spacing: .8px; }
   .form-content { padding-top: 32px; }
-  input { font-size: 16px; }
+  input, select { font-size: 16px; }
   .company-card { padding: 13px; }
   .company-card strong { font-size: 11px; }
   .form-footer { padding-top: 12px; }

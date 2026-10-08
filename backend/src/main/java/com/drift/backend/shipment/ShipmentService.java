@@ -1,22 +1,27 @@
 package com.drift.backend.shipment;
 
 import java.util.List;
+import java.util.Locale;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
+import com.drift.backend.company.CompanyRepository;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.InvalidImporterOrganisationException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @Service
@@ -26,13 +31,15 @@ public class ShipmentService {
 
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
+	private final CompanyRepository companies;
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
+	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions) {
 		this.shipments = shipments;
 		this.users = users;
+		this.companies = companies;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 	}
@@ -40,7 +47,7 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
-		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
+		return shipments.findVisibleToCompany(company.getId()).stream()
 				.map(this::respond)
 				.toList();
 	}
@@ -68,6 +75,9 @@ public class ShipmentService {
 		if (company == null || !company.isActive()) {
 			throw new ShipmentCreationForbiddenException();
 		}
+		if (request.importerCompanyId() != null && creator.getRole() != Role.FREIGHT_FORWARDER) {
+			throw new ShipmentLinkForbiddenException();
+		}
 
 		String shipmentReference = request.shipmentReference().strip();
 		if (shipments.existsByCompanyIdAndShipmentReferenceIgnoreCase(company.getId(), shipmentReference)) {
@@ -78,6 +88,7 @@ public class ShipmentService {
 				request.destination().strip(), request.transshipmentPort().strip(), request.motherVessel().strip(),
 				request.plannedMotherArrivalAt(),
 				request.feederVessel().strip(), request.plannedFeederDepartureAt());
+		shipment.linkImporter(importerOrganisation(company, request.importerCompanyId()));
 		try {
 			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {
@@ -100,13 +111,50 @@ public class ShipmentService {
 		return false;
 	}
 
+	@Transactional(readOnly = true)
+	public List<ImporterOrganisation> importerOrganisations(AuthenticatedUser principal, String query) {
+		Company company = activeCompany(principal);
+		String nameQuery = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+		return companies.findByActiveTrueAndIdNotOrderByNameAsc(company.getId()).stream()
+				.filter(candidate -> nameQuery.isEmpty() || candidate.getName().toLowerCase(Locale.ROOT).contains(nameQuery))
+				.map(ImporterOrganisation::of)
+				.toList();
+	}
+
+	@Transactional
+	public ShipmentDetailResponse linkImporter(AuthenticatedUser principal, Long shipmentId, Long importerCompanyId) {
+		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		if (account.getRole() != Role.FREIGHT_FORWARDER) {
+			throw new ShipmentLinkForbiddenException();
+		}
+		Company company = account.getCompany();
+		if (company == null || !company.isActive()) {
+			throw new ShipmentAccessForbiddenException();
+		}
+		Shipment shipment = shipments.findByIdAndCompanyId(shipmentId, company.getId()).orElseThrow(() ->
+				shipments.existsById(shipmentId) ? new ShipmentLinkForbiddenException() : new ShipmentNotFoundException());
+		shipment.linkImporter(importerOrganisation(company, importerCompanyId));
+		return detail(shipment);
+	}
+
+	private Company importerOrganisation(Company owner, Long importerCompanyId) {
+		if (importerCompanyId == null) {
+			return null;
+		}
+		Company importer = companies.findById(importerCompanyId).orElse(null);
+		if (importer == null || !importer.isActive() || importer.getId().equals(owner.getId())) {
+			throw new InvalidImporterOrganisationException();
+		}
+		return importer;
+	}
+
 	private ShipmentResponse respond(Shipment shipment) {
 		return ShipmentResponse.from(shipment, window(shipment));
 	}
 
 	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
-		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+		return shipments.findVisibleByIdAndCompanyId(shipmentId, company.getId())
 				.orElseThrow(ShipmentNotFoundException::new);
 	}
 

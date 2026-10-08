@@ -17,6 +17,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 @RestControllerAdvice(assignableTypes = ShipmentController.class)
@@ -46,6 +47,12 @@ public class ShipmentExceptionHandler {
 	@ExceptionHandler(DuplicateShipmentReferenceException.class)
 	public ResponseEntity<Map<String, String>> handleDuplicate(DuplicateShipmentReferenceException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(ShipmentLinkForbiddenException.class)
+	public ResponseEntity<Map<String, String>> handleLinkForbidden(ShipmentLinkForbiddenException ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}
 

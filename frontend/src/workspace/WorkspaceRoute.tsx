@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
+import { ImporterLink } from '../shipment/ImporterLink';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
@@ -34,7 +35,10 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
       </header>
       <main className="workspace-main">
         {shipmentId
-          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
+          ? <>
+            <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
+            <ImporterLink token={account.token} shipmentId={shipmentId} role={account.role} onSessionEnded={onSessionEnded} />
+          </>
           : <>
             <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
             <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>

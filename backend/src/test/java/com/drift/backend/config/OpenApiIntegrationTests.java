@@ -33,7 +33,7 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.description")
-						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is reported as not found."))
+						.value("Returns one shipment visible to the authenticated user's active company. A shipment is visible when that company owns it, or when the shipment is linked to that company as the importer organisation. The response includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment the company cannot see is reported as not found."))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404']").exists())
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))

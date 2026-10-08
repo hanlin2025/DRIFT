@@ -28,6 +28,10 @@ public class Shipment {
 	@JoinColumn(name = "company_id", nullable = false)
 	private Company company;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "importer_company_id")
+	private Company importerCompany;
+
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "created_by_user_id", nullable = false)
 	private UserAccount createdBy;
@@ -78,7 +82,12 @@ public class Shipment {
 		this.createdAt = Instant.now();
 	}
 
+	public void linkImporter(Company importerCompany) {
+		this.importerCompany = importerCompany;
+	}
+
 	public Long getId() { return id; }
+	public Company getImporterCompany() { return importerCompany; }
 	public String getShipmentReference() { return shipmentReference; }
 	public String getOrigin() { return origin; }
 	public String getDestination() { return destination; }

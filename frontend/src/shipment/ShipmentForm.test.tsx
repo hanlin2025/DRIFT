@@ -6,10 +6,17 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { createShipment, listShipments, type Shipment } from './api';
+import { createShipment, listImporterOrganisations, listShipments, type Shipment } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn() }));
+vi.mock('./api', () => ({
+  createShipment: vi.fn(),
+  listShipments: vi.fn(),
+  listImporterOrganisations: vi.fn(),
+  linkShipmentImporter: vi.fn(),
+  getShipment: vi.fn(),
+  getShipmentTracking: vi.fn(),
+}));
 
 const forwarder: Session = {
   token: 'session-token',
@@ -33,6 +40,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...forwarder, token }));
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listImporterOrganisations).mockResolvedValue([]);
   vi.mocked(createShipment).mockImplementation(async (_token, shipment) => ({
     id: 9,
     createdAt: '2026-09-29T04:00:00Z',
@@ -189,5 +197,43 @@ describe('shipment registration', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(screen.getByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
     expect(sessionStorage.getItem('drift.session')).toBeNull();
+  });
+
+  it('links the shipment to the selected importer organisation', async () => {
+    vi.mocked(listImporterOrganisations).mockResolvedValue([
+      { id: 2, code: 'STRAITS_FRESH_DEMO', name: 'Straits Fresh Imports (Demo)' },
+    ]);
+    vi.mocked(createShipment).mockImplementation(async (_token, shipment) => ({
+      id: 9,
+      createdAt: '2026-09-29T04:00:00Z',
+      shipmentReference: shipment.shipmentReference,
+      origin: shipment.origin,
+      destination: shipment.destination,
+      transshipmentPort: shipment.transshipmentPort,
+      motherVessel: shipment.motherVessel,
+      plannedMotherArrivalAt: shipment.plannedMotherArrivalAt,
+      feederVessel: shipment.feederVessel,
+      plannedFeederDepartureAt: shipment.plannedFeederDepartureAt,
+      connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
+      motherVesselPosition: null,
+      feederVesselPosition: null,
+      importerOrganisation: { id: 2, code: 'STRAITS_FRESH_DEMO', name: 'Straits Fresh Imports (Demo)' },
+    }));
+    await openPortfolio();
+    const user = await fillItinerary();
+    expect(await screen.findByRole('option', { name: 'Straits Fresh Imports (Demo)' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Importer organisation'), 'Straits Fresh Imports (Demo)');
+    await user.click(screen.getByRole('button', { name: /Register shipment/ }));
+    expect(await screen.findByText('Shipment linked to Straits Fresh Imports (Demo).')).toBeInTheDocument();
+    expect(createShipment).toHaveBeenCalledWith('session-token', expect.objectContaining({ importerCompanyId: 2 }));
+  });
+
+  it('hides shipment registration, including the importer link, from an importer', async () => {
+    writeSession(importer);
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...importer, token }));
+    render(<MemoryRouter initialEntries={['/importer']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Importer organisation')).not.toBeInTheDocument();
+    expect(listImporterOrganisations).not.toHaveBeenCalled();
   });
 });

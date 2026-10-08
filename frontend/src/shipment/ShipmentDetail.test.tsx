@@ -6,10 +6,17 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments, type Shipment, type ShipmentTracking } from './api';
+import { getShipment, getShipmentTracking, listImporterOrganisations, listShipments, type Shipment, type ShipmentTracking } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('./api', () => ({
+  createShipment: vi.fn(),
+  listShipments: vi.fn(),
+  getShipment: vi.fn(),
+  getShipmentTracking: vi.fn(),
+  listImporterOrganisations: vi.fn(),
+  linkShipmentImporter: vi.fn(),
+}));
 
 const importer: Session = {
   token: 'importer-token',
@@ -67,6 +74,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(listShipments).mockResolvedValue([shipment]);
+  vi.mocked(listImporterOrganisations).mockResolvedValue([]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
 });

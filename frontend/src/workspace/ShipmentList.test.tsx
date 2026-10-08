@@ -5,13 +5,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { getShipment, getShipmentTracking, listShipments, type Shipment } from '../shipment/api';
+import { getShipment, getShipmentTracking, listImporterOrganisations, listShipments, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({
+  listShipments: vi.fn(),
+  createShipment: vi.fn(),
+  getShipment: vi.fn(),
+  getShipmentTracking: vi.fn(),
+  listImporterOrganisations: vi.fn(),
+  linkShipmentImporter: vi.fn(),
+}));
 
 const newer: Shipment = {
   id: 2,
@@ -59,6 +66,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...account('FREIGHT_FORWARDER'), token }));
   vi.mocked(listShipments).mockResolvedValue([newer, older]);
+  vi.mocked(listImporterOrganisations).mockResolvedValue([]);
   vi.mocked(getShipment).mockImplementation(async (_token, id) => {
     const found = [older, newer].find(row => String(row.id) === id);
     if (!found) throw new ApiError('Shipment not found', 404);
@@ -201,7 +209,7 @@ describe('workspace shipment retrieval', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('We could not reach DRIFT. Check your connection and try again.');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
-    expect(getShipment).toHaveBeenCalledTimes(2);
+    expect(getShipment).toHaveBeenCalledTimes(3);
   });
 
   it('ends the session when a shipment page is rejected', async () => {

@@ -17,7 +17,10 @@ public record ShipmentResponse(
 		OffsetDateTime plannedFeederDepartureAt,
 		Instant createdAt,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
-		ConnectionWindow connectionWindow) {
+		ConnectionWindow connectionWindow,
+		@Schema(description = "Importer organisation allowed to follow this shipment. Null when the shipment is not linked.",
+				types = { "object", "null" }, implementation = ImporterOrganisation.class)
+		ImporterOrganisation importerOrganisation) {
 
 	static ShipmentResponse from(Shipment shipment) {
 		return from(shipment, null);
@@ -28,6 +31,6 @@ public record ShipmentResponse(
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
-				connectionWindow);
+				connectionWindow, ImporterOrganisation.of(shipment.getImporterCompany()));
 	}
 }

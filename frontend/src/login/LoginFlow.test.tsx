@@ -7,10 +7,17 @@ import { AppRoutes } from '../App';
 import { ApiError } from '../signup/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { loadSession, login } from './api';
-import { listShipments } from '../shipment/api';
+import { listImporterOrganisations, listShipments } from '../shipment/api';
 
 vi.mock('./api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn() }));
+vi.mock('../shipment/api', () => ({
+  listShipments: vi.fn(),
+  createShipment: vi.fn(),
+  listImporterOrganisations: vi.fn(),
+  linkShipmentImporter: vi.fn(),
+  getShipment: vi.fn(),
+  getShipmentTracking: vi.fn(),
+}));
 
 const session: Session = {
   token: 'session-token',
@@ -30,6 +37,7 @@ beforeEach(() => {
   vi.mocked(login).mockResolvedValue(session);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...session, token }));
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listImporterOrganisations).mockResolvedValue([]);
 });
 
 describe('login and role routing', () => {

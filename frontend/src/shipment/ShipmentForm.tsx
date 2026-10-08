@@ -1,6 +1,6 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../signup/api';
-import { createShipment, type Shipment } from './api';
+import { createShipment, listImporterOrganisations, type ImporterOrganisation, type Shipment } from './api';
 import { toOffsetDateTime, validateShipment, type ShipmentErrors, type ShipmentFields } from './validation';
 
 const emptyFields: ShipmentFields = {
@@ -27,7 +27,20 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
   const [problem, setProblem] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<Shipment | null>(null);
+  const [organisations, setOrganisations] = useState<ImporterOrganisation[]>([]);
+  const [importerCompanyId, setImporterCompanyId] = useState('');
   const busy = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    listImporterOrganisations(token).then(found => {
+      if (active) setOrganisations(found);
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
+    });
+    return () => { active = false; };
+  }, [token, onSessionEnded]);
 
   function change(field: keyof ShipmentFields, value: string) {
     const next = { ...fields, [field]: value };
@@ -78,8 +91,10 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
         plannedMotherArrivalAt: toOffsetDateTime(fields.plannedMotherArrivalAt),
         feederVessel: fields.feederVessel.trim(),
         plannedFeederDepartureAt: toOffsetDateTime(fields.plannedFeederDepartureAt),
+        ...(importerCompanyId ? { importerCompanyId: Number(importerCompanyId) } : {}),
       });
       setFields(emptyFields);
+      setImporterCompanyId('');
       setErrors({});
       setCreated(shipment);
       onRegistered?.(shipment);
@@ -122,6 +137,14 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
           <TimeField id="mother-arrival" name="plannedMotherArrivalAt" label="Planned mother-vessel arrival" hint="When the mother vessel is planned to arrive for the connection." value={fields.plannedMotherArrivalAt} error={errors.plannedMotherArrivalAt} disabled={submitting} onChange={change} onBlur={blur} />
           <TimeField id="feeder-departure" name="plannedFeederDepartureAt" label="Planned feeder-vessel departure" hint="Must be after the mother vessel arrives." value={fields.plannedFeederDepartureAt} error={errors.plannedFeederDepartureAt} disabled={submitting} onChange={change} onBlur={blur} />
         </div>
+        <div className="field">
+          <label htmlFor="importer-organisation">Importer organisation</label>
+          <select id="importer-organisation" name="importerCompanyId" value={importerCompanyId} disabled={submitting} onChange={event => setImporterCompanyId(event.target.value)}>
+            <option value="">No importer</option>
+            {organisations.map(organisation => <option key={organisation.id} value={organisation.id}>{organisation.name}</option>)}
+          </select>
+          <p className="field-hint" id="importer-organisation-hint">Optional. The importer organisation that should see this shipment.</p>
+        </div>
         <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Registering shipment...' : 'Register shipment'}<span aria-hidden="true">&#8594;</span></button>
         <p className="membership-note">{companyName ? `This shipment is registered for ${companyName}.` : 'This shipment is registered for your company.'}</p>
       </form>
@@ -134,6 +157,7 @@ function RegisteredShipment({ shipment }: { shipment: Shipment }) {
     <article className="shipment-record" role="status" aria-label={`Registered shipment ${shipment.shipmentReference}`}>
       <span className="overline">REGISTERED</span>
       <strong>{shipment.shipmentReference}</strong>
+      {shipment.importerOrganisation ? <p className="shipment-route">Shipment linked to {shipment.importerOrganisation.name}.</p> : null}
       <p className="shipment-route">{shipment.origin} to {shipment.destination}</p>
       <dl>
         <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>

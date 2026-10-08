@@ -38,7 +38,8 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments")
-	@Operation(summary = "List shipments", description = "Lists the shipments of the authenticated user's active company, newest first. "
+	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
+			+ "A shipment is visible when that company owns it, or when the shipment is linked to that company as the importer organisation. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -62,10 +63,11 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company, "
-			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
+	@Operation(summary = "Get a shipment", description = "Returns one shipment visible to the authenticated user's active company. "
+			+ "A shipment is visible when that company owns it, or when the shipment is linked to that company as the importer organisation. "
+			+ "The response includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
 			+ "and the latest retained AIS position for each vessel name. "
-			+ "A shipment of another company is reported as not found.",
+			+ "A shipment the company cannot see is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipment found", content = @Content(
@@ -94,10 +96,11 @@ public class ShipmentController {
 
 	@GetMapping("/api/shipments/{shipmentId}/tracking")
 	@Operation(summary = "Get shipment vessel tracking", description = "Returns the latest retained AIS position for the mother vessel and the feeder vessel "
-			+ "of one shipment belonging to the authenticated user's active company. "
+			+ "of one shipment visible to the authenticated user's active company. "
+			+ "A shipment is visible when that company owns it, or when the shipment is linked to that company as the importer organisation. "
 			+ "Each position includes coordinates, speed, course, heading, and the time it was ingested. "
 			+ "A missing position is null. This is a live fix, not an arrival estimate. "
-			+ "A shipment of another company is reported as not found.",
+			+ "A shipment the company cannot see is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Tracking for the shipment, with a null position where no AIS report is retained", content = @Content(
@@ -127,6 +130,7 @@ public class ShipmentController {
 	@PostMapping("/api/shipments")
 	@Operation(summary = "Create a shipment", description = "Creates a shipment for the authenticated user's active company. "
 			+ "Shipment references are unique within that company, ignoring letter case. "
+			+ "An optional importer organisation links the shipment so that organisation can follow it. Only a freight forwarder can set that link. "
 			+ "The response includes the planned connection window, calculated from the stored mother-vessel arrival and feeder-vessel departure.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
