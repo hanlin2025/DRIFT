@@ -9,7 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
-	List<Shipment> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
+	List<Shipment> findByCompanyIdAndStatusOrderByCreatedAtDesc(Long companyId, String status);
 
 	Optional<Shipment> findByIdAndCompanyId(Long id, Long companyId);
 
