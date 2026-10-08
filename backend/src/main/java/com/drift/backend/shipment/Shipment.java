@@ -15,6 +15,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "shipments")
@@ -31,6 +32,10 @@ public class Shipment {
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "created_by_user_id", nullable = false)
 	private UserAccount createdBy;
+
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "updated_by_user_id", nullable = false)
+	private UserAccount updatedBy;
 
 	@Column(name = "shipment_reference", nullable = false, length = 100)
 	private String shipmentReference;
@@ -59,6 +64,13 @@ public class Shipment {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	@Column(name = "updated_at", nullable = false)
+	private Instant updatedAt;
+
+	@Version
+	@Column(nullable = false)
+	private Long version;
+
 	protected Shipment() {
 	}
 
@@ -67,6 +79,7 @@ public class Shipment {
 			String feederVessel, OffsetDateTime plannedFeederDepartureAt) {
 		this.company = company;
 		this.createdBy = createdBy;
+		this.updatedBy = createdBy;
 		this.shipmentReference = shipmentReference;
 		this.origin = origin;
 		this.destination = destination;
@@ -75,7 +88,14 @@ public class Shipment {
 		this.plannedMotherArrivalAt = plannedMotherArrivalAt;
 		this.feederVessel = feederVessel;
 		this.plannedFeederDepartureAt = plannedFeederDepartureAt;
-		this.createdAt = Instant.now();
+		Instant now = Instant.now();
+		this.createdAt = now;
+		this.updatedAt = now;
+	}
+
+	void markUpdated(UserAccount updatedBy, Instant updatedAt) {
+		this.updatedBy = updatedBy;
+		this.updatedAt = updatedAt;
 	}
 
 	public Long getId() { return id; }
@@ -88,4 +108,7 @@ public class Shipment {
 	public String getFeederVessel() { return feederVessel; }
 	public OffsetDateTime getPlannedFeederDepartureAt() { return plannedFeederDepartureAt; }
 	public Instant getCreatedAt() { return createdAt; }
+	public Instant getUpdatedAt() { return updatedAt; }
+	public UserAccount getUpdatedBy() { return updatedBy; }
+	public Long getVersion() { return version; }
 }
