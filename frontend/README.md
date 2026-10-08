@@ -52,15 +52,17 @@ The reference in that table opens `/importer/shipments/:id` or `/freight-forward
 
 ## Browser tests
 
-With the backend running on port 8080 against the default `drift` database:
+With the backend running on port 8080 against the default `drift` database, and Mailpit
+on port 8025 (`docker compose up -d postgres mailpit`):
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-That command covers desktop and mobile signup, login, role routing, validation, signed-out
-redirects, session expiry, and invitation reuse against the real API. It does not run the
+That command covers desktop and mobile signup, login, password reset, role routing,
+validation, signed-out redirects, session expiry, and invitation reuse against the real API.
+It does not run the
 shipment retrieval spec below. Set `DRIFT_E2E_DATABASE` only when the backend uses that same
 database.
 
