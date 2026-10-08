@@ -64,9 +64,12 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         return;
       }
       const missing = reason instanceof ApiError && reason.status === 404;
+      const forbidden = reason instanceof ApiError && reason.status === 403;
       setProblem({
-        message: missing ? 'This shipment is not available.' : reason instanceof Error ? reason.message : UNREACHABLE,
-        retry: !missing,
+        message: forbidden
+          ? reason.message
+          : missing ? 'This shipment is not available.' : reason instanceof Error ? reason.message : UNREACHABLE,
+        retry: !missing && !forbidden,
       });
     });
     getShipmentTracking(token, shipmentId).then(found => {
@@ -76,6 +79,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
       if (!active || requestId !== requestSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
+        return;
+      }
+      if (reason instanceof ApiError && reason.status === 403) {
+        setProblem({ message: reason.message, retry: false });
       }
     });
     return () => { active = false; };
