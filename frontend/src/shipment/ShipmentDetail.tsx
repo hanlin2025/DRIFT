@@ -90,9 +90,11 @@ function ShipmentRecord({ shipment, tracking, onEdit }: {
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
-      <h2>{shipment.shipmentReference}</h2>
+      <div className="shipment-title">
+        <h2>{shipment.shipmentReference}</h2>
+        <div className="detail-actions"><button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button></div>
+      </div>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
-      <div className="detail-actions"><button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button></div>
       <RouteMap shipment={shipment} tracking={tracking} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
