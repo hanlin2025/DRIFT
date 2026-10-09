@@ -74,7 +74,11 @@ beforeEach(() => {
 
 describe('connection window on the shipment detail', () => {
   it('shows the planned window on the shipment detail', async () => {
-    open(forwarder, '/freight-forwarder/shipments/7');
+    open(forwarder, '/freight-forwarder');
+    const user = userEvent.setup();
+    const link = await screen.findByRole('link', { name: 'HL-1001' });
+    expect(link).toHaveAttribute('href', '/freight-forwarder/shipments/7');
+    await user.click(link);
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
@@ -91,6 +95,9 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
     expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Back' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
   });
 
   it('shows when the shipment has no planned connection window', async () => {
@@ -195,6 +202,28 @@ describe('connection window on the shipment detail', () => {
     expect(updateShipment).toHaveBeenCalledWith('importer-token', 7, expect.objectContaining({
       shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 3,
     }));
+  });
+
+  it('preserves seconds when saving an unchanged itinerary', async () => {
+    const precise = {
+      ...shipment,
+      plannedMotherArrivalAt: '2026-10-02T00:00:30Z',
+      plannedFeederDepartureAt: '2026-10-03T10:00:45Z',
+      version: 4,
+    };
+    vi.mocked(getShipment).mockResolvedValue(precise);
+    vi.mocked(updateShipment).mockResolvedValue(precise);
+    open(importer, '/importer/shipments/7');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    expect(screen.getByLabelText('Planned mother-vessel arrival')).toHaveAttribute('step', '1');
+    expect(screen.getByLabelText('Planned feeder-vessel departure')).toHaveAttribute('step', '1');
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+
+    const request = vi.mocked(updateShipment).mock.calls[0][2];
+    expect(Date.parse(request.plannedMotherArrivalAt)).toBe(Date.parse(precise.plannedMotherArrivalAt));
+    expect(Date.parse(request.plannedFeederDepartureAt)).toBe(Date.parse(precise.plannedFeederDepartureAt));
   });
 
   it('shows duplicate-reference and stale-version conflicts differently', async () => {

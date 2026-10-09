@@ -15,6 +15,7 @@ const emptyFields: ShipmentFields = {
 };
 
 const fieldOrder = Object.keys(emptyFields) as (keyof ShipmentFields)[];
+// Keep this aligned with StaleShipmentVersionException.MESSAGE in the backend.
 const STALE_UPDATE_MESSAGE = 'This shipment was updated by another user. Refresh it and try again.';
 const STALE_UPDATE_NOTICE = 'This shipment was updated by someone else while you were editing it. Reload the latest details before trying again.';
 
@@ -174,7 +175,7 @@ function toLocalInput(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function RegisteredShipment({ shipment }: { shipment: Shipment }) {
@@ -242,7 +243,7 @@ function TimeField({ id, name, label, hint, value, error, disabled, onChange, on
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
-      <input id={id} name={name} type="datetime-local" value={value} required disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : `${id}-hint`} onChange={event => onChange(name, event.target.value)} onBlur={() => onBlur(name)} />
+      <input id={id} name={name} type="datetime-local" step="1" value={value} required disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : `${id}-hint`} onChange={event => onChange(name, event.target.value)} onBlur={() => onBlur(name)} />
       {error ? <p className="field-error" id={`${id}-error`}>{error}</p> : <p className="field-hint" id={`${id}-hint`}>{hint}</p>}
     </div>
   );

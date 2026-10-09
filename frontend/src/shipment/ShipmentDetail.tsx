@@ -66,9 +66,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
           ? <div className="notice">Loading shipment...</div>
           : editing
             ? <ShipmentForm token={token} onSessionEnded={onSessionEnded} shipment={shipment}
-                onUpdated={updated => {
-                  setShipment(updated);
-                  setTracking(null);
+                onUpdated={() => {
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }}
