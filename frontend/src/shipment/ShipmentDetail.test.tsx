@@ -112,6 +112,25 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/importer');
   });
 
+  it('shows a pending feeder vessel and departure when none is assigned', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      feederVessel: null,
+      plannedFeederDepartureAt: null,
+      connectionWindow: null,
+    });
+    vi.mocked(getShipmentTracking).mockResolvedValue({ ...tracking, feederVesselName: null, feederVessel: null });
+    open(importer, '/importer/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const pending = within(record).getAllByText('Pending assignment');
+    expect(pending).toHaveLength(2);
+    pending.forEach(field => expect(field).toHaveClass('is-missing'));
+    expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
+    expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
+    expect(screen.getByText('FEEDER Pending assignment')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('keeps the recorded position in the facts when tracking cannot be loaded', async () => {
     vi.mocked(getShipmentTracking).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(forwarder, '/freight-forwarder/shipments/7');
@@ -204,5 +223,26 @@ describe('connection window on the shipment detail', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
     await user.click(screen.getByRole('button', { name: 'Save shipment' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+  });
+});
+
+describe('shipment detail decoding', () => {
+  async function decode(body: unknown) {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+    const api = await vi.importActual<typeof import('./api')>('./api');
+    return api.getShipment('token', '7').finally(() => vi.unstubAllGlobals());
+  }
+
+  it('accepts an explicitly unassigned feeder vessel', async () => {
+    await expect(decode({ ...shipment, feederVessel: null, plannedFeederDepartureAt: null }))
+      .resolves.toMatchObject({ feederVessel: null, plannedFeederDepartureAt: null });
+  });
+
+  it('rejects a response that omits the feeder vessel fields', async () => {
+    const { feederVessel: _vessel, plannedFeederDepartureAt: _departure, ...omitted } = shipment;
+    await expect(decode(omitted)).rejects.toMatchObject({ status: 502 });
   });
 });

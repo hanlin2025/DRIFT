@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Shipment, ShipmentTracking, VesselPosition } from './api';
-import { formatWhen } from './ShipmentForm';
+import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
 import { trackingNotice } from './positionNotice';
 import { along, arc, locate, type LngLat } from './places';
 
@@ -12,9 +12,9 @@ type Stop = {
   at: LngLat | null;
 };
 
-function shown(value: string) {
-  const text = value.trim();
-  return text || 'Not recorded';
+function shown(value: string | null, fallback = 'Not recorded') {
+  const text = value?.trim();
+  return text || fallback;
 }
 
 function stopsFor(shipment: Shipment): Stop[] {
@@ -25,7 +25,7 @@ function stopsFor(shipment: Shipment): Stop[] {
     { id: 'departure', kicker: 'DEPARTURE', name: shown(shipment.origin), at: origin },
     { id: 'mother', kicker: 'MOTHER', name: shown(shipment.motherVessel), at: origin && hub ? along(origin, hub, 0.58) : null },
     { id: 'transshipment', kicker: 'TRANSSHIPMENT', name: shown(shipment.transshipmentPort), at: hub },
-    { id: 'feeder', kicker: 'FEEDER', name: shown(shipment.feederVessel), at: hub && destination ? along(hub, destination, 0.42) : null },
+    { id: 'feeder', kicker: 'FEEDER', name: shown(shipment.feederVessel, PENDING_ASSIGNMENT), at: hub && destination ? along(hub, destination, 0.42) : null },
     { id: 'destination', kicker: 'DESTINATION', name: shown(shipment.destination), at: destination },
   ];
 }
@@ -62,7 +62,7 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
     fixes.push({
       id: 'feeder',
       kicker: 'FEEDER LIVE',
-      name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName,
+      name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName?.trim() || 'Feeder vessel',
       position: tracking.feederVessel,
     });
   }
@@ -81,7 +81,7 @@ function pin(stop: Stop) {
   kicker.textContent = stop.kicker;
   const name = document.createElement('strong');
   name.textContent = stop.name;
-  if (stop.name === 'Not recorded') name.className = 'is-missing';
+  if (stop.name === 'Not recorded' || stop.name === PENDING_ASSIGNMENT) name.className = 'is-missing';
   copy.append(kicker, name);
   root.append(dot, copy);
   return root;

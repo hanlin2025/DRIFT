@@ -164,12 +164,13 @@ function fieldsFromShipment(shipment: Shipment): ShipmentFields {
     transshipmentPort: shipment.transshipmentPort,
     motherVessel: shipment.motherVessel,
     plannedMotherArrivalAt: toLocalInput(shipment.plannedMotherArrivalAt),
-    feederVessel: shipment.feederVessel,
+    feederVessel: shipment.feederVessel ?? '',
     plannedFeederDepartureAt: toLocalInput(shipment.plannedFeederDepartureAt),
   };
 }
 
-function toLocalInput(value: string) {
+function toLocalInput(value: string | null) {
+  if (value == null) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const pad = (part: number) => String(part).padStart(2, '0');
@@ -186,12 +187,16 @@ function RegisteredShipment({ shipment }: { shipment: Shipment }) {
         <div><dt>Transshipment port</dt><dd>{shipment.transshipmentPort}</dd></div>
         <div><dt>Mother vessel</dt><dd>{shipment.motherVessel}</dd></div>
         <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
-        <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel}</dd></div>
-        <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
+        <div><dt>Feeder vessel</dt><dd>{shipment.feederVessel || PENDING_ASSIGNMENT}</dd></div>
+        <div><dt>Planned departure</dt><dd>{shipment.plannedFeederDepartureAt
+          ? <time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time>
+          : PENDING_ASSIGNMENT}</dd></div>
       </dl>
     </article>
   );
 }
+
+export const PENDING_ASSIGNMENT = 'Pending assignment';
 
 export function formatWhen(value: string) {
   const date = new Date(value);
