@@ -28,6 +28,7 @@ export type Shipment = {
   feederVessel: string;
   plannedFeederDepartureAt: string;
   createdAt: string;
+  version: number;
   connectionWindow: ConnectionWindow | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -73,6 +74,19 @@ export async function createShipment(token: string, shipment: ShipmentFields): P
   const created = asShipment(data);
   if (!created) throw new ApiError(UNEXPECTED, 502);
   return created;
+}
+
+export type ShipmentUpdate = ShipmentFields & { version: number };
+
+export async function updateShipment(token: string, shipmentId: number, shipment: ShipmentUpdate): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}`, token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(shipment),
+  });
+  const updated = asShipment(data);
+  if (!updated) throw new ApiError(UNEXPECTED, 502);
+  return updated;
 }
 
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
@@ -154,6 +168,7 @@ function asShipment(value: unknown): Shipment | null {
   if (!isRecord(value) || typeof value.id !== 'number') return null;
   const text = ['shipmentReference', 'origin', 'destination', 'transshipmentPort', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
   if (!text.every(key => typeof value[key] === 'string')) return null;
+  if (!isFiniteNumber(value.version) || value.version < 0) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
   const motherVesselPosition = value.motherVesselPosition;
@@ -171,6 +186,7 @@ function asShipment(value: unknown): Shipment | null {
     feederVessel: value.feederVessel as string,
     plannedFeederDepartureAt: value.plannedFeederDepartureAt as string,
     createdAt: value.createdAt as string,
+    version: value.version,
     connectionWindow: window ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
