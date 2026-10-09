@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record UpdateShipmentRequest(
 		@NotBlank(message = "Shipment reference is required")
 		@Size(max = 100, message = "Shipment reference must be at most 100 characters")
@@ -32,5 +34,6 @@ public record UpdateShipmentRequest(
 		OffsetDateTime plannedFeederDepartureAt,
 		@NotNull(message = "Version is required")
 		@PositiveOrZero(message = "Version must not be negative")
+		@Schema(description = "Optimistic-lock version returned when the shipment was last read. A stale value returns 409 Conflict.", example = "0")
 		Long version) implements ShipmentDetailsRequest {
 }
