@@ -110,6 +110,11 @@ describe('shipment list', () => {
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
   });
+
+  it('shows an unassigned feeder vessel as pending', () => {
+    render(<MemoryRouter><ShipmentList shipments={[{ ...newer, feederVessel: null, plannedFeederDepartureAt: null }]} basePath="/importer" /></MemoryRouter>);
+    expect(screen.getByRole('cell', { name: 'Pending assignment' })).toHaveClass('is-missing');
+  });
 });
 
 describe('workspace shipment retrieval', () => {
