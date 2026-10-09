@@ -69,6 +69,7 @@ class ShipmentUpdateServiceIntegrationTests {
 		assertThat(updated.getUpdatedAt()).isAfter(createdAt);
 		assertThat(updated.getUpdatedBy().getId()).isEqualTo(importer.id());
 		assertThat(updated.getVersion()).isEqualTo(previousVersion + 1);
+		assertThat(response.version()).isEqualTo(updated.getVersion());
 	}
 
 	@Test
