@@ -18,6 +18,7 @@ import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
@@ -69,8 +70,8 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler(ShipmentAccessForbiddenException.class)
-	public ResponseEntity<Map<String, String>> handleAccessForbidden(ShipmentAccessForbiddenException ex) {
+	@ExceptionHandler({ ShipmentAccessForbiddenException.class, ShipmentDetailForbiddenException.class })
+	public ResponseEntity<Map<String, String>> handleAccessForbidden(RuntimeException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}

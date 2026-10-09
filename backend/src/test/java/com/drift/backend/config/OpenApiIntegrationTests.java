@@ -12,6 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,8 +34,13 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.description")
-						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is reported as not found."))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404']").exists())
+						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is forbidden, and an unknown id is reported as not found."))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].schema.properties.message.type")
+						.value("string"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].examples['Shipment of another company'].value.message")
+						.value(ShipmentDetailForbiddenException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404'].content['application/json'].schema.properties.message.type")
+						.value("string"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.summary").value("Replace a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.responses['200'].content['application/json'].schema.$ref")
