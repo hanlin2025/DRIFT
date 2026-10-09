@@ -22,4 +22,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 	boolean existsByCompanyIdAndShipmentReferenceIgnoreCase(
 			@Param("companyId") Long companyId,
 			@Param("shipmentReference") String shipmentReference);
+
+	@Query("""
+			SELECT COUNT(shipment) > 0
+			FROM Shipment shipment
+			WHERE shipment.company.id = :companyId
+				AND shipment.id <> :shipmentId
+				AND LOWER(shipment.shipmentReference) = LOWER(:shipmentReference)
+			""")
+	boolean existsOtherByCompanyIdAndShipmentReferenceIgnoreCase(
+			@Param("companyId") Long companyId,
+			@Param("shipmentId") Long shipmentId,
+			@Param("shipmentReference") String shipmentReference);
+
 }

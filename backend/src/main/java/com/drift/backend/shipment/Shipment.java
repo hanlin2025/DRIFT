@@ -98,6 +98,18 @@ public class Shipment {
 		this.updatedAt = updatedAt;
 	}
 
+	void replaceDetails(ShipmentDetails details, UserAccount updatedBy, Instant updatedAt) {
+		this.shipmentReference = details.shipmentReference();
+		this.origin = details.origin();
+		this.destination = details.destination();
+		this.transshipmentPort = details.transshipmentPort();
+		this.motherVessel = details.motherVessel();
+		this.plannedMotherArrivalAt = details.plannedMotherArrivalAt();
+		this.feederVessel = details.feederVessel();
+		this.plannedFeederDepartureAt = details.plannedFeederDepartureAt();
+		markUpdated(updatedBy, updatedAt);
+	}
+
 	public Long getId() { return id; }
 	public String getShipmentReference() { return shipmentReference; }
 	public String getOrigin() { return origin; }

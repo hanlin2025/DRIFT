@@ -16,6 +16,8 @@ public record ShipmentResponse(
 		String feederVessel,
 		OffsetDateTime plannedFeederDepartureAt,
 		Instant createdAt,
+		@Schema(description = "Optimistic-lock version. Supply this value when updating the shipment.", example = "0")
+		Long version,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow) {
 
@@ -28,6 +30,6 @@ public record ShipmentResponse(
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
-				connectionWindow);
+				shipment.getVersion(), connectionWindow);
 	}
 }
