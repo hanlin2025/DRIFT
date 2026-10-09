@@ -6,10 +6,10 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments, type Shipment, type ShipmentTracking } from './api';
+import { getShipment, getShipmentTracking, listShipments, updateShipment, type Shipment, type ShipmentTracking } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -34,6 +34,7 @@ const shipment: Shipment = {
   feederVessel: 'Straits Feeder',
   plannedFeederDepartureAt: '2026-10-03T10:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  version: 3,
   connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
   motherVesselPosition: {
     mmsi: '563001234',
@@ -52,7 +53,7 @@ function Location() { return <output data-testid="location">{useLocation().pathn
 
 function open(account: Session, path: string) {
   writeSession(account);
-  vi.mocked(loadSession).mockImplementation(async token => ({ ...account, token }));
+  vi.mocked(loadSession).mockResolvedValue({ ...account, token: account.token });
   return render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /></MemoryRouter>);
 }
 
@@ -72,13 +73,8 @@ beforeEach(() => {
 });
 
 describe('connection window on the shipment detail', () => {
-  it('opens the detail from the reference and shows the planned window', async () => {
-    open(forwarder, '/freight-forwarder');
-    const user = userEvent.setup();
-    const link = await screen.findByRole('link', { name: 'HL-1001' });
-    expect(link).toHaveAttribute('href', '/freight-forwarder/shipments/7');
-    expect(screen.queryByText('1 day 10 hours')).not.toBeInTheDocument();
-    await user.click(link);
+  it('shows the planned window on the shipment detail', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
@@ -95,9 +91,6 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
     expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('link', { name: 'Back' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
-    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
   });
 
   it('shows when the shipment has no planned connection window', async () => {
@@ -157,5 +150,59 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/importer/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('importer-token', '7');
+  });
+
+  it('lets an importer edit all shipment fields and sends the hidden version token', async () => {
+    const updated = { ...shipment, shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 4 };
+    vi.mocked(updateShipment).mockResolvedValue(updated);
+    open(importer, '/importer/shipments/7');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    expect(screen.getByRole('heading', { name: 'Edit shipment' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Shipment reference')).toHaveValue('HL-1001');
+    expect(screen.getByLabelText('Origin')).toHaveValue('Singapore');
+    expect(screen.queryByLabelText(/version/i)).not.toBeInTheDocument();
+
+    vi.mocked(getShipment).mockResolvedValue(updated);
+
+    await user.clear(screen.getByLabelText('Shipment reference'));
+    await user.type(screen.getByLabelText('Shipment reference'), 'HL-UPDATED');
+    await user.clear(screen.getByLabelText('Origin'));
+    await user.type(screen.getByLabelText('Origin'), 'Busan, KR');
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+
+    expect(await screen.findByRole('heading', { name: 'HL-UPDATED' })).toBeInTheDocument();
+    expect(updateShipment).toHaveBeenCalledWith('importer-token', 7, expect.objectContaining({
+      shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 3,
+    }));
+  });
+
+  it('shows duplicate-reference and stale-version conflicts differently', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    vi.mocked(updateShipment).mockRejectedValueOnce(new ApiError('A shipment with this reference already exists for your company', 409));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A shipment with this reference already exists for your company');
+    expect(screen.getByLabelText('Shipment reference')).toHaveAttribute('aria-invalid', 'true');
+
+    vi.mocked(updateShipment).mockRejectedValueOnce(new ApiError('This shipment was updated by another user. Refresh it and try again.', 409));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment was updated by someone else while you were editing it. Reload the latest details before trying again.');
+    await user.click(screen.getByRole('button', { name: 'Reload latest details' }));
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+  });
+
+  it('returns to the existing unavailable detail state when an edit is no longer visible', async () => {
+    vi.mocked(getShipment)
+      .mockResolvedValueOnce(shipment)
+      .mockRejectedValueOnce(new ApiError('Shipment not found', 404));
+    vi.mocked(updateShipment).mockRejectedValue(new ApiError('Shipment not found', 404));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
   });
 });

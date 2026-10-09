@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../signup/api';
-import { createShipment, type Shipment } from './api';
+import { createShipment, updateShipment, type Shipment } from './api';
 import { toOffsetDateTime, validateShipment, type ShipmentErrors, type ShipmentFields } from './validation';
 
 const emptyFields: ShipmentFields = {
@@ -15,18 +15,26 @@ const emptyFields: ShipmentFields = {
 };
 
 const fieldOrder = Object.keys(emptyFields) as (keyof ShipmentFields)[];
+const STALE_UPDATE_MESSAGE = 'This shipment was updated by another user. Refresh it and try again.';
+const STALE_UPDATE_NOTICE = 'This shipment was updated by someone else while you were editing it. Reload the latest details before trying again.';
 
-export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered }: {
+export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered, shipment, onUpdated, onCancel, onReload }: {
   token: string;
-  companyName: string | null;
+  companyName?: string | null;
   onSessionEnded: () => void;
   onRegistered?: (shipment: Shipment) => void;
+  shipment?: Shipment;
+  onUpdated?: (shipment: Shipment) => void;
+  onCancel?: () => void;
+  onReload?: () => void;
 }) {
-  const [fields, setFields] = useState<ShipmentFields>(emptyFields);
+  const editing = shipment !== undefined;
+  const [fields, setFields] = useState<ShipmentFields>(() => shipment ? fieldsFromShipment(shipment) : emptyFields);
   const [errors, setErrors] = useState<ShipmentErrors>({});
   const [problem, setProblem] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<Shipment | null>(null);
+  const [stale, setStale] = useState(false);
   const busy = useRef(false);
 
   function change(field: keyof ShipmentFields, value: string) {
@@ -59,6 +67,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
     const validation = validateShipment(fields);
     setErrors(validation);
     setProblem('');
+    setStale(false);
     const invalid = fieldOrder.filter(name => validation[name]);
     if (invalid.length) {
       const first = event.currentTarget.elements.namedItem(invalid[0]);
@@ -69,7 +78,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
     busy.current = true;
     setSubmitting(true);
     try {
-      const shipment = await createShipment(token, {
+      const request = {
         shipmentReference: fields.shipmentReference.trim(),
         origin: fields.origin.trim(),
         destination: fields.destination.trim(),
@@ -78,23 +87,38 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
         plannedMotherArrivalAt: toOffsetDateTime(fields.plannedMotherArrivalAt),
         feederVessel: fields.feederVessel.trim(),
         plannedFeederDepartureAt: toOffsetDateTime(fields.plannedFeederDepartureAt),
-      });
-      setFields(emptyFields);
+      };
+      const saved = editing
+        ? await updateShipment(token, shipment.id, { ...request, version: shipment.version })
+        : await createShipment(token, request);
       setErrors({});
-      setCreated(shipment);
-      onRegistered?.(shipment);
+      if (editing) {
+        onUpdated?.(saved);
+      } else {
+        setFields(emptyFields);
+        setCreated(saved);
+        onRegistered?.(saved);
+      }
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
         return;
       }
+      if (reason instanceof ApiError && reason.status === 404 && onReload) {
+        onReload();
+        return;
+      }
       if (reason instanceof ApiError) {
+        const staleUpdate = reason.status === 409 && reason.message === STALE_UPDATE_MESSAGE;
         const mapped: ShipmentErrors = {};
         for (const name of fieldOrder) if (reason.fields[name]) mapped[name] = reason.fields[name];
-        if (reason.status === 409) mapped.shipmentReference = reason.message;
+        if (reason.status === 409 && !staleUpdate) mapped.shipmentReference = reason.message;
         setErrors(mapped);
+        setStale(staleUpdate);
       }
-      setProblem(reason instanceof Error ? reason.message : 'The shipment could not be registered. Please try again.');
+      setProblem(reason instanceof ApiError && reason.status === 409 && reason.message === STALE_UPDATE_MESSAGE
+        ? STALE_UPDATE_NOTICE
+        : reason instanceof Error ? reason.message : `The shipment could not be ${editing ? 'updated' : 'registered'}. Please try again.`);
     } finally {
       busy.current = false;
       setSubmitting(false);
@@ -102,11 +126,11 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
   }
 
   return (
-    <section className="shipment-panel" aria-labelledby="register-shipment">
-      <h3 id="register-shipment">Register a shipment</h3>
-      <p className="intro">Save the transshipment port, the mother vessel, the feeder vessel, and the planned connection between them.</p>
-      {problem && <div className="error-notice" role="alert">{problem}</div>}
-      {created && <RegisteredShipment shipment={created} />}
+    <section className="shipment-panel" aria-labelledby={editing ? 'edit-shipment' : 'register-shipment'}>
+      <h3 id={editing ? 'edit-shipment' : 'register-shipment'}>{editing ? 'Edit shipment' : 'Register a shipment'}</h3>
+      <p className="intro">{editing ? 'Update the stored route, vessel, and planned connection details.' : 'Save the transshipment port, the mother vessel, the feeder vessel, and the planned connection between them.'}</p>
+      {problem && <div className="error-notice" role="alert">{problem}{stale && onReload && <><br /><button type="button" className="retry-button" onClick={onReload}>Reload latest details</button></>}</div>}
+      {!editing && created && <RegisteredShipment shipment={created} />}
       <form onSubmit={submit} className="shipment-form" noValidate aria-busy={submitting}>
         <TextField id="shipment-reference" name="shipmentReference" label="Shipment reference" placeholder="e.g. HL-1001" hint="The tracking or B/L number for this shipment." value={fields.shipmentReference} error={errors.shipmentReference} maxLength={100} autoComplete="off" spellCheck={false} disabled={submitting} onChange={change} onBlur={blur} />
         <div className="pair-grid">
@@ -122,11 +146,34 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered 
           <TimeField id="mother-arrival" name="plannedMotherArrivalAt" label="Planned mother-vessel arrival" hint="When the mother vessel is planned to arrive for the connection." value={fields.plannedMotherArrivalAt} error={errors.plannedMotherArrivalAt} disabled={submitting} onChange={change} onBlur={blur} />
           <TimeField id="feeder-departure" name="plannedFeederDepartureAt" label="Planned feeder-vessel departure" hint="Must be after the mother vessel arrives." value={fields.plannedFeederDepartureAt} error={errors.plannedFeederDepartureAt} disabled={submitting} onChange={change} onBlur={blur} />
         </div>
-        <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Registering shipment...' : 'Register shipment'}<span aria-hidden="true">&#8594;</span></button>
-        <p className="membership-note">{companyName ? `This shipment is registered for ${companyName}.` : 'This shipment is registered for your company.'}</p>
+        <div className="form-actions">
+          {editing && <button type="button" className="secondary-button" disabled={submitting} onClick={onCancel}>Cancel</button>}
+          <button type="submit" className="primary-button" disabled={submitting}>{submitting ? (editing ? 'Saving shipment...' : 'Registering shipment...') : (editing ? 'Save shipment' : 'Register shipment')}<span aria-hidden="true">&#8594;</span></button>
+        </div>
+        {!editing && <p className="membership-note">{companyName ? `This shipment is registered for ${companyName}.` : 'This shipment is registered for your company.'}</p>}
       </form>
     </section>
   );
+}
+
+function fieldsFromShipment(shipment: Shipment): ShipmentFields {
+  return {
+    shipmentReference: shipment.shipmentReference,
+    origin: shipment.origin,
+    destination: shipment.destination,
+    transshipmentPort: shipment.transshipmentPort,
+    motherVessel: shipment.motherVessel,
+    plannedMotherArrivalAt: toLocalInput(shipment.plannedMotherArrivalAt),
+    feederVessel: shipment.feederVessel,
+    plannedFeederDepartureAt: toLocalInput(shipment.plannedFeederDepartureAt),
+  };
+}
+
+function toLocalInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function RegisteredShipment({ shipment }: { shipment: Shipment }) {

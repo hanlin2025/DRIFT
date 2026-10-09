@@ -10,7 +10,7 @@ import { STALE_NOTICE } from './positionNotice';
 import { RouteMap } from './RouteMap';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
 vi.mock('maplibre-gl', () => ({
   Map: class Map {
     on(_event: string, callback: () => void) { callback(); }
@@ -53,6 +53,7 @@ const shipment: Shipment = {
   feederVessel: 'MV Strait Runner',
   plannedFeederDepartureAt: '2026-10-16T04:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  version: 0,
   connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
   motherVesselPosition: null,
   feederVesselPosition: null,

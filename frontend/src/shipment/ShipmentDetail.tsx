@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
-import { formatWhen } from './ShipmentForm';
+import { formatWhen, ShipmentForm } from './ShipmentForm';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
@@ -17,6 +17,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
   const [problem, setProblem] = useState<{ message: string; retry: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -63,20 +64,35 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
         : shipment === null
           ? <div className="notice">Loading shipment...</div>
-          : <ShipmentRecord shipment={shipment} tracking={tracking} />}
+          : editing
+            ? <ShipmentForm token={token} onSessionEnded={onSessionEnded} shipment={shipment}
+                onUpdated={updated => {
+                  setShipment(updated);
+                  setTracking(null);
+                  setEditing(false);
+                  setAttempt(value => value + 1);
+                }}
+                onCancel={() => setEditing(false)}
+                onReload={() => {
+                  setEditing(false);
+                  setAttempt(value => value + 1);
+                }} />
+            : <ShipmentRecord shipment={shipment} tracking={tracking} onEdit={() => setEditing(true)} />}
     </section>
   );
 }
 
-function ShipmentRecord({ shipment, tracking }: {
+function ShipmentRecord({ shipment, tracking, onEdit }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
+  onEdit: () => void;
 }) {
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
       <h2>{shipment.shipmentReference}</h2>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
+      <div className="detail-actions"><button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button></div>
       <RouteMap shipment={shipment} tracking={tracking} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
