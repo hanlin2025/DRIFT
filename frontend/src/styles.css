@@ -164,6 +164,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .route-live { list-style: none; margin: 0; padding: 10px 16px 12px; background: #f8f6ed; border-top: 1px solid #c8d9bf; }
 .route-live li { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
 .route-live li + li { margin-top: 4px; }
+.route-warning { margin: 0; padding: 10px 16px 12px; color: #8a5a12; background: #f8efd8; border-top: 1px solid #e2d3a8; font-size: 12px; font-weight: 700; }
 .globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
