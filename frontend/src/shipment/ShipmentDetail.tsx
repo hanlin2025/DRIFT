@@ -85,7 +85,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         setProblem({ message: reason.message, retry: false });
       }
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      requestSeq.current += 1;
+    };
   }, [token, shipmentId, attempt, onSessionEnded]);
 
   useEffect(() => {
@@ -127,11 +130,11 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
           <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
-          <div><dt>Mother vessel position</dt><dd>{formatLive(tracking?.motherVessel ?? shipment.motherVesselPosition)}</dd></div>
+          <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel)}</dd></div>
-          <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking?.feederVessel ?? shipment.feederVesselPosition)}</dd></div>
+          <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
           <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
           <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
           <div>

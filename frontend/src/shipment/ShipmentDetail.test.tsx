@@ -230,7 +230,7 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText('PACIFIC HORIZON · 3, 103.82 · 12.4 kn')).not.toBeInTheDocument();
   });
 
-  it('shows the recorded position when the live tracking position is missing', async () => {
+  it('shows no live position when tracking has loaded without a fix', async () => {
     vi.mocked(getShipmentTracking).mockResolvedValue({
       motherVesselName: shipment.motherVessel,
       motherVessel: null,
@@ -239,7 +239,6 @@ describe('connection window on the shipment detail', () => {
     });
     open(forwarder, '/freight-forwarder/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
-    expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
-    expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
+    expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
   });
 });
