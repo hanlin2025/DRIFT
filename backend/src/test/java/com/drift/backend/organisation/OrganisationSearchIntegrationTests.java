@@ -139,6 +139,14 @@ class OrganisationSearchIntegrationTests {
 				.header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value(InvalidOrganisationQueryException.PAGE));
+		mvc.perform(get("/api/organisations?type=importer&page=")
+				.header("Authorization", "Bearer " + forwarderToken))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidOrganisationQueryException.PAGE));
+		mvc.perform(get("/api/organisations?type=importer&size=")
+				.header("Authorization", "Bearer " + forwarderToken))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidOrganisationQueryException.SIZE));
 	}
 
 	@Test
@@ -172,7 +180,7 @@ class OrganisationSearchIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/organisations'].get.summary").value("Search importer organisations"))
 				.andExpect(jsonPath("$.paths['/api/organisations'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/organisations'].get.parameters[?(@.name == 'type')].required",
-						contains(false)))
+						contains(true)))
 				.andExpect(jsonPath("$.paths['/api/organisations'].get.responses['200'].content['application/json'].schema.$ref")
 						.value("#/components/schemas/OrganisationPageResponse"))
 				.andExpect(jsonPath("$.paths['/api/organisations'].get.responses['400'].content['application/json'].example.message")

@@ -1,5 +1,7 @@
 package com.drift.backend.organisation;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -10,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
+import com.drift.backend.organisation.exception.InvalidOrganisationQueryException;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -56,18 +59,31 @@ public class OrganisationController {
 							"""))) })
 	public ResponseEntity<OrganisationPageResponse> search(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
-			@Parameter(description = "Organisation type. Only importer is accepted.", example = "importer")
-			@RequestParam(required = false) String type,
+			@Parameter(description = "Organisation type. Only importer is accepted.", required = true, example = "importer")
+			@RequestParam String type,
 			@Parameter(description = "Optional case-insensitive match against any part of the organisation name.")
 			@RequestParam(required = false) String name,
 			@Parameter(description = "Zero-based page index. Defaults to 0.", example = "0")
 			@RequestParam(required = false) Integer page,
 			@Parameter(description = "Page size from 1 to 100. Defaults to 20.", example = "20")
-			@RequestParam(required = false) Integer size) {
+			@RequestParam(required = false) Integer size,
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) HttpServletRequest request) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
+		rejectBlank(request, "page", InvalidOrganisationQueryException.PAGE);
+		rejectBlank(request, "size", InvalidOrganisationQueryException.SIZE);
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(organisations.search(user, type, name, page, size));
+	}
+
+	private static void rejectBlank(HttpServletRequest request, String name, String message) {
+		if (!request.getParameterMap().containsKey(name)) {
+			return;
+		}
+		String value = request.getParameter(name);
+		if (value == null || value.isBlank()) {
+			throw new InvalidOrganisationQueryException(message);
+		}
 	}
 }

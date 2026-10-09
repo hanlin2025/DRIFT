@@ -5,6 +5,7 @@ import java.util.Map;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -19,6 +20,14 @@ public class OrganisationExceptionHandler {
 	@ExceptionHandler(InvalidOrganisationQueryException.class)
 	public ResponseEntity<Map<String, String>> handleQuery(InvalidOrganisationQueryException ex) {
 		return message(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	@ExceptionHandler(MissingServletRequestParameterException.class)
+	public ResponseEntity<Map<String, String>> handleMissing(MissingServletRequestParameterException ex) {
+		String message = "type".equals(ex.getParameterName())
+				? InvalidOrganisationQueryException.TYPE
+				: InvalidOrganisationQueryException.PAGE;
+		return message(HttpStatus.BAD_REQUEST, message);
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
