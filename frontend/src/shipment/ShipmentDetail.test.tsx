@@ -147,6 +147,27 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
   });
 
+  it('shows a loading skeleton until the shipment arrives', async () => {
+    let arrive: (found: Shipment) => void = () => {};
+    vi.mocked(getShipment).mockReturnValue(new Promise(resolve => { arrive = resolve; }));
+    open(importer, '/importer/shipments/7');
+    const loading = (await screen.findByText('Loading shipment...')).closest('[role="status"]');
+    expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    arrive(shipment);
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit shipment' })).toBeInTheDocument();
+  });
+
+  it('replaces the loading skeleton with the error when the shipment is forbidden', async () => {
+    vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
+    open(importer, '/importer/shipments/8');
+    expect(await screen.findByRole('alert')).toHaveTextContent('You do not have access to this shipment');
+    expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
   it('reports a missing shipment without a retry', async () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(importer, '/importer/shipments/99');

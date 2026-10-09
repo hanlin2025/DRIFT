@@ -104,7 +104,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
       {problem
         ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
         : shipment === null
-          ? <div className="notice">Loading shipment...</div>
+          ? <ShipmentSkeleton />
           : editing
             ? <ShipmentForm token={token} onSessionEnded={onSessionEnded} shipment={shipment}
                 onUpdated={() => {
@@ -118,6 +118,29 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
                 }} />
             : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} onEdit={() => setEditing(true)} />}
     </section>
+  );
+}
+
+const FACT_ROWS = 11;
+
+function ShipmentSkeleton() {
+  return (
+    <div className="shipment-skeleton" role="status" aria-busy="true">
+      <span className="sr-only">Loading shipment...</span>
+      <div aria-hidden="true">
+        <span className="skeleton skeleton-eyebrow" />
+        <span className="skeleton skeleton-title" />
+        <span className="skeleton skeleton-intro" />
+        <span className="skeleton skeleton-map" />
+        <div className="shipment-record route-facts">
+          <dl>
+            {Array.from({ length: FACT_ROWS }, (_, row) => (
+              <div key={row}><dt><span className="skeleton skeleton-label" /></dt><dd><span className="skeleton skeleton-value" /></dd></div>
+            ))}
+          </dl>
+        </div>
+      </div>
+    </div>
   );
 }
 
