@@ -25,8 +25,8 @@ export type Shipment = {
   transshipmentPort: string;
   motherVessel: string;
   plannedMotherArrivalAt: string;
-  feederVessel: string;
-  plannedFeederDepartureAt: string;
+  feederVessel: string | null;
+  plannedFeederDepartureAt: string | null;
   createdAt: string;
   connectionWindow: ConnectionWindow | null;
   motherVesselPosition: VesselPosition | null;
@@ -53,7 +53,7 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
 export type ShipmentTracking = {
   motherVesselName: string;
   motherVessel: VesselPosition | null;
-  feederVesselName: string;
+  feederVesselName: string | null;
   feederVessel: VesselPosition | null;
 };
 
@@ -105,6 +105,10 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   return data;
 }
 
+function isNullableText(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -139,7 +143,7 @@ function isVesselPosition(value: unknown): value is VesselPosition {
 }
 
 function asTracking(value: unknown): ShipmentTracking | null {
-  if (!isRecord(value) || typeof value.motherVesselName !== 'string' || typeof value.feederVesselName !== 'string') return null;
+  if (!isRecord(value) || typeof value.motherVesselName !== 'string' || !isNullableText(value.feederVesselName)) return null;
   if (value.motherVessel != null && !isVesselPosition(value.motherVessel)) return null;
   if (value.feederVessel != null && !isVesselPosition(value.feederVessel)) return null;
   return {
@@ -152,8 +156,9 @@ function asTracking(value: unknown): ShipmentTracking | null {
 
 function asShipment(value: unknown): Shipment | null {
   if (!isRecord(value) || typeof value.id !== 'number') return null;
-  const text = ['shipmentReference', 'origin', 'destination', 'transshipmentPort', 'motherVessel', 'plannedMotherArrivalAt', 'feederVessel', 'plannedFeederDepartureAt', 'createdAt'] as const;
+  const text = ['shipmentReference', 'origin', 'destination', 'transshipmentPort', 'motherVessel', 'plannedMotherArrivalAt', 'createdAt'] as const;
   if (!text.every(key => typeof value[key] === 'string')) return null;
+  if (!isNullableText(value.feederVessel) || !isNullableText(value.plannedFeederDepartureAt)) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
   const motherVesselPosition = value.motherVesselPosition;
@@ -168,8 +173,8 @@ function asShipment(value: unknown): Shipment | null {
     transshipmentPort: value.transshipmentPort as string,
     motherVessel: value.motherVessel as string,
     plannedMotherArrivalAt: value.plannedMotherArrivalAt as string,
-    feederVessel: value.feederVessel as string,
-    plannedFeederDepartureAt: value.plannedFeederDepartureAt as string,
+    feederVessel: value.feederVessel,
+    plannedFeederDepartureAt: value.plannedFeederDepartureAt,
     createdAt: value.createdAt as string,
     connectionWindow: window ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
