@@ -25,6 +25,7 @@ import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
@@ -58,7 +59,12 @@ public class ShipmentService {
 
 	@Transactional(readOnly = true)
 	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
-		return detail(visibleShipment(principal, shipmentId));
+		Company company = activeCompany(principal);
+		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.map(this::detail)
+				.orElseThrow(() -> shipments.existsById(shipmentId)
+						? new ShipmentDetailForbiddenException()
+						: new ShipmentNotFoundException());
 	}
 
 	@Transactional(readOnly = true)

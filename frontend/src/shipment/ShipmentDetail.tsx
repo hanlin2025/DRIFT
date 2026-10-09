@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
-import { formatWhen } from './ShipmentForm';
+import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
@@ -133,9 +133,11 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
-          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel)}</dd></div>
+          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</dd></div>
           <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
-          <div><dt>Planned departure</dt><dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd></div>
+          <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
+            ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
+            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
           <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
           <div>
             <dt>Connection window</dt>
@@ -155,11 +157,11 @@ function formatLive(position: VesselPosition | null) {
   return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
 }
 
-function recorded(value: string) {
-  const text = value.trim();
-  return text || 'Not recorded';
+function recorded(value: string | null, fallback = 'Not recorded') {
+  const text = value?.trim();
+  return text || fallback;
 }
 
-function missing(value: string) {
-  return value.trim() ? undefined : 'is-missing';
+function missing(value: string | null) {
+  return value?.trim() ? undefined : 'is-missing';
 }

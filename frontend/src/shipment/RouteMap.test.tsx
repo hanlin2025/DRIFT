@@ -97,6 +97,11 @@ describe('shipment route display', () => {
     expect(screen.getByText('Not placed on the globe: Not A Port')).toBeInTheDocument();
   });
 
+  it('marks an unassigned feeder vessel as pending', () => {
+    render(<RouteMap shipment={{ ...shipment, feederVessel: null, plannedFeederDepartureAt: null }} />);
+    expect(routeText()[3]).toBe('FEEDER Pending assignment');
+  });
+
   it('places a live vessel on the planned route and shows when the fix was ingested', async () => {
     const tracking: ShipmentTracking = {
       motherVesselName: 'MV Pacific Horizon',

@@ -33,6 +33,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -258,7 +259,9 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
-		// TODO: when GET /api/shipments/{id} returns, also expect 403 and this message for an inactive company.
+		detail(token, "1")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 	}
 
 	@Test
@@ -350,15 +353,16 @@ class ShipmentCreationIntegrationTests {
 	}
 
 	@Test
-	void hidesAnotherCompanysShipmentAndUnknownIds() throws Exception {
+	void forbidsAnotherCompanysShipmentAndHidesUnknownIds() throws Exception {
 		String otherEmail = "cdg24-other-" + UUID.randomUUID() + "@example.com";
 		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
 		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-2026-008")).andExpect(status().isCreated()).andReturn();
 		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
 		detail(token, otherShipmentId.toString())
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+				.andExpect(status().isForbidden())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
 		detail(token, "999999999")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
