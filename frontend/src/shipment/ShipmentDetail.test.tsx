@@ -173,7 +173,17 @@ describe('connection window on the shipment detail', () => {
 
   it('lets an importer edit all shipment fields and sends the hidden version token', async () => {
     const updated = { ...shipment, shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 4 };
+    const refreshedTracking: ShipmentTracking = {
+      motherVesselName: updated.motherVessel,
+      motherVessel: { ...shipment.motherVesselPosition!, vesselName: 'NEW MOTHER POSITION', latitude: 1.31 },
+      feederVesselName: updated.feederVessel,
+      feederVessel: null,
+    };
     vi.mocked(updateShipment).mockResolvedValue(updated);
+    vi.mocked(getShipment).mockReset();
+    vi.mocked(getShipment).mockResolvedValueOnce(shipment).mockResolvedValueOnce(updated);
+    vi.mocked(getShipmentTracking).mockReset();
+    vi.mocked(getShipmentTracking).mockResolvedValueOnce(tracking).mockResolvedValueOnce(refreshedTracking);
     open(importer, '/importer/shipments/7');
     const user = userEvent.setup();
 
@@ -182,8 +192,6 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByLabelText('Shipment reference')).toHaveValue('HL-1001');
     expect(screen.getByLabelText('Origin')).toHaveValue('Singapore');
     expect(screen.queryByLabelText(/version/i)).not.toBeInTheDocument();
-
-    vi.mocked(getShipment).mockResolvedValue(updated);
 
     await user.clear(screen.getByLabelText('Shipment reference'));
     await user.type(screen.getByLabelText('Shipment reference'), 'HL-UPDATED');
@@ -195,6 +203,8 @@ describe('connection window on the shipment detail', () => {
     expect(updateShipment).toHaveBeenCalledWith('importer-token', 7, expect.objectContaining({
       shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 3,
     }));
+    expect(getShipmentTracking).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/NEW MOTHER POSITION/)).toBeInTheDocument();
   });
 
   it('shows duplicate-reference and stale-version conflicts differently', async () => {
@@ -211,6 +221,47 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('This shipment was updated by someone else while you were editing it. Reload the latest details before trying again.');
     await user.click(screen.getByRole('button', { name: 'Reload latest details' }));
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+  });
+
+  it('reloads and displays the server state after a stale update conflict', async () => {
+    const refreshed = { ...shipment, shipmentReference: 'HL-SERVER-CURRENT', origin: 'Busan, KR', version: 4 };
+    vi.mocked(getShipment).mockReset();
+    vi.mocked(getShipment).mockResolvedValueOnce(shipment).mockResolvedValueOnce(refreshed);
+    vi.mocked(updateShipment).mockRejectedValueOnce(new ApiError('This shipment was updated by another user. Refresh it and try again.', 409));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    await user.clear(screen.getByLabelText('Shipment reference'));
+    await user.type(screen.getByLabelText('Shipment reference'), 'HL-STALE-LOCAL');
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment was updated by someone else while you were editing it.');
+    expect(screen.getByLabelText('Shipment reference')).toHaveValue('HL-STALE-LOCAL');
+    await user.click(screen.getByRole('button', { name: 'Reload latest details' }));
+
+    expect(await screen.findByRole('heading', { name: 'HL-SERVER-CURRENT' })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('HL-STALE-LOCAL')).not.toBeInTheDocument();
+    expect(getShipment).toHaveBeenCalledTimes(2);
+    expect(updateShipment).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps edit mode and unsaved values when the backend rejects the update', async () => {
+    vi.mocked(updateShipment).mockRejectedValueOnce(new ApiError('Shipment information is missing or invalid', 400, {
+      shipmentReference: 'Shipment reference is required',
+    }));
+    open(importer, '/importer/shipments/7');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    await user.clear(screen.getByLabelText('Shipment reference'));
+    await user.type(screen.getByLabelText('Shipment reference'), 'HL-UNSAVED');
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment information is missing or invalid');
+    expect(screen.getByRole('heading', { name: 'Edit shipment' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Shipment reference')).toHaveValue('HL-UNSAVED');
+    expect(screen.getByText('Shipment reference is required')).toBeInTheDocument();
   });
 
   it('returns to the existing unavailable detail state when an edit is no longer visible', async () => {

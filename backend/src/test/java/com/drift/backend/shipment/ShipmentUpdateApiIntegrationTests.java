@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.jayway.jsonpath.JsonPath;
@@ -54,6 +55,8 @@ class ShipmentUpdateApiIntegrationTests {
 	@Test
 	void importerCanReplaceAllEditableFieldsAndReceivesTheNextVersion() throws Exception {
 		ShipmentSnapshot shipment = create(forwarderToken, "HBL-UPDATE-ALL");
+		String createdAt = jdbc.queryForObject("SELECT created_at::text FROM shipments WHERE id = ?", String.class, shipment.id());
+		Long creatorId = accountId(forwarderEmail);
 		String importerEmail = "cdg85-importer-" + UUID.randomUUID() + "@example.com";
 		createAccount(importerEmail, "IMPORTER", companyId);
 
@@ -75,8 +78,12 @@ class ShipmentUpdateApiIntegrationTests {
 		Long importerId = accountId(importerEmail);
 		assertThat(jdbc.queryForObject("SELECT updated_by_user_id FROM shipments WHERE id = ?", Long.class, shipment.id()))
 				.isEqualTo(importerId);
-		assertThat(jdbc.queryForObject("SELECT updated_at >= created_at FROM shipments WHERE id = ?", Boolean.class, shipment.id()))
+		assertThat(jdbc.queryForObject("SELECT updated_at > created_at FROM shipments WHERE id = ?", Boolean.class, shipment.id()))
 				.isTrue();
+		assertThat(jdbc.queryForObject("SELECT created_at::text FROM shipments WHERE id = ?", String.class, shipment.id()))
+				.isEqualTo(createdAt);
+		assertThat(jdbc.queryForObject("SELECT created_by_user_id FROM shipments WHERE id = ?", Long.class, shipment.id()))
+				.isEqualTo(creatorId);
 	}
 
 	@Test
@@ -134,14 +141,31 @@ class ShipmentUpdateApiIntegrationTests {
 	}
 
 	@Test
+	void rejectsUpdatesFromAnAuthenticatedUserWithoutAnActiveCompany() throws Exception {
+		ShipmentSnapshot shipment = create(forwarderToken, "HBL-NO-COMPANY");
+		String unassignedEmail = "cdg85-unassigned-" + UUID.randomUUID() + "@example.com";
+		createAccount(unassignedEmail, "IMPORTER", null);
+
+		update(tokenFor(unassignedEmail), shipment.id(), updatePayload("HBL-NO-COMPANY", shipment.version()))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+	}
+
+	@Test
 	void rejectsStaleVersionsWithConflict() throws Exception {
 		ShipmentSnapshot shipment = create(forwarderToken, "HBL-STALE");
 		update(forwarderToken, shipment.id(), updatePayload("HBL-CURRENT", shipment.version()))
-				.andExpect(status().isOk());
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.version").value(shipment.version() + 1));
 
 		update(forwarderToken, shipment.id(), updatePayload("HBL-STALE-WRITE", shipment.version()))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.message").value(StaleShipmentVersionException.MESSAGE));
+
+		assertThat(jdbc.queryForObject("SELECT shipment_reference FROM shipments WHERE id = ?", String.class, shipment.id()))
+				.isEqualTo("HBL-CURRENT");
+		assertThat(jdbc.queryForObject("SELECT version FROM shipments WHERE id = ?", Long.class, shipment.id()))
+				.isEqualTo(shipment.version() + 1);
 	}
 
 	private ShipmentSnapshot create(String token, String reference) throws Exception {
