@@ -12,7 +12,7 @@
 | Planned Mother Arrival | Yes | `plannedMotherArrivalAt` | ISO-8601 offset date-time | An explicit timezone offset is required, for example `2026-10-10T09:30:00+08:00`. |
 | Feeder Vessel | Yes | `feederVessel` | Text | Trim whitespace; 1-200 characters. |
 | Planned Feeder Departure | Yes | `plannedFeederDepartureAt` | ISO-8601 offset date-time | An explicit timezone offset is required and the value must be strictly after Planned Mother Arrival. |
-| Importer Organisation | No | Future importer-company association | Deferred | A blank value is valid. A nonblank value is normalized and retained for later identifier resolution, authorization, and linking. |
+| Importer Organisation | No | Future importer-company association | Company Code | A blank value is valid. A nonblank value is an exact stored Company Code, retained for later authorization and linking. |
 
 ## Normalization and validation
 
@@ -23,9 +23,11 @@
 
 ## Organisation context
 
-`shipments.company_id` is the primary/managing organisation. It can be either an importer managing its own shipment or a freight forwarder managing a shipment. `importer_company_id` is an optional associated importer organisation, but its null/self semantics for importer-managed shipments remain unresolved.
+`shipments.company_id` is the primary/managing organisation. It can be either an importer managing its own shipment or a freight forwarder managing a shipment. For an importer-managed shipment, `importer_company_id` remains null. For a forwarder-managed shipment, it may reference a distinct linked importer.
 
-Importer Organisation is intentionally deferred. The parser preserves normalized nonblank text without resolving it to a company or granting access. The current company display name is not safe as a CSV identifier because the model does not establish that names are unique. The database ID is stable but not a user-friendly CSV value, and the existing company code is not currently exposed as a confirmed organisation-import identifier. CDG-129 must define the identifier, forwarder-to-importer authorization, and separate view/edit permissions before any retained value is linked to a shipment.
+Importer Organisation is optional. A nonblank value is resolved only as an exact stored Company Code; company display names are never used. The parser preserves normalized nonblank text without resolving it to a company or granting access. When an import is later orchestrated, the company must be active and the importing freight forwarder must have an active forwarder-to-importer authorization relationship before the value can be linked to a shipment.
+
+ADMIN bulk-import authorization remains deferred: the current Company model has no reliable company-type classification, so an ADMIN account cannot safely be identified as belonging to a freight-forwarder company. A future company-type/domain classification must be introduced before that rule can be completed.
 
 ## Responsibilities by subtask
 
