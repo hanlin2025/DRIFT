@@ -270,6 +270,12 @@ test('an administrator assigns a user and the new organisation and role take eff
     await expect(choice).toHaveAccessibleName(/Importer/);
     await expect(choice).toHaveAccessibleName(/Straits Fresh Imports \(Demo\)/);
 
+    await adminPage.reload();
+    await expect(adminPage).toHaveURL('/admin');
+    await expect(adminPage.getByRole('heading', { name: 'User management' })).toBeVisible();
+    await expect(adminPage.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
+    await expect(adminPage.getByRole('radio', { name: /Alice Tan/ })).toHaveAccessibleName(/Importer/);
+
     const adminStillSignedIn = await request.get('/api/session', { headers: bearer(adminSession.token) });
     expect(adminStillSignedIn.status()).toBe(200);
     await expectMessage(await request.get('/api/session', { headers: bearer(member.token) }), 401, SESSION_ENDED);
@@ -318,6 +324,7 @@ test('an invalid role or inactive organisation is rejected and the current assig
     await expectMessage(await assign(request, adminSession.token, target.id, 999999, 'IMPORTER'), 400, INVALID);
     await expectMessage(await assign(request, adminSession.token, target.id, companyId(archivedCode), 'IMPORTER'), 400, INVALID);
     await expectMessage(await assign(request, adminSession.token, target.id, null, 'IMPORTER'), 400, INVALID);
+    await expectMessage(await request.patch(`/api/admin/users/${target.id}/assign`, { headers: bearer(adminSession.token) }), 400, MISSING_ASSIGNMENT);
     const unchanged = await request.get('/api/session', { headers: bearer(target.token) });
     const unchangedBody = await unchanged.text();
     expect(unchanged.status(), unchangedBody).toBe(200);
@@ -379,7 +386,7 @@ test('someone who is not an administrator cannot assign users or open user manag
     }
     await expectMessage(await assign(request, null, target.id, importer.companyId, 'IMPORTER'), 401, SESSION_ENDED);
     await expectMessage(await request.get('/api/admin/users'), 401, SESSION_ENDED);
-    await expectMessage(await request.patch(`/api/admin/users/${target.id}/assign`, { headers: bearer(importer.token) }), 400, MISSING_ASSIGNMENT);
+    await expectMessage(await request.patch(`/api/admin/users/${target.id}/assign`, { headers: bearer(importer.token) }), 403, ASSIGNMENT_FORBIDDEN);
 
     await signIn(page, importer.email, '/importer');
     await expect(page.getByRole('heading', { name: 'Shipment overview' })).toBeVisible();
