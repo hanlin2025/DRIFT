@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { AdminRoute } from './admin/UserManagementPage';
 import './admin/admin.css';
+import './shipment/importer-link.css';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
 import { clearSession, homePath, isExpired, readSession } from './session/session';

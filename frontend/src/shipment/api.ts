@@ -17,6 +17,19 @@ export type VesselPosition = {
   ingestedAt: string;
 };
 
+export type ImporterOrganisation = {
+  id: number;
+  code: string;
+  name: string;
+};
+
+export type OrganisationPage = {
+  items: ImporterOrganisation[];
+  page: number;
+  size: number;
+  total: number;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -32,6 +45,7 @@ export type Shipment = {
   connectionWindow: ConnectionWindow | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
+  importer?: ImporterOrganisation | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -87,6 +101,25 @@ export async function updateShipment(token: string, shipmentId: number, shipment
   const updated = asShipment(data);
   if (!updated) throw new ApiError(UNEXPECTED, 502);
   return updated;
+}
+
+export async function searchImporterOrganisations(token: string, name: string): Promise<OrganisationPage> {
+  const query = new URLSearchParams({ type: 'importer', name, page: '0', size: '20' });
+  const data = await send(`/api/organisations?${query}`, token);
+  const page = asOrganisationPage(data);
+  if (!page) throw new ApiError(UNEXPECTED, 502);
+  return page;
+}
+
+export async function linkShipmentImporter(token: string, shipmentId: number, importerCompanyId: number | null): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/link-importer`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ importerCompanyId }),
+  });
+  const linked = asShipment(data);
+  if (!linked) throw new ApiError(UNEXPECTED, 502);
+  return linked;
 }
 
 export type ShipmentImportJobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
@@ -228,6 +261,8 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
   if (feederVesselPosition != null && !isVesselPosition(feederVesselPosition)) return null;
+  const importer = 'importer' in value ? organisationOf(value.importer) : null;
+  if (importer === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -243,7 +278,30 @@ function asShipment(value: unknown): Shipment | null {
     connectionWindow: window ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
+    importer,
   };
+}
+
+function organisationOf(value: unknown): ImporterOrganisation | null | undefined {
+  if (value == null) return null;
+  if (!isRecord(value) || !isFiniteNumber(value.id) || value.id <= 0 || typeof value.code !== 'string' || !value.code.trim()
+    || typeof value.name !== 'string' || !value.name.trim()) return undefined;
+  return { id: value.id, code: value.code, name: value.name };
+}
+
+function asOrganisationPage(value: unknown): OrganisationPage | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || !isWhole(value.page) || !isWhole(value.size) || !isWhole(value.total)) return null;
+  const items: ImporterOrganisation[] = [];
+  for (const item of value.items) {
+    const organisation = organisationOf(item);
+    if (!organisation) return null;
+    items.push(organisation);
+  }
+  return { items, page: value.page, size: value.size, total: value.total };
+}
+
+function isWhole(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 function asShipmentImportJob(value: unknown): ShipmentImportJob | null {
