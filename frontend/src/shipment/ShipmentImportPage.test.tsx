@@ -141,6 +141,12 @@ describe('shipment import page', () => {
     expect(screen.getByRole('link', { name: 'Back to Shipments' })).toHaveAttribute('href', '/freight-forwarder');
   });
 
+  it('uses singular wording for one successful import', async () => {
+    vi.mocked(getShipmentImportJob).mockResolvedValue({ ...job, status: 'COMPLETED', totalRows: 1, processedRows: 1, importedCount: 1, completedAt: '2026-10-10T00:02:00Z' });
+    open(forwarder, '/freight-forwarder/import/42');
+    expect(await screen.findByText('1 shipment imported successfully.')).toBeInTheDocument();
+  });
+
   it('shows upload API validation and permission failures without navigating', async () => {
     open();
     const file = new File(['row'], 'shipments.csv', { type: 'text/csv' });
