@@ -60,8 +60,9 @@ class PasswordResetDeliveryTests {
 		reset(store);
 		email = "cdg114-delivery-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Alex', ?, 'hash', 'FREIGHT_FORWARDER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Alex', ?, 'hash', id
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", email);
 	}
 
