@@ -171,7 +171,7 @@ function JobStatus({ job, errors, problem, onRetry, basePath }: {
 }
 
 function completionMessage(job: ShipmentImportJob): string {
-  if (job.failedCount === 0) return `${job.importedCount} shipments imported successfully.`;
+  if (job.failedCount === 0) return `${job.importedCount} ${job.importedCount === 1 ? 'shipment' : 'shipments'} imported successfully.`;
   return `${job.importedCount} imported, ${job.failedCount} failed.`;
 }
 
