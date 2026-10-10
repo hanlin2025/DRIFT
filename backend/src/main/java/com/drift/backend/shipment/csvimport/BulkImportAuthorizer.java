@@ -11,15 +11,14 @@ public class BulkImportAuthorizer {
 
 	public void authorize(UserAccount account) {
 		if (account.getCompany() == null || !account.getCompany().isActive()) {
-			throw new BulkImportForbiddenException("Bulk import requires an active company");
+			throw new BulkImportForbiddenException(BulkImportForbiddenException.ACTIVE_COMPANY);
 		}
 		if (account.getRole() == Role.FREIGHT_FORWARDER) {
 			return;
 		}
 		if (account.getRole() == Role.ADMIN) {
-			throw new BulkImportForbiddenException(
-					"ADMIN bulk-import access is deferred until company type is defined");
+			throw new BulkImportForbiddenException(BulkImportForbiddenException.ADMIN_DEFERRED);
 		}
-		throw new BulkImportForbiddenException("Your role is not authorized to import shipments in bulk");
+		throw new BulkImportForbiddenException(BulkImportForbiddenException.ROLE);
 	}
 }
