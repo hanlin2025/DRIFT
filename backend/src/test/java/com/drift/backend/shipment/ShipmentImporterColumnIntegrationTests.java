@@ -45,8 +45,9 @@ class ShipmentImporterColumnIntegrationTests {
 		String email = "cdg119-" + UUID.randomUUID() + "@example.com";
 		companyId = companyId("HARBOURLINE_DEMO");
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", email, passwords.encode("Example123"), companyId);
 		MvcResult login = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"%s\",\"password\":\"Example123\"}".formatted(email)))

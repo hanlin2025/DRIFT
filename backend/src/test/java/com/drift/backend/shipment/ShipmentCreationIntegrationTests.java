@@ -175,8 +175,9 @@ class ShipmentCreationIntegrationTests {
 	void rejectsAuthenticatedAccountsWithoutACompany() throws Exception {
 		String unassigned = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Unassigned User', ?, ?, 'FREIGHT_FORWARDER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Unassigned User', ?, ?, id
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", unassigned, passwords.encode("Example123"));
 
 		create(tokenFor(unassigned), shipment("HBL-2026-005"))
@@ -270,8 +271,9 @@ class ShipmentCreationIntegrationTests {
 
 		String importer = "cdg24-importer-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Ivan Lim', ?, ?, 'IMPORTER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Ivan Lim', ?, ?, id, ?
+				FROM roles WHERE code = 'IMPORTER'
 				""", importer, passwords.encode("Example123"), companyId);
 
 		list(tokenFor(importer))
@@ -494,8 +496,9 @@ class ShipmentCreationIntegrationTests {
 
 	private void createAccount(String accountEmail, Long accountCompanyId) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", accountEmail, passwords.encode("Example123"), accountCompanyId);
 	}
 

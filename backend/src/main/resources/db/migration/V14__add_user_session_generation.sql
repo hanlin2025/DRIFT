@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN session_generation BIGINT NOT NULL DEFAULT 0;

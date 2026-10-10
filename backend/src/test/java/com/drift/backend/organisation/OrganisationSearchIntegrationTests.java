@@ -157,8 +157,9 @@ class OrganisationSearchIntegrationTests {
 
 		String unassigned = "cdg120-none-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('No Company', ?, ?, 'IMPORTER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'No Company', ?, ?, id
+				FROM roles WHERE code = 'IMPORTER'
 				""", unassigned, passwords.encode("Example123"));
 		mvc.perform(get("/api/organisations").param("type", "importer")
 				.header("Authorization", "Bearer " + tokenFor(unassigned)))
@@ -196,9 +197,10 @@ class OrganisationSearchIntegrationTests {
 	private String account(String prefix, Long company, String role) throws Exception {
 		String email = prefix + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Akil Tan', ?, ?, ?, ?)
-				""", email, passwords.encode("Example123"), role, company);
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Akil Tan', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", email, passwords.encode("Example123"), company, role);
 		return tokenFor(email);
 	}
 
