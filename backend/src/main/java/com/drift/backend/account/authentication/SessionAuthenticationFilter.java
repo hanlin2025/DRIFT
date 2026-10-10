@@ -10,6 +10,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.exception.SessionEndedException;
 
 import jakarta.servlet.FilterChain;
@@ -22,9 +23,11 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 	static final String BEARER = "Bearer ";
 
 	private final JwtSessionTokens tokens;
+	private final UserAccountRepository users;
 
-	public SessionAuthenticationFilter(JwtSessionTokens tokens) {
+	public SessionAuthenticationFilter(JwtSessionTokens tokens, UserAccountRepository users) {
 		this.tokens = tokens;
+		this.users = users;
 	}
 
 	@Override
@@ -37,6 +40,10 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 		}
 		try {
 			AuthenticatedUser user = tokens.parse(header.substring(BEARER.length()).trim());
+			long generation = users.findSessionGenerationById(user.id()).orElseThrow(SessionEndedException::new);
+			if (generation != user.sessionGeneration()) {
+				throw new SessionEndedException();
+			}
 			var authentication = new UsernamePasswordAuthenticationToken(user, null,
 					List.of(new SimpleGrantedAuthority("ROLE_" + user.role().name())));
 			SecurityContextHolder.getContext().setAuthentication(authentication);

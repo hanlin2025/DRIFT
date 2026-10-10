@@ -92,6 +92,18 @@ class OpenApiIntegrationTests {
 						.value("#/components/schemas/VesselPosition"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists());
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists())
+				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.importer.$ref")
+						.value("#/components/schemas/Organisation"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.summary")
+						.value("Link a shipment to an importer"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.security[0].bearerAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['200'].content['application/json'].schema.$ref")
+						.value("#/components/schemas/ShipmentDetailResponse"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['400'].content['application/json'].example.message")
+						.value(com.drift.backend.shipment.exception.InvalidImporterOrganisationException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['404']").exists());
 	}
 }

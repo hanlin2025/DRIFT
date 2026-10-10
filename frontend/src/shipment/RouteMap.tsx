@@ -94,6 +94,8 @@ type LiveGlobe = {
   maplibre: MapLibre;
   markers: InstanceType<MapLibre['Marker']>[];
   ports: LngLat[];
+  framed: boolean;
+  liveFramed: boolean;
 };
 
 function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
@@ -101,13 +103,18 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
   handle.markers = fixes.map(fix => new handle.maplibre.Marker({ element: livePin(fix), anchor: 'center' })
     .setLngLat([fix.position.longitude, fix.position.latitude])
     .addTo(handle.map));
+  if (handle.liveFramed || (handle.framed && fixes.length === 0)) return;
   const framed = [...handle.ports, ...fixes.map(fix => [fix.position.longitude, fix.position.latitude] as LngLat)];
   if (framed.length > 1) {
     const bounds = new handle.maplibre.LngLatBounds(framed[0], framed[0]);
     for (const point of framed) bounds.extend(point);
     handle.map.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
+    handle.framed = true;
+    if (fixes.length > 0) handle.liveFramed = true;
   } else if (framed.length === 1) {
     handle.map.jumpTo({ center: framed[0], zoom: 3.4 });
+    handle.framed = true;
+    if (fixes.length > 0) handle.liveFramed = true;
   }
 }
 
@@ -152,8 +159,9 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
         attributionControl: { compact: true },
         cooperativeGestures: true,
       });
+      globe.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
       created = globe;
-      const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports };
+      const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports, framed: false, liveFramed: false };
       globeRef.current = handle;
       globe.on('load', () => {
         if (disposed) return;

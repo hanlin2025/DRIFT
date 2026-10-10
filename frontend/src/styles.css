@@ -162,7 +162,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-detail .intro { margin-bottom: 18px; }
 .shipment-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .shipment-title h2 { margin: 0; }
-.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.detail-actions .secondary-button,
+.refresh-button { white-space: nowrap; }
+.refresh-button { border: 1px solid var(--line); background: #f8f6ed; color: var(--ink); border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 750; }
+.refresh-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .route-chart { position: relative; margin: 0 0 18px; border-radius: 8px; overflow: hidden; background: #e7eef2; border: 1px solid #c8d9bf; }
 .route-chart-stage { height: 480px; }
 .route-chart-stage.maplibregl-map { font-family: 'Manrope Variable', sans-serif; }

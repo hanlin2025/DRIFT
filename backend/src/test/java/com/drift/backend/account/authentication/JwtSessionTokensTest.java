@@ -31,6 +31,7 @@ class JwtSessionTokensTest {
 		assertThat(user.id()).isEqualTo(15L);
 		assertThat(user.email()).isEqualTo("alice@example.com");
 		assertThat(user.role()).isEqualTo(Role.FREIGHT_FORWARDER);
+		assertThat(user.sessionGeneration()).isZero();
 		assertThat(session.expiresAt()).isEqualTo(now.plus(Duration.ofHours(1)));
 		assertThat(user.expiresAt()).isEqualTo(session.expiresAt());
 	}
