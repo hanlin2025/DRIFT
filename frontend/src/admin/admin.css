@@ -1,0 +1,46 @@
+.workspace-nav {
+  margin-left: auto;
+  color: #f8f6ed;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  text-decoration: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+.workspace-bar .workspace-nav + .sign-out { margin-left: 16px; }
+.admin-layout { display: grid; gap: 22px; }
+.user-choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.user-choices legend { font-size: 11px; font-weight: 750; margin-bottom: 8px; }
+.user-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fcfcf8;
+}
+.user-choice input { width: 18px; min-height: 18px; grid-row: span 2; }
+.user-choice strong { font-size: 12px; }
+.user-choice span { grid-column: 2; color: var(--muted); font-size: 11px; }
+.admin-form select {
+  width: 100%;
+  border: 1px solid #ccd5cb;
+  background: #fcfcf8;
+  border-radius: 4px;
+  padding: 12px 13px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  min-height: 44px;
+}
+.admin-form select:focus { outline: none; border-color: #54775f; box-shadow: 0 0 0 3px #54775f15; }
+.admin-form .primary-button { width: auto; min-width: 180px; }
+@media (max-width: 720px) {
+  .workspace-bar { flex-wrap: wrap; }
+  .workspace-nav { margin-left: 0; }
+  .admin-form .primary-button { width: 100%; }
+}

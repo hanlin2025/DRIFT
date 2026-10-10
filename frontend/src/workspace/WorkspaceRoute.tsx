@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
@@ -30,6 +30,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark href={basePath} />
+        {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">
@@ -88,9 +89,9 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       if (!active) return;
       const next = { ...current, token: saved.token };
       writeSession(next);
-      if (next.role !== role) {
+      if (homePath(next.role) !== homePath(role)) {
         const home = homePath(next.role);
-        navigate(shipmentId ? `${home}/shipments/${shipmentId}` : home, { replace: true });
+        navigate(shipmentId && home !== '/admin' ? `${home}/shipments/${shipmentId}` : home, { replace: true });
         return;
       }
       setAccount(next);
