@@ -40,7 +40,7 @@ app:
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
     rate-limit:
       email: ${PASSWORD_RESET_EMAIL_LIMIT:5}
-      ip: ${PASSWORD_RESET_IP_LIMIT:20}
+      ip: ${PASSWORD_RESET_IP_LIMIT:30}
       window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   ais:
     enabled: ${AIS_ENABLED:false}
