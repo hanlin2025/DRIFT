@@ -206,6 +206,18 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .globe-copy strong.is-missing { color: var(--muted); font-weight: 500; }
 .route-facts { margin-top: 0; }
 .route-facts dd.is-missing { color: var(--muted); font-weight: 500; }
+.shipment-detail .route-facts dd { overflow-wrap: anywhere; }
+.skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
+.skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
+.skeleton-intro { width: min(200px, 55%); height: 12px; margin: 0 0 18px; }
+.skeleton-map { height: 480px; margin: 0 0 18px; border-radius: 8px; }
+.shipment-record .skeleton-label { width: 90px; height: 10px; margin: 2px 0; }
+.shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (min-width: 761px) {
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(6, auto); grid-auto-flow: column; column-gap: 32px; }
+}
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
@@ -213,5 +225,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .pair-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }
-  .route-chart-stage { height: 340px; }
+  .route-chart-stage, .skeleton-map { height: 340px; }
+  .shipment-record .skeleton-value { margin-left: 0; margin-top: 6px; }
+  .shipment-detail .back-link { min-height: 44px; margin-bottom: 16px; }
+}
+@media (max-width: 480px) {
+  .route-chart-stage, .skeleton-map { height: 260px; }
+  .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
 }
