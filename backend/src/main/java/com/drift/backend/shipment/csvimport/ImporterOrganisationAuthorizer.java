@@ -21,6 +21,10 @@ public class ImporterOrganisationAuthorizer {
 	}
 
 	public ImporterOrganisationResolution resolveAuthorizedImporter(Company managingCompany, ShipmentImportRow row) {
+		return resolveAuthorizedImporter(managingCompany.getId(), row);
+	}
+
+	public ImporterOrganisationResolution resolveAuthorizedImporter(Long managingCompanyId, ShipmentImportRow row) {
 		String companyCode = row.importerOrganisation();
 		if (companyCode == null) {
 			return ImporterOrganisationResolution.authorized(null);
@@ -34,9 +38,9 @@ public class ImporterOrganisationAuthorizer {
 		if (!importer.isActive()) {
 			return rejected(row, "INACTIVE_IMPORTER_ORGANISATION", "Importer Organisation Company Code is inactive");
 		}
-		if (managingCompany.getId().equals(importer.getId())
+		if (managingCompanyId.equals(importer.getId())
 				|| !relationships.existsByForwarderCompanyIdAndImporterCompanyIdAndActiveTrue(
-						managingCompany.getId(), importer.getId())) {
+						managingCompanyId, importer.getId())) {
 			return rejected(row, "UNAUTHORIZED_IMPORTER_ORGANISATION",
 					"Your organisation is not authorized to import shipments for this importer");
 		}

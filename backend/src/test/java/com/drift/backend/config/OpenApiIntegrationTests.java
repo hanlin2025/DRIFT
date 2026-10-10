@@ -104,6 +104,10 @@ class OpenApiIntegrationTests {
 						.value(com.drift.backend.shipment.exception.InvalidImporterOrganisationException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['404']").exists());
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['404']").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/import'].post.summary").value("Start a shipment CSV import"))
+				.andExpect(jsonPath("$.paths['/api/shipments/import'].post.responses['202']").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/import/{jobId}'].get.summary").value("Get shipment import status"))
+				.andExpect(jsonPath("$.paths['/api/shipments/import/{jobId}/errors'].get.summary").value("Get shipment import row errors"));
 	}
 }
