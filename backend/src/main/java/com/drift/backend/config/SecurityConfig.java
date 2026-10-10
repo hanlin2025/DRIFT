@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import com.drift.backend.access.RolePermissionFilter;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.JwtSessionTokens;
 import com.drift.backend.account.authentication.SessionAuthenticationFilter;
@@ -23,6 +24,7 @@ public class SecurityConfig {
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens, UserAccountRepository users)
 			throws Exception {
 		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens, users);
+		RolePermissionFilter permissions = new RolePermissionFilter(users);
 		http
 				.csrf(AbstractHttpConfigurer::disable)
 				.httpBasic(AbstractHttpConfigurer::disable)
@@ -35,7 +37,8 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
 						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))
-				.addFilterBefore(sessions, UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(sessions, UsernamePasswordAuthenticationFilter.class)
+				.addFilterAfter(permissions, SessionAuthenticationFilter.class);
 		return http.build();
 	}
 
