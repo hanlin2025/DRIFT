@@ -172,14 +172,15 @@ class ShipmentUpdateServiceIntegrationTests {
 	private AuthenticatedUser account(String prefix, Role role, Long assignedCompanyId) {
 		String email = "cdg86-" + prefix + "-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('CDG 86 User', ?, ?, ?, ?)
-				""", email, passwords.encode("Example123"), role.name(), assignedCompanyId);
+				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				SELECT 'CDG 86 User', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", email, passwords.encode("Example123"), assignedCompanyId, role.name());
 		Long id = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
 		return new AuthenticatedUser(id, email, role, Instant.now().plusSeconds(3600));
 	}
 
 	private Long companyId(String code) {
-		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
+		return jdbc.queryForObject("SELECT id FROM organisations WHERE code = ?", Long.class, code);
 	}
 }

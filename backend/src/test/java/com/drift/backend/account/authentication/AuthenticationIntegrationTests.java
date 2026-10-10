@@ -50,7 +50,7 @@ class AuthenticationIntegrationTests {
 	@BeforeEach
 	void account() {
 		email = "cdg12-" + UUID.randomUUID() + "@example.com";
-		companyId = jdbc.queryForObject("SELECT id FROM companies WHERE code = 'HARBOURLINE_DEMO'", Long.class);
+		companyId = jdbc.queryForObject("SELECT id FROM organisations WHERE code = 'HARBOURLINE_DEMO'", Long.class);
 		createAccount(email, "FREIGHT_FORWARDER", companyId);
 	}
 
@@ -108,7 +108,7 @@ class AuthenticationIntegrationTests {
 	@Test
 	void importerLoginOpensAnImporterSession() throws Exception {
 		String importer = "cdg14-importer-" + UUID.randomUUID() + "@example.com";
-		Long importerCompany = jdbc.queryForObject("SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO'", Long.class);
+		Long importerCompany = jdbc.queryForObject("SELECT id FROM organisations WHERE code = 'STRAITS_FRESH_DEMO'", Long.class);
 		createAccount(importer, "IMPORTER", importerCompany);
 
 		String token = tokenFor(importer, "Example123");
@@ -177,9 +177,10 @@ class AuthenticationIntegrationTests {
 
 	private void createAccount(String accountEmail, String role, Long company) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, ?, ?)
-				""", accountEmail, passwords.encode("Example123"), role, company);
+				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", accountEmail, passwords.encode("Example123"), company, role);
 	}
 
 	private String tokenFor(String accountEmail, String password) throws Exception {

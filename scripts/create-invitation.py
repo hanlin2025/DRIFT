@@ -22,10 +22,10 @@ def main():
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     sql = r"""
 BEGIN;
-SELECT id AS company_id FROM companies WHERE code = :'company' AND active = TRUE \gset
+SELECT id AS organisation_id FROM organisations WHERE code = :'company' AND active = TRUE \gset
 UPDATE invitations SET status = 'REVOKED' WHERE email = :'email' AND status = 'PENDING';
-INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
-VALUES (:'email', :company_id, :'role', :'token_hash', NOW() + INTERVAL '7 days');
+INSERT INTO invitations (email, organisation_id, role, token_hash, expires_at)
+VALUES (:'email', :organisation_id, :'role', :'token_hash', NOW() + INTERVAL '7 days');
 COMMIT;
 """
     subprocess.run(

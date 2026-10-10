@@ -45,8 +45,9 @@ class PasswordResetIntegrationTests {
 		mailer.reset();
 		email = "cdg114-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Alex', ?, 'hash', 'FREIGHT_FORWARDER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Alex', ?, 'hash', id
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", email);
 	}
 
@@ -114,8 +115,9 @@ class PasswordResetIntegrationTests {
 	void oneAccountRequestDoesNotRetireAnotherAccountsLink() throws Exception {
 		String other = "other-" + email;
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Other', ?, 'hash', 'IMPORTER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Other', ?, 'hash', id
+				FROM roles WHERE code = 'IMPORTER'
 				""", other);
 		request(email);
 		request(other);

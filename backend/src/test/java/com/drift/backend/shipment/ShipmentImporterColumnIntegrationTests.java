@@ -45,8 +45,9 @@ class ShipmentImporterColumnIntegrationTests {
 		String email = "cdg119-" + UUID.randomUUID() + "@example.com";
 		companyId = companyId("HARBOURLINE_DEMO");
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", email, passwords.encode("Example123"), companyId);
 		MvcResult login = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"%s\",\"password\":\"Example123\"}".formatted(email)))
@@ -64,10 +65,10 @@ class ShipmentImporterColumnIntegrationTests {
 				""")).containsEntry("is_nullable", "YES");
 		assertThat(jdbc.queryForObject("""
 				SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'shipments_importer_company_id_fkey'
-				""", String.class)).contains("REFERENCES companies(id)");
+				""", String.class)).contains("REFERENCES organisations(id)");
 		assertThat(jdbc.queryForObject("""
 				SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'shipments_importer_is_another_company'
-				""", String.class)).contains("importer_company_id <> company_id");
+				""", String.class)).contains("importer_company_id <> organisation_id");
 		assertThat(jdbc.queryForObject("""
 				SELECT indexdef FROM pg_indexes WHERE indexname = 'shipments_importer_company_idx'
 				""", String.class)).contains("importer_company_id");
@@ -129,6 +130,6 @@ class ShipmentImporterColumnIntegrationTests {
 	}
 
 	private Long companyId(String code) {
-		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
+		return jdbc.queryForObject("SELECT id FROM organisations WHERE code = ?", Long.class, code);
 	}
 }

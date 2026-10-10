@@ -82,10 +82,10 @@ class ShipmentCreationIntegrationTests {
 		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
 		Long shipmentId = responseId.longValue();
 		assertThat(jdbc.queryForMap("""
-				SELECT company_id, created_by_user_id, shipment_reference, mother_vessel, feeder_vessel
+				SELECT organisation_id, created_by_user_id, shipment_reference, mother_vessel, feeder_vessel
 				FROM shipments WHERE id = ?
 				""", shipmentId))
-				.containsEntry("company_id", companyId)
+				.containsEntry("organisation_id", companyId)
 				.containsEntry("created_by_user_id", accountId)
 				.containsEntry("shipment_reference", "HBL-2026-001")
 				.containsEntry("mother_vessel", "MV Pacific Horizon")
@@ -175,8 +175,9 @@ class ShipmentCreationIntegrationTests {
 	void rejectsAuthenticatedAccountsWithoutACompany() throws Exception {
 		String unassigned = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Unassigned User', ?, ?, 'FREIGHT_FORWARDER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Unassigned User', ?, ?, id
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", unassigned, passwords.encode("Example123"));
 
 		create(tokenFor(unassigned), shipment("HBL-2026-005"))
@@ -254,7 +255,7 @@ class ShipmentCreationIntegrationTests {
 
 	@Test
 	void rejectsListingForAnInactiveCompany() throws Exception {
-		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", companyId);
+		jdbc.update("UPDATE organisations SET active = FALSE WHERE id = ?", companyId);
 		entityManager.clear();
 		list(token)
 				.andExpect(status().isForbidden())
@@ -270,8 +271,9 @@ class ShipmentCreationIntegrationTests {
 
 		String importer = "cdg24-importer-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Ivan Lim', ?, ?, 'IMPORTER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				SELECT 'Ivan Lim', ?, ?, id, ?
+				FROM roles WHERE code = 'IMPORTER'
 				""", importer, passwords.encode("Example123"), companyId);
 
 		list(tokenFor(importer))
@@ -463,7 +465,7 @@ class ShipmentCreationIntegrationTests {
 
 		MvcResult own = create(token, shipment("HBL-TRACK-OWN")).andExpect(status().isCreated()).andReturn();
 		Number ownShipmentId = JsonPath.read(own.getResponse().getContentAsString(), "$.id");
-		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", companyId);
+		jdbc.update("UPDATE organisations SET active = FALSE WHERE id = ?", companyId);
 		entityManager.clear();
 		tracking(token, ownShipmentId.toString())
 				.andExpect(status().isForbidden())
@@ -494,8 +496,9 @@ class ShipmentCreationIntegrationTests {
 
 	private void createAccount(String accountEmail, Long accountCompanyId) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", accountEmail, passwords.encode("Example123"), accountCompanyId);
 	}
 
@@ -508,7 +511,7 @@ class ShipmentCreationIntegrationTests {
 	}
 
 	private Long companyId(String code) {
-		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
+		return jdbc.queryForObject("SELECT id FROM organisations WHERE code = ?", Long.class, code);
 	}
 
 	private int countShipments() {

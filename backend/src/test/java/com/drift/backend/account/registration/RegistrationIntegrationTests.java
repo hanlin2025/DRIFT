@@ -45,8 +45,8 @@ class RegistrationIntegrationTests {
     void invite() {
         email = "cdg17-" + UUID.randomUUID() + "@example.com";
         token = UUID.randomUUID().toString().replace("-", "") + "abcdefghijk";
-        companyId = jdbc.queryForObject("SELECT id FROM companies WHERE code = 'HARBOURLINE_DEMO'", Long.class);
-        jdbc.update("INSERT INTO invitations (email, company_id, role, token_hash, expires_at) VALUES (?, ?, 'FREIGHT_FORWARDER', ?, ?)",
+        companyId = jdbc.queryForObject("SELECT id FROM organisations WHERE code = 'HARBOURLINE_DEMO'", Long.class);
+        jdbc.update("INSERT INTO invitations (email, organisation_id, role, token_hash, expires_at) VALUES (?, ?, 'FREIGHT_FORWARDER', ?, ?)",
                 email, companyId, InvitationToken.hash(token), java.sql.Timestamp.from(Instant.now().plusSeconds(3600)));
     }
 
@@ -82,7 +82,7 @@ class RegistrationIntegrationTests {
         String hash = jdbc.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, email);
         assertThat(hash).isNotEqualTo("Example123");
         assertThat(passwords.matches("Example123", hash)).isTrue();
-        assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE email = ?", Long.class, email)).isEqualTo(companyId);
+        assertThat(jdbc.queryForObject("SELECT organisation_id FROM users WHERE email = ?", Long.class, email)).isEqualTo(companyId);
         assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, email)).isEqualTo("CONSUMED");
         assertThat(jdbc.queryForObject("SELECT consumed_at IS NOT NULL FROM invitations WHERE email = ?", Boolean.class, email)).isTrue();
     }
@@ -91,8 +91,10 @@ class RegistrationIntegrationTests {
     void clientCannotOverrideCompanyOrRole() throws Exception {
         String body = request("Alice", email, "Example123", token).strip().replace("}", ",\"role\":\"IMPORTER\",\"companyId\":999999}");
         assertThat(register(body)).isEqualTo(201);
-        assertThat(jdbc.queryForObject("SELECT role FROM users WHERE email = ?", String.class, email)).isEqualTo("FREIGHT_FORWARDER");
-        assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE email = ?", Long.class, email)).isEqualTo(companyId);
+        assertThat(jdbc.queryForObject("""
+                SELECT roles.code FROM users JOIN roles ON roles.id = users.role_id WHERE users.email = ?
+                """, String.class, email)).isEqualTo("FREIGHT_FORWARDER");
+        assertThat(jdbc.queryForObject("SELECT organisation_id FROM users WHERE email = ?", Long.class, email)).isEqualTo(companyId);
     }
 
     @Test
@@ -131,7 +133,7 @@ class RegistrationIntegrationTests {
             case "expired" -> jdbc.update("UPDATE invitations SET expires_at = NOW() - INTERVAL '1 hour' WHERE email = ?", email);
             case "revoked" -> jdbc.update("UPDATE invitations SET status = 'REVOKED' WHERE email = ?", email);
             case "consumed" -> jdbc.update("UPDATE invitations SET status = 'CONSUMED', consumed_at = NOW() WHERE email = ?", email);
-            case "inactive-company" -> jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", companyId);
+            case "inactive-company" -> jdbc.update("UPDATE organisations SET active = FALSE WHERE id = ?", companyId);
             default -> throw new IllegalArgumentException(state);
         }
         assertThat(register(request("Alice", email, "Example123", token))).isEqualTo(400);
@@ -150,7 +152,10 @@ class RegistrationIntegrationTests {
 
     @Test
     void duplicateEmailDoesNotConsumeInvitation() throws Exception {
-        jdbc.update("INSERT INTO users (full_name, email, password_hash, role) VALUES ('Existing', ?, 'existing-hash', 'IMPORTER')", email);
+        jdbc.update("""
+                INSERT INTO users (full_name, email, password_hash, role_id)
+                SELECT 'Existing', ?, 'existing-hash', id FROM roles WHERE code = 'IMPORTER'
+                """, email);
         mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON)
                 .content(request("Alice", email.toUpperCase(), "Example123", token)))
                 .andExpect(status().isConflict())
