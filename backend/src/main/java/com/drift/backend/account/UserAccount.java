@@ -9,8 +9,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -33,9 +31,9 @@ public class UserAccount {
 	@Column(name = "password_hash", nullable = false, length = 255)
 	private String passwordHash;
 
-	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 32)
-	private Role role;
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "role_id", nullable = false)
+	private AccountRole role;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "company_id")
@@ -47,7 +45,7 @@ public class UserAccount {
 	protected UserAccount() {
 	}
 
-	public UserAccount(String fullName, String email, String passwordHash, Role role, Company company) {
+	public UserAccount(String fullName, String email, String passwordHash, AccountRole role, Company company) {
 		this.fullName = fullName;
 		this.email = email;
 		this.passwordHash = passwordHash;
@@ -73,7 +71,7 @@ public class UserAccount {
 	}
 
 	public Role getRole() {
-		return role;
+		return role.getCode();
 	}
 
 	public Company getCompany() {

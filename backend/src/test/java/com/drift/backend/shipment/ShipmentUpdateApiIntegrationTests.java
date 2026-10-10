@@ -175,9 +175,10 @@ class ShipmentUpdateApiIntegrationTests {
 
 	private void createAccount(String email, String role, Long accountCompanyId) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Update User', ?, ?, ?, ?)
-				""", email, passwords.encode("Example123"), role, accountCompanyId);
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Update User', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", email, passwords.encode("Example123"), accountCompanyId, role);
 	}
 
 	private Long companyId(String companyCode) {

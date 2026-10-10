@@ -177,9 +177,10 @@ class AuthenticationIntegrationTests {
 
 	private void createAccount(String accountEmail, String role, Long company) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, ?, ?)
-				""", accountEmail, passwords.encode("Example123"), role, company);
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", accountEmail, passwords.encode("Example123"), company, role);
 	}
 
 	private String tokenFor(String accountEmail, String password) throws Exception {
