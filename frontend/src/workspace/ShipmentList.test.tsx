@@ -171,7 +171,7 @@ describe('workspace shipment retrieval', () => {
 
     cleanup();
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/99');
-    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found or has been removed.');
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/freight-forwarder');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
   });
