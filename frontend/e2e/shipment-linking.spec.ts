@@ -209,13 +209,39 @@ async function signIn(page: Page, email: string, url: string) {
   await expect(page).toHaveURL(url);
 }
 
+async function linkThroughEditor(page: Page, shipmentId: number, search: string, optionName: string) {
+  await page.goto(`/freight-forwarder/shipments/${shipmentId}`);
+  await page.getByRole('button', { name: 'Edit shipment' }).click();
+  await expect(page.getByRole('heading', { name: 'Edit shipment' })).toBeVisible();
+  const field = page.getByLabel('Link importer');
+  await field.click();
+  await field.fill(search);
+  const list = page.getByRole('listbox', { name: 'Importer organisations' });
+  const option = list.getByRole('option', { name: optionName });
+  await expect(option).toBeVisible();
+  await expect(list).not.toContainText('HARBOURLINE_DEMO');
+  await option.click();
+  await expect(field).toHaveValue(optionName);
+  await page.getByRole('button', { name: /Save shipment/ }).click();
+  await expect(page.getByRole('status')).toHaveText(`Shipment linked to ${optionName}`);
+}
+
+async function unlinkThroughEditor(page: Page, shipmentId: number) {
+  await page.goto(`/freight-forwarder/shipments/${shipmentId}`);
+  await page.getByRole('button', { name: 'Edit shipment' }).click();
+  await page.getByRole('button', { name: 'Remove link' }).click();
+  await expect(page.getByLabel('Link importer')).toHaveValue('');
+  await page.getByRole('button', { name: /Save shipment/ }).click();
+  await expect(page.getByRole('status')).toHaveText('Shipment unlinked.');
+}
+
 test.beforeAll(() => {
   assertOwnedDatabase();
 });
 
-test('a freight forwarder links a shipment and the importer dashboard shows it at once', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+test('a freight forwarder links a shipment and the importer dashboard shows it at once', { tag: '@disposable-database' }, async ({ page, browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Shipment linking is covered once on desktop.');
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const suffix = randomBytes(3).toString('hex');
   const pacificCode = `CDG124P${suffix}`.slice(0, 50);
   insertCompany(pacificCode, `Pacific Gate ${suffix}`, true);
@@ -224,6 +250,7 @@ test('a freight forwarder links a shipment and the importer dashboard shows it a
   const pacific = await registerAccount(request, 'IMPORTER', pacificCode, 'Casey Pacific');
   const ownedByStraits = await createShipment(request, straits.token, `Straits Own ${suffix}`);
   const shipment = await createShipment(request, forwarder.token, `Ever Steady ${suffix}`);
+  const forwarderPage = await browser.newPage();
   try {
     const found = await searchImporters(request, forwarder.token, 'Straits Fresh');
     const straitsOrg = found.items.find(item => item.code === 'STRAITS_FRESH_DEMO');
@@ -235,7 +262,9 @@ test('a freight forwarder links a shipment and the importer dashboard shows it a
     await expect(page.getByRole('link', { name: shipment.shipmentReference })).toHaveCount(0);
     await expect(page.getByLabel('Link importer')).toHaveCount(0);
 
-    const linked = await linkImporter(request, forwarder.token, shipment.id, straitsOrg!.id);
+    await signIn(forwarderPage, forwarder.email, '/freight-forwarder');
+    await linkThroughEditor(forwarderPage, shipment.id, 'Straits', 'Straits Fresh Imports (Demo)');
+    const linked = await request.get(`/api/shipments/${shipment.id}`, { headers: bearer(forwarder.token) });
     const linkedBody = await linked.text();
     expect(linked.status(), linkedBody).toBe(200);
     const linkedJson = JSON.parse(linkedBody);
@@ -277,6 +306,7 @@ test('a freight forwarder links a shipment and the importer dashboard shows it a
     await expect(page.getByRole('link', { name: shipment.shipmentReference })).toBeVisible();
     await expect(page.locator('.company-card strong')).toHaveText('Harbourline Logistics (Demo)');
   } finally {
+    await forwarderPage.close();
     cleanup([forwarder.email, straits.email, pacific.email], [pacificCode]);
   }
 });
@@ -314,9 +344,9 @@ test('an invalid, inactive, or missing importer is rejected and the current link
   }
 });
 
-test('re-linking and unlinking move the shipment between importer dashboards', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+test('re-linking and unlinking move the shipment between importer dashboards', { tag: '@disposable-database' }, async ({ page, browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Shipment linking is covered once on desktop.');
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const suffix = randomBytes(3).toString('hex');
   const pacificCode = `CDG124R${suffix}`.slice(0, 50);
   const pacificName = `Pacific Gate ${suffix}`;
@@ -326,6 +356,7 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
   const pacific = await registerAccount(request, 'IMPORTER', pacificCode, 'Casey Pacific');
   const first = await createShipment(request, forwarder.token, `Ever Steady ${suffix}`);
   const second = await createShipment(request, forwarder.token, `Feeder North ${suffix}`);
+  const forwarderPage = await browser.newPage();
   try {
     const straitsOrg = (await searchImporters(request, forwarder.token, 'Straits Fresh')).items
       .find(item => item.code === 'STRAITS_FRESH_DEMO');
@@ -334,8 +365,9 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
     expect(straitsOrg).toBeTruthy();
     expect(pacificOrg).toBeTruthy();
 
-    expect((await linkImporter(request, forwarder.token, first.id, straitsOrg!.id)).status()).toBe(200);
-    expect((await linkImporter(request, forwarder.token, second.id, pacificOrg!.id)).status()).toBe(200);
+    await signIn(forwarderPage, forwarder.email, '/freight-forwarder');
+    await linkThroughEditor(forwarderPage, first.id, 'Straits', 'Straits Fresh Imports (Demo)');
+    await linkThroughEditor(forwarderPage, second.id, pacificName, pacificName);
 
     await signIn(page, straits.email, '/importer');
     await expect(page.getByRole('link', { name: first.shipmentReference })).toBeVisible();
@@ -347,7 +379,8 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
     await expect(page.getByRole('link', { name: first.shipmentReference })).toHaveCount(0);
     await expectHidden(request, pacific.token, first);
 
-    const moved = await linkImporter(request, forwarder.token, first.id, pacificOrg!.id);
+    await linkThroughEditor(forwarderPage, first.id, pacificName, pacificName);
+    const moved = await request.get(`/api/shipments/${first.id}`, { headers: bearer(forwarder.token) });
     const movedBody = await moved.text();
     expect(moved.status(), movedBody).toBe(200);
     expect(JSON.parse(movedBody).importer.code).toBe(pacificCode);
@@ -366,7 +399,8 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
     await expect(page.getByRole('heading', { name: first.shipmentReference })).toBeVisible();
     await expect(page.getByText(first.vessel).first()).toBeVisible();
 
-    const cleared = await linkImporter(request, forwarder.token, first.id, null);
+    await unlinkThroughEditor(forwarderPage, first.id);
+    const cleared = await request.get(`/api/shipments/${first.id}`, { headers: bearer(forwarder.token) });
     const clearedBody = await cleared.text();
     expect(cleared.status(), clearedBody).toBe(200);
     expect(JSON.parse(clearedBody).importer).toBeNull();
@@ -381,6 +415,7 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
     await expect(page.getByRole('link', { name: first.shipmentReference })).toBeVisible();
     await expect(page.getByRole('link', { name: second.shipmentReference })).toBeVisible();
   } finally {
+    await forwarderPage.close();
     cleanup([forwarder.email, straits.email, pacific.email], [pacificCode]);
   }
 });
