@@ -39,20 +39,24 @@ public class ShipmentService {
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
 	private final Validator validator;
+	private final ShipmentAccessPolicy accessPolicy;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator) {
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
+			ShipmentAccessPolicy accessPolicy) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 		this.validator = validator;
+		this.accessPolicy = accessPolicy;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
 		Company company = activeCompany(principal);
-		return shipments.findByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
+		return shipments.findVisibleByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
+				.filter(shipment -> accessPolicy.canView(company, shipment))
 				.map(this::respond)
 				.toList();
 	}
@@ -60,7 +64,8 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
-		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+		return shipments.findByIdVisibleToCompanyId(shipmentId, company.getId())
+				.filter(shipment -> accessPolicy.canView(company, shipment))
 				.map(this::detail)
 				.orElseThrow(() -> shipments.existsById(shipmentId)
 						? new ShipmentDetailForbiddenException()
@@ -103,7 +108,7 @@ public class ShipmentService {
 	@Transactional
 	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request) {
 		ShipmentDetails details = validatedDetails(request);
-		Shipment shipment = visibleShipment(principal, shipmentId);
+		Shipment shipment = editableShipment(principal, shipmentId);
 		if (!request.version().equals(shipment.getVersion())) {
 			throw new StaleShipmentVersionException();
 		}
@@ -162,8 +167,21 @@ public class ShipmentService {
 
 	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
-		return shipments.findByIdAndCompanyId(shipmentId, company.getId())
+		return shipments.findByIdVisibleToCompanyId(shipmentId, company.getId())
+				.filter(shipment -> accessPolicy.canView(company, shipment))
 				.orElseThrow(ShipmentNotFoundException::new);
+	}
+
+	private Shipment editableShipment(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		Shipment shipment = shipments.findByIdAndCompanyId(shipmentId, company.getId()).orElse(null);
+		if (shipment != null && accessPolicy.canEdit(company, shipment)) {
+			return shipment;
+		}
+		if (shipments.findByIdVisibleToCompanyId(shipmentId, company.getId()).isPresent()) {
+			throw new ShipmentDetailForbiddenException();
+		}
+		throw new ShipmentNotFoundException();
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {

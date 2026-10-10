@@ -135,4 +135,8 @@ public class Shipment {
 	public Company getImporterCompany() {
 		return importerCompany;
 	}
+
+	public Company getCompany() {
+		return company;
+	}
 }
