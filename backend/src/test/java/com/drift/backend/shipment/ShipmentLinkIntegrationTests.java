@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.InvalidImporterOrganisationException;
+import com.drift.backend.shipment.exception.MissingShipmentInformationException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
@@ -133,6 +134,20 @@ class ShipmentLinkIntegrationTests {
 	}
 
 	@Test
+	void rejectsAMissingBodyWithoutClearingAnExistingLink() throws Exception {
+		Long shipmentId = createShipment(token);
+		link(token, shipmentId, importerId).andExpect(status().isOk());
+
+		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
+				.header("Authorization", "Bearer " + token))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(MissingShipmentInformationException.MESSAGE));
+
+		assertThat(jdbc.queryForObject("SELECT importer_company_id FROM shipments WHERE id = ?", Long.class, shipmentId))
+				.isEqualTo(importerId);
+	}
+
+	@Test
 	void rejectsAMissingSessionAndAnUnknownShipment() throws Exception {
 		mvc.perform(patch("/api/shipments/1/link-importer")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -181,9 +196,10 @@ class ShipmentLinkIntegrationTests {
 
 	private void createAccount(String accountEmail, Long accountCompanyId, String role) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, ?, ?)
-				""", accountEmail, passwords.encode("Example123"), role, accountCompanyId);
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = ?
+				""", accountEmail, passwords.encode("Example123"), accountCompanyId, role);
 	}
 
 	private String tokenFor(String accountEmail) throws Exception {

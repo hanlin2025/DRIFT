@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
+import com.drift.backend.shipment.exception.MissingShipmentInformationException;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -33,7 +34,7 @@ public class ShipmentLinkController {
 
 	@PatchMapping("/api/shipments/{shipmentId}/link-importer")
 	@Operation(summary = "Link a shipment to an importer", description = "Links one shipment owned by the authenticated freight forwarder's company to another active company, "
-			+ "or removes the link when importerCompanyId is null. "
+			+ "or removes the link when importerCompanyId is null. A request with no body is rejected and does not remove the link. "
 			+ "The stored column is shipments.importer_company_id. "
 			+ "An importer organisation is any other active company, which is the same rule as the organisation search. "
 			+ "A user who is not a freight forwarder in that company is forbidden.",
@@ -68,7 +69,10 @@ public class ShipmentLinkController {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
-		Long importerCompanyId = request == null ? null : request.importerCompanyId();
+		if (request == null) {
+			throw new MissingShipmentInformationException();
+		}
+		Long importerCompanyId = request.importerCompanyId();
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(links.link(user, shipmentId, importerCompanyId));
 	}

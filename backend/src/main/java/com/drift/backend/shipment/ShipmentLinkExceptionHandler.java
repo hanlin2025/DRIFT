@@ -12,6 +12,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.InvalidImporterOrganisationException;
+import com.drift.backend.shipment.exception.MissingShipmentInformationException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
@@ -24,9 +25,9 @@ public class ShipmentLinkExceptionHandler {
 		return message(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
-	@ExceptionHandler(HttpMessageNotReadableException.class)
-	public ResponseEntity<Map<String, String>> handleUnreadable(HttpMessageNotReadableException ex) {
-		return message(HttpStatus.BAD_REQUEST, "Shipment information is missing or invalid");
+	@ExceptionHandler({ HttpMessageNotReadableException.class, MissingShipmentInformationException.class })
+	public ResponseEntity<Map<String, String>> handleUnreadable(Exception ex) {
+		return message(HttpStatus.BAD_REQUEST, MissingShipmentInformationException.MESSAGE);
 	}
 
 	@ExceptionHandler({ ShipmentLinkForbiddenException.class, ShipmentAccessForbiddenException.class })
