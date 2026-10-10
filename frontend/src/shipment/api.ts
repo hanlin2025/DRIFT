@@ -6,6 +6,13 @@ export type ConnectionWindow = {
   totalSeconds: number;
 };
 
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export type ShipmentRisk = {
+  level: RiskLevel;
+  explanation: string;
+};
+
 export type VesselPosition = {
   mmsi: string;
   vesselName: string | null;
@@ -30,6 +37,7 @@ export type Shipment = {
   createdAt: string;
   version: number;
   connectionWindow: ConnectionWindow | null;
+  risk: ShipmentRisk | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
 };
@@ -135,6 +143,15 @@ function isConnectionWindow(value: unknown): value is ConnectionWindow {
     && Number.isFinite(value.totalSeconds);
 }
 
+const RISK_LEVELS: readonly unknown[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+function isRisk(value: unknown): value is ShipmentRisk {
+  return isRecord(value)
+    && RISK_LEVELS.includes(value.level)
+    && typeof value.explanation === 'string'
+    && value.explanation.trim().length > 0;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -176,6 +193,8 @@ function asShipment(value: unknown): Shipment | null {
   if (!isNullableText(value.feederVessel) || !isNullableText(value.plannedFeederDepartureAt)) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
+  const risk = value.risk;
+  if (risk != null && !isRisk(risk)) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -193,6 +212,7 @@ function asShipment(value: unknown): Shipment | null {
     createdAt: value.createdAt as string,
     version: value.version,
     connectionWindow: window ?? null,
+    risk: risk ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
   };

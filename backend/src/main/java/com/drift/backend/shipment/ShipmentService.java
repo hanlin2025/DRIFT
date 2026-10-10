@@ -167,7 +167,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, window(shipment),
+		return ShipmentDetailResponse.from(shipment, calculation(shipment),
 				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
 	}
 
@@ -193,8 +193,12 @@ public class ShipmentService {
 	}
 
 	private ConnectionWindow window(Shipment shipment) {
+		return calculation(shipment).window();
+	}
+
+	private ConnectionWindowCalculation calculation(Shipment shipment) {
 		return connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt()).window();
+				shipment.getPlannedFeederDepartureAt());
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

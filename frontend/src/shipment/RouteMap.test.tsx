@@ -44,6 +44,7 @@ const shipment: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: null,
+  risk: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
