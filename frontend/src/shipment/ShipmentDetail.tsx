@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
-import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
+import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
@@ -19,6 +19,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
   const [problem, setProblem] = useState<{ message: string; retry: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const requestSeq = useRef(0);
@@ -104,24 +105,39 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
         : shipment === null
           ? <div className="notice">Loading shipment...</div>
-          : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} />}
+          : editing
+            ? <ShipmentForm token={token} onSessionEnded={onSessionEnded} shipment={shipment}
+                onUpdated={() => {
+                  setEditing(false);
+                  setAttempt(value => value + 1);
+                }}
+                onCancel={() => setEditing(false)}
+                onReload={() => {
+                  setEditing(false);
+                  setAttempt(value => value + 1);
+                }} />
+            : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} onEdit={() => setEditing(true)} />}
     </section>
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh }: {
+function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, onEdit }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
+  onEdit: () => void;
 }) {
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
       <div className="shipment-title">
         <h2>{shipment.shipmentReference}</h2>
-        <button type="button" className="refresh-button" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
+        <div className="detail-actions">
+          <button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button>
+          <button type="button" className="refresh-button" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
+        </div>
       </div>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}

@@ -9,7 +9,7 @@ import { ApiError } from '../signup/api';
 import { createShipment, listShipments, type Shipment } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('./api', () => ({ createShipment: vi.fn(), listShipments: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn() }));
 
 const forwarder: Session = {
   token: 'session-token',
@@ -36,6 +36,7 @@ beforeEach(() => {
   vi.mocked(createShipment).mockImplementation(async (_token, shipment) => ({
     id: 9,
     createdAt: '2026-09-29T04:00:00Z',
+    version: 0,
     ...shipment,
     connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
     motherVesselPosition: null,
@@ -73,6 +74,7 @@ const listed: Shipment = {
   feederVessel: 'MV Strait Runner',
   plannedFeederDepartureAt: '2026-10-05T00:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  version: 0,
   connectionWindow: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
