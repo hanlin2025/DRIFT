@@ -104,6 +104,23 @@ class ShipmentImportCsvParserTest {
         assertThrows(ShipmentImportFileException.class, () -> parser.parse(new ByteArrayInputStream(malformed)));
     }
 
+    @Test
+    void rejectsMalformedQuotedRecordsAfterAValidHeaderAsFileLevelFailures() {
+        ShipmentImportFileException exception = assertThrows(
+                ShipmentImportFileException.class,
+                () -> parse(csv(validValues()) + "\"unterminated value"));
+
+        assertEquals("CSV could not be read", exception.getMessage());
+    }
+
+    @Test
+    void reportsSurplusFieldsAsRowLevelErrors() {
+        ShipmentImportParseResult result = parse(csv(validValues() + ",unexpected"));
+
+        assertTrue(result.validRows().isEmpty());
+        assertEquals("TOO_MANY_COLUMNS", result.errors().getFirst().code());
+    }
+
     private ShipmentImportParseResult parse(String csv) {
         return parser.parse(new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8)));
     }

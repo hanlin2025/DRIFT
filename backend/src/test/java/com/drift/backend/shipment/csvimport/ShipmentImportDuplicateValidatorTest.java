@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.ShipmentRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -38,8 +40,8 @@ class ShipmentImportDuplicateValidatorTest {
 
     @Test
     void rejectsAReferenceThatAlreadyExistsForTheManagingCompany() {
-        when(shipmentRepository.existsByCompanyIdAndShipmentReferenceIgnoreCase(any(), eq("REF-1")))
-                .thenReturn(true);
+        when(shipmentRepository.findExistingShipmentReferencesByCompanyIdIgnoringCase(any(), any()))
+                .thenReturn(Set.of("ref-1"));
         ShipmentImportDuplicateValidator validator = new ShipmentImportDuplicateValidator(shipmentRepository);
 
         ShipmentImportParseResult result = validator.validate(
@@ -47,6 +49,7 @@ class ShipmentImportDuplicateValidatorTest {
 
         assertTrue(result.validRows().isEmpty());
         assertEquals("DUPLICATE_REFERENCE_IN_DATABASE", result.errors().getFirst().code());
+        verify(shipmentRepository).findExistingShipmentReferencesByCompanyIdIgnoringCase(any(), eq(Set.of("ref-1")));
     }
 
     @Test
