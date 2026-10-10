@@ -40,7 +40,8 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments")
-	@Operation(summary = "List shipments", description = "Lists the shipments of the authenticated user's active company, newest first. "
+	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
+			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -64,8 +65,8 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company, "
-			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
+	@Operation(summary = "Get a shipment", description = "Returns one shipment visible to the authenticated user's active company, "
+			+ "including a shipment linked to that company as the importer, and includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
@@ -100,7 +101,7 @@ public class ShipmentController {
 
 	@GetMapping("/api/shipments/{shipmentId}/tracking")
 	@Operation(summary = "Get shipment vessel tracking", description = "Returns the latest retained AIS position for the mother vessel and the feeder vessel "
-			+ "of one shipment belonging to the authenticated user's active company. "
+			+ "of one shipment visible to the authenticated user's active company. "
 			+ "Each position includes coordinates, speed, course, heading, and the time it was ingested. "
 			+ "A missing position is null. This is a live fix, not an arrival estimate. "
 			+ "A shipment of another company is reported as not found.",
@@ -169,7 +170,8 @@ public class ShipmentController {
 	}
 
 	@PutMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Replace a shipment", description = "Replaces all editable shipment details for a shipment of the authenticated user's active company. "
+	@Operation(summary = "Replace a shipment", description = "Replaces all editable shipment details for a shipment managed by the authenticated user's active company. "
+			+ "A linked importer may view and track a shipment but cannot replace it. "
 			+ "Supply the version returned when the shipment was last read. A stale version returns 409 Conflict; refresh the shipment before trying again. "
 			+ "Shipment references remain unique within the company, ignoring letter case.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))

@@ -34,7 +34,7 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.description")
-						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is forbidden, and an unknown id is reported as not found."))
+						.value("Returns one shipment visible to the authenticated user's active company, including a shipment linked to that company as the importer, and includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is forbidden, and an unknown id is reported as not found."))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].schema.properties.message.type")
 						.value("string"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].examples['Shipment of another company'].value.message")

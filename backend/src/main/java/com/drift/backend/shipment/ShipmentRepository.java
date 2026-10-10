@@ -10,9 +10,23 @@ import org.springframework.data.repository.query.Param;
 
 public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
-	List<Shipment> findByCompanyIdOrderByCreatedAtDesc(Long companyId);
+	@Query("""
+			SELECT shipment FROM Shipment shipment
+			WHERE shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId
+			ORDER BY shipment.createdAt DESC
+			""")
+	List<Shipment> findVisibleByCompanyIdOrderByCreatedAtDesc(@Param("companyId") Long companyId);
 
 	Optional<Shipment> findByIdAndCompanyId(Long id, Long companyId);
+
+	@Query("""
+			SELECT shipment FROM Shipment shipment
+			WHERE shipment.id = :shipmentId
+				AND (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)
+			""")
+	Optional<Shipment> findByIdVisibleToCompanyId(
+			@Param("shipmentId") Long shipmentId,
+			@Param("companyId") Long companyId);
 
 	@Query("""
 			SELECT COUNT(shipment) > 0
