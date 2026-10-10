@@ -228,6 +228,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .route-chart-stage, .skeleton-map { height: 340px; }
   .shipment-record .skeleton-value { margin-left: 0; margin-top: 6px; }
   .shipment-detail .back-link { min-height: 44px; margin-bottom: 16px; }
+	.import-errors-heading { align-items: flex-start; flex-direction: column; }
 }
 @media (max-width: 480px) {
   .route-chart-stage, .skeleton-map { height: 260px; }

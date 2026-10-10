@@ -5,6 +5,7 @@ import { clearSession, endSession, homePath, isExpired, readSession, sessionHasE
 import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
+import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
@@ -17,12 +18,13 @@ function Wordmark({ href }: { href: string }) {
   );
 }
 
-export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
+export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'portfolio' }: {
   account: Session;
   onSignOut: () => void;
   onSessionEnded: () => void;
+  page?: 'portfolio' | 'import';
 }) {
-  const { shipmentId } = useParams();
+  const { shipmentId, jobId } = useParams();
   const [registered, setRegistered] = useState(0);
   const importer = account.role === 'IMPORTER';
   const basePath = homePath(account.role);
@@ -30,11 +32,14 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark href={basePath} />
+        {account.role === 'FREIGHT_FORWARDER' ? <Link className="workspace-nav" to="/freight-forwarder/import">Import shipments</Link> : null}
         {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">
-        {shipmentId
+        {page === 'import'
+          ? <ShipmentImportPage token={account.token} basePath={basePath} jobId={jobId} onSessionEnded={onSessionEnded} />
+          : shipmentId
           ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
           : <>
             <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
@@ -64,7 +69,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded }: {
 // setTimeout fires immediately for delays above 2^31 - 1 ms, so long sessions are re-checked in steps.
 const MAX_TIMER_DELAY = 2_147_483_647;
 
-export function WorkspaceRoute({ role }: { role: Session['role'] }) {
+export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['role']; page?: 'portfolio' | 'import' }) {
   const navigate = useNavigate();
   const { shipmentId } = useParams();
   const [account, setAccount] = useState<Session | null>(null);
@@ -89,6 +94,10 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       if (!active) return;
       const next = { ...current, token: saved.token };
       writeSession(next);
+      if (page === 'import' && next.role !== 'FREIGHT_FORWARDER') {
+        navigate(homePath(next.role), { replace: true });
+        return;
+      }
       if (homePath(next.role) !== homePath(role)) {
         const home = homePath(next.role);
         navigate(shipmentId && home !== '/admin' ? `${home}/shipments/${shipmentId}` : home, { replace: true });
@@ -104,7 +113,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [navigate, role, attempt, sessionEnded, shipmentId]);
+  }, [navigate, page, role, attempt, sessionEnded, shipmentId]);
 
   useEffect(() => {
     if (!account) return;
@@ -125,7 +134,7 @@ export function WorkspaceRoute({ role }: { role: Session['role'] }) {
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <WorkspacePage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
+  return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
 function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
