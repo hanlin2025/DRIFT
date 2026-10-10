@@ -1,12 +1,12 @@
-import { ApiError, post, type Role } from '../signup/api';
-import { type Session } from '../session/session';
+import { ApiError, post } from '../signup/api';
+import { type Role, type Session } from '../session/session';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isRole(value: unknown): value is Role {
-  return value === 'IMPORTER' || value === 'FREIGHT_FORWARDER';
+  return value === 'IMPORTER' || value === 'FREIGHT_FORWARDER' || value === 'ADMIN' || value === 'LOGISTICS_MANAGER';
 }
 
 function companyOf(value: unknown): Session['company'] {
