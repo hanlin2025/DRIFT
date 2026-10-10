@@ -61,8 +61,8 @@ npm run test:e2e
 
 That command covers desktop and mobile signup, login, role routing, validation, signed-out
 redirects, session expiry, and invitation reuse against the real API. It does not run the
-shipment retrieval spec below. Set `DRIFT_E2E_DATABASE` only when the backend uses that same
-database.
+shipment retrieval or map monitoring specs below. Set `DRIFT_E2E_DATABASE` only when the
+backend uses that same database.
 
 ### Shipment retrieval
 
@@ -98,3 +98,40 @@ and does not run this one.
 
 Ordering and company isolation stay in `ShipmentCreationIntegrationTests`. This spec does not
 open a shipment detail page.
+
+### Map monitoring
+
+`e2e/map-monitoring.spec.ts` signs in a disposable freight forwarder and opens one shipment
+detail page. It checks that a fresh vessel observation draws the live marker and the
+last-updated line, that an observation older than six hours keeps that marker and shows the
+last-known-position warning, and that a shipment with no observation shows the no-position
+warning with no live marker. A freight forwarder from another company receives 403 from the
+shipment detail API and 404 from the tracking API, and the page shows that access alert
+instead of the globe. A request with no session receives 401. Dragging the globe and zooming
+with Ctrl plus the wheel move the marker without leaving the shipment URL.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:map
+```
+
+That command runs `scripts/run-map-monitoring.mjs`. The runner generates a database name,
+creates that database, and records ownership only after creation succeeds. It then starts a
+backend with `SPRING_DATASOURCE_URL` and `SPRING_FLYWAY_URL` set to that database, so Flyway
+migrates only the database it just created. The spec receives the same name and writes fixtures
+only when the database comment matches the ownership record. A supplied name is not enough.
+`AIS_ENABLED` is false, and the JWT secret stays in the backend process. SQL goes through
+Docker Compose when it is available, and through `psql` on `127.0.0.1` otherwise.
+
+If port 8080 is already in use, the runner stops before creating a database and does not stop
+the other process. After the spec, a failed spec, or a backend that exits before it is ready,
+the runner stops only the backend it started and drops only the database it created. It does
+not drop `drift`, `drift_test`, or a database that already existed. Cleanup is not guaranteed
+if the runner is killed in a way it cannot catch, or if a second interrupt arrives during
+cleanup. The runner reports a drop or shutdown failure instead of ignoring it.
+
+Running the spec file directly, including `npx playwright test` with only `DRIFT_E2E_DATABASE`
+set, stops before any fixture write. `npm run test:e2e` does not run this spec. No production
+code or Flyway version changes with it.
