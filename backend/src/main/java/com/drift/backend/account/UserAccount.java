@@ -42,6 +42,9 @@ public class UserAccount {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	@Column(name = "session_generation", nullable = false)
+	private long sessionGeneration;
+
 	protected UserAccount() {
 	}
 
@@ -52,6 +55,7 @@ public class UserAccount {
 		this.role = role;
 		this.company = company;
 		this.createdAt = Instant.now();
+		this.sessionGeneration = 0;
 	}
 
 	public Long getId() {
@@ -76,5 +80,19 @@ public class UserAccount {
 
 	public Company getCompany() {
 		return company;
+	}
+
+	public long getSessionGeneration() {
+		return sessionGeneration;
+	}
+
+	public void assign(AccountRole nextRole, Company nextCompany) {
+		boolean sameRole = role.getCode() == nextRole.getCode();
+		boolean sameCompany = company != null && company.getId().equals(nextCompany.getId());
+		this.role = nextRole;
+		this.company = nextCompany;
+		if (!sameRole || !sameCompany) {
+			sessionGeneration++;
+		}
 	}
 }
