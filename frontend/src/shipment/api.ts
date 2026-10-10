@@ -89,6 +89,54 @@ export async function updateShipment(token: string, shipmentId: number, shipment
   return updated;
 }
 
+export type ShipmentImportJobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export type ShipmentImportJob = {
+  id: number;
+  status: ShipmentImportJobStatus;
+  originalFilename: string;
+  fileSizeBytes: number;
+  totalRows: number;
+  processedRows: number;
+  importedCount: number;
+  failedCount: number;
+  failureMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type ShipmentImportError = {
+  rowNumber: number;
+  column: string | null;
+  code: string;
+  message: string;
+};
+
+export async function submitShipmentImport(token: string, file: File): Promise<ShipmentImportJob> {
+  const form = new FormData();
+  form.append('file', file);
+  const data = await send('/api/shipments/import', token, { method: 'POST', body: form });
+  const job = asShipmentImportJob(data);
+  if (!job) throw new ApiError(UNEXPECTED, 502);
+  return job;
+}
+
+export async function getShipmentImportJob(token: string, jobId: string): Promise<ShipmentImportJob> {
+  const data = await send(`/api/shipments/import/${encodeURIComponent(jobId)}`, token);
+  const job = asShipmentImportJob(data);
+  if (!job) throw new ApiError(UNEXPECTED, 502);
+  return job;
+}
+
+export async function getShipmentImportErrors(token: string, jobId: string): Promise<ShipmentImportError[]> {
+  const data = await send(`/api/shipments/import/${encodeURIComponent(jobId)}/errors`, token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  const errors = data.map(asShipmentImportError);
+  if (errors.some(error => error === null)) throw new ApiError(UNEXPECTED, 502);
+  return errors as ShipmentImportError[];
+}
+
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
   let response: Response;
   try {
@@ -196,4 +244,41 @@ function asShipment(value: unknown): Shipment | null {
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
   };
+}
+
+function asShipmentImportJob(value: unknown): ShipmentImportJob | null {
+  if (!isRecord(value) || typeof value.id !== 'number' || !isImportStatus(value.status)
+    || typeof value.originalFilename !== 'string' || !isFiniteNumber(value.fileSizeBytes)
+    || !isNonNegativeInteger(value.totalRows) || !isNonNegativeInteger(value.processedRows)
+    || !isNonNegativeInteger(value.importedCount) || !isNonNegativeInteger(value.failedCount)
+    || !isNullableText(value.failureMessage) || typeof value.createdAt !== 'string'
+    || !isNullableText(value.startedAt) || !isNullableText(value.completedAt)) return null;
+  return {
+    id: value.id,
+    status: value.status,
+    originalFilename: value.originalFilename,
+    fileSizeBytes: value.fileSizeBytes,
+    totalRows: value.totalRows,
+    processedRows: value.processedRows,
+    importedCount: value.importedCount,
+    failedCount: value.failedCount,
+    failureMessage: value.failureMessage,
+    createdAt: value.createdAt,
+    startedAt: value.startedAt,
+    completedAt: value.completedAt,
+  };
+}
+
+function asShipmentImportError(value: unknown): ShipmentImportError | null {
+  if (!isRecord(value) || !isNonNegativeInteger(value.rowNumber) || !isNullableText(value.column)
+    || typeof value.code !== 'string' || typeof value.message !== 'string') return null;
+  return { rowNumber: value.rowNumber, column: value.column, code: value.code, message: value.message };
+}
+
+function isImportStatus(value: unknown): value is ShipmentImportJobStatus {
+  return value === 'PENDING' || value === 'PROCESSING' || value === 'COMPLETED' || value === 'FAILED';
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
