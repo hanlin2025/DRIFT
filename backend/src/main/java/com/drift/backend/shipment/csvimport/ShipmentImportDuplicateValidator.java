@@ -21,10 +21,14 @@ public class ShipmentImportDuplicateValidator {
 	}
 
 	public ShipmentImportParseResult validate(Company managingCompany, ShipmentImportParseResult parseResult) {
+		return validate(managingCompany.getId(), parseResult);
+	}
+
+	public ShipmentImportParseResult validate(Long managingCompanyId, ShipmentImportParseResult parseResult) {
 		ShipmentImportParseResult withoutInFileDuplicates =
 				parseResult.withAdditionalErrors(findInFileDuplicateErrors(parseResult.validRows()));
 		return withoutInFileDuplicates.withAdditionalErrors(
-				findExistingShipmentDuplicateErrors(managingCompany, withoutInFileDuplicates.validRows()));
+				findExistingShipmentDuplicateErrors(managingCompanyId, withoutInFileDuplicates.validRows()));
 	}
 
 	private List<ShipmentImportRowError> findInFileDuplicateErrors(List<ShipmentImportRow> rows) {
@@ -48,7 +52,7 @@ public class ShipmentImportDuplicateValidator {
 	}
 
 	private List<ShipmentImportRowError> findExistingShipmentDuplicateErrors(
-			Company managingCompany, List<ShipmentImportRow> rows) {
+			Long managingCompanyId, List<ShipmentImportRow> rows) {
 		if (rows.isEmpty()) {
 			return List.of();
 		}
@@ -57,7 +61,7 @@ public class ShipmentImportDuplicateValidator {
 				.map(this::normalizeReference)
 				.collect(java.util.stream.Collectors.toUnmodifiableSet());
 		Set<String> existingReferences = shipmentRepository
-				.findExistingShipmentReferencesByCompanyIdIgnoringCase(managingCompany.getId(), references);
+				.findExistingShipmentReferencesByCompanyIdIgnoringCase(managingCompanyId, references);
 		List<ShipmentImportRowError> errors = new ArrayList<>();
 		for (ShipmentImportRow row : rows) {
 			if (existingReferences.contains(normalizeReference(row.shipmentReference()))) {

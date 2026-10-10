@@ -28,6 +28,7 @@ import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
+import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 
 @Service
 public class ShipmentService {
@@ -88,21 +89,16 @@ public class ShipmentService {
 			throw new ShipmentCreationForbiddenException();
 		}
 
-		if (shipments.existsByCompanyIdAndShipmentReferenceIgnoreCase(company.getId(), details.shipmentReference())) {
-			throw new DuplicateShipmentReferenceException();
-		}
+		return respond(persistNewShipment(company, creator, details, null));
+	}
 
-		Shipment shipment = new Shipment(company, creator, details.shipmentReference(), details.origin(),
-				details.destination(), details.transshipmentPort(), details.motherVessel(), details.plannedMotherArrivalAt(),
-				details.feederVessel(), details.plannedFeederDepartureAt());
-		try {
-			return respond(shipments.saveAndFlush(shipment));
-		} catch (DataIntegrityViolationException ex) {
-			if (isDuplicateReference(ex)) {
-				throw new DuplicateShipmentReferenceException();
-			}
-			throw ex;
-		}
+	/** Reuses normal creation persistence for a row already validated by the CSV import pipeline. */
+	@Transactional
+	public void createImported(Company managingCompany, UserAccount creator, ShipmentImportRow row, Company importerCompany) {
+		ShipmentDetails details = validatedDetails(new CreateShipmentRequest(row.shipmentReference(), row.origin(),
+				row.destination(), row.transshipmentPort(), row.motherVessel(), row.plannedMotherArrivalAt(),
+				row.feederVessel(), row.plannedFeederDepartureAt()));
+		persistNewShipment(managingCompany, creator, details, importerCompany);
 	}
 
 	@Transactional
@@ -159,6 +155,28 @@ public class ShipmentService {
 			cause = cause.getCause();
 		}
 		return false;
+	}
+
+	private Shipment persistNewShipment(Company company, UserAccount creator, ShipmentDetails details,
+			Company importerCompany) {
+		if (shipments.existsByCompanyIdAndShipmentReferenceIgnoreCase(company.getId(), details.shipmentReference())) {
+			throw new DuplicateShipmentReferenceException();
+		}
+
+		Shipment shipment = new Shipment(company, creator, details.shipmentReference(), details.origin(),
+				details.destination(), details.transshipmentPort(), details.motherVessel(), details.plannedMotherArrivalAt(),
+				details.feederVessel(), details.plannedFeederDepartureAt());
+		if (importerCompany != null) {
+			shipment.linkImporter(importerCompany);
+		}
+		try {
+			return shipments.saveAndFlush(shipment);
+		} catch (DataIntegrityViolationException ex) {
+			if (isDuplicateReference(ex)) {
+				throw new DuplicateShipmentReferenceException();
+			}
+			throw ex;
+		}
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
