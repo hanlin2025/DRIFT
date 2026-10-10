@@ -52,8 +52,9 @@ class ShipmentImportDuplicateValidatorIntegrationTest {
     private void insertShipment(Long companyId, String reference) {
         String email = "csv-import-" + UUID.randomUUID() + "@example.com";
         jdbc.update("""
-                INSERT INTO users (full_name, email, password_hash, role, company_id)
-                VALUES ('CSV Import Test User', ?, 'not-used', 'FREIGHT_FORWARDER', ?)
+                INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+                SELECT 'CSV Import Test User', ?, 'not-used', id, ?
+                FROM roles WHERE code = 'FREIGHT_FORWARDER'
                 """, email, companyId);
         Long userId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
         jdbc.update("""
