@@ -207,6 +207,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .route-facts { margin-top: 0; }
 .route-facts dd.is-missing { color: var(--muted); font-weight: 500; }
 .shipment-detail .route-facts dd { overflow-wrap: anywhere; }
+.risk-badge { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; }
+.risk-low { background: var(--green); }
+.risk-medium { background: var(--accent); color: var(--ink); }
+.risk-high { background: #c46a2b; }
+.risk-critical { background: var(--error); }
 .skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
 .skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
