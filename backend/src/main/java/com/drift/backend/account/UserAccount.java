@@ -36,7 +36,7 @@ public class UserAccount {
 	private AccountRole role;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "organisation_id")
+	@JoinColumn(name = "company_id")
 	private Company company;
 
 	@Column(name = "created_at", nullable = false)

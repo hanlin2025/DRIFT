@@ -24,7 +24,7 @@ public class Invitation {
 	@Column(nullable = false, length = 320)
 	private String email;
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "organisation_id", nullable = false)
+	@JoinColumn(name = "company_id", nullable = false)
 	private Company company;
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 32)

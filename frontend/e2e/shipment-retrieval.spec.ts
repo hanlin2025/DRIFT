@@ -33,9 +33,9 @@ const password = 'Example123';
 
 async function registerFreightForwarder(request: APIRequestContext, email: string) {
   const token = randomBytes(32).toString('base64url');
-  sql(`INSERT INTO invitations (email, organisation_id, role, token_hash, expires_at)
+  sql(`INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
     SELECT :'email', id, 'FREIGHT_FORWARDER', :'hash', NOW() + INTERVAL '1 hour'
-    FROM organisations WHERE code = 'HARBOURLINE_DEMO';`, { email, hash: createHash('sha256').update(token).digest('hex') });
+    FROM companies WHERE code = 'HARBOURLINE_DEMO';`, { email, hash: createHash('sha256').update(token).digest('hex') });
   const response = await request.post('/api/register', { data: { fullName: 'Alex Tan', email, password, invitationToken: token } });
   expect(response.status(), 'registration must reach the disposable database').toBe(201);
 }
@@ -58,7 +58,7 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
   });
   try {
     await registerFreightForwarder(request, email);
-    expect(sql("SELECT COUNT(*) FROM shipments WHERE organisation_id = (SELECT id FROM organisations WHERE code = 'HARBOURLINE_DEMO');")).toBe('0');
+    expect(sql("SELECT COUNT(*) FROM shipments WHERE company_id = (SELECT id FROM companies WHERE code = 'HARBOURLINE_DEMO');")).toBe('0');
     const initialList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.goto('/login');
     await page.getByLabel('Work email').fill(email);

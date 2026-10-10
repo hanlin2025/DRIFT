@@ -14,9 +14,9 @@ function sql(query: string, variables: Record<string, string> = {}) {
 test('invited user registers, reaches login and cannot reuse the invitation', async ({ page, request }, testInfo) => {
   const token = randomBytes(32).toString('base64url');
   const email = `cdg17-e2e-${randomBytes(8).toString('hex')}@example.com`;
-  sql(`INSERT INTO invitations (email, organisation_id, role, token_hash, expires_at)
+  sql(`INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
     SELECT :'email', id, 'FREIGHT_FORWARDER', :'hash', NOW() + INTERVAL '1 hour'
-    FROM organisations WHERE code = 'HARBOURLINE_DEMO';`, { email, hash: createHash('sha256').update(token).digest('hex') });
+    FROM companies WHERE code = 'HARBOURLINE_DEMO';`, { email, hash: createHash('sha256').update(token).digest('hex') });
   try {
     await page.goto(`/signup#invite=${token}`);
     await expect(page.getByText('Harbourline Logistics (Demo)')).toBeVisible();

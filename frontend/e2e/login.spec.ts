@@ -18,9 +18,9 @@ async function registeredAccount(request: APIRequestContext, role: 'IMPORTER' | 
   const token = randomBytes(32).toString('base64url');
   const email = `cdg14-e2e-${randomBytes(8).toString('hex')}@example.com`;
   created.push(email);
-  sql(`INSERT INTO invitations (email, organisation_id, role, token_hash, expires_at)
+  sql(`INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
     SELECT :'email', id, :'role', :'hash', NOW() + INTERVAL '1 hour'
-    FROM organisations WHERE code = :'company';`, { email, role, company, hash: createHash('sha256').update(token).digest('hex') });
+    FROM companies WHERE code = :'company';`, { email, role, company, hash: createHash('sha256').update(token).digest('hex') });
   const response = await request.post('/api/register', { data: { fullName: 'Alex Tan', email, password, invitationToken: token } });
   expect(response.status()).toBe(201);
   return email;

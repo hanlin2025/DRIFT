@@ -166,7 +166,7 @@ class OrganisationSearchIntegrationTests {
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(OrganisationAccessForbiddenException.MESSAGE));
 
-		jdbc.update("UPDATE organisations SET active = FALSE WHERE id = ?", harbourlineId);
+		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", harbourlineId);
 		entityManager.clear();
 		mvc.perform(get("/api/organisations").param("type", "importer")
 				.header("Authorization", "Bearer " + forwarderToken))
@@ -197,7 +197,7 @@ class OrganisationSearchIntegrationTests {
 	private String account(String prefix, Long company, String role) throws Exception {
 		String email = prefix + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role_id, organisation_id)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
 				SELECT 'Akil Tan', ?, ?, id, ?
 				FROM roles WHERE code = ?
 				""", email, passwords.encode("Example123"), company, role);
@@ -213,7 +213,7 @@ class OrganisationSearchIntegrationTests {
 	}
 
 	private Long companyId(String code) {
-		return jdbc.queryForObject("SELECT id FROM organisations WHERE code = ?", Long.class, code);
+		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
 	}
 
 	private Long insertCompany(String code, String name) {
@@ -221,7 +221,7 @@ class OrganisationSearchIntegrationTests {
 	}
 
 	private Long insertCompany(String code, String name, boolean active) {
-		jdbc.update("INSERT INTO organisations (code, name, active) VALUES (?, ?, ?)", code, name, active);
-		return jdbc.queryForObject("SELECT id FROM organisations WHERE code = ?", Long.class, code);
+		jdbc.update("INSERT INTO companies (code, name, active) VALUES (?, ?, ?)", code, name, active);
+		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
 	}
 }
