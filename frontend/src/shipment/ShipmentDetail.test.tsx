@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, listShipments, updateShipment, type Shipment, type ShipmentTracking } from './api';
+import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
@@ -176,6 +177,88 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/importer/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('importer-token', '7');
+  });
+
+  it('refreshes the vessel position without leaving the detail page', async () => {
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracking)
+      .mockResolvedValueOnce({
+        ...tracking,
+        motherVessel: { ...tracking.motherVessel!, latitude: 2.5 },
+      });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipmentTracking).toHaveBeenCalledTimes(2);
+  });
+
+  it('polls tracking while the detail page stays open', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(getShipmentTracking).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+    expect(getShipmentTracking).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('keeps the newer position when an older tracking response arrives later', async () => {
+    let resolveInitial: (value: ShipmentTracking) => void = () => {};
+    const initial = new Promise<ShipmentTracking>(resolve => { resolveInitial = resolve; });
+    let resolveRefresh: (value: ShipmentTracking) => void = () => {};
+    const refreshed = new Promise<ShipmentTracking>(resolve => { resolveRefresh = resolve; });
+    vi.mocked(getShipmentTracking).mockReturnValueOnce(initial).mockReturnValueOnce(refreshed);
+    open(forwarder, '/freight-forwarder/shipments/7');
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Refresh' }));
+    await act(async () => {
+      resolveRefresh({ ...tracking, motherVessel: { ...tracking.motherVessel!, latitude: 2.5 } });
+    });
+    expect(await screen.findByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
+    await act(async () => { resolveInitial(tracking); });
+    expect(screen.getByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(screen.queryByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).not.toBeInTheDocument();
+  });
+
+  it('does not apply a refresh from the previous shipment', async () => {
+    let resolvePrevious: (value: ShipmentTracking) => void = () => {};
+    const previous = new Promise<ShipmentTracking>(resolve => { resolvePrevious = resolve; });
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracking)
+      .mockReturnValueOnce(previous)
+      .mockResolvedValueOnce({ ...tracking, motherVessel: { ...tracking.motherVessel!, latitude: 9 } });
+    const view = render(
+      <MemoryRouter>
+        <ShipmentDetail token="forwarder-token" shipmentId="7" basePath="/freight-forwarder" onSessionEnded={() => {}} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    view.rerender(
+      <MemoryRouter>
+        <ShipmentDetail token="forwarder-token" shipmentId="8" basePath="/freight-forwarder" onSessionEnded={() => {}} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('PACIFIC HORIZON · 9, 103.82 · 12.4 kn')).toBeInTheDocument();
+    await act(async () => {
+      resolvePrevious({ ...tracking, motherVessel: { ...tracking.motherVessel!, latitude: 3 } });
+    });
+    expect(screen.getByText('PACIFIC HORIZON · 9, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(screen.queryByText('PACIFIC HORIZON · 3, 103.82 · 12.4 kn')).not.toBeInTheDocument();
+  });
+
+  it('shows no live position when tracking has loaded without a fix', async () => {
+    vi.mocked(getShipmentTracking).mockResolvedValue({
+      motherVesselName: shipment.motherVessel,
+      motherVessel: null,
+      feederVesselName: shipment.feederVessel,
+      feederVessel: null,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
   });
 
   it('lets an importer edit all shipment fields and sends the hidden version token', async () => {
