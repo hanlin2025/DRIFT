@@ -2,6 +2,7 @@ package com.drift.backend.shipment;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -22,6 +23,16 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 	boolean existsByCompanyIdAndShipmentReferenceIgnoreCase(
 			@Param("companyId") Long companyId,
 			@Param("shipmentReference") String shipmentReference);
+
+	@Query("""
+			SELECT LOWER(shipment.shipmentReference)
+			FROM Shipment shipment
+			WHERE shipment.company.id = :companyId
+				AND LOWER(shipment.shipmentReference) IN :shipmentReferences
+			""")
+	Set<String> findExistingShipmentReferencesByCompanyIdIgnoringCase(
+			@Param("companyId") Long companyId,
+			@Param("shipmentReferences") Set<String> shipmentReferences);
 
 	@Query("""
 			SELECT COUNT(shipment) > 0

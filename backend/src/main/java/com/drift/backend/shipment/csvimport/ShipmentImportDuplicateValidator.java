@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /** Applies the current company-scoped shipment-reference uniqueness rule to parsed rows. */
@@ -48,10 +49,18 @@ public class ShipmentImportDuplicateValidator {
 
     private List<ShipmentImportRowError> findExistingShipmentDuplicateErrors(
             Company managingCompany, List<ShipmentImportRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        Set<String> references = rows.stream()
+                .map(ShipmentImportRow::shipmentReference)
+                .map(this::normalizeReference)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> existingReferences = shipmentRepository
+                .findExistingShipmentReferencesByCompanyIdIgnoringCase(managingCompany.getId(), references);
         List<ShipmentImportRowError> errors = new ArrayList<>();
         for (ShipmentImportRow row : rows) {
-            if (shipmentRepository.existsByCompanyIdAndShipmentReferenceIgnoreCase(
-                    managingCompany.getId(), row.shipmentReference())) {
+            if (existingReferences.contains(normalizeReference(row.shipmentReference()))) {
                 errors.add(new ShipmentImportRowError(
                         row.rowNumber(),
                         ShipmentImportCsvContract.TRACKING_BL_NUMBER,

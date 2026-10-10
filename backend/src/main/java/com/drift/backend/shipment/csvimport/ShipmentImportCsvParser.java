@@ -15,7 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PushbackInputStream;
-import java.nio.ByteBuffer;
+import java.io.UncheckedIOException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -23,7 +23,6 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.regex.Pattern;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -53,6 +52,12 @@ public class ShipmentImportCsvParser {
             return new ShipmentImportParseResult(validRows, errors);
         } catch (CharacterCodingException exception) {
             throw new ShipmentImportFileException("CSV must be valid UTF-8", exception);
+        } catch (UncheckedIOException exception) {
+            IOException cause = exception.getCause();
+            if (cause instanceof CharacterCodingException) {
+                throw new ShipmentImportFileException("CSV must be valid UTF-8", cause);
+            }
+            throw new ShipmentImportFileException("CSV could not be read", cause);
         } catch (IOException | IllegalArgumentException exception) {
             throw new ShipmentImportFileException("CSV could not be read", exception);
         }
@@ -68,6 +73,14 @@ public class ShipmentImportCsvParser {
             CSVRecord record, List<ShipmentImportRow> validRows, List<ShipmentImportRowError> errors) {
         long rowNumber = record.getRecordNumber() + 1;
         List<ShipmentImportRowError> rowErrors = new ArrayList<>();
+
+        if (record.size() > ShipmentImportCsvContract.HEADERS.size()) {
+            rowErrors.add(new ShipmentImportRowError(
+                    rowNumber,
+                    null,
+                    "TOO_MANY_COLUMNS",
+                    "CSV row contains more columns than the shipment import template"));
+        }
 
         String shipmentReference = requiredText(record, TRACKING_BL_NUMBER, 100, rowNumber, rowErrors);
         String origin = requiredText(record, ORIGIN_PORT, 200, rowNumber, rowErrors);
