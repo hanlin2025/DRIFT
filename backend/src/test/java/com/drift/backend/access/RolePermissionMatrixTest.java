@@ -89,6 +89,18 @@ class RolePermissionMatrixTest {
 	}
 
 	@Test
+	void shipmentReadsAreTheListDetailAndTrackingGets() {
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/tracking")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/import/4")).isFalse();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/risk")).isFalse();
+		assertThat(RolePermissionMatrix.isShipmentRead("PUT", "/api/shipments/4")).isFalse();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/abc")).isFalse();
+	}
+
+	@Test
 	void doesNotDecideArchiveOrPublicPaths() {
 		assertThat(RolePermissionMatrix.denial(Role.LOGISTICS_MANAGER, true, "PATCH", "/api/shipments/8/status")).isEmpty();
 		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "GET", "/api/session")).isEmpty();

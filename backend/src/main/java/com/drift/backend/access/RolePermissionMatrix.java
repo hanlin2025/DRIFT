@@ -14,6 +14,7 @@ import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
  * Role gate for the APIs that already exist on main.
  * Company isolation for a particular shipment stays in {@code ShipmentAccessPolicy}:
  * a company can view a shipment it manages or one linked to it, and can edit only a shipment it manages.
+ * {@link ShipmentVisibilityFilter} applies that view rule to the shipment list, detail, and tracking reads.
  * There is no planner role. Logistics managers keep the shipment operations main already allows,
  * which is also the role the open archive work permits to archive a shipment.
  */
@@ -80,6 +81,10 @@ public final class RolePermissionMatrix {
 			return Optional.of(BulkImportForbiddenException.ADMIN_DEFERRED);
 		}
 		return Optional.of(BulkImportForbiddenException.ROLE);
+	}
+
+	static boolean isShipmentRead(String method, String path) {
+		return shipmentRead(method, normalize(path));
 	}
 
 	private static boolean shipmentRead(String method, String path) {
