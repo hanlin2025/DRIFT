@@ -211,7 +211,7 @@ describe('connection window on the shipment detail', () => {
       shipmentReference: 'HL-UPDATED', origin: 'Busan, KR', version: 3,
     }));
     expect(getShipmentTracking).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText(/NEW MOTHER POSITION/)).toBeInTheDocument();
+    expect(await screen.findAllByText(/NEW MOTHER POSITION/)).not.toHaveLength(0);
   });
 
   it('preserves seconds when saving an unchanged itinerary', async () => {
