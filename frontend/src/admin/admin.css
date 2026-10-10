@@ -39,8 +39,14 @@
 }
 .admin-form select:focus { outline: none; border-color: #54775f; box-shadow: 0 0 0 3px #54775f15; }
 .admin-form .primary-button { width: auto; min-width: 180px; }
+.audit-panel { margin-top: 28px; }
+.audit-panel h3 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-size: 28px; letter-spacing: -.6px; margin: 0 0 12px; }
+.audit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.audit-list li { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fcfcf8; }
+.audit-list span, .audit-list time { color: var(--muted); font-size: 11px; }
 @media (max-width: 720px) {
   .workspace-bar { flex-wrap: wrap; }
   .workspace-nav { margin-left: 0; }
   .admin-form .primary-button { width: 100%; }
+  .audit-panel h3 { font-size: 24px; }
 }

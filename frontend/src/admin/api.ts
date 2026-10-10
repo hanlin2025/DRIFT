@@ -10,6 +10,17 @@ export type AdminUser = {
   role: Role;
   organisation: AdminOrganisation | null;
 };
+export type AssignmentAuditParty = { id: number; fullName: string; email: string };
+export type AssignmentAudit = {
+  id: number;
+  recordedAt: string;
+  operator: AssignmentAuditParty;
+  target: AssignmentAuditParty;
+  previousRole: Role;
+  assignedRole: Role;
+  previousOrganisation: AdminOrganisation | null;
+  organisation: AdminOrganisation;
+};
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
 const ROLES: Role[] = ['IMPORTER', 'FREIGHT_FORWARDER', 'ADMIN', 'LOGISTICS_MANAGER'];
@@ -28,6 +39,13 @@ function organisationOf(value: unknown): AdminOrganisation | null {
     throw new ApiError(UNEXPECTED, 502);
   }
   return { id: value.id, code: value.code, name: value.name };
+}
+
+function partyOf(value: unknown): AssignmentAuditParty {
+  if (!isRecord(value) || typeof value.id !== 'number' || typeof value.fullName !== 'string' || typeof value.email !== 'string') {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+  return { id: value.id, fullName: value.fullName, email: value.email };
 }
 
 function userOf(value: unknown): AdminUser {
@@ -94,6 +112,29 @@ export async function listAssignableOrganisations(token: string): Promise<AdminO
     const organisation = organisationOf(item);
     if (!organisation) throw new ApiError(UNEXPECTED, 502);
     return organisation;
+  });
+}
+
+export async function listAssignmentAudits(token: string): Promise<AssignmentAudit[]> {
+  const data = await send('/api/admin/assignment-audits', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(entry => {
+    if (!isRecord(entry) || typeof entry.id !== 'number' || typeof entry.recordedAt !== 'string'
+      || !isRole(entry.previousRole) || !isRole(entry.assignedRole)) {
+      throw new ApiError(UNEXPECTED, 502);
+    }
+    const organisation = organisationOf(entry.organisation);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return {
+      id: entry.id,
+      recordedAt: entry.recordedAt,
+      operator: partyOf(entry.operator),
+      target: partyOf(entry.target),
+      previousRole: entry.previousRole,
+      assignedRole: entry.assignedRole,
+      previousOrganisation: organisationOf(entry.previousOrganisation),
+      organisation,
+    };
   });
 }
 

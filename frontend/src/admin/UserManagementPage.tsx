@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, type AdminOrganisation, type AdminRole, type AdminUser } from './api';
+import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
 
 function Wordmark() {
   return (
@@ -22,6 +22,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [organisations, setOrganisations] = useState<AdminOrganisation[]>([]);
+  const [audits, setAudits] = useState<AssignmentAudit[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [organisationId, setOrganisationId] = useState('');
   const [role, setRole] = useState<Role | ''>('');
@@ -39,11 +40,13 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       listAssignableUsers(account.token),
       listAssignableRoles(account.token),
       listAssignableOrganisations(account.token),
-    ]).then(([foundUsers, foundRoles, foundOrganisations]) => {
+      listAssignmentAudits(account.token),
+    ]).then(([foundUsers, foundRoles, foundOrganisations, foundAudits]) => {
       if (!active) return;
       setUsers(foundUsers);
       setRoles(foundRoles);
       setOrganisations(foundOrganisations);
+      setAudits(foundAudits);
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
@@ -78,6 +81,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       }
       setUsers(current => current?.map(user => user.id === updated.id ? updated : user) ?? null);
       setSaved('User assigned successfully');
+      setAudits(await listAssignmentAudits(account.token));
     } catch (reason: unknown) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
@@ -136,9 +140,37 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </button>
           </form>
         ) : null}
+        {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
       </main>
     </div>
   );
+}
+
+function AssignmentHistory({ audits, roles }: { audits: AssignmentAudit[]; roles: AdminRole[] }) {
+  const label = (code: Role) => roles.find(item => item.code === code)?.label ?? code;
+  const place = (organisation: AdminOrganisation | null) => organisation?.name ?? 'No organisation';
+  return (
+    <section className="audit-panel" aria-labelledby="assignment-history">
+      <h3 id="assignment-history">Assignment history</h3>
+      {audits.length === 0 ? <p className="notice">No assignment changes yet.</p> : (
+        <ol className="audit-list">
+          {audits.map(audit => (
+            <li key={audit.id}>
+              <strong>{audit.operator.fullName}</strong> assigned <strong>{audit.target.fullName}</strong>
+              <span>{label(audit.previousRole)} at {place(audit.previousOrganisation)} → {label(audit.assignedRole)} at {place(audit.organisation)}</span>
+              <time dateTime={audit.recordedAt}>{formatRecordedAt(audit.recordedAt)}</time>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function formatRecordedAt(value: string) {
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return value;
+  return new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Singapore' }).format(time);
 }
 
 const MAX_TIMER_DELAY = 2_147_483_647;
