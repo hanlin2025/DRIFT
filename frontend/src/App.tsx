@@ -28,6 +28,8 @@ export function AppRoutes() {
     <Route path="/admin" element={<AdminRoute />} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
+    <Route path="/freight-forwarder/import/:jobId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
+    <Route path="/freight-forwarder/import" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
     <Route path="/freight-forwarder/shipments/:shipmentId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
     <Route path="/freight-forwarder" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
     <Route path="*" element={<HomeRedirect />} />
