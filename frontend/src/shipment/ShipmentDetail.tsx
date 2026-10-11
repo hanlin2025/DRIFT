@@ -8,6 +8,9 @@ import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
 const REFRESH_NOTE = 'The latest position could not be loaded. The map is still showing the last position it received.';
+const NOT_FOUND = 'Shipment not found or has been removed.';
+
+type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
 
 export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
   token: string;
@@ -17,7 +20,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
-  const [problem, setProblem] = useState<{ message: string; retry: boolean } | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,7 +42,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         return;
       }
       if (reason instanceof ApiError && reason.status === 403) {
-        setProblem({ message: reason.message, retry: false });
+        setProblem({ kind: 'forbidden', message: reason.message });
         return;
       }
       setRefreshNote(REFRESH_NOTE);
@@ -64,14 +67,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         onSessionEnded();
         return;
       }
-      const missing = reason instanceof ApiError && reason.status === 404;
-      const forbidden = reason instanceof ApiError && reason.status === 403;
-      setProblem({
-        message: forbidden
-          ? reason.message
-          : missing ? 'This shipment is not available.' : reason instanceof Error ? reason.message : UNREACHABLE,
-        retry: !missing && !forbidden,
-      });
+      if (reason instanceof ApiError && reason.status === 403) {
+        setProblem({ kind: 'forbidden', message: reason.message });
+        return;
+      }
+      setProblem(reason instanceof ApiError && reason.status === 404
+        ? { kind: 'missing', message: NOT_FOUND }
+        : { kind: 'failed', message: reason instanceof Error ? reason.message : UNREACHABLE });
     });
     getShipmentTracking(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -83,7 +85,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
         return;
       }
       if (reason instanceof ApiError && reason.status === 403) {
-        setProblem({ message: reason.message, retry: false });
+        setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
     return () => {
@@ -102,7 +104,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
     <section className="shipment-detail">
       <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
       {problem
-        ? <div className="error-notice" role="alert">{problem.message}{problem.retry && <><br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></>}</div>
+        ? problem.kind === 'failed'
+          ? <div className="error-notice" role="alert">{problem.message}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
+          : <ShipmentUnavailable problem={problem} />
         : shipment === null
           ? <ShipmentSkeleton />
           : editing
@@ -118,6 +122,17 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
                 }} />
             : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} onEdit={() => setEditing(true)} />}
     </section>
+  );
+}
+
+function ShipmentUnavailable({ problem }: { problem: Problem }) {
+  const forbidden = problem.kind === 'forbidden';
+  return (
+    <div role="alert">
+      <p className="eyebrow">{forbidden ? '403' : '404'}</p>
+      <h2>{forbidden ? 'Access denied' : 'Shipment not found'}</h2>
+      <p className="intro">{problem.message}</p>
+    </div>
   );
 }
 

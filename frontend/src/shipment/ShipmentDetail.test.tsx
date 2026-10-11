@@ -164,6 +164,7 @@ describe('connection window on the shipment detail', () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
     open(importer, '/importer/shipments/8');
     expect(await screen.findByRole('alert')).toHaveTextContent('You do not have access to this shipment');
+    expect(screen.getByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
@@ -171,8 +172,16 @@ describe('connection window on the shipment detail', () => {
   it('reports a missing shipment without a retry', async () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(importer, '/importer/shipments/99');
-    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found or has been removed.');
+    expect(screen.getByRole('heading', { name: 'Shipment not found' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('shows the not found page for an invalid shipment id', async () => {
+    vi.mocked(getShipment).mockRejectedValue(new ApiError('Shipment not found', 404));
+    open(importer, '/importer/shipments/not-a-number');
+    expect(await screen.findByRole('heading', { name: 'Shipment not found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Back/ })).toHaveAttribute('href', '/importer');
   });
 
   it('retries a failed detail request', async () => {
@@ -406,7 +415,7 @@ describe('connection window on the shipment detail', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
     await user.click(screen.getByRole('button', { name: 'Save shipment' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found or has been removed.');
   });
 });
 
