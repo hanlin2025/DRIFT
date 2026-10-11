@@ -11,7 +11,7 @@ import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -24,6 +24,7 @@ const newer: Shipment = {
   feederVessel: 'MV Strait Runner',
   plannedFeederDepartureAt: '2026-10-05T00:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
+  version: 0,
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
   motherVesselPosition: null,
   feederVesselPosition: null,
@@ -39,6 +40,7 @@ const older: Shipment = {
   feederVessel: 'MV Harbour Link',
   plannedFeederDepartureAt: '2026-10-03T00:00:00Z',
   createdAt: '2026-09-28T04:00:00Z',
+  version: 0,
   connectionWindow: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
@@ -110,6 +112,11 @@ describe('shipment list', () => {
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
   });
+
+  it('shows an unassigned feeder vessel as pending', () => {
+    render(<MemoryRouter><ShipmentList shipments={[{ ...newer, feederVessel: null, plannedFeederDepartureAt: null }]} basePath="/importer" /></MemoryRouter>);
+    expect(screen.getByRole('cell', { name: 'Pending assignment' })).toHaveClass('is-missing');
+  });
 });
 
 describe('workspace shipment retrieval', () => {
@@ -164,7 +171,7 @@ describe('workspace shipment retrieval', () => {
 
     cleanup();
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/99');
-    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is not available.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found or has been removed.');
     expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/freight-forwarder');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
   });

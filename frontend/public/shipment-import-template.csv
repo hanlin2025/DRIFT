@@ -1,0 +1,2 @@
+Tracking/BL No.,Origin Port,Destination Port,Transshipment Port,Mother Vessel,Planned Mother Arrival,Feeder Vessel,Planned Feeder Departure,Importer Organisation
+DRIFT-DEMO-001,Port of Singapore,Port of Rotterdam,Port of Tanjung Pelepas,Example Mother Vessel,2026-10-10T09:30:00+08:00,Example Feeder Vessel,2026-10-10T15:45:00+08:00,

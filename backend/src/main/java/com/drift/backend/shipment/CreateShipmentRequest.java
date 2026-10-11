@@ -38,5 +38,5 @@ public record CreateShipmentRequest(
 		String feederVessel,
 		@Schema(description = "Planned feeder-vessel departure from the transshipment port, including a UTC offset. It must be after the mother-vessel arrival.", example = "2026-10-16T12:00:00+08:00", requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotNull(message = "Planned feeder-vessel departure is required")
-		OffsetDateTime plannedFeederDepartureAt) {
+		OffsetDateTime plannedFeederDepartureAt) implements ShipmentDetailsRequest {
 }

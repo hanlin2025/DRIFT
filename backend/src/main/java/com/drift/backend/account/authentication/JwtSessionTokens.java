@@ -60,6 +60,7 @@ public class JwtSessionTokens {
 				.subject(account.getId().toString())
 				.claim("email", account.getEmail())
 				.claim("role", account.getRole().name())
+				.claim("gen", account.getSessionGeneration())
 				.issueTime(Date.from(now))
 				.expirationTime(Date.from(expiresAt))
 				.build();
@@ -92,7 +93,8 @@ public class JwtSessionTokens {
 			if (email == null || email.isBlank()) {
 				throw new SessionEndedException();
 			}
-			return new AuthenticatedUser(id, email, role, expiration.toInstant());
+			Long generation = claims.getLongClaim("gen");
+			return new AuthenticatedUser(id, email, role, expiration.toInstant(), generation == null ? 0 : generation);
 		} catch (SessionEndedException ex) {
 			throw ex;
 		} catch (ParseException | JOSEException | RuntimeException ex) {

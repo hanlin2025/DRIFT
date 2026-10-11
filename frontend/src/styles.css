@@ -77,6 +77,11 @@ input[aria-invalid=true] { border-color: var(--error); }
 .primary-button { border: 1px solid #214e40; background: var(--green); color: #fffefa; border-radius: 4px; min-height: 47px; width: 100%; padding: 13px 18px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 650; margin-top: 23px; transition: background .18s; }
 .primary-button:hover:not(:disabled) { background: #133d30; }
 .primary-button span { font-size: 20px; line-height: 1; }
+.secondary-button { border: 1px solid #9aad9f; background: #f8f6ed; color: #214e40; border-radius: 4px; min-height: 42px; padding: 10px 14px; font-size: 11px; font-weight: 700; }
+.secondary-button:hover:not(:disabled) { background: #e8ede2; }
+.form-actions { display: flex; gap: 10px; align-items: end; margin-top: 23px; }
+.form-actions .primary-button { margin-top: 0; }
+.form-actions .secondary-button { flex: 0 0 auto; }
 .membership-note { text-align: center; margin: 11px 0 0; color: #7a8376; font-size: 9px; }
 .login-prompt { border-top: 1px solid var(--line); padding-top: 22px; margin: 27px 0 0; color: var(--muted); text-align: center; font-size: 11px; }
 .login-prompt a { margin-left: 5px; font-weight: 750; text-underline-offset: 4px; }
@@ -150,11 +155,33 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
+.shipment-import { max-width: 640px; }
+.shipment-import .back-link { margin-bottom: 28px; }
+.template-link { color: #214e40; font-size: 12px; font-weight: 750; text-underline-offset: 3px; }
+.shipment-import-form { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 24px; }
+.import-file-field { display: grid; justify-content: start; gap: 8px; color: var(--ink); }
+.import-file-field input { max-width: 100%; }
+.import-file-field small, .selected-file { color: var(--muted); font-size: 11px; }
+.selected-file { margin: 16px 0 0; }
+.import-progress { display: grid; gap: 10px; margin: 24px 0; padding: 18px; border: 1px solid #c8d9bf; border-radius: 5px; background: #e8ede2; }
+.import-progress strong { font-size: 14px; }
+.import-progress progress { width: 100%; height: 10px; accent-color: var(--green); }
+.import-errors { margin-top: 28px; }
+.import-errors-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.import-errors h3 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-size: 24px; margin: 0; }
+.import-back { margin-top: 26px; }
 .back-link { display: inline-flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; text-decoration: none; }
 .back-link:hover { color: var(--ink); }
 .workspace-main:has(.shipment-detail) { max-width: 920px; }
 .shipment-detail .back-link { margin: 0 0 28px; }
 .shipment-detail .intro { margin-bottom: 18px; }
+.shipment-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.shipment-title h2 { margin: 0; }
+.detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.detail-actions .secondary-button,
+.refresh-button { white-space: nowrap; }
+.refresh-button { border: 1px solid var(--line); background: #f8f6ed; color: var(--ink); border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 750; }
+.refresh-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .route-chart { position: relative; margin: 0 0 18px; border-radius: 8px; overflow: hidden; background: #e7eef2; border: 1px solid #c8d9bf; }
 .route-chart-stage { height: 480px; }
 .route-chart-stage.maplibregl-map { font-family: 'Manrope Variable', sans-serif; }
@@ -164,6 +191,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .route-live { list-style: none; margin: 0; padding: 10px 16px 12px; background: #f8f6ed; border-top: 1px solid #c8d9bf; }
 .route-live li { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
 .route-live li + li { margin-top: 4px; }
+.route-warning { margin: 0; padding: 10px 16px 12px; color: #8a5a12; background: #f8efd8; border-top: 1px solid #e2d3a8; font-size: 12px; font-weight: 700; }
 .globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
@@ -193,6 +221,18 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .globe-copy strong.is-missing { color: var(--muted); font-weight: 500; }
 .route-facts { margin-top: 0; }
 .route-facts dd.is-missing { color: var(--muted); font-weight: 500; }
+.shipment-detail .route-facts dd { overflow-wrap: anywhere; }
+.skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
+.skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
+.skeleton-intro { width: min(200px, 55%); height: 12px; margin: 0 0 18px; }
+.skeleton-map { height: 480px; margin: 0 0 18px; border-radius: 8px; }
+.shipment-record .skeleton-label { width: 90px; height: 10px; margin: 2px 0; }
+.shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (min-width: 761px) {
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(6, auto); grid-auto-flow: column; column-gap: 32px; }
+}
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
@@ -200,5 +240,12 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .pair-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }
-  .route-chart-stage { height: 340px; }
+  .route-chart-stage, .skeleton-map { height: 340px; }
+  .shipment-record .skeleton-value { margin-left: 0; margin-top: 6px; }
+  .shipment-detail .back-link { min-height: 44px; margin-bottom: 16px; }
+  .import-errors-heading { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 480px) {
+  .route-chart-stage, .skeleton-map { height: 260px; }
+  .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
 }

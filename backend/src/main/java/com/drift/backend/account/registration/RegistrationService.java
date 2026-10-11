@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.drift.backend.account.registration.RegisterRequest;
 import com.drift.backend.account.registration.RegisterResponse;
+import com.drift.backend.account.AccountRole;
+import com.drift.backend.account.AccountRoleRepository;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.exception.DuplicateAccountException;
@@ -20,11 +22,14 @@ import com.drift.backend.account.registration.invitation.InvitationToken;
 @Service
 public class RegistrationService {
 	private final UserAccountRepository users;
+	private final AccountRoleRepository roles;
 	private final InvitationRepository invitations;
 	private final PasswordEncoder passwordEncoder;
 
-	public RegistrationService(UserAccountRepository users, InvitationRepository invitations, PasswordEncoder passwordEncoder) {
+	public RegistrationService(UserAccountRepository users, AccountRoleRepository roles, InvitationRepository invitations,
+			PasswordEncoder passwordEncoder) {
 		this.users = users;
+		this.roles = roles;
 		this.invitations = invitations;
 		this.passwordEncoder = passwordEncoder;
 	}
@@ -51,8 +56,10 @@ public class RegistrationService {
 		if (users.existsByEmailIgnoreCase(request.email())) {
 			throw new DuplicateAccountException();
 		}
+		AccountRole role = roles.findByCode(invitation.getRole())
+				.orElseThrow(() -> new IllegalStateException("Role is not configured"));
 		UserAccount account = new UserAccount(request.fullName(), request.email(),
-				passwordEncoder.encode(request.password()), invitation.getRole(), invitation.getCompany());
+				passwordEncoder.encode(request.password()), role, invitation.getCompany());
 		try {
 			account = users.saveAndFlush(account);
 		} catch (DataIntegrityViolationException ex) {

@@ -1,8 +1,7 @@
-import type { Role } from '../signup/api';
-
 const KEY = 'drift.session';
 const ENDED = 'drift.session.ended';
 
+export type Role = 'IMPORTER' | 'FREIGHT_FORWARDER' | 'ADMIN' | 'LOGISTICS_MANAGER';
 export type Company = { id: number; code: string; name: string };
 export type Session = {
   token: string;
@@ -50,5 +49,7 @@ export function isExpired(expiresAt: string, now = Date.now()) {
 }
 
 export function homePath(role: Role) {
-  return role === 'IMPORTER' ? '/importer' : '/freight-forwarder';
+  if (role === 'IMPORTER') return '/importer';
+  if (role === 'ADMIN') return '/admin';
+  return '/freight-forwarder';
 }

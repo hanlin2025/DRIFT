@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.Test;
 
+import com.drift.backend.account.AccountRole;
 import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.exception.SessionEndedException;
@@ -30,6 +31,7 @@ class JwtSessionTokensTest {
 		assertThat(user.id()).isEqualTo(15L);
 		assertThat(user.email()).isEqualTo("alice@example.com");
 		assertThat(user.role()).isEqualTo(Role.FREIGHT_FORWARDER);
+		assertThat(user.sessionGeneration()).isZero();
 		assertThat(session.expiresAt()).isEqualTo(now.plus(Duration.ofHours(1)));
 		assertThat(user.expiresAt()).isEqualTo(session.expiresAt());
 	}
@@ -59,7 +61,8 @@ class JwtSessionTokensTest {
 	}
 
 	private static UserAccount account() throws Exception {
-		UserAccount account = new UserAccount("Alice Tan", "alice@example.com", "hash", Role.FREIGHT_FORWARDER, null);
+		UserAccount account = new UserAccount("Alice Tan", "alice@example.com", "hash",
+				new AccountRole(Role.FREIGHT_FORWARDER), null);
 		Field id = UserAccount.class.getDeclaredField("id");
 		id.setAccessible(true);
 		id.set(account, 15L);

@@ -1,4 +1,6 @@
 spring:
+  main:
+    allow-bean-definition-overriding: true
   datasource:
     url: ${DRIFT_TEST_DATABASE_URL:jdbc:postgresql://localhost:5432/drift_test}
     username: ${DRIFT_TEST_DATABASE_USERNAME:drift}
@@ -9,3 +11,5 @@ app:
     secret: test-only-jwt-secret-not-used-outside-tests
   ais:
     enabled: false
+  shipment-import:
+    max-upload-bytes: 5242880

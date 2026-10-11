@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Shipment, ShipmentTracking, VesselPosition } from './api';
-import { formatWhen } from './ShipmentForm';
+import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
+import { trackingNotice } from './positionNotice';
 import { along, arc, locate, type LngLat } from './places';
 
 type Stop = {
@@ -11,9 +12,9 @@ type Stop = {
   at: LngLat | null;
 };
 
-function shown(value: string) {
-  const text = value.trim();
-  return text || 'Not recorded';
+function shown(value: string | null, fallback = 'Not recorded') {
+  const text = value?.trim();
+  return text || fallback;
 }
 
 function stopsFor(shipment: Shipment): Stop[] {
@@ -24,7 +25,7 @@ function stopsFor(shipment: Shipment): Stop[] {
     { id: 'departure', kicker: 'DEPARTURE', name: shown(shipment.origin), at: origin },
     { id: 'mother', kicker: 'MOTHER', name: shown(shipment.motherVessel), at: origin && hub ? along(origin, hub, 0.58) : null },
     { id: 'transshipment', kicker: 'TRANSSHIPMENT', name: shown(shipment.transshipmentPort), at: hub },
-    { id: 'feeder', kicker: 'FEEDER', name: shown(shipment.feederVessel), at: hub && destination ? along(hub, destination, 0.42) : null },
+    { id: 'feeder', kicker: 'FEEDER', name: shown(shipment.feederVessel, PENDING_ASSIGNMENT), at: hub && destination ? along(hub, destination, 0.42) : null },
     { id: 'destination', kicker: 'DESTINATION', name: shown(shipment.destination), at: destination },
   ];
 }
@@ -61,7 +62,7 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
     fixes.push({
       id: 'feeder',
       kicker: 'FEEDER LIVE',
-      name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName,
+      name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName?.trim() || 'Feeder vessel',
       position: tracking.feederVessel,
     });
   }
@@ -80,7 +81,7 @@ function pin(stop: Stop) {
   kicker.textContent = stop.kicker;
   const name = document.createElement('strong');
   name.textContent = stop.name;
-  if (stop.name === 'Not recorded') name.className = 'is-missing';
+  if (stop.name === 'Not recorded' || stop.name === PENDING_ASSIGNMENT) name.className = 'is-missing';
   copy.append(kicker, name);
   root.append(dot, copy);
   return root;
@@ -93,6 +94,8 @@ type LiveGlobe = {
   maplibre: MapLibre;
   markers: InstanceType<MapLibre['Marker']>[];
   ports: LngLat[];
+  framed: boolean;
+  liveFramed: boolean;
 };
 
 function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
@@ -100,13 +103,18 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
   handle.markers = fixes.map(fix => new handle.maplibre.Marker({ element: livePin(fix), anchor: 'center' })
     .setLngLat([fix.position.longitude, fix.position.latitude])
     .addTo(handle.map));
+  if (handle.liveFramed || (handle.framed && fixes.length === 0)) return;
   const framed = [...handle.ports, ...fixes.map(fix => [fix.position.longitude, fix.position.latitude] as LngLat)];
   if (framed.length > 1) {
     const bounds = new handle.maplibre.LngLatBounds(framed[0], framed[0]);
     for (const point of framed) bounds.extend(point);
     handle.map.fitBounds(bounds, { padding: 72, maxZoom: 3.4, duration: 0 });
+    handle.framed = true;
+    if (fixes.length > 0) handle.liveFramed = true;
   } else if (framed.length === 1) {
     handle.map.jumpTo({ center: framed[0], zoom: 3.4 });
+    handle.framed = true;
+    if (fixes.length > 0) handle.liveFramed = true;
   }
 }
 
@@ -127,6 +135,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
   const mapReadyRef = useRef(false);
   const stops = stopsFor(shipment);
   const fixes = liveFixes(tracking);
+  const notice = trackingNotice(tracking);
   fixesRef.current = fixes;
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
 
@@ -150,8 +159,9 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
         attributionControl: { compact: true },
         cooperativeGestures: true,
       });
+      globe.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
       created = globe;
-      const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports };
+      const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports, framed: false, liveFramed: false };
       globeRef.current = handle;
       globe.on('load', () => {
         if (disposed) return;
@@ -207,6 +217,7 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
           ))}
         </ul>
       )}
+      {notice && <p className="route-warning" role="status">{notice}</p>}
       {unmapped.length > 0 && <p className="route-unmapped">Not placed on the globe: {unmapped.join(', ')}</p>}
     </figure>
   );

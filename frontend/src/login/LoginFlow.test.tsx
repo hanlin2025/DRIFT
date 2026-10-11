@@ -10,7 +10,7 @@ import { loadSession, login } from './api';
 import { listShipments } from '../shipment/api';
 
 vi.mock('./api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn() }));
 
 const session: Session = {
   token: 'session-token',

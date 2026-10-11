@@ -33,6 +33,7 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -91,6 +92,38 @@ class ShipmentCreationIntegrationTests {
 				.containsEntry("feeder_vessel", "MV Strait Runner");
 	}
 
+
+	@Test
+	void persistsInitialUpdateAuditAndManagesTheOptimisticLockVersion() throws Exception {
+		MvcResult result = create(token, shipment("HBL-2026-AUDIT"))
+				.andExpect(status().isCreated())
+				.andReturn();
+		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+		Long shipmentId = responseId.longValue();
+
+		entityManager.clear();
+		Shipment persisted = entityManager.find(Shipment.class, shipmentId);
+		assertThat(persisted.getUpdatedAt()).isEqualTo(persisted.getCreatedAt());
+		assertThat(persisted.getUpdatedBy().getId()).isEqualTo(accountId);
+		assertThat(persisted.getVersion()).isZero();
+
+		Instant updatedAt = persisted.getCreatedAt().plusSeconds(60);
+		persisted.markUpdated(entityManager.getReference(com.drift.backend.account.UserAccount.class, accountId), updatedAt);
+		entityManager.flush();
+		entityManager.clear();
+
+		Shipment updated = entityManager.find(Shipment.class, shipmentId);
+		assertThat(updated.getUpdatedAt()).isEqualTo(updatedAt);
+		assertThat(updated.getUpdatedBy().getId()).isEqualTo(accountId);
+		assertThat(updated.getVersion()).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*)
+				FROM shipments shipment
+				JOIN users updater ON updater.id = shipment.updated_by_user_id
+				WHERE shipment.id = ?
+				""", Integer.class, shipmentId)).isEqualTo(1);
+	}
+
 	@Test
 	void rejectsMissingRequiredFields() throws Exception {
 		create(token, "{}")
@@ -142,8 +175,9 @@ class ShipmentCreationIntegrationTests {
 	void rejectsAuthenticatedAccountsWithoutACompany() throws Exception {
 		String unassigned = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role)
-				VALUES ('Unassigned User', ?, ?, 'FREIGHT_FORWARDER')
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Unassigned User', ?, ?, id
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", unassigned, passwords.encode("Example123"));
 
 		create(tokenFor(unassigned), shipment("HBL-2026-005"))
@@ -226,7 +260,9 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
-		// TODO: when GET /api/shipments/{id} returns, also expect 403 and this message for an inactive company.
+		detail(token, "1")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
 	}
 
 	@Test
@@ -235,8 +271,9 @@ class ShipmentCreationIntegrationTests {
 
 		String importer = "cdg24-importer-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Ivan Lim', ?, ?, 'IMPORTER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Ivan Lim', ?, ?, id, ?
+				FROM roles WHERE code = 'IMPORTER'
 				""", importer, passwords.encode("Example123"), companyId);
 
 		list(tokenFor(importer))
@@ -318,15 +355,16 @@ class ShipmentCreationIntegrationTests {
 	}
 
 	@Test
-	void hidesAnotherCompanysShipmentAndUnknownIds() throws Exception {
+	void forbidsAnotherCompanysShipmentAndHidesUnknownIds() throws Exception {
 		String otherEmail = "cdg24-other-" + UUID.randomUUID() + "@example.com";
 		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
 		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-2026-008")).andExpect(status().isCreated()).andReturn();
 		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
 		detail(token, otherShipmentId.toString())
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+				.andExpect(status().isForbidden())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
 		detail(token, "999999999")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
@@ -458,8 +496,9 @@ class ShipmentCreationIntegrationTests {
 
 	private void createAccount(String accountEmail, Long accountCompanyId) {
 		jdbc.update("""
-				INSERT INTO users (full_name, email, password_hash, role, company_id)
-				VALUES ('Alice Tan', ?, ?, 'FREIGHT_FORWARDER', ?)
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Alice Tan', ?, ?, id, ?
+				FROM roles WHERE code = 'FREIGHT_FORWARDER'
 				""", accountEmail, passwords.encode("Example123"), accountCompanyId);
 	}
 
