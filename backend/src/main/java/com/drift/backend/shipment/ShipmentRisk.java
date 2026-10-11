@@ -25,7 +25,7 @@ public record ShipmentRisk(
 		return switch (calculation.status()) {
 			case INCOMPLETE -> null;
 			case INVALID -> new ShipmentRisk(Level.CRITICAL,
-					"The feeder vessel is planned to depart before the mother vessel arrives.");
+					"The feeder vessel is planned to depart at or before the mother vessel's arrival, leaving no time to transfer cargo.");
 			case AVAILABLE -> available(calculation.window().totalSeconds());
 		};
 	}

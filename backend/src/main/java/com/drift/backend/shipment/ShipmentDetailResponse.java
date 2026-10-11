@@ -23,7 +23,7 @@ public record ShipmentDetailResponse(
 		Long version,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow,
-		@Schema(description = "Transshipment risk derived from the connection window: CRITICAL when the feeder departs before the mother vessel arrives, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. Null when the feeder schedule is missing.", nullable = true)
+		@Schema(description = "Transshipment risk derived from the connection window: CRITICAL when the feeder departs at or before the mother vessel's arrival, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. Null when the feeder schedule is missing.", nullable = true)
 		ShipmentRisk risk,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,

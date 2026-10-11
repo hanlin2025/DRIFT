@@ -31,12 +31,14 @@ class ShipmentRiskTest {
 	}
 
 	@Test
-	void marksAFeederDepartingBeforeTheMotherArrivesAsCritical() {
-		ShipmentRisk risk = risk("2026-10-15T08:00:00Z", "2026-10-15T08:00:00Z");
+	void marksAFeederDepartingAtOrBeforeTheMotherArrivalAsCritical() {
+		ShipmentRisk equal = risk("2026-10-15T08:00:00Z", "2026-10-15T08:00:00Z");
+		ShipmentRisk earlier = risk("2026-10-15T08:00:00Z", "2026-10-15T07:00:00Z");
 
-		assertThat(risk.level()).isEqualTo(Level.CRITICAL);
-		assertThat(risk.explanation())
-				.isEqualTo("The feeder vessel is planned to depart before the mother vessel arrives.");
+		assertThat(equal).isEqualTo(earlier);
+		assertThat(equal.level()).isEqualTo(Level.CRITICAL);
+		assertThat(equal.explanation()).isEqualTo(
+				"The feeder vessel is planned to depart at or before the mother vessel's arrival, leaving no time to transfer cargo.");
 	}
 
 	@Test
