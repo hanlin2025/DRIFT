@@ -103,11 +103,35 @@ public class AdminAssignmentController {
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(assignments.organisations(user));
 	}
 
+	@GetMapping("/api/admin/assignment-audits")
+	@Operation(summary = "List assignment changes", description = "Lists every saved organisation or role change, newest first. "
+			+ "Each entry records the administrator, the user, the previous and new role, the previous and new organisation, and the time. "
+			+ "Saving the same organisation and role does not add an entry. A rejected assignment does not add an entry.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Assignment changes, possibly empty", content = @Content(
+					mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = AssignmentAuditResponse.class)))),
+			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Your session has ended. Log in again."}
+							"""))),
+			@ApiResponse(responseCode = "403", description = "Authenticated account is not an administrator", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Only an administrator can assign users"}
+							"""))) })
+	public ResponseEntity<List<AssignmentAuditResponse>> audits(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(assignments.audits(user));
+	}
+
 	@PatchMapping("/api/admin/users/{userId}/assign")
 	@Operation(summary = "Assign a user to an organisation and role", description = "Stores the organisation and role for one user. "
 			+ "The organisation must be an active company and the role must be one of the stored roles. "
 			+ "A company can have only one administrator. "
-			+ "When the role or organisation changes, the user's existing session stops working and they must log in again. "
+			+ "When the role or organisation changes, the user's existing session stops working, they must log in again, and the change is recorded in the assignment audit. "
 			+ "Saving the same organisation and role leaves the current session valid.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
