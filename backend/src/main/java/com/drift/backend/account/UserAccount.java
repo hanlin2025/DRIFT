@@ -86,13 +86,15 @@ public class UserAccount {
 		return sessionGeneration;
 	}
 
-	public void assign(AccountRole nextRole, Company nextCompany) {
+	public boolean assign(AccountRole nextRole, Company nextCompany) {
 		boolean sameRole = role.getCode() == nextRole.getCode();
 		boolean sameCompany = company != null && company.getId().equals(nextCompany.getId());
 		this.role = nextRole;
 		this.company = nextCompany;
-		if (!sameRole || !sameCompany) {
-			sessionGeneration++;
+		if (sameRole && sameCompany) {
+			return false;
 		}
+		sessionGeneration++;
+		return true;
 	}
 }

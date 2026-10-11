@@ -1,5 +1,6 @@
 package com.drift.backend.account.admin;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 
@@ -28,11 +29,14 @@ public class AdminAssignmentService {
 	private final UserAccountRepository users;
 	private final AccountRoleRepository roles;
 	private final CompanyRepository companies;
+	private final UserAssignmentAuditRepository audits;
 
-	public AdminAssignmentService(UserAccountRepository users, AccountRoleRepository roles, CompanyRepository companies) {
+	public AdminAssignmentService(UserAccountRepository users, AccountRoleRepository roles, CompanyRepository companies,
+			UserAssignmentAuditRepository audits) {
 		this.users = users;
 		this.roles = roles;
 		this.companies = companies;
+		this.audits = audits;
 	}
 
 	@Transactional(readOnly = true)
@@ -58,14 +62,23 @@ public class AdminAssignmentService {
 				.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<AssignmentAuditResponse> audits(AuthenticatedUser principal) {
+		requireAdmin(principal);
+		return audits.findAllByOrderByRecordedAtDescIdDesc().stream().map(AssignmentAuditResponse::from).toList();
+	}
+
 	@Transactional
 	public AssignmentResponse assign(AuthenticatedUser principal, Long userId, AssignUserRequest request) {
-		requireAdmin(principal);
+		UserAccount operator = requireAdmin(principal);
 		if (request == null) {
 			throw new InvalidAssignmentException();
 		}
 		UserAccount target = users.findById(userId).orElseThrow(AssignedUserNotFoundException::new);
-		target.assign(role(request.role()), organisation(request.organisationId()));
+		Role previousRole = target.getRole();
+		Company previousOrganisation = target.getCompany();
+		Company nextOrganisation = organisation(request.organisationId());
+		boolean changed = target.assign(role(request.role()), nextOrganisation);
 		try {
 			users.saveAndFlush(target);
 		} catch (RuntimeException ex) {
@@ -74,14 +87,19 @@ public class AdminAssignmentService {
 			}
 			throw ex;
 		}
+		if (changed) {
+			audits.saveAndFlush(new UserAssignmentAudit(operator, target, previousRole, previousOrganisation,
+					nextOrganisation, Instant.now()));
+		}
 		return AssignmentResponse.from(target);
 	}
 
-	private void requireAdmin(AuthenticatedUser principal) {
+	private UserAccount requireAdmin(AuthenticatedUser principal) {
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		if (account.getRole() != Role.ADMIN) {
 			throw new AssignmentForbiddenException();
 		}
+		return account;
 	}
 
 	private AccountRole role(String code) {

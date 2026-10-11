@@ -8,7 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
-import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers } from './api';
+import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
@@ -16,6 +16,7 @@ vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
   listAssignableOrganisations: vi.fn(),
+  listAssignmentAudits: vi.fn(),
   assignUser: vi.fn(),
 }));
 
@@ -55,6 +56,7 @@ beforeEach(() => {
   vi.mocked(listAssignableUsers).mockResolvedValue(users);
   vi.mocked(listAssignableRoles).mockResolvedValue(roles);
   vi.mocked(listAssignableOrganisations).mockResolvedValue(organisations);
+  vi.mocked(listAssignmentAudits).mockResolvedValue([]);
   vi.mocked(assignUser).mockResolvedValue({ ...users[0], role: 'IMPORTER', organisation: organisations[1] });
 });
 
@@ -76,6 +78,36 @@ describe('user management', () => {
     expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 2, 'IMPORTER');
     expect(await screen.findByText('User assigned successfully')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('shows the assignment history after a change is saved', async () => {
+    writeSession(admin);
+    const entry = {
+      id: 1,
+      recordedAt: '2026-10-10T00:22:00Z',
+      operator: { id: 9, fullName: 'Amina Rahman', email: 'amina@example.com' },
+      target: { id: 4, fullName: 'Alice Tan', email: 'alice@example.com' },
+      previousRole: 'FREIGHT_FORWARDER' as const,
+      assignedRole: 'IMPORTER' as const,
+      previousOrganisation: organisations[0],
+      organisation: organisations[1],
+    };
+    let saved = false;
+    vi.mocked(listAssignmentAudits).mockImplementation(async () => saved ? [entry] : []);
+    vi.mocked(assignUser).mockImplementation(async () => {
+      saved = true;
+      return { ...users[0], role: 'IMPORTER', organisation: organisations[1] };
+    });
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByText('No assignment changes yet.')).toBeInTheDocument();
+    await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
+    await user.selectOptions(screen.getByLabelText('Organisation'), 'Straits Fresh Imports (Demo)');
+    await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
+    await user.click(screen.getByRole('button', { name: /Save assignment/ }));
+    expect(await screen.findByText('Freight forwarder at Harbourline Logistics (Demo) → Importer at Straits Fresh Imports (Demo)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Assignment history' })).toBeInTheDocument();
+    expect(screen.queryByText('No assignment changes yet.')).not.toBeInTheDocument();
   });
 
   it('keeps the administrator signed in when their own assignment is unchanged', async () => {
