@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
+import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
 import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
+import { RemoveShipment } from './RemoveShipment';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 
@@ -12,11 +14,13 @@ const NOT_FOUND = 'Shipment not found or has been removed.';
 
 type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
 
-export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: {
+export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, archive }: {
   token: string;
   shipmentId: string;
   basePath: string;
   onSessionEnded: () => void;
+  canEdit?: boolean;
+  archive?: ShipmentArchive;
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
@@ -120,7 +124,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded }: 
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} onEdit={() => setEditing(true)} />}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote} onRefresh={() => void reloadTracking()} canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
+              ? <RemoveShipment token={archive.token} shipmentId={shipment.id} reference={shipment.shipmentReference} onSessionEnded={archive.onSessionEnded} onRemoved={archive.onRemoved} onFailed={archive.onFailed} />
+              : null} />}
     </section>
   );
 }
@@ -159,13 +165,15 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, onEdit }: {
+function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
+  canEdit: boolean;
   onEdit: () => void;
+  action: ReactNode;
 }) {
   return (
     <>
@@ -173,7 +181,8 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       <div className="shipment-title">
         <h2>{shipment.shipmentReference}</h2>
         <div className="detail-actions">
-          <button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button>
+          {canEdit && <button type="button" className="secondary-button" onClick={onEdit}>Edit shipment</button>}
+          {action}
           <button type="button" className="refresh-button" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
         </div>
       </div>

@@ -6,12 +6,12 @@ import { AppRoutes } from '../App';
 import { loadSession, login } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { listShipments } from '../shipment/api';
+import { getShipment, getShipmentTracking, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn() }));
 vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
@@ -68,6 +68,7 @@ describe('user management', () => {
 
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
     await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
     expect(screen.getByLabelText('Organisation')).toHaveValue('1');
     expect(screen.getByLabelText('Role')).toHaveValue('FREIGHT_FORWARDER');
@@ -148,21 +149,42 @@ describe('user management', () => {
     expect(screen.getByRole('button', { name: /Save assignment/ })).toBeDisabled();
   });
 
-  it('sends an administrator from the freight forwarder page to user management', async () => {
+  it('sends an administrator from a freight-forwarder shipment to that shipment in company shipments', async () => {
     writeSession(admin);
+    vi.mocked(getShipment).mockResolvedValue({
+      id: 15,
+      shipmentReference: 'HBL-15',
+      origin: 'Singapore',
+      destination: 'Jakarta',
+      transshipmentPort: 'Singapore',
+      motherVessel: 'Ever Steady',
+      plannedMotherArrivalAt: '2026-10-02T00:00:00Z',
+      feederVessel: 'Straits Feeder',
+      plannedFeederDepartureAt: '2026-10-03T00:00:00Z',
+      createdAt: '2026-09-29T04:00:00Z',
+      version: 0,
+      companyId: 1,
+      connectionWindow: null,
+      motherVesselPosition: null,
+      feederVesselPosition: null,
+    });
+    vi.mocked(getShipmentTracking).mockResolvedValue({ motherVesselName: 'Ever Steady', motherVessel: null, feederVesselName: 'Straits Feeder', feederVessel: null });
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/15']}><AppRoutes /><Location /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+    expect(await screen.findByRole('heading', { name: 'HBL-15' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments/15');
+    expect(screen.queryByRole('heading', { name: 'User management' })).not.toBeInTheDocument();
   });
 
-  it('sends a logistics manager to the freight forwarder home', async () => {
+  it('sends a logistics manager from user management to the company shipment workspace', async () => {
     const manager: Session = { ...forwarder, token: 'manager-token', role: 'LOGISTICS_MANAGER' };
     vi.mocked(loadSession).mockImplementation(async token => ({ ...manager, token }));
     writeSession(manager);
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Import shipments' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'User management' })).not.toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
+    expect(screen.getByTestId('location')).toHaveTextContent('/logistics-manager');
   });
 
   it('shows the validation error and keeps the administrator signed in', async () => {

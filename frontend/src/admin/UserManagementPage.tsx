@@ -97,6 +97,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark />
+        <Link className="workspace-nav" to="/admin/shipments">Company shipments</Link>
         <Link className="workspace-nav" to="/admin" aria-current="page">User management</Link>
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>

@@ -51,5 +51,16 @@ export function isExpired(expiresAt: string, now = Date.now()) {
 export function homePath(role: Role) {
   if (role === 'IMPORTER') return '/importer';
   if (role === 'ADMIN') return '/admin';
+  if (role === 'LOGISTICS_MANAGER') return '/logistics-manager';
   return '/freight-forwarder';
+}
+
+export function shipmentListPath(role: Role) {
+  if (role === 'ADMIN') return '/admin/shipments';
+  return homePath(role);
+}
+
+export function shipmentDetailPath(role: Role, shipmentId: string) {
+  if (role === 'ADMIN') return `/admin/shipments/${shipmentId}`;
+  return `${homePath(role)}/shipments/${shipmentId}`;
 }

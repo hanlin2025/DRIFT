@@ -54,6 +54,34 @@ describe('login and role routing', () => {
     expect(sessionStorage.getItem('drift.session')).not.toContain('Example123');
   });
 
+  it('opens user management for an administrator', async () => {
+    vi.mocked(login).mockResolvedValue({ ...session, role: 'ADMIN' });
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'ADMIN', token }));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Password'), 'Example123');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('opens the company shipment workspace for a logistics manager', async () => {
+    vi.mocked(login).mockResolvedValue({ ...session, role: 'LOGISTICS_MANAGER' });
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'LOGISTICS_MANAGER', token }));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Password'), 'Example123');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+    expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Import shipments' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'User management' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/logistics-manager');
+  });
+
   it('opens the importer overview for an importer', async () => {
     vi.mocked(login).mockResolvedValue({ ...session, role: 'IMPORTER' });
     vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'IMPORTER', token }));
@@ -181,7 +209,7 @@ describe('login acceptance criteria', () => {
     expect(login).not.toHaveBeenCalled();
   });
 
-  it.each(['/importer', '/freight-forwarder'])('sends a signed-out visitor from %s to login without protected data', async path => {
+  it.each(['/importer', '/freight-forwarder', '/admin', '/admin/shipments', '/logistics-manager'])('sends a signed-out visitor from %s to login without protected data', async path => {
     render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login');

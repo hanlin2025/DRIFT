@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 public record ShipmentDetailResponse(
 		Long id,
+		@Schema(description = "Id of the company that owns this shipment. A shipment visible through an importer link still returns the owning company's id.", example = "1")
+		Long companyId,
 		String shipmentReference,
 		String origin,
 		String destination,
@@ -32,7 +34,7 @@ public record ShipmentDetailResponse(
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindow connectionWindow,
 			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition) {
-		return new ShipmentDetailResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
+		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),

@@ -220,7 +220,8 @@ describe('importer linking', () => {
     writeSession(manager);
     vi.mocked(loadSession).mockImplementation(async token => ({ ...manager, token }));
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Link importer')).not.toBeInTheDocument();
     cleanup();
 

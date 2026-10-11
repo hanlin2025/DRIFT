@@ -1,13 +1,42 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
+import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, shipmentDetailPath, shipmentListPath, writeSession, type Session } from '../session/session';
+import { type ShipmentArchive } from '../shipment/archiveAccess';
 import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
+
+function workspaceCopy(role: Session['role']) {
+  if (role === 'IMPORTER') {
+    return {
+      eyebrow: 'IMPORTER',
+      title: 'Shipment overview',
+      intro: 'You are signed in to the shipments your company is authorised to follow.',
+    };
+  }
+  if (role === 'FREIGHT_FORWARDER') {
+    return {
+      eyebrow: 'FREIGHT FORWARDER',
+      title: 'Shipment portfolio',
+      intro: 'You are signed in to the shipment plans you register and maintain.',
+    };
+  }
+  return {
+    eyebrow: role === 'ADMIN' ? 'ADMIN' : 'LOGISTICS MANAGER',
+    title: 'Company shipments',
+    intro: 'You are signed in to the shipments registered for your company.',
+  };
+}
+
+function removedMessage(state: unknown) {
+  if (typeof state !== 'object' || state === null || !('shipmentRemoved' in state)) return '';
+  const message = state.shipmentRemoved;
+  return typeof message === 'string' ? message : '';
+}
 
 function Wordmark({ href }: { href: string }) {
   return (
@@ -25,28 +54,62 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   page?: 'portfolio' | 'import';
 }) {
   const { shipmentId, jobId } = useParams();
+  const navigate = useNavigate();
+  const removed = removedMessage(useLocation().state);
   const [registered, setRegistered] = useState(0);
-  const importer = account.role === 'IMPORTER';
-  const basePath = homePath(account.role);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(
+    removed ? { tone: 'success', message: removed } : null,
+  );
+  const noticeRef = useRef<HTMLDivElement>(null);
+  const copy = workspaceCopy(account.role);
+  const canRegister = account.role === 'FREIGHT_FORWARDER';
+  const canEdit = account.role === 'FREIGHT_FORWARDER' || account.role === 'IMPORTER';
+  const listPath = shipmentListPath(account.role);
+  const linkBase = account.role === 'ADMIN' ? '/admin' : listPath;
+  const viewer = { role: account.role, companyId: account.company?.id ?? null };
+
+  useEffect(() => {
+    if (removed) setNotice({ tone: 'success', message: removed });
+  }, [removed]);
+
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
+
+  function archiveFailed(error: ApiError) {
+    setNotice({ tone: 'error', message: error.message });
+    if (error.status === 409) setRegistered(value => value + 1);
+  }
+
+  const archive: ShipmentArchive = {
+    token: account.token,
+    viewer,
+    onSessionEnded,
+    onRemoved: message => {
+      setNotice({ tone: 'success', message });
+      setRegistered(value => value + 1);
+    },
+    onFailed: archiveFailed,
+  };
+
   return (
     <div className="workspace">
       <header className="workspace-bar">
-        <Wordmark href={basePath} />
+        <Wordmark href={listPath} />
         {account.role === 'FREIGHT_FORWARDER' ? <Link className="workspace-nav" to="/freight-forwarder/import">Import shipments</Link> : null}
         {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">
+        {notice && <div ref={noticeRef} tabIndex={-1} className={notice.tone === 'success' ? 'success-notice' : 'error-notice'} role={notice.tone === 'success' ? 'status' : 'alert'}>{notice.message}</div>}
         {page === 'import'
-          ? <ShipmentImportPage token={account.token} basePath={basePath} jobId={jobId} onSessionEnded={onSessionEnded} />
+          ? <ShipmentImportPage token={account.token} basePath={listPath} jobId={jobId} onSessionEnded={onSessionEnded} />
           : shipmentId
-          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={basePath} onSessionEnded={onSessionEnded} />
+          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={listPath} onSessionEnded={onSessionEnded} canEdit={canEdit} archive={{ ...archive, onRemoved: message => navigate(listPath, { state: { shipmentRemoved: message } }) }} />
           : <>
-            <p className="eyebrow">{importer ? 'IMPORTER' : 'FREIGHT FORWARDER'}</p>
-            <h2>{importer ? 'Shipment overview' : 'Shipment portfolio'}</h2>
-            <p className="intro">{importer
-              ? 'You are signed in to the shipments your company is authorised to follow.'
-              : 'You are signed in to the shipment plans you register and maintain.'}</p>
+            <p className="eyebrow">{copy.eyebrow}</p>
+            <h2>{copy.title}</h2>
+            <p className="intro">{copy.intro}</p>
             <div className="company-card">
               <span className="company-symbol" aria-hidden="true">&#9637;</span>
               <div>
@@ -58,8 +121,8 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
               <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
-            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
-            {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
+            <CompanyShipments token={account.token} basePath={linkBase} refreshKey={registered} onSessionEnded={onSessionEnded} archive={archive} />
+            {canRegister ? <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} /> : null}
           </>}
       </main>
     </div>
@@ -99,8 +162,7 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
         return;
       }
       if (homePath(next.role) !== homePath(role)) {
-        const home = homePath(next.role);
-        navigate(shipmentId && home !== '/admin' ? `${home}/shipments/${shipmentId}` : home, { replace: true });
+        navigate(shipmentId ? shipmentDetailPath(next.role, shipmentId) : homePath(next.role), { replace: true });
         return;
       }
       setAccount(next);
@@ -137,11 +199,12 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
   return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
+function CompanyShipments({ token, basePath, refreshKey, onSessionEnded, archive }: {
   token: string;
   basePath: string;
   refreshKey: number;
   onSessionEnded: () => void;
+  archive: ShipmentArchive;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
   const [problem, setProblem] = useState('');
@@ -171,5 +234,5 @@ function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
   if (shipments.length === 0) {
     return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
-  return <ShipmentList shipments={shipments} basePath={basePath} />;
+  return <ShipmentList shipments={shipments} basePath={basePath} archive={archive} />;
 }
