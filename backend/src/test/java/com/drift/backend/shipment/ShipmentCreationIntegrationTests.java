@@ -298,6 +298,8 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.feederVessel").value("MV Strait Runner"))
 				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
 				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
+				.andExpect(jsonPath("$.risk.level").value("LOW"))
+				.andExpect(jsonPath("$.risk.explanation").value("At least 24 hours to transfer cargo between vessels."))
 				.andExpect(jsonPath("$.motherVesselPosition").value(nullValue()))
 				.andExpect(jsonPath("$.feederVesselPosition").value(nullValue()));
 	}
