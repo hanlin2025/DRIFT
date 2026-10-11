@@ -12,6 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,8 +34,21 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.security[0].bearerAuth").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.summary").value("Get a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.description")
-						.value("Returns one shipment of the authenticated user's active company, including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is reported as not found."))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404']").exists())
+						.value("Returns one shipment visible to the authenticated user's active company, including a shipment linked to that company as the importer, and includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, and the latest retained AIS position for each vessel name. A shipment of another company is forbidden, and an unknown id is reported as not found."))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].schema.properties.message.type")
+						.value("string"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['403'].content['application/json'].examples['Shipment of another company'].value.message")
+						.value(ShipmentDetailForbiddenException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].get.responses['404'].content['application/json'].schema.properties.message.type")
+						.value("string"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.summary").value("Replace a shipment"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.security[0].bearerAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.responses['200'].content['application/json'].schema.$ref")
+						.value("#/components/schemas/ShipmentResponse"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}'].put.responses['409']").exists())
+				.andExpect(jsonPath("$.components.schemas.UpdateShipmentRequest.required").isArray())
+				.andExpect(jsonPath("$.components.schemas.UpdateShipmentRequest.properties.version.description")
+						.value(org.hamcrest.Matchers.containsString("version")))
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type").value("http"))
 				.andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
 				.andExpect(jsonPath("$.components.schemas.CreateShipmentRequest.required").isArray())
@@ -44,11 +58,13 @@ class OpenApiIntegrationTests {
 						.value("#/components/schemas/ShipmentDetailResponse"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.connectionWindow.$ref")
 						.value("#/components/schemas/ConnectionWindow"))
+				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.version.type").value("integer"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.motherVesselPosition.$ref")
 						.value("#/components/schemas/VesselPosition"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.feederVesselPosition.$ref")
 						.value("#/components/schemas/VesselPosition"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.motherVesselPosition").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.version.type").value("integer"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.connectionWindow.$ref")
 						.value("#/components/schemas/ConnectionWindow"))
 				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.duration.example")
@@ -76,6 +92,22 @@ class OpenApiIntegrationTests {
 						.value("#/components/schemas/VesselPosition"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
-				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists());
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists())
+				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.importer.$ref")
+						.value("#/components/schemas/Organisation"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.summary")
+						.value("Link a shipment to an importer"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.security[0].bearerAuth").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['200'].content['application/json'].schema.$ref")
+						.value("#/components/schemas/ShipmentDetailResponse"))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['400'].content['application/json'].example.message")
+						.value(com.drift.backend.shipment.exception.InvalidImporterOrganisationException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['401'].content['application/json'].example.message")
+						.value(SessionEndedException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.responses['404']").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/import'].post.summary").value("Start a shipment CSV import"))
+				.andExpect(jsonPath("$.paths['/api/shipments/import'].post.responses['202']").exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/import/{jobId}'].get.summary").value("Get shipment import status"))
+				.andExpect(jsonPath("$.paths['/api/shipments/import/{jobId}/errors'].get.summary").value("Get shipment import row errors"));
 	}
 }

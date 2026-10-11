@@ -17,12 +17,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
+import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
 @RestControllerAdvice(assignableTypes = ShipmentController.class)
 public class ShipmentExceptionHandler {
@@ -48,8 +52,20 @@ public class ShipmentExceptionHandler {
 				.body(body(ex.getMessage(), Map.of("plannedFeederDepartureAt", ex.getMessage())));
 	}
 
+	@ExceptionHandler(InvalidShipmentRequestException.class)
+	public ResponseEntity<Map<String, Object>> handleInvalidShipmentRequest(InvalidShipmentRequestException ex) {
+		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+				.body(body(ex.getMessage(), ex.getErrors()));
+	}
+
 	@ExceptionHandler(DuplicateShipmentReferenceException.class)
 	public ResponseEntity<Map<String, String>> handleDuplicate(DuplicateShipmentReferenceException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(StaleShipmentVersionException.class)
+	public ResponseEntity<Map<String, String>> handleStaleVersion(StaleShipmentVersionException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}
@@ -60,16 +76,21 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler(ShipmentAccessForbiddenException.class)
-	public ResponseEntity<Map<String, String>> handleAccessForbidden(ShipmentAccessForbiddenException ex) {
+	@ExceptionHandler({
+			ShipmentAccessForbiddenException.class,
+			ShipmentDetailForbiddenException.class,
+			ShipmentArchiveForbiddenException.class,
+			ShipmentNotEditableException.class
+	})
+	public ResponseEntity<Map<String, String>> handleAccessForbidden(RuntimeException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler(ShipmentArchiveForbiddenException.class)
-	public ResponseEntity<Map<String, String>> handleArchiveForbidden(ShipmentArchiveForbiddenException ex) {
-		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
-				.body(Map.of("message", ex.getMessage()));
+	@ExceptionHandler(ShipmentAlreadyArchivedException.class)
+	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ShipmentAlreadyArchivedException.MESSAGE));
 	}
 
 	@ExceptionHandler(ShipmentNotFoundException.class)
@@ -88,12 +109,6 @@ public class ShipmentExceptionHandler {
 		}
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
-	}
-
-	@ExceptionHandler(ShipmentAlreadyArchivedException.class)
-	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
-		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
-				.body(Map.of("message", ShipmentAlreadyArchivedException.MESSAGE));
 	}
 
 	@ExceptionHandler(SessionEndedException.class)

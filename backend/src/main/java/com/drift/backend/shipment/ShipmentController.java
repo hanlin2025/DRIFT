@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +24,7 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.media.SchemaProperty;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -40,12 +42,13 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments")
-	@Operation(summary = "List shipments", description = "Lists the active shipments of the authenticated user's active company, newest first. "
+	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
+			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
-				@ApiResponse(responseCode = "200", description = "Active shipments of the company, possibly empty", content = @Content(
+				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
@@ -65,10 +68,10 @@ public class ShipmentController {
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Get a shipment", description = "Returns one shipment of the authenticated user's active company, "
-			+ "including the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
+	@Operation(summary = "Get a shipment", description = "Returns one shipment visible to the authenticated user's active company, "
+			+ "including a shipment linked to that company as the importer, and includes the planned connection window calculated from the stored mother-vessel arrival and feeder-vessel departure, "
 			+ "and the latest retained AIS position for each vessel name. "
-			+ "A shipment of another company is reported as not found.",
+			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipment found", content = @Content(
@@ -77,12 +80,16 @@ public class ShipmentController {
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
 								"""))),
-				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Your account must belong to an active company to view shipments"}
-								"""))),
-				@ApiResponse(responseCode = "404", description = "No shipment with this id belongs to the authenticated user's company", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
+				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company, or the shipment belongs to another company", content = @Content(
+						mediaType = "application/json", schemaProperties = @SchemaProperty(name = "message", schema = @Schema(type = "string")), examples = {
+								@ExampleObject(name = "No active company", value = """
+										{"message":"Your account must belong to an active company to view shipments"}
+										"""),
+								@ExampleObject(name = "Shipment of another company", value = """
+										{"message":"You do not have access to this shipment"}
+										""") })),
+				@ApiResponse(responseCode = "404", description = "No shipment exists with this id", content = @Content(
+						mediaType = "application/json", schemaProperties = @SchemaProperty(name = "message", schema = @Schema(type = "string")), examples = @ExampleObject(value = """
 								{"message":"Shipment not found"}
 								"""))) })
 	public ResponseEntity<ShipmentDetailResponse> get(
@@ -97,7 +104,7 @@ public class ShipmentController {
 
 	@GetMapping("/api/shipments/{shipmentId}/tracking")
 	@Operation(summary = "Get shipment vessel tracking", description = "Returns the latest retained AIS position for the mother vessel and the feeder vessel "
-			+ "of one shipment belonging to the authenticated user's active company. "
+			+ "of one shipment visible to the authenticated user's active company. "
 			+ "Each position includes coordinates, speed, course, heading, and the time it was ingested. "
 			+ "A missing position is null. This is a live fix, not an arrival estimate. "
 			+ "A shipment of another company is reported as not found.",
@@ -163,6 +170,58 @@ public class ShipmentController {
 		}
 		return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore())
 				.body(shipmentService.create(user, request));
+	}
+
+	@PutMapping("/api/shipments/{shipmentId}")
+	@Operation(summary = "Replace a shipment", description = "Replaces all editable shipment details for a shipment managed by the authenticated user's active company. "
+			+ "A linked importer may view and track a shipment but cannot replace it. "
+			+ "Supply the version returned when the shipment was last read. A stale version returns 409 Conflict; refresh the shipment before trying again. "
+			+ "Shipment references remain unique within the company, ignoring letter case.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Shipment updated", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = ShipmentResponse.class))),
+				@ApiResponse(responseCode = "400", description = "Missing or invalid shipment data, including an invalid itinerary or version", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Invalid itinerary", value = """
+										{"message":"Planned feeder-vessel departure must be after planned mother-vessel arrival","errors":{"plannedFeederDepartureAt":"Planned feeder-vessel departure must be after planned mother-vessel arrival"}}
+										"""),
+								@ExampleObject(name = "Missing version", value = """
+										{"message":"Shipment information is missing or invalid","errors":{"version":"Version is required"}}
+										""") })),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Log in again."}
+								"""))),
+				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company, cannot edit the shipment, or the shipment is archived", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "No active company", value = """
+										{"message":"Your account must belong to an active company to view shipments"}
+										"""),
+								@ExampleObject(name = "Archived", value = """
+										{"message":"This shipment cannot be edited in its current status."}
+										""") })),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id belongs to the authenticated user's company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))),
+				@ApiResponse(responseCode = "409", description = "Shipment reference already exists for the company, or the supplied version is stale", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Duplicate reference", value = """
+										{"message":"A shipment with this reference already exists for your company"}
+										"""),
+								@ExampleObject(name = "Stale version", value = """
+										{"message":"This shipment was updated by another user. Refresh it and try again."}
+										""") })) })
+	public ResponseEntity<ShipmentResponse> update(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Identifier of the shipment to replace", example = "42") @PathVariable Long shipmentId,
+			@Valid @RequestBody UpdateShipmentRequest request) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(shipmentService.update(user, shipmentId, request));
 	}
 
 	@PatchMapping("/api/shipments/{shipmentId}/status")
