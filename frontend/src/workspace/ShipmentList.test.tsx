@@ -26,6 +26,7 @@ const newer: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
+  risk: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
@@ -42,6 +43,7 @@ const older: Shipment = {
   createdAt: '2026-09-28T04:00:00Z',
   version: 0,
   connectionWindow: null,
+  risk: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
@@ -166,7 +168,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();
