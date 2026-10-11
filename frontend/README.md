@@ -135,3 +135,27 @@ cleanup. The runner reports a drop or shutdown failure instead of ignoring it.
 Running the spec file directly, including `npx playwright test` with only `DRIFT_E2E_DATABASE`
 set, stops before any fixture write. `npm run test:e2e` does not run this spec. No production
 code or Flyway version changes with it.
+
+### Shipment CSV import
+
+`e2e/shipment-import.spec.ts` covers the two cross-layer CDG-26 journeys: a freight forwarder
+downloads the canonical template, imports shipments through the page, sees the completed job in
+the real portfolio and detail view, and an independently authenticated linked importer can list,
+read, and track the linked shipment but cannot update it. The second journey imports one valid
+and one invalid row, displays the API's persisted row errors, and downloads the browser-generated
+CSV error report. CSV escaping for comma, quote, and newline values remains unit-covered because
+the backend's production row-error messages deliberately contain no user-supplied text.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:import
+```
+
+That command runs `scripts/run-shipment-import.mjs` against a fresh, disposable
+`drift_cdg130_*` database. It starts a normal Spring Boot process with the production async
+executor (not the deterministic backend-test executor), migrates only that database, and passes
+the database ownership token to the spec before it permits fixture writes. The runner stops only
+the backend it starts and drops only the database it created; it never drops `drift`,
+`drift_test`, or a pre-existing database. `npm run test:e2e` does not run this disposable spec.

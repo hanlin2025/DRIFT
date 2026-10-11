@@ -155,6 +155,21 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
+.shipment-import { max-width: 640px; }
+.shipment-import .back-link { margin-bottom: 28px; }
+.template-link { color: #214e40; font-size: 12px; font-weight: 750; text-underline-offset: 3px; }
+.shipment-import-form { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 24px; }
+.import-file-field { display: grid; justify-content: start; gap: 8px; color: var(--ink); }
+.import-file-field input { max-width: 100%; }
+.import-file-field small, .selected-file { color: var(--muted); font-size: 11px; }
+.selected-file { margin: 16px 0 0; }
+.import-progress { display: grid; gap: 10px; margin: 24px 0; padding: 18px; border: 1px solid #c8d9bf; border-radius: 5px; background: #e8ede2; }
+.import-progress strong { font-size: 14px; }
+.import-progress progress { width: 100%; height: 10px; accent-color: var(--green); }
+.import-errors { margin-top: 28px; }
+.import-errors-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.import-errors h3 { font-family: 'Fraunces Variable', Georgia, serif; font-weight: 450; font-size: 24px; margin: 0; }
+.import-back { margin-top: 26px; }
 .back-link { display: inline-flex; gap: 8px; align-items: center; margin: 0 0 16px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; text-decoration: none; }
 .back-link:hover { color: var(--ink); }
 .workspace-main:has(.shipment-detail) { max-width: 920px; }
@@ -228,7 +243,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .route-chart-stage, .skeleton-map { height: 340px; }
   .shipment-record .skeleton-value { margin-left: 0; margin-top: 6px; }
   .shipment-detail .back-link { min-height: 44px; margin-bottom: 16px; }
-	.import-errors-heading { align-items: flex-start; flex-direction: column; }
+  .import-errors-heading { align-items: flex-start; flex-direction: column; }
 }
 @media (max-width: 480px) {
   .route-chart-stage, .skeleton-map { height: 260px; }

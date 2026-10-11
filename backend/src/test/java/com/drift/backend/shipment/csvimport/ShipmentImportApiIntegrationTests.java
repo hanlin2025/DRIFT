@@ -136,6 +136,10 @@ class ShipmentImportApiIntegrationTests {
 		String logisticsToken = tokenFor(account("LOGISTICS_MANAGER", forwarderCompanyId));
 		mvc.perform(multipart("/api/shipments/import").file(file).header("Authorization", "Bearer " + logisticsToken))
 				.andExpect(status().isForbidden());
+		String adminToken = tokenFor(account("ADMIN", forwarderCompanyId));
+		mvc.perform(multipart("/api/shipments/import").file(file).header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value("ADMIN bulk-import access is deferred until company type is defined"));
 		mvc.perform(multipart("/api/shipments/import").file(new MockMultipartFile("file", "empty.csv", "text/csv", new byte[0]))
 				.header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isBadRequest());
