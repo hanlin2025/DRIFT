@@ -17,6 +17,8 @@ import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
  * {@link ShipmentVisibilityFilter} applies that view rule to the shipment list, detail, and tracking reads.
  * There is no planner role. Logistics managers keep the shipment operations main already allows,
  * which is also the role the open archive work permits to archive a shipment.
+ * GET and PATCH /api/profile are the signed-in user's own account, so every role is allowed
+ * with or without an active company.
  */
 public final class RolePermissionMatrix {
 
@@ -47,6 +49,9 @@ public final class RolePermissionMatrix {
 			if (role != Role.FREIGHT_FORWARDER) {
 				return Optional.of(ShipmentLinkForbiddenException.MESSAGE);
 			}
+			return Optional.empty();
+		}
+		if (profile(method, normalized)) {
 			return Optional.empty();
 		}
 		if ("GET".equals(method) && normalized.equals("/api/organisations")) {
@@ -91,6 +96,10 @@ public final class RolePermissionMatrix {
 		return "GET".equals(method) && (path.equals("/api/shipments")
 				|| path.matches("/api/shipments/\\d+")
 				|| path.matches("/api/shipments/\\d+/tracking"));
+	}
+
+	private static boolean profile(String method, String path) {
+		return path.equals("/api/profile") && ("GET".equals(method) || "PATCH".equals(method));
 	}
 
 	private static boolean shipmentReplace(String method, String path) {

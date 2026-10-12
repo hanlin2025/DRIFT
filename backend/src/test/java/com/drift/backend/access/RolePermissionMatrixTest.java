@@ -101,6 +101,17 @@ class RolePermissionMatrixTest {
 	}
 
 	@Test
+	void profileIsAvailableToEveryRoleWithoutACompany() {
+		for (Role role : Role.values()) {
+			assertThat(RolePermissionMatrix.denial(role, false, "GET", "/api/profile")).isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, false, "PATCH", "/api/profile/")).isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/profile?userId=4")).isEmpty();
+		}
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, false, "GET", "/api/profile/4")).isEmpty();
+		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "PUT", "/api/profile")).isEmpty();
+	}
+
+	@Test
 	void doesNotDecideArchiveOrPublicPaths() {
 		assertThat(RolePermissionMatrix.denial(Role.LOGISTICS_MANAGER, true, "PATCH", "/api/shipments/8/status")).isEmpty();
 		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "GET", "/api/session")).isEmpty();

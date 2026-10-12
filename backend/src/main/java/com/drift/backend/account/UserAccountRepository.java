@@ -23,6 +23,10 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 	Optional<UserAccount> findForPermissionCheck(@Param("id") Long id);
 
 	@EntityGraph(attributePaths = { "company", "role" })
+	@Query("SELECT account FROM UserAccount account WHERE account.id = :id")
+	Optional<UserAccount> findForProfile(@Param("id") Long id);
+
+	@EntityGraph(attributePaths = { "company", "role" })
 	@Query("SELECT account FROM UserAccount account ORDER BY account.fullName ASC, account.id ASC")
 	List<UserAccount> findAllForAssignment();
 }
