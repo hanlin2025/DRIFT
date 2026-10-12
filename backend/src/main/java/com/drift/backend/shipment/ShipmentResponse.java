@@ -19,7 +19,9 @@ public record ShipmentResponse(
 		@Schema(description = "Optimistic-lock version. Supply this value when updating the shipment.", example = "0")
 		Long version,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
-		ConnectionWindow connectionWindow) {
+		ConnectionWindow connectionWindow,
+		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
+		ShipmentStatus status) {
 
 	static ShipmentResponse from(Shipment shipment) {
 		return from(shipment, null);
@@ -30,6 +32,6 @@ public record ShipmentResponse(
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
-				shipment.getVersion(), connectionWindow);
+				shipment.getVersion(), connectionWindow, shipment.getStatus());
 	}
 }
