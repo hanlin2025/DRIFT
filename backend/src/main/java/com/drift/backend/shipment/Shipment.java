@@ -8,6 +8,8 @@ import com.drift.backend.company.Company;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -65,17 +67,15 @@ public class Shipment {
 	@Column(name = "planned_feeder_departure_at", nullable = false)
 	private OffsetDateTime plannedFeederDepartureAt;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "status", nullable = false, length = 16)
+	private ShipmentStatus status;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
-
-	public static final String ACTIVE = "ACTIVE";
-	public static final String ARCHIVED = "ARCHIVED";
-
-	@Column(nullable = false, length = 16)
-	private String status;
 
 	@Version
 	@Column(nullable = false)
@@ -98,14 +98,14 @@ public class Shipment {
 		this.plannedMotherArrivalAt = plannedMotherArrivalAt;
 		this.feederVessel = feederVessel;
 		this.plannedFeederDepartureAt = plannedFeederDepartureAt;
+		this.status = ShipmentStatus.ACTIVE;
 		Instant now = Instant.now();
 		this.createdAt = now;
 		this.updatedAt = now;
-		this.status = ACTIVE;
 	}
 
 	void archive() {
-		this.status = ARCHIVED;
+		this.status = ShipmentStatus.ARCHIVED;
 	}
 
 	void markUpdated(UserAccount updatedBy, Instant updatedAt) {
@@ -138,7 +138,7 @@ public class Shipment {
 	public Instant getUpdatedAt() { return updatedAt; }
 	public UserAccount getUpdatedBy() { return updatedBy; }
 	public Long getVersion() { return version; }
-	public String getStatus() { return status; }
+	public ShipmentStatus getStatus() { return status; }
 
 	void linkImporter(Company importerCompany) {
 		this.importerCompany = importerCompany;

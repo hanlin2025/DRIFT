@@ -40,6 +40,8 @@ const shipment: Shipment = {
   version: 3,
   companyId: 2,
   connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
+  risk: { level: 'LOW', explanation: 'At least 24 hours to transfer cargo between vessels.' },
+  status: null,
   motherVesselPosition: {
     mmsi: '563001234',
     vesselName: 'PACIFIC HORIZON',
@@ -94,6 +96,8 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('Registered')).toBeInTheDocument();
     expect(within(record).getByText('Connection window')).toBeInTheDocument();
     expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+    expect(within(record).getByText('Low')).toHaveClass('risk-badge', 'risk-low');
+    expect(within(record).getByText(/At least 24 hours to transfer cargo between vessels\./)).toBeInTheDocument();
     expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
@@ -129,12 +133,13 @@ describe('connection window on the shipment detail', () => {
       feederVessel: null,
       plannedFeederDepartureAt: null,
       connectionWindow: null,
+      risk: null,
     });
     vi.mocked(getShipmentTracking).mockResolvedValue({ ...tracking, feederVesselName: null, feederVessel: null });
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     const pending = within(record).getAllByText('Pending assignment');
-    expect(pending).toHaveLength(2);
+    expect(pending).toHaveLength(3);
     pending.forEach(field => expect(field).toHaveClass('is-missing'));
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
@@ -472,6 +477,11 @@ describe('shipment detail decoding', () => {
   it('accepts an explicitly unassigned feeder vessel', async () => {
     await expect(decode({ ...shipment, feederVessel: null, plannedFeederDepartureAt: null }))
       .resolves.toMatchObject({ feederVessel: null, plannedFeederDepartureAt: null });
+  });
+
+  it('rejects an unknown risk level', async () => {
+    await expect(decode({ ...shipment, risk: { level: 'SEVERE', explanation: 'Unknown.' } }))
+      .rejects.toMatchObject({ status: 502 });
   });
 
   it('rejects a response that omits the feeder vessel fields', async () => {

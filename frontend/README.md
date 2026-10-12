@@ -48,7 +48,7 @@ Both the importer overview and the freight-forwarder portfolio load `GET /api/sh
 
 The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
 
-The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
+The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A Risk badge rates that window: Critical when the feeder departs at or before the mother vessel's arrival, High under 12 hours, Medium under 24 hours and Low otherwise, with a one-line explanation. It shows Pending assignment until the feeder departure is scheduled. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
 
 ## Browser tests
 
@@ -61,7 +61,7 @@ npm run test:e2e
 
 That command covers desktop and mobile signup, login, role routing, validation, signed-out
 redirects, session expiry, and invitation reuse against the real API. It does not run the
-shipment retrieval or map monitoring specs below. Set `DRIFT_E2E_DATABASE` only when the
+shipment retrieval, map monitoring, or shipment detail specs below. Set `DRIFT_E2E_DATABASE` only when the
 backend uses that same database.
 
 ### Shipment retrieval
@@ -159,3 +159,24 @@ executor (not the deterministic backend-test executor), migrates only that datab
 the database ownership token to the spec before it permits fixture writes. The runner stops only
 the backend it starts and drops only the database it created; it never drops `drift`,
 `drift_test`, or a pre-existing database. `npm run test:e2e` does not run this disposable spec.
+
+### Shipment detail
+
+`e2e/shipment-detail.spec.ts` opens a shipment from a disposable freight forwarder's list and
+checks every field and the High risk badge for a nine-hour connection, before and after reload.
+A freight forwarder from another company does not get the shipment in the list and sees
+**Access denied** at its address. An unknown or non-numeric ID returns 404 and shows **Shipment
+not found**. A blank feeder vessel shows Pending assignment, and a vessel with no observation
+shows No live AIS position. The live marker and the API's 403 and 401 stay in the map monitoring
+spec.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:detail
+```
+
+That command runs `scripts/run-shipment-detail.mjs`, which creates, uses, and drops its own
+`drift_cdg101_*` database the same way the map monitoring runner does. `npm run test:e2e` does
+not run this spec.

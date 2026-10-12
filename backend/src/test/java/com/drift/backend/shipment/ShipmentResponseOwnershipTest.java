@@ -28,29 +28,46 @@ class ShipmentResponseOwnershipTest {
 		shipment.linkImporter(importer);
 
 		ShipmentResponse listed = ShipmentResponse.from(shipment);
-		ShipmentDetailResponse detail = ShipmentDetailResponse.from(shipment, null, null, null);
+		ShipmentDetailResponse detail = detail(shipment);
 
 		assertThat(listed.companyId()).isEqualTo(11L);
+		assertThat(listed.status()).isEqualTo(ShipmentStatus.ACTIVE);
 		assertThat(detail.companyId()).isEqualTo(11L);
+		assertThat(detail.status()).isEqualTo(ShipmentStatus.ACTIVE);
 		assertThat(detail.importer().id()).isEqualTo(22L);
+		assertThat(detail.risk().level()).isEqualTo(ShipmentRisk.Level.LOW);
+		assertThat(detail.risk().explanation()).isEqualTo("At least 24 hours to transfer cargo between vessels.");
 
 		JsonNode listedJson = json.valueToTree(listed);
 		JsonNode detailJson = json.valueToTree(detail);
 		assertThat(listedJson.get("companyId").asLong()).isEqualTo(11L);
+		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
+		assertThat(listedJson.has("risk")).isFalse();
 		assertThat(listedJson.has("importer")).isFalse();
 		assertThat(detailJson.get("companyId").asLong()).isEqualTo(11L);
+		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
+		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").get("id").asLong()).isEqualTo(22L);
+		assertThat(detailJson.get("companyId").asLong()).isNotEqualTo(detailJson.get("importer").get("id").asLong());
 	}
 
 	@Test
 	void anUnlinkedShipmentStillReturnsItsOwningCompanyId() throws Exception {
 		Shipment shipment = shipment(company(11L, "HARBOURLINE_DEMO", "Harbourline Logistics (Demo)"));
 
-		JsonNode detailJson = json.valueToTree(ShipmentDetailResponse.from(shipment, null, null, null));
+		JsonNode detailJson = json.valueToTree(detail(shipment));
 
 		assertThat(ShipmentResponse.from(shipment).companyId()).isEqualTo(11L);
+		assertThat(ShipmentResponse.from(shipment).status()).isEqualTo(ShipmentStatus.ACTIVE);
 		assertThat(detailJson.get("companyId").asLong()).isEqualTo(11L);
+		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
+		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+	}
+
+	private static ShipmentDetailResponse detail(Shipment shipment) {
+		return ShipmentDetailResponse.from(shipment, new ConnectionWindowService().calculate(
+				shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()), null, null);
 	}
 
 	private static Shipment shipment(Company owner) {

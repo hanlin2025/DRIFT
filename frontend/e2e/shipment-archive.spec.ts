@@ -154,7 +154,7 @@ async function listReferences(request: APIRequestContext, token: string) {
   const response = await request.get('/api/shipments', { headers: bearer(token) });
   const body = await response.text();
   expect(response.status(), body).toBe(200);
-  return JSON.parse(body) as Array<{ id: number; shipmentReference: string; companyId: number }>;
+  return JSON.parse(body) as Array<{ id: number; shipmentReference: string; companyId: number; status: string }>;
 }
 
 function companies(prefix: string) {
@@ -218,6 +218,7 @@ test('an owning admin archives from the list and the stored row leaves both acti
   const listed = await listReferences(request, admin.token);
   expect(listed.find(item => item.id === owned.id)?.companyId).toBe(admin.companyId);
   expect(listed.find(item => item.id === foreign.id)?.companyId).toBe(otherForwarder.companyId);
+  expect(listed.map(item => item.status)).toEqual(listed.map(() => 'ACTIVE'));
 
   await page.getByRole('button', { name: `Remove ${owned.shipmentReference}` }).click();
   const dialog = page.getByRole('dialog', { name: 'Remove shipment' });
@@ -229,6 +230,14 @@ test('an owning admin archives from the list and the stored row leaves both acti
   await expect(page.getByRole('link', { name: foreign.shipmentReference })).toBeVisible();
   expect((await listReferences(request, importerAccount.token)).map(item => item.id)).not.toContain(owned.id);
   expect(shipmentStatus(owned.id)).toBe('ARCHIVED');
+  const archivedDetail = await request.get(`/api/shipments/${owned.id}`, { headers: bearer(admin.token) });
+  const archivedBody = await archivedDetail.text();
+  expect(archivedDetail.status(), archivedBody).toBe(200);
+  expect(JSON.parse(archivedBody)).toMatchObject({
+    companyId: admin.companyId,
+    status: 'ARCHIVED',
+    risk: { level: 'LOW' },
+  });
   expect(sql(`SELECT COUNT(*) FROM shipments WHERE id = ${owned.id};`)).toBe('1');
   expect(shipmentStatus(keeper.id)).toBe('ACTIVE');
   expect(shipmentStatus(foreign.id)).toBe('ACTIVE');

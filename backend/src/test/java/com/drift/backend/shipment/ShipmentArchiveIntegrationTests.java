@@ -9,19 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.ApplicationContextInitializer;
-import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,22 +38,21 @@ import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest(properties = {
-		"spring.datasource.url=jdbc:postgresql://localhost:5432/drift_cdg81int_20261011213000",
-		"spring.flyway.url=jdbc:postgresql://localhost:5432/drift_cdg81int_20261011213000",
-		"spring.datasource.username=drift",
-		"spring.datasource.password=drift",
-		"spring.flyway.user=drift",
-		"spring.flyway.password=drift",
-		"app.ais.enabled=false"
+		"spring.datasource.url=${DRIFT_CDG81_ARCHIVE_JDBC_URL}",
+		"spring.flyway.url=${DRIFT_CDG81_ARCHIVE_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"spring.flyway.user=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"app.ais.enabled=false",
+		"drift.startup-guard.expected-url=${DRIFT_CDG81_ARCHIVE_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG81_ARCHIVE_OWNERSHIP_TOKEN}"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@ContextConfiguration(initializers = ShipmentArchiveIntegrationTests.DisposableDatabaseGuard.class)
+@ContextConfiguration(initializers = ShipmentDisposableDatabaseGuard.class)
 @Transactional
 class ShipmentArchiveIntegrationTests {
-
-	private static final String DATABASE = "drift_cdg81int_20261011213000";
-	private static final String URL = "jdbc:postgresql://localhost:5432/" + DATABASE;
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
@@ -82,6 +74,7 @@ class ShipmentArchiveIntegrationTests {
 		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
 		String adminToken = tokenFor(adminEmail);
 		Long activeId = createShipment(forwarderToken, "CDG81-STILL-ACTIVE");
+		link(forwarderToken, activeId, importerCompanyId).andExpect(status().isOk());
 		Row before = row(shipmentId);
 
 		archive(adminToken, shipmentId.toString(), "{\"status\":\"ARCHIVED\"}")
@@ -90,7 +83,7 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$.message").value(ShipmentService.REMOVED_MESSAGE));
 
 		Row after = row(shipmentId);
-		assertThat(after.status()).isEqualTo(Shipment.ARCHIVED);
+		assertThat(after.status()).isEqualTo("ARCHIVED");
 		assertThat(after.reference()).isEqualTo(before.reference());
 		assertThat(after.origin()).isEqualTo(before.origin());
 		assertThat(after.destination()).isEqualTo(before.destination());
@@ -98,17 +91,24 @@ class ShipmentArchiveIntegrationTests {
 		assertThat(after.updatedBy()).isEqualTo(accountId(adminEmail));
 		assertThat(after.updatedAt()).isNotEqualTo(before.updatedAt());
 		assertThat(after.version()).isEqualTo(before.version() + 1);
-		assertThat(row(activeId).status()).isEqualTo(Shipment.ACTIVE);
+		assertThat(row(activeId).status()).isEqualTo("ACTIVE");
 
 		list(adminToken)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isEmpty())
-				.andExpect(jsonPath("$[?(@.id == " + activeId + ")]").isNotEmpty());
+				.andExpect(jsonPath("$[?(@.id == " + activeId + ")].status")
+						.value(org.hamcrest.Matchers.contains("ACTIVE")));
 		list(importerToken)
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isEmpty());
+				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isEmpty())
+				.andExpect(jsonPath("$[?(@.id == " + activeId + ")].status")
+						.value(org.hamcrest.Matchers.contains("ACTIVE")));
 		detail(adminToken, shipmentId).andExpect(status().isOk())
-				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"));
+				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"))
+				.andExpect(jsonPath("$.status").value("ARCHIVED"))
+				.andExpect(jsonPath("$.risk.level").value("LOW"))
+				.andExpect(jsonPath("$.risk.explanation")
+						.value("At least 24 hours to transfer cargo between vessels."));
 		detail(importerToken, shipmentId).andExpect(status().isOk());
 		mvc.perform(get("/api/shipments/" + shipmentId + "/tracking").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
@@ -137,7 +137,7 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$.message").value(ShipmentService.REMOVED_MESSAGE));
 
 		Row after = row(shipmentId);
-		assertThat(after.status()).isEqualTo(Shipment.ARCHIVED);
+		assertThat(after.status()).isEqualTo("ARCHIVED");
 		assertThat(after.updatedBy()).isEqualTo(accountId(managerEmail));
 		assertThat(after.version()).isEqualTo(before.version() + 1);
 		assertThat(after.updatedAt()).isNotEqualTo(before.updatedAt());
@@ -241,7 +241,7 @@ class ShipmentArchiveIntegrationTests {
 		archive(token, shipmentId.toString(), "{\"status\":\"\"}")
 				.andExpect(status().isBadRequest());
 
-		assertThat(row(shipmentId).status()).isEqualTo(Shipment.ACTIVE);
+		assertThat(row(shipmentId).status()).isEqualTo("ACTIVE");
 	}
 
 	@Test
@@ -264,7 +264,7 @@ class ShipmentArchiveIntegrationTests {
 		assertThat(jdbc.queryForObject(
 				"SELECT COUNT(*) FROM shipments WHERE company_id = ? AND shipment_reference = 'CDG81-REUSE'",
 				Integer.class, companyId("HARBOURLINE_DEMO"))).isEqualTo(1);
-		assertThat(row(shipmentId).status()).isEqualTo(Shipment.ARCHIVED);
+		assertThat(row(shipmentId).status()).isEqualTo("ARCHIVED");
 	}
 
 	@Test
@@ -291,7 +291,7 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$.shipmentReference").value("CDG81-EDITED"))
 				.andExpect(jsonPath("$.version").value(active.version() + 1));
 		Row edited = row(activeId);
-		assertThat(edited.status()).isEqualTo(Shipment.ACTIVE);
+		assertThat(edited.status()).isEqualTo("ACTIVE");
 		assertThat(edited.reference()).isEqualTo("CDG81-EDITED");
 		assertThat(edited.updatedBy()).isEqualTo(accountId(forwarderEmail));
 		assertThat(edited.version()).isEqualTo(active.version() + 1);
@@ -364,7 +364,7 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(status().isCreated())
 				.andReturn();
 		Number id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
-		assertThat(row(id.longValue()).status()).isEqualTo(Shipment.ACTIVE);
+		assertThat(row(id.longValue()).status()).isEqualTo("ACTIVE");
 		return id.longValue();
 	}
 
@@ -438,33 +438,5 @@ class ShipmentArchiveIntegrationTests {
 
 	private record Row(String reference, String origin, String destination, Long importerCompanyId, String status,
 			long version, String updatedAt, long updatedBy) {
-	}
-
-	static class DisposableDatabaseGuard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
-
-		@Override
-		public void initialize(ConfigurableApplicationContext context) {
-			String datasource = context.getEnvironment().getProperty("spring.datasource.url");
-			String flyway = context.getEnvironment().getProperty("spring.flyway.url");
-			if (!URL.equals(datasource) || !URL.equals(flyway)
-					|| datasource.endsWith("/drift") || datasource.endsWith("/drift_test")
-					|| datasource.contains("drift_cdg80") || datasource.contains("drift_cdg107")
-					|| datasource.contains("drift_conc") || datasource.contains("drift_cdg81_20261008")) {
-				throw new IllegalStateException("Refusing datasource " + datasource + " and Flyway " + flyway);
-			}
-			String ais = context.getEnvironment().getProperty("app.ais.enabled");
-			if (!"false".equals(ais)) {
-				throw new IllegalStateException("AIS must stay disabled, found " + ais);
-			}
-			try (Connection connection = DriverManager.getConnection(URL, "drift", "drift");
-					Statement statement = connection.createStatement();
-					ResultSet result = statement.executeQuery("SELECT current_database(), inet_server_port()")) {
-				if (!result.next() || !DATABASE.equals(result.getString(1)) || result.getInt(2) != 5432) {
-					throw new IllegalStateException("Connected database did not match " + DATABASE);
-				}
-			} catch (SQLException exception) {
-				throw new IllegalStateException("Could not confirm the disposable database", exception);
-			}
-		}
 	}
 }
