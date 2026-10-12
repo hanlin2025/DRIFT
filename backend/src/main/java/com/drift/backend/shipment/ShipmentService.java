@@ -11,6 +11,7 @@ import jakarta.validation.Validator;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,9 +56,14 @@ public class ShipmentService {
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
+		return list(principal, ShipmentFilterCriteria.none());
+	}
+
+	@Transactional(readOnly = true)
+	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
 		Company company = activeCompany(principal);
-		return shipments.findVisibleByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
-				.filter(shipment -> accessPolicy.canView(company, shipment))
+		return shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+				Sort.by(Sort.Direction.DESC, "createdAt")).stream()
 				.map(this::respond)
 				.toList();
 	}
