@@ -68,6 +68,7 @@ describe('user management', () => {
 
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');
     await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
     expect(screen.getByLabelText('Organisation')).toHaveValue('1');
     expect(screen.getByLabelText('Role')).toHaveValue('FREIGHT_FORWARDER');

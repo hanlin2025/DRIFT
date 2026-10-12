@@ -16,14 +16,19 @@ function expiredState(value: unknown) {
   return typeof value === 'object' && value !== null && 'expired' in value && value.expired === true;
 }
 
+function passwordChangedState(value: unknown) {
+  return typeof value === 'object' && value !== null && 'passwordChanged' in value && value.passwordChanged === true;
+}
+
 export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { registered, email: invitedEmail } = registrationState(location.state);
+  const passwordChanged = passwordChangedState(location.state);
   const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [error, setError] = useState(expiredState(location.state) || sessionHasEnded() ? 'Your session has ended. Log in again.' : '');
+  const [error, setError] = useState(!passwordChanged && (expiredState(location.state) || sessionHasEnded()) ? 'Your session has ended. Log in again.' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const busy = useRef(false);
@@ -76,6 +81,7 @@ export function LoginPage() {
     <h2>Welcome to DRIFT.</h2>
     <p className="intro">Your workspace starts with a shared view.</p>
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
+    {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
     {error && <div className="error-notice" role="alert">{error}</div>}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
