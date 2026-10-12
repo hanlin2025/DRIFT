@@ -7,6 +7,7 @@ import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
 import { ApiError } from '../signup/api';
+import { ShipmentFilterControls } from './ShipmentFilterControls';
 import { ShipmentList } from './ShipmentList';
 
 function Wordmark({ href }: { href: string }) {
@@ -58,6 +59,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
               <div><dt>Signed in as</dt><dd>{account.fullName}</dd></div>
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
+            <ShipmentFilterControls />
             <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
             {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
           </>}
