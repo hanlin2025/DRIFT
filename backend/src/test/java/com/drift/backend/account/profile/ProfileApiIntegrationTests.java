@@ -164,12 +164,23 @@ class ProfileApiIntegrationTests {
 		reject(bearer, """
 				{"currentPassword":"Example123"}
 				""", InvalidProfileException.NEW_REQUIRED);
+		reject(bearer, """
+				{"fullName":"Should Stay","currentPassword":"","newPassword":""}
+				""", InvalidProfileException.CURRENT_REQUIRED);
+		reject(bearer, """
+				{"currentPassword":"   ","newPassword":"   "}
+				""", InvalidProfileException.CURRENT_REQUIRED);
+		reject(bearer, """
+				{"currentPassword":"Example123","newPassword":"  "}
+				""", InvalidProfileException.NEW_REQUIRED);
 
 		mvc.perform(get("/api/profile").header("Authorization", "Bearer " + bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.fullName").value("Alice Tan"));
 		assertThat(passwords.matches("Example123", jdbc.queryForObject(
 				"SELECT password_hash FROM users WHERE email = ?", String.class, email))).isTrue();
+		assertThat(jdbc.queryForObject("SELECT session_generation FROM users WHERE email = ?", Long.class, email))
+				.isZero();
 	}
 
 	@Test
@@ -191,9 +202,17 @@ class ProfileApiIntegrationTests {
 				.andExpect(jsonPath("$.riskEmailNotificationsEnabled").value(true))
 				.andExpect(jsonPath("$.minimumRiskNotificationLevel").value("CRITICAL"));
 		mvc.perform(get("/api/profile").header("Authorization", "Bearer " + token(email)))
+				.andExpect(jsonPath("$.fullName").value("Alice Tan"))
 				.andExpect(jsonPath("$.minimumRiskNotificationLevel").value("CRITICAL"));
 		reject(bearer, "{\"minimumRiskNotificationLevel\":\"high\"}", InvalidProfileException.RISK_LEVEL);
 		reject(bearer, "{\"minimumRiskNotificationLevel\":\"SEVERE\"}", InvalidProfileException.RISK_LEVEL);
+		reject(bearer, "{\"fullName\":\"Should Stay\",\"minimumRiskNotificationLevel\":\" HIGH \"}",
+				InvalidProfileException.RISK_LEVEL);
+		reject(bearer, "{\"minimumRiskNotificationLevel\":\"HIGH \"}", InvalidProfileException.RISK_LEVEL);
+		reject(bearer, "{\"minimumRiskNotificationLevel\":\" LOW\"}", InvalidProfileException.RISK_LEVEL);
+		mvc.perform(get("/api/profile").header("Authorization", "Bearer " + bearer))
+				.andExpect(jsonPath("$.fullName").value("Alice Tan"))
+				.andExpect(jsonPath("$.minimumRiskNotificationLevel").value("CRITICAL"));
 
 		mvc.perform(patch("/api/profile").header("Authorization", "Bearer " + bearer)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -216,6 +235,16 @@ class ProfileApiIntegrationTests {
 		reject(bearer, "{\"photo\":\"avatar.png\"}", InvalidProfileException.LOCKED);
 		reject(bearer, "{\"profilePhoto\":\"avatar.png\"}", InvalidProfileException.LOCKED);
 		reject(bearer, "{\"password\":\"FreshPass1\"}", InvalidProfileException.PASSWORD_FIELDS);
+		reject(bearer, "{\"email\":null,\"fullName\":\"Should Stay\"}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"company\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"companyId\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"organisation\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"organisationId\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"role\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"roleId\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"photo\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"profilePhoto\":null}", InvalidProfileException.LOCKED);
+		reject(bearer, "{\"password\":null}", InvalidProfileException.PASSWORD_FIELDS);
 
 		mvc.perform(get("/api/profile").header("Authorization", "Bearer " + bearer))
 				.andExpect(jsonPath("$.email").value(email))
@@ -327,7 +356,9 @@ class ProfileApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/profile'].patch.responses['401']").exists())
 				.andExpect(jsonPath("$.paths['/api/profile'].patch.responses['403']").exists())
 				.andExpect(jsonPath("$.components.schemas.Profile.properties.minimumRiskNotificationLevel").exists())
-				.andExpect(jsonPath("$.components.schemas.Profile.properties.passwordHash").doesNotExist());
+				.andExpect(jsonPath("$.components.schemas.Profile.properties.passwordHash").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/profile'].patch.requestBody.content['application/json'].schema.$ref")
+						.value("#/components/schemas/UpdateProfileRequest"));
 	}
 
 	private void reject(String bearer, String body, String message) throws Exception {

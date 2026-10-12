@@ -12,6 +12,8 @@ import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
 
+import tools.jackson.databind.JsonNode;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -57,8 +59,10 @@ public class ProfileController {
 			+ "Omitted fields stay as they are. "
 			+ "A password change requires the current password and a new password that meets the registration password policy, "
 			+ "replaces the existing password hash, and ends the current session. "
+			+ "A present but blank password field is rejected. "
 			+ "The notification fields store whether email is wanted and the minimum shipment-risk level. No email is sent. "
-			+ "Email, company, role and a profile photo are rejected. "
+			+ "minimumRiskNotificationLevel must be exactly LOW, MEDIUM, HIGH, or CRITICAL. "
+			+ "Email, company, role and a profile photo are rejected, including when one of those fields is sent as null. "
 			+ "A different user id is rejected.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -78,10 +82,12 @@ public class ProfileController {
 							"""))) })
 	public ResponseEntity<ProfileView> update(
 			@Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
-			@RequestBody UpdateProfileRequest request) {
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = UpdateProfileRequest.class)))
+			@RequestBody JsonNode body) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
-		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(profiles.update(user, request));
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(profiles.update(user, body));
 	}
 }

@@ -14,15 +14,21 @@ import com.drift.backend.account.exception.ProfileForbiddenException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.account.registration.PasswordPolicy;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 @Service
 public class ProfileService {
 
 	private final UserAccountRepository users;
 	private final PasswordEncoder passwordEncoder;
+	private final ObjectMapper objectMapper;
 
-	public ProfileService(UserAccountRepository users, PasswordEncoder passwordEncoder) {
+	public ProfileService(UserAccountRepository users, PasswordEncoder passwordEncoder, ObjectMapper objectMapper) {
 		this.users = users;
 		this.passwordEncoder = passwordEncoder;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional(readOnly = true)
@@ -31,15 +37,12 @@ public class ProfileService {
 	}
 
 	@Transactional
-	public ProfileView update(AuthenticatedUser principal, UpdateProfileRequest request) {
-		if (request == null) {
-			throw new InvalidProfileException(InvalidProfileException.MISSING);
-		}
+	public ProfileView update(AuthenticatedUser principal, JsonNode body) {
+		UpdateProfileRequest request = request(body);
 		UserAccount account = account(principal);
 		if (request.userId() != null && !request.userId().equals(account.getId())) {
 			throw new ProfileForbiddenException();
 		}
-		rejectLockedFields(request);
 		RiskNotificationLevel nextLevel = request.minimumRiskNotificationLevel() == null
 				? null
 				: level(request.minimumRiskNotificationLevel());
@@ -50,7 +53,7 @@ public class ProfileService {
 		if (request.fullName() != null) {
 			account.rename(request.fullName());
 		}
-		if (changePassword && !blank(request.currentPassword()) && !blank(request.newPassword())) {
+		if (changePassword) {
 			account.replacePasswordHash(passwordEncoder.encode(request.newPassword()));
 		}
 		if (request.riskEmailNotificationsEnabled() != null || nextLevel != null) {
@@ -68,22 +71,27 @@ public class ProfileService {
 		return users.findForProfile(principal.id()).orElseThrow(SessionEndedException::new);
 	}
 
-	private static void rejectLockedFields(UpdateProfileRequest request) {
-		if (request.email() != null || request.company() != null || request.companyId() != null
-				|| request.organisation() != null || request.organisationId() != null
-				|| request.role() != null || request.roleId() != null
-				|| request.photo() != null || request.profilePhoto() != null) {
+	private UpdateProfileRequest request(JsonNode body) {
+		if (body == null || !body.isObject()) {
+			throw new InvalidProfileException(InvalidProfileException.MISSING);
+		}
+		if (body.has("email") || body.has("company") || body.has("companyId")
+				|| body.has("organisation") || body.has("organisationId")
+				|| body.has("role") || body.has("roleId")
+				|| body.has("photo") || body.has("profilePhoto")) {
 			throw new InvalidProfileException(InvalidProfileException.LOCKED);
 		}
-		if (request.password() != null) {
+		if (body.has("password")) {
 			throw new InvalidProfileException(InvalidProfileException.PASSWORD_FIELDS);
+		}
+		try {
+			return objectMapper.convertValue(body, UpdateProfileRequest.class);
+		} catch (IllegalArgumentException | JacksonException ex) {
+			throw new InvalidProfileException(InvalidProfileException.MISSING);
 		}
 	}
 
 	private void checkPassword(UserAccount account, String currentPassword, String newPassword) {
-		if (blank(currentPassword) && blank(newPassword)) {
-			return;
-		}
 		if (blank(currentPassword)) {
 			throw new InvalidProfileException(InvalidProfileException.CURRENT_REQUIRED);
 		}
@@ -101,12 +109,9 @@ public class ProfileService {
 	}
 
 	private static RiskNotificationLevel level(String raw) {
-		if (raw.isBlank()) {
-			throw new InvalidProfileException(InvalidProfileException.RISK_LEVEL);
-		}
 		try {
-			return RiskNotificationLevel.valueOf(raw.strip());
-		} catch (IllegalArgumentException ex) {
+			return RiskNotificationLevel.valueOf(raw);
+		} catch (IllegalArgumentException | NullPointerException ex) {
 			throw new InvalidProfileException(InvalidProfileException.RISK_LEVEL);
 		}
 	}
