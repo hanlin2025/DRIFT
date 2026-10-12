@@ -31,6 +31,10 @@ import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 @Service
 public class ShipmentService {
 
@@ -42,16 +46,18 @@ public class ShipmentService {
 	private final LatestAisPositions latestPositions;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
+	private final ObjectMapper objectMapper;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
-			ShipmentAccessPolicy accessPolicy) {
+			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional(readOnly = true)
@@ -108,7 +114,26 @@ public class ShipmentService {
 	}
 
 	@Transactional
+	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, JsonNode body) {
+		if (body == null || !body.isObject()) {
+			throw new InvalidShipmentRequestException(Map.of());
+		}
+		UpdateShipmentRequest request;
+		try {
+			request = objectMapper.convertValue(body, UpdateShipmentRequest.class);
+		} catch (IllegalArgumentException | JacksonException ex) {
+			throw new InvalidShipmentRequestException(Map.of());
+		}
+		return update(principal, shipmentId, request, VesselIdentityPresence.from(body));
+	}
+
+	@Transactional
 	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request) {
+		return update(principal, shipmentId, request, VesselIdentityPresence.omitted());
+	}
+
+	private ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request,
+			VesselIdentityPresence identity) {
 		ShipmentDetails details = validatedDetails(request);
 		Shipment shipment = editableShipment(principal, shipmentId);
 		if (!request.version().equals(shipment.getVersion())) {
@@ -123,6 +148,7 @@ public class ShipmentService {
 
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		shipment.replaceDetails(details, editor, Instant.now());
+		shipment.applySpecifiedIdentity(details, identity);
 		try {
 			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {

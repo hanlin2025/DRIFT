@@ -146,6 +146,46 @@ class VesselIdentityIntegrationTests {
 	}
 
 	@Test
+	void anUpdateThatOmitsIdentityLeavesTheStoredValuesInPlace() throws Exception {
+		long id = create(shipment("HBL-144-KEEP", """
+				, "motherVesselImo": "9387421",
+				  "motherVesselMmsi": "563000111",
+				  "motherVesselOperator": "Harbourline",
+				  "feederVesselImo": "9411882",
+				  "feederVesselMmsi": "565987654",
+				  "feederVesselOperator": "Strait Feeders"
+				"""));
+		mvc.perform(put("/api/shipments/" + id)
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "shipmentReference": "HBL-144-KEPT",
+						  "origin": "Shanghai, CN",
+						  "destination": "Jakarta, ID",
+						  "transshipmentPort": "Singapore",
+						  "motherVessel": "MV Pacific Horizon",
+						  "plannedMotherArrivalAt": "2026-10-15T08:00:00+08:00",
+						  "feederVessel": "MV Strait Runner",
+						  "plannedFeederDepartureAt": "2026-10-16T12:00:00+08:00",
+						  "motherVesselImo": " 9390001 ",
+						  "version": 0
+						}
+						"""))
+				.andExpect(status().isOk());
+		assertThat(identity(id))
+				.containsEntry("mother_vessel", "MV Pacific Horizon")
+				.containsEntry("mother_vessel_imo", "9390001")
+				.containsEntry("mother_vessel_mmsi", "563000111")
+				.containsEntry("mother_vessel_operator", "Harbourline")
+				.containsEntry("feeder_vessel_imo", "9411882")
+				.containsEntry("feeder_vessel_mmsi", "565987654")
+				.containsEntry("feeder_vessel_operator", "Strait Feeders");
+		assertThat(jdbc.queryForObject("SELECT shipment_reference FROM shipments WHERE id = ?", String.class, id))
+				.isEqualTo("HBL-144-KEPT");
+	}
+
+	@Test
 	void blankIdentityClearsStoredValuesOnUpdate() throws Exception {
 		long id = create(shipment("HBL-144-CLEAR", """
 				, "motherVesselImo": "9387421",
@@ -180,9 +220,9 @@ class VesselIdentityIntegrationTests {
 				.containsEntry("mother_vessel_imo", null)
 				.containsEntry("mother_vessel_mmsi", null)
 				.containsEntry("mother_vessel_operator", null)
-				.containsEntry("feeder_vessel_imo", null)
-				.containsEntry("feeder_vessel_mmsi", null)
-				.containsEntry("feeder_vessel_operator", null);
+				.containsEntry("feeder_vessel_imo", "9411882")
+				.containsEntry("feeder_vessel_mmsi", "565987654")
+				.containsEntry("feeder_vessel_operator", "Strait Feeders");
 		assertThat(((java.sql.Timestamp) identity(id).get("planned_mother_arrival_at")).toInstant())
 				.isEqualTo(java.time.Instant.parse("2026-10-15T00:00:00Z"));
 	}

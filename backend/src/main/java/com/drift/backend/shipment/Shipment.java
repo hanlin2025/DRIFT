@@ -129,8 +129,28 @@ public class Shipment {
 		this.plannedMotherArrivalAt = details.plannedMotherArrivalAt();
 		this.feederVessel = details.feederVessel();
 		this.plannedFeederDepartureAt = details.plannedFeederDepartureAt();
-		recordVesselIdentity(details);
 		markUpdated(updatedBy, updatedAt);
+	}
+
+	void applySpecifiedIdentity(ShipmentDetails details, VesselIdentityPresence presence) {
+		if (presence.motherVesselImo()) {
+			this.motherVesselImo = details.motherVesselImo();
+		}
+		if (presence.motherVesselMmsi()) {
+			this.motherVesselMmsi = details.motherVesselMmsi();
+		}
+		if (presence.motherVesselOperator()) {
+			this.motherVesselOperator = details.motherVesselOperator();
+		}
+		if (presence.feederVesselImo()) {
+			this.feederVesselImo = details.feederVesselImo();
+		}
+		if (presence.feederVesselMmsi()) {
+			this.feederVesselMmsi = details.feederVesselMmsi();
+		}
+		if (presence.feederVesselOperator()) {
+			this.feederVesselOperator = details.feederVesselOperator();
+		}
 	}
 
 	void recordVesselIdentity(ShipmentDetails details) {

@@ -32,6 +32,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+import tools.jackson.databind.JsonNode;
+
 @RestController
 @Tag(name = "Shipments", description = "Create shipments and their planned transshipment itineraries.")
 public class ShipmentController {
@@ -183,7 +185,8 @@ public class ShipmentController {
 	}
 
 	@PutMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Replace a shipment", description = "Replaces all editable shipment details for a shipment managed by the authenticated user's active company. "
+	@Operation(summary = "Replace a shipment", description = "Replaces the editable shipment itinerary for a shipment managed by the authenticated user's active company. "
+			+ "An omitted vessel IMO, MMSI, or operator stays as stored. Sending that field as null or blank clears it. "
 			+ "A linked importer may view and track a shipment but cannot replace it. "
 			+ "Supply the version returned when the shipment was last read. A stale version returns 409 Conflict; refresh the shipment before trying again. "
 			+ "Shipment references remain unique within the company, ignoring letter case.",
@@ -222,11 +225,13 @@ public class ShipmentController {
 	public ResponseEntity<ShipmentResponse> update(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Identifier of the shipment to replace", example = "42") @PathVariable Long shipmentId,
-			@Valid @RequestBody UpdateShipmentRequest request) {
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = UpdateShipmentRequest.class)))
+			@RequestBody JsonNode body) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.update(user, shipmentId, request));
+				.body(shipmentService.update(user, shipmentId, body));
 	}
 }
