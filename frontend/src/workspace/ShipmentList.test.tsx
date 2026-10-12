@@ -1,6 +1,6 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
@@ -79,14 +79,26 @@ beforeEach(() => {
   });
 });
 
-function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }
+function Location() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname}{location.search}</output>;
+}
+
+function NavigateToFilters() {
+  const navigate = useNavigate();
+  return <>
+    <button type="button" onClick={() => navigate('/freight-forwarder?reference=HBL-NEWER')}>Navigate to filtered shipments</button>
+    <button type="button" onClick={() => navigate(-1)}>Back through filter history</button>
+    <button type="button" onClick={() => navigate(1)}>Forward through filter history</button>
+  </>;
+}
 
 function openWorkspace(role: Session['role'] = 'FREIGHT_FORWARDER', path?: string) {
   const current = account(role);
   writeSession(current);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...current, token }));
   const entry = path ?? (role === 'IMPORTER' ? '/importer' : '/freight-forwarder');
-  render(<MemoryRouter initialEntries={[entry]}><AppRoutes /><Location /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[entry]}><AppRoutes /><NavigateToFilters /><Location /></MemoryRouter>);
 }
 
 describe('shipment list', () => {
@@ -151,6 +163,83 @@ describe('workspace shipment retrieval', () => {
     await user.click(await screen.findByRole('link', { name: 'HBL-NEWER' }));
     expect(within(await screen.findByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
     expect(screen.getByText('1 day')).toBeInTheDocument();
+  });
+
+  it('loads an initial supported URL filter without forwarding unrelated parameters', async () => {
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-NEWER&vessel=Pacific&customer=STRAITS&arrivalDate=2026-10-12&tab=overview');
+
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledWith('session-token', {
+      reference: 'HBL-NEWER',
+      vessel: 'Pacific',
+      customer: 'STRAITS',
+      arrivalDate: '2026-10-12',
+    });
+  });
+
+  it('fetches only after filters are applied or cleared', async () => {
+    const user = userEvent.setup();
+    openWorkspace();
+    await screen.findByRole('cell', { name: 'HBL-NEWER' });
+
+    const reference = screen.getByRole('textbox', { name: 'Filter by shipment reference' });
+    await user.type(reference, 'HBL-NEWER');
+    expect(listShipments).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', {
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(3));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token');
+  });
+
+  it('refetches when navigation changes the applied URL filters', async () => {
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-OLDER');
+    await screen.findByRole('cell', { name: 'HBL-NEWER' });
+
+    await user.click(screen.getByRole('button', { name: 'Navigate to filtered shipments' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', {
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Back through filter history' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(3));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', {
+      reference: 'HBL-OLDER', vessel: '', customer: '', arrivalDate: '',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Forward through filter history' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(4));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', {
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '',
+    });
+  });
+
+  it('keeps the latest filtered response when an earlier request resolves afterward', async () => {
+    let resolveFirst: (rows: Shipment[]) => void = () => {};
+    let resolveSecond: (rows: Shipment[]) => void = () => {};
+    vi.mocked(listShipments)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveSecond = resolve; }));
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-OLDER');
+    expect(await screen.findByText('Loading shipments...')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Navigate to filtered shipments' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    resolveSecond([newer]);
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+
+    resolveFirst([older]);
+    await Promise.resolve();
+    expect(screen.getByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'HBL-OLDER' })).not.toBeInTheDocument();
   });
 
   it('opens a shipment address directly and explains a missing shipment', async () => {
@@ -262,8 +351,8 @@ describe('workspace shipment retrieval', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('shows the same shipments to an importer without the registration form', async () => {
-    openWorkspace('IMPORTER');
+  it('uses the same filters for an importer without the registration form', async () => {
+    openWorkspace('IMPORTER', '/importer?customer=STRAITS');
     expect(await screen.findByRole('textbox', { name: 'Filter by customer' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
@@ -271,6 +360,9 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByRole('cell', { name: 'Tanjung Pelepas' })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: formatWhen(newer.plannedMotherArrivalAt) })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledWith('session-token', {
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '',
+    });
     cleanup();
 
     openWorkspace();
