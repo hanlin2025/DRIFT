@@ -126,6 +126,8 @@ describe('workspace shipment retrieval', () => {
     vi.mocked(listShipments).mockResolvedValue([older, newer]);
     openWorkspace();
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Search and filter shipments' }))
+      .getByRole('textbox', { name: 'Filter by shipment reference' })).toBeInTheDocument();
     const rows = (await screen.findAllByRole('row')).slice(1);
     expect(within(rows[0]).getByRole('cell', { name: 'HBL-OLDER' })).toBeInTheDocument();
     expect(within(rows[0]).getByRole('cell', { name: 'Singapore' })).toBeInTheDocument();
@@ -262,6 +264,7 @@ describe('workspace shipment retrieval', () => {
 
   it('shows the same shipments to an importer without the registration form', async () => {
     openWorkspace('IMPORTER');
+    expect(await screen.findByRole('textbox', { name: 'Filter by customer' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/importer/shipments/2');
