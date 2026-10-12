@@ -23,21 +23,26 @@ public record ShipmentDetailResponse(
 		Long version,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow,
+		@Schema(description = "Transshipment risk derived from the connection window: CRITICAL when the feeder departs at or before the mother vessel's arrival, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. Null when the feeder schedule is missing.", nullable = true)
+		ShipmentRisk risk,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the feeder vessel. Null when the livestream has not retained one.")
 		VesselPosition feederVesselPosition,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
-		OrganisationResponse importer) {
+		OrganisationResponse importer,
+		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
+		ShipmentStatus status) {
 
-	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindow connectionWindow,
+	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
 			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition) {
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
-				shipment.getVersion(), connectionWindow, motherVesselPosition, feederVesselPosition,
-				organisation(shipment.getImporterCompany()));
+				shipment.getVersion(), calculation.window(), ShipmentRisk.of(calculation),
+				motherVesselPosition, feederVesselPosition,
+				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
 
 	private static OrganisationResponse organisation(Company company) {

@@ -12,19 +12,25 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.drift.backend.access.RolePermissionFilter;
+import com.drift.backend.access.ShipmentVisibilityFilter;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.JwtSessionTokens;
 import com.drift.backend.account.authentication.SessionAuthenticationFilter;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.shipment.ShipmentAccessPolicy;
+import com.drift.backend.shipment.ShipmentVisibilityLookup;
+
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class SecurityConfig {
 
 	@Bean
-	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens, UserAccountRepository users)
-			throws Exception {
+	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens, UserAccountRepository users,
+			ShipmentVisibilityLookup shipments, ShipmentAccessPolicy access, ObjectMapper json) throws Exception {
 		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens, users);
 		RolePermissionFilter permissions = new RolePermissionFilter(users);
+		ShipmentVisibilityFilter visibility = new ShipmentVisibilityFilter(users, shipments, access, json);
 		http
 				.csrf(AbstractHttpConfigurer::disable)
 				.httpBasic(AbstractHttpConfigurer::disable)
@@ -38,7 +44,8 @@ public class SecurityConfig {
 				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
 						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))
 				.addFilterBefore(sessions, UsernamePasswordAuthenticationFilter.class)
-				.addFilterAfter(permissions, SessionAuthenticationFilter.class);
+				.addFilterAfter(permissions, SessionAuthenticationFilter.class)
+				.addFilterAfter(visibility, RolePermissionFilter.class);
 		return http.build();
 	}
 
