@@ -103,7 +103,7 @@ public class ShipmentService {
 	public void createImported(Company managingCompany, UserAccount creator, ShipmentImportRow row, Company importerCompany) {
 		ShipmentDetails details = validatedDetails(new CreateShipmentRequest(row.shipmentReference(), row.origin(),
 				row.destination(), row.transshipmentPort(), row.motherVessel(), row.plannedMotherArrivalAt(),
-				row.feederVessel(), row.plannedFeederDepartureAt()));
+				row.feederVessel(), row.plannedFeederDepartureAt(), null, null, null, null, null, null));
 		persistNewShipment(managingCompany, creator, details, importerCompany);
 	}
 
@@ -140,6 +140,10 @@ public class ShipmentService {
 		for (ConstraintViolation<ShipmentDetailsRequest> violation : validator.validate(request)) {
 			errors.putIfAbsent(violation.getPropertyPath().toString(), violation.getMessage());
 		}
+		checkDigits(request.motherVesselImo(), "motherVesselImo", "Mother vessel IMO must be 7 digits.", 7, errors);
+		checkDigits(request.motherVesselMmsi(), "motherVesselMmsi", "Mother vessel MMSI must be 9 digits.", 9, errors);
+		checkDigits(request.feederVesselImo(), "feederVesselImo", "Feeder vessel IMO must be 7 digits.", 7, errors);
+		checkDigits(request.feederVesselMmsi(), "feederVesselMmsi", "Feeder vessel MMSI must be 9 digits.", 9, errors);
 		if (!errors.isEmpty()) {
 			throw new InvalidShipmentRequestException(errors);
 		}
@@ -149,6 +153,15 @@ public class ShipmentService {
 			throw new InvalidItineraryException();
 		}
 		return details;
+	}
+
+	private static void checkDigits(String raw, String field, String message, int length, Map<String, String> errors) {
+		if (raw == null || raw.isBlank()) {
+			return;
+		}
+		if (!raw.strip().matches("\\d{" + length + "}")) {
+			errors.putIfAbsent(field, message);
+		}
 	}
 
 	private static boolean isDuplicateReference(DataIntegrityViolationException ex) {
@@ -172,6 +185,7 @@ public class ShipmentService {
 		Shipment shipment = new Shipment(company, creator, details.shipmentReference(), details.origin(),
 				details.destination(), details.transshipmentPort(), details.motherVessel(), details.plannedMotherArrivalAt(),
 				details.feederVessel(), details.plannedFeederDepartureAt());
+		shipment.recordVesselIdentity(details);
 		if (importerCompany != null) {
 			shipment.linkImporter(importerCompany);
 		}

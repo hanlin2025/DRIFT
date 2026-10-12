@@ -65,6 +65,24 @@ public class Shipment {
 	@Column(name = "planned_feeder_departure_at", nullable = false)
 	private OffsetDateTime plannedFeederDepartureAt;
 
+	@Column(name = "mother_vessel_imo", length = 7)
+	private String motherVesselImo;
+
+	@Column(name = "mother_vessel_mmsi", length = 9)
+	private String motherVesselMmsi;
+
+	@Column(name = "mother_vessel_operator", length = 200)
+	private String motherVesselOperator;
+
+	@Column(name = "feeder_vessel_imo", length = 7)
+	private String feederVesselImo;
+
+	@Column(name = "feeder_vessel_mmsi", length = 9)
+	private String feederVesselMmsi;
+
+	@Column(name = "feeder_vessel_operator", length = 200)
+	private String feederVesselOperator;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -111,7 +129,17 @@ public class Shipment {
 		this.plannedMotherArrivalAt = details.plannedMotherArrivalAt();
 		this.feederVessel = details.feederVessel();
 		this.plannedFeederDepartureAt = details.plannedFeederDepartureAt();
+		recordVesselIdentity(details);
 		markUpdated(updatedBy, updatedAt);
+	}
+
+	void recordVesselIdentity(ShipmentDetails details) {
+		this.motherVesselImo = details.motherVesselImo();
+		this.motherVesselMmsi = details.motherVesselMmsi();
+		this.motherVesselOperator = details.motherVesselOperator();
+		this.feederVesselImo = details.feederVesselImo();
+		this.feederVesselMmsi = details.feederVesselMmsi();
+		this.feederVesselOperator = details.feederVesselOperator();
 	}
 
 	public Long getId() { return id; }
@@ -123,6 +151,12 @@ public class Shipment {
 	public OffsetDateTime getPlannedMotherArrivalAt() { return plannedMotherArrivalAt; }
 	public String getFeederVessel() { return feederVessel; }
 	public OffsetDateTime getPlannedFeederDepartureAt() { return plannedFeederDepartureAt; }
+	public String getMotherVesselImo() { return motherVesselImo; }
+	public String getMotherVesselMmsi() { return motherVesselMmsi; }
+	public String getMotherVesselOperator() { return motherVesselOperator; }
+	public String getFeederVesselImo() { return feederVesselImo; }
+	public String getFeederVesselMmsi() { return feederVesselMmsi; }
+	public String getFeederVesselOperator() { return feederVesselOperator; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public UserAccount getUpdatedBy() { return updatedBy; }
