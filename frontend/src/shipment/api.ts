@@ -13,6 +13,12 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type OperationalState = {
+  label: string;
+  description: string;
+  unreliable: boolean;
+};
+
 export type VesselPosition = {
   mmsi: string;
   vesselName: string | null;
@@ -53,6 +59,8 @@ export type Shipment = {
   risk: ShipmentRisk | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
+  motherOperationalState?: OperationalState | null;
+  feederOperationalState?: OperationalState | null;
   importer?: ImporterOrganisation | null;
 };
 
@@ -280,6 +288,9 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
   if (feederVesselPosition != null && !isVesselPosition(feederVesselPosition)) return null;
+  const motherOperationalState = operationalStateOf(value.motherOperationalState);
+  const feederOperationalState = operationalStateOf(value.feederOperationalState);
+  if (motherOperationalState === undefined || feederOperationalState === undefined) return null;
   const importer = 'importer' in value ? organisationOf(value.importer) : null;
   if (importer === undefined) return null;
   return {
@@ -298,8 +309,18 @@ function asShipment(value: unknown): Shipment | null {
     risk: risk ?? null,
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
+    motherOperationalState,
+    feederOperationalState,
     importer,
   };
+}
+
+function operationalStateOf(value: unknown): OperationalState | null | undefined {
+  if (value == null) return null;
+  if (!isRecord(value) || typeof value.label !== 'string' || !value.label.trim()
+    || typeof value.description !== 'string' || !value.description.trim()
+    || typeof value.unreliable !== 'boolean' || !value.description.startsWith(value.label)) return undefined;
+  return { label: value.label, description: value.description, unreliable: value.unreliable };
 }
 
 function organisationOf(value: unknown): ImporterOrganisation | null | undefined {

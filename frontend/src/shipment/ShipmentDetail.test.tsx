@@ -104,6 +104,34 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
   });
 
+  it('shows each vessel operational state with its port context and an unreliable warning', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'At anchor', description: 'At anchor near Singapore', unreliable: false },
+      feederOperationalState: { label: 'Moored', description: 'Moored near Singapore', unreliable: true },
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('Mother vessel state')).toBeInTheDocument();
+    expect(within(record).getByText('At anchor near Singapore')).toBeInTheDocument();
+    expect(within(record).getByText('Feeder vessel state')).toBeInTheDocument();
+    expect(within(record).getByText('Moored near Singapore')).toBeInTheDocument();
+    expect(within(record).getByText('This state may be unreliable.')).toBeInTheDocument();
+  });
+
+  it('shows unknown and a vessel that is far from port', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'Unknown', description: 'Unknown', unreliable: false },
+      feederOperationalState: { label: 'Under way', description: 'Under way, far from port', unreliable: false },
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('Unknown')).toBeInTheDocument();
+    expect(within(record).getByText('Under way, far from port')).toBeInTheDocument();
+    expect(within(record).queryByText('This state may be unreliable.')).not.toBeInTheDocument();
+  });
+
   it('shows when the shipment has no planned connection window', async () => {
     vi.mocked(getShipment).mockResolvedValue({
       ...shipment,

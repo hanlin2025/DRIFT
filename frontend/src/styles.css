@@ -227,6 +227,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .risk-medium { background: var(--accent); color: var(--ink); }
 .risk-high { background: #c46a2b; }
 .risk-critical { background: var(--error); }
+.state-warning { display: block; margin-top: 4px; color: var(--error); font-size: 13px; }
 .skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
 .skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
@@ -236,7 +237,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (min-width: 761px) {
-  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(6, auto); grid-auto-flow: column; column-gap: 32px; }
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(7, auto); grid-auto-flow: column; column-gap: 32px; }
 }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
