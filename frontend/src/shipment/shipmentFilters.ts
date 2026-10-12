@@ -34,6 +34,14 @@ export function applyShipmentFilters(searchParams: URLSearchParams, filters: Shi
   return next;
 }
 
+export function shipmentFilterSearchParams(filters: ShipmentFilters): URLSearchParams {
+  return applyShipmentFilters(new URLSearchParams(), filters);
+}
+
+export function hasShipmentFilters(filters: ShipmentFilters): boolean {
+  return shipmentFilterSearchParams(filters).size > 0;
+}
+
 function setText(searchParams: URLSearchParams, parameter: string, value: string) {
   const normalized = value.trim();
   if (normalized) searchParams.set(parameter, normalized);
