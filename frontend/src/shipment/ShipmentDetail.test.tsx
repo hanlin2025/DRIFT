@@ -464,6 +464,48 @@ describe('connection window on the shipment detail', () => {
   });
 });
 
+describe('vessel identity on the shipment detail', () => {
+  it('shows Not available when IMO, MMSI, and operator were not stored', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('Mother vessel IMO').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getByText('Mother vessel MMSI').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getByText('Mother vessel operator').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getByText('Feeder vessel IMO').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getByText('Feeder vessel MMSI').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getByText('Feeder vessel operator').closest('div')).toHaveTextContent('Not available');
+    expect(within(record).getAllByText('Not available')).toHaveLength(6);
+    expect(within(record).queryByText('The AIS vessel name does not match the stored mother vessel.')).not.toBeInTheDocument();
+    expect(within(record).getByText('Ever Steady')).toBeInTheDocument();
+    expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+  });
+
+  it('shows the stored identity and the AIS name warning from the detail', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherVesselImo: '9387421',
+      motherVesselMmsi: '563000111',
+      motherVesselOperator: 'Harbourline',
+      feederVesselImo: '9411882',
+      feederVesselMmsi: '565987654',
+      feederVesselOperator: 'Strait Feeders',
+      motherVesselNameWarning: 'The AIS vessel name does not match the stored mother vessel.',
+      feederVesselNameWarning: null,
+    });
+    open(importer, '/importer/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('9387421')).toBeInTheDocument();
+    expect(within(record).getByText('563000111')).toBeInTheDocument();
+    expect(within(record).getByText('Harbourline')).toBeInTheDocument();
+    expect(within(record).getByText('9411882')).toBeInTheDocument();
+    expect(within(record).getByText('565987654')).toBeInTheDocument();
+    expect(within(record).getByText('Strait Feeders')).toBeInTheDocument();
+    expect(within(record).getByText('The AIS vessel name does not match the stored mother vessel.')).toHaveClass('vessel-name-warning');
+    expect(within(record).queryByText('The AIS vessel name does not match the stored feeder vessel.')).not.toBeInTheDocument();
+    expect(within(record).getByText('Ever Steady')).toBeInTheDocument();
+  });
+});
+
 describe('shipment detail decoding', () => {
   async function decode(body: unknown) {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
@@ -482,6 +524,23 @@ describe('shipment detail decoding', () => {
   it('rejects an unknown risk level', async () => {
     await expect(decode({ ...shipment, risk: { level: 'SEVERE', explanation: 'Unknown.' } }))
       .rejects.toMatchObject({ status: 502 });
+  });
+
+  it('treats omitted vessel identity as absent and rejects a non-text value', async () => {
+    await expect(decode(shipment)).resolves.toMatchObject({
+      motherVesselImo: null,
+      feederVesselOperator: null,
+      motherVesselNameWarning: null,
+    });
+    await expect(decode({
+      ...shipment,
+      motherVesselImo: '9387421',
+      motherVesselNameWarning: 'The AIS vessel name does not match the stored mother vessel.',
+    })).resolves.toMatchObject({
+      motherVesselImo: '9387421',
+      motherVesselNameWarning: 'The AIS vessel name does not match the stored mother vessel.',
+    });
+    await expect(decode({ ...shipment, feederVesselMmsi: 565987654 })).rejects.toMatchObject({ status: 502 });
   });
 
   it('rejects a response that omits the feeder vessel fields', async () => {

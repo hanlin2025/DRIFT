@@ -59,6 +59,14 @@ export type Shipment = {
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
   importer?: ImporterOrganisation | null;
+  motherVesselImo?: string | null;
+  motherVesselMmsi?: string | null;
+  motherVesselOperator?: string | null;
+  feederVesselImo?: string | null;
+  feederVesselMmsi?: string | null;
+  feederVesselOperator?: string | null;
+  motherVesselNameWarning?: string | null;
+  feederVesselNameWarning?: string | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -300,6 +308,16 @@ function asShipment(value: unknown): Shipment | null {
   if (feederVesselPosition != null && !isVesselPosition(feederVesselPosition)) return null;
   const importer = 'importer' in value ? organisationOf(value.importer) : null;
   if (importer === undefined) return null;
+  const motherVesselImo = optionalIdentity(value, 'motherVesselImo');
+  const motherVesselMmsi = optionalIdentity(value, 'motherVesselMmsi');
+  const motherVesselOperator = optionalIdentity(value, 'motherVesselOperator');
+  const feederVesselImo = optionalIdentity(value, 'feederVesselImo');
+  const feederVesselMmsi = optionalIdentity(value, 'feederVesselMmsi');
+  const feederVesselOperator = optionalIdentity(value, 'feederVesselOperator');
+  const motherVesselNameWarning = optionalIdentity(value, 'motherVesselNameWarning');
+  const feederVesselNameWarning = optionalIdentity(value, 'feederVesselNameWarning');
+  if ([motherVesselImo, motherVesselMmsi, motherVesselOperator, feederVesselImo, feederVesselMmsi,
+    feederVesselOperator, motherVesselNameWarning, feederVesselNameWarning].some(item => item === undefined)) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -319,6 +337,14 @@ function asShipment(value: unknown): Shipment | null {
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
     importer,
+    motherVesselImo,
+    motherVesselMmsi,
+    motherVesselOperator,
+    feederVesselImo,
+    feederVesselMmsi,
+    feederVesselOperator,
+    motherVesselNameWarning,
+    feederVesselNameWarning,
   };
 }
 
@@ -329,6 +355,11 @@ function shipmentStatusOf(value: unknown): ShipmentStatus | null {
 function companyIdOf(value: unknown) {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) return null;
   return value;
+}
+
+function optionalIdentity(record: Record<string, unknown>, key: string): string | null | undefined {
+  if (!(key in record) || record[key] == null) return null;
+  return typeof record[key] === 'string' ? record[key] : undefined;
 }
 
 function organisationOf(value: unknown): ImporterOrganisation | null | undefined {

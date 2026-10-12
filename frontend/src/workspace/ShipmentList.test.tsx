@@ -269,7 +269,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Risk', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();

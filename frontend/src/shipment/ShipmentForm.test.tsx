@@ -155,6 +155,12 @@ describe('shipment registration', () => {
     }));
     const body = vi.mocked(createShipment).mock.calls[0][1];
     expect(Date.parse(body.plannedFeederDepartureAt)).toBeGreaterThan(Date.parse(body.plannedMotherArrivalAt));
+    expect(body.motherVesselImo).toBe('');
+    expect(body.motherVesselMmsi).toBe('');
+    expect(body.motherVesselOperator).toBe('');
+    expect(body.feederVesselImo).toBe('');
+    expect(body.feederVesselMmsi).toBe('');
+    expect(body.feederVesselOperator).toBe('');
     expect(screen.getByLabelText('Shipment reference')).toHaveValue('');
     expect(listShipments).toHaveBeenCalledWith('session-token');
   });
@@ -445,5 +451,45 @@ describe('importer linking', () => {
     expect(await screen.findByText('Shipment linked to North Star Imports')).toBeInTheDocument();
     expect(linkShipmentImporter).toHaveBeenCalledWith('session-token', 2, 5);
     expect(onUpdated).not.toHaveBeenCalled();
+  });
+
+  it('sends the stored vessel identity back when the shipment is saved', async () => {
+    const onUpdated = vi.fn();
+    writeSession(forwarder);
+    render(<ShipmentForm token={forwarder.token} shipment={{
+      ...listed,
+      motherVesselImo: '9387421',
+      motherVesselMmsi: '563000111',
+      motherVesselOperator: 'Harbourline',
+      feederVesselImo: '9411882',
+      feederVesselMmsi: '565987654',
+      feederVesselOperator: 'Strait Feeders',
+    }} onSessionEnded={vi.fn()} onUpdated={onUpdated} onCancel={vi.fn()} />);
+    vi.mocked(updateShipment).mockResolvedValue({ ...listed, version: 1 });
+    const user = userEvent.setup();
+    expect(screen.getByLabelText('Mother IMO')).toHaveValue('9387421');
+    expect(screen.getByLabelText('Feeder operator')).toHaveValue('Strait Feeders');
+    expect(screen.getByLabelText('Mother IMO')).not.toBeRequired();
+    await user.click(screen.getByRole('button', { name: /Save shipment/ }));
+    await waitFor(() => expect(onUpdated).toHaveBeenCalled());
+    expect(updateShipment).toHaveBeenCalledWith('session-token', 2, expect.objectContaining({
+      motherVesselImo: '9387421',
+      motherVesselMmsi: '563000111',
+      motherVesselOperator: 'Harbourline',
+      feederVesselImo: '9411882',
+      feederVesselMmsi: '565987654',
+      feederVesselOperator: 'Strait Feeders',
+      version: 0,
+    }));
+  });
+
+  it('shows the same identity message as the API before saving', async () => {
+    writeSession(forwarder);
+    render(<ShipmentForm token={forwarder.token} shipment={listed} onSessionEnded={vi.fn()} onUpdated={vi.fn()} onCancel={vi.fn()} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Mother IMO'), '123');
+    await user.click(screen.getByRole('button', { name: /Save shipment/ }));
+    expect(screen.getByText('Mother vessel IMO must be 7 digits.')).toBeInTheDocument();
+    expect(updateShipment).not.toHaveBeenCalled();
   });
 });

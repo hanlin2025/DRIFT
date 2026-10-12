@@ -142,7 +142,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 12;
+const FACT_ROWS = 18;
 
 function ShipmentSkeleton() {
   return (
@@ -192,11 +192,17 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
-          <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
+          <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shipment.motherVesselNameWarning)}</dd></div>
+          <div><dt>Mother vessel IMO</dt><dd className={missing(shipment.motherVesselImo)}>{recorded(shipment.motherVesselImo, 'Not available')}</dd></div>
+          <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
+          <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
-          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</dd></div>
+          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shipment.feederVesselNameWarning)}</dd></div>
+          <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
+          <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
+          <div><dt>Feeder vessel operator</dt><dd className={missing(shipment.feederVesselOperator)}>{recorded(shipment.feederVesselOperator, 'Not available')}</dd></div>
           <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
           <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
             ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
@@ -225,11 +231,16 @@ function formatLive(position: VesselPosition | null) {
   return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
 }
 
-function recorded(value: string | null, fallback = 'Not recorded') {
+function recorded(value: string | null | undefined, fallback = 'Not recorded') {
   const text = value?.trim();
   return text || fallback;
 }
 
-function missing(value: string | null) {
+function missing(value: string | null | undefined) {
   return value?.trim() ? undefined : 'is-missing';
+}
+
+function nameWarning(warning: string | null | undefined) {
+  const text = warning?.trim();
+  return text ? <span className="vessel-name-warning">{text}</span> : null;
 }

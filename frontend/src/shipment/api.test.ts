@@ -33,6 +33,8 @@ describe('shipment importer API', () => {
     const listed = await listShipments('token');
     expect(listed).toHaveLength(1);
     expect(listed[0].importer).toBeNull();
+    expect(listed[0].motherVesselImo).toBeNull();
+    expect(listed[0].motherVesselNameWarning).toBeNull();
     expect(fetch).toHaveBeenCalledWith('/api/shipments', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
