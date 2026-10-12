@@ -3,6 +3,7 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
+import com.drift.backend.ais.operation.OperationalState;
 import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
 
@@ -29,17 +30,22 @@ public record ShipmentDetailResponse(
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the feeder vessel. Null when the livestream has not retained one.")
 		VesselPosition feederVesselPosition,
+		@Schema(description = "Operational state of the mother vessel, derived from its latest AIS navigational status whenever the shipment is read. Unknown when that status is missing. Null when the mother vessel is not named.", nullable = true)
+		OperationalState motherOperationalState,
+		@Schema(description = "Operational state of the feeder vessel, derived from its latest AIS navigational status whenever the shipment is read. Unknown when that status is missing. Null when the feeder vessel is not named.", nullable = true)
+		OperationalState feederOperationalState,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
-			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition) {
+			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition,
+			OperationalState motherOperationalState, OperationalState feederOperationalState) {
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
 				shipment.getVersion(), calculation.window(), ShipmentRisk.of(calculation),
-				motherVesselPosition, feederVesselPosition,
+				motherVesselPosition, feederVesselPosition, motherOperationalState, feederOperationalState,
 				organisation(shipment.getImporterCompany()));
 	}
 

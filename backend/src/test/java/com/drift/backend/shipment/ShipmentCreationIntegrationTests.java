@@ -313,6 +313,7 @@ class ShipmentCreationIntegrationTests {
 		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 		String createdBody = created.getResponse().getContentAsString();
 		assertThat(createdBody).doesNotContain("motherVesselPosition");
+		assertThat(createdBody).doesNotContain("operationalState");
 
 		detail(token, shipmentId.toString())
 				.andExpect(status().isOk())
@@ -330,7 +331,63 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"))
-				.andExpect(jsonPath("$[0].motherVesselPosition").doesNotExist());
+				.andExpect(jsonPath("$[0].motherVesselPosition").doesNotExist())
+				.andExpect(jsonPath("$[0].motherOperationalState").doesNotExist())
+				.andExpect(jsonPath("$[0].feederOperationalState").doesNotExist());
+	}
+
+	@Test
+	void includesOperationalStateFromTheLatestAisReportOnTheShipmentDetail() throws Exception {
+		MvcResult created = create(token, shipment("HBL-2026-STATE")).andExpect(status().isCreated()).andReturn();
+		assertThat(created.getResponse().getContentAsString()).doesNotContain("operationalState");
+		String shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id").toString();
+
+		detail(token, shipmentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherOperationalState.label").value("Unknown"))
+				.andExpect(jsonPath("$.motherOperationalState.description").value("Unknown"))
+				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(false))
+				.andExpect(jsonPath("$.feederOperationalState.label").value("Unknown"))
+				.andExpect(jsonPath("$.feederOperationalState.unreliable").value(false));
+
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "1.264000", "103.840000", "0.2", 15,
+				Instant.parse("2026-10-05T03:00:00Z")));
+		detail(token, shipmentId)
+				.andExpect(jsonPath("$.motherOperationalState.label").value("Unknown"))
+				.andExpect(jsonPath("$.motherOperationalState.description").value("Unknown near Singapore"))
+				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(false));
+
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "1.264000", "103.840000", "0.2", 5,
+				Instant.parse("2026-10-05T04:00:00Z")));
+		latestPositions.record(position("563009999", "MV Strait Runner", "1.250000", "103.700000", "0.2", 1,
+				Instant.parse("2026-10-05T04:00:00Z")));
+		detail(token, shipmentId)
+				.andExpect(jsonPath("$.motherOperationalState.label").value("Moored"))
+				.andExpect(jsonPath("$.motherOperationalState.description").value("Moored near Singapore"))
+				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(false))
+				.andExpect(jsonPath("$.feederOperationalState.label").value("At anchor"))
+				.andExpect(jsonPath("$.feederOperationalState.description").value("At anchor near Singapore"))
+				.andExpect(jsonPath("$.feederOperationalState.unreliable").value(false));
+
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "1.264000", "103.840000", "4.0", 5,
+				Instant.parse("2026-10-05T05:00:00Z")));
+		detail(token, shipmentId)
+				.andExpect(jsonPath("$.motherOperationalState.label").value("Moored"))
+				.andExpect(jsonPath("$.motherOperationalState.description").value("Moored near Singapore"))
+				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(true))
+				.andExpect(jsonPath("$.feederOperationalState.description").value("At anchor near Singapore"));
+
+		latestPositions.record(position("563001234", "PACIFIC HORIZON", "10.000000", "110.000000", "14.0", 0,
+				Instant.parse("2026-10-05T06:00:00Z")));
+		detail(token, shipmentId)
+				.andExpect(jsonPath("$.motherOperationalState.label").value("Under way"))
+				.andExpect(jsonPath("$.motherOperationalState.description").value("Under way, far from port"))
+				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(false));
+
+		list(token)
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-2026-STATE"))
+				.andExpect(jsonPath("$[0].motherOperationalState").doesNotExist())
+				.andExpect(jsonPath("$[0].feederOperationalState").doesNotExist());
 	}
 
 	@Test
@@ -366,7 +423,9 @@ class ShipmentCreationIntegrationTests {
 		detail(token, otherShipmentId.toString())
 				.andExpect(status().isForbidden())
 				.andExpect(header().string("Cache-Control", "no-store"))
-				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE))
+				.andExpect(jsonPath("$.motherOperationalState").doesNotExist())
+				.andExpect(jsonPath("$.feederOperationalState").doesNotExist());
 		detail(token, "999999999")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
@@ -521,9 +580,14 @@ class ShipmentCreationIntegrationTests {
 	}
 
 	private static AisPosition position(String mmsi, String name, String latitude, String longitude, String speed) {
+		return position(mmsi, name, latitude, longitude, speed, 0, Instant.parse("2026-10-05T03:00:00Z"));
+	}
+
+	private static AisPosition position(String mmsi, String name, String latitude, String longitude, String speed,
+			Integer navigationalStatus, Instant ingestedAt) {
 		return new AisPosition(mmsi, name, new BigDecimal(latitude), new BigDecimal(longitude),
-				new BigDecimal(speed), new BigDecimal("175.0"), 176, 0, true, 42,
-				Instant.parse("2026-10-05T03:00:00Z"), AisPositionSource.AIS_STREAM);
+				new BigDecimal(speed), new BigDecimal("175.0"), 176, navigationalStatus, true, 42,
+				ingestedAt, AisPositionSource.AIS_STREAM);
 	}
 
 	private static String shipment(String reference) {

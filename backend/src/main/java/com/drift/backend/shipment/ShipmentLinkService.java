@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import java.time.Instant;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,6 +11,9 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.operation.OperationalState;
+import com.drift.backend.ais.operation.OperationalStateService;
+import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
@@ -28,15 +32,18 @@ public class ShipmentLinkService {
 	private final CompanyRepository companies;
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
+	private final OperationalStateService operationalStates;
 	private final EntityManager entityManager;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, EntityManager entityManager) {
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions,
+			OperationalStateService operationalStates, EntityManager entityManager) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
+		this.operationalStates = operationalStates;
 		this.entityManager = entityManager;
 	}
 
@@ -89,14 +96,28 @@ public class ShipmentLinkService {
 		ConnectionWindowCalculation calculation = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
 				shipment.getPlannedFeederDepartureAt());
 		return ShipmentDetailResponse.from(shipment, calculation,
-				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
+				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()),
+				operationalState(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
+				operationalState(shipment.getFeederVessel(), shipment.getTransshipmentPort()));
 	}
 
 	private VesselPosition livePosition(String vesselName) {
+		return latestFix(vesselName).map(VesselPosition::from).orElse(null);
+	}
+
+	private OperationalState operationalState(String vesselName, String transshipmentPort) {
+		if (vesselName == null || vesselName.isBlank()) {
+			return null;
+		}
+		return latestFix(vesselName)
+				.map(position -> operationalStates.derive(position.navigationalStatus(),
+						position.speedOverGroundKnots(), position.latitude(), position.longitude(), transshipmentPort))
+				.orElseGet(() -> operationalStates.derive(null, null, null, null, transshipmentPort));
+	}
+
+	private Optional<AisPosition> latestFix(String vesselName) {
 		return latestPositions.findByVesselName(vesselName)
-				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
-				.map(VesselPosition::from)
-				.orElse(null);
+				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)));
 	}
 
 	private static String withoutVesselPrefix(String vesselName) {
