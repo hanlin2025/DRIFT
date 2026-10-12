@@ -1,5 +1,6 @@
 package com.drift.backend.shipment;
 
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -76,8 +77,22 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler({ ShipmentNotFoundException.class, MethodArgumentTypeMismatchException.class })
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+		if (LocalDate.class.equals(ex.getRequiredType())) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(body("Shipment information is missing or invalid",
+							Map.of(ex.getName(), "Arrival date must use ISO format YYYY-MM-DD")));
+		}
+		return notFound();
+	}
+
+	@ExceptionHandler(ShipmentNotFoundException.class)
 	public ResponseEntity<Map<String, String>> handleNotFound() {
+		return notFound();
+	}
+
+	private ResponseEntity<Map<String, String>> notFound() {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
 	}
