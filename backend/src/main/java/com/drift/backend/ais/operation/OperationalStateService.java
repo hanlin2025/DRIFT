@@ -13,11 +13,13 @@ public class OperationalStateService {
 	private static final BigDecimal MOVEMENT_CONFLICT_KNOTS = new BigDecimal("1");
 	// Distance from the port reference point that still counts as near that port.
 	private static final double NEAR_PORT_NAUTICAL_MILES = 25;
+	// Keeps a position that lands a few ulps over 25 nautical miles on the near side of the cutoff.
+	private static final double NEAR_PORT_TOLERANCE_NAUTICAL_MILES = 1e-6;
 
 	private static final String UNKNOWN = "Unknown";
 	private static final List<KnownPort> PORTS = List.of(
-			new KnownPort("Singapore", 1.264, 103.840),
-			new KnownPort("Tanjung Pelepas", 1.362, 103.549));
+			new KnownPort("Singapore", 1.264, 103.840, List.of("sgsin", "singaporeport")),
+			new KnownPort("Tanjung Pelepas", 1.362, 103.549, List.of("mytpp", "tg pelepas")));
 
 	public OperationalState derive(Integer navigationalStatus, BigDecimal speedOverGroundKnots,
 			BigDecimal latitude, BigDecimal longitude, String transshipmentPort) {
@@ -65,7 +67,7 @@ public class OperationalStateService {
 		}
 		double distance = nauticalMiles(latitude.doubleValue(), longitude.doubleValue(), port.latitude(),
 				port.longitude());
-		if (distance <= NEAR_PORT_NAUTICAL_MILES) {
+		if (distance <= NEAR_PORT_NAUTICAL_MILES + NEAR_PORT_TOLERANCE_NAUTICAL_MILES) {
 			return label + " near " + port.name();
 		}
 		return label + ", far from port";
@@ -75,15 +77,37 @@ public class OperationalStateService {
 		if (transshipmentPort == null || transshipmentPort.isBlank()) {
 			return null;
 		}
-		String normalized = transshipmentPort.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
+		String normalized = normalize(transshipmentPort);
+		String compact = compact(normalized);
 		KnownPort match = null;
 		for (KnownPort port : PORTS) {
-			if (containsPhrase(normalized, port.name().toLowerCase(Locale.ROOT))
+			if (matches(normalized, compact, port)
 					&& (match == null || port.name().length() > match.name().length())) {
 				match = port;
 			}
 		}
 		return match;
+	}
+
+	private static boolean matches(String normalized, String compact, KnownPort port) {
+		String name = port.name().toLowerCase(Locale.ROOT);
+		if (containsPhrase(normalized, name) || compact.equals(compact(name))) {
+			return true;
+		}
+		for (String alias : port.aliases()) {
+			if (normalized.equals(alias) || compact.equals(compact(alias))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static String normalize(String value) {
+		return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
+	}
+
+	private static String compact(String value) {
+		return value.replace(" ", "");
 	}
 
 	private static boolean containsPhrase(String haystack, String phrase) {
@@ -109,6 +133,6 @@ public class OperationalStateService {
 		return 60 * Math.hypot(east, north);
 	}
 
-	private record KnownPort(String name, double latitude, double longitude) {
+	private record KnownPort(String name, double latitude, double longitude, List<String> aliases) {
 	}
 }

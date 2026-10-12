@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 import org.junit.jupiter.api.Test;
 
@@ -88,10 +89,36 @@ class OperationalStateServiceTest {
 	}
 
 	@Test
+	void treatsAVesselExactlyTwentyFiveNauticalMilesFromThePortAsNear() {
+		BigDecimal latitude = SINGAPORE_LATITUDE.add(
+				new BigDecimal("25").divide(new BigDecimal("60"), 16, RoundingMode.HALF_UP));
+
+		OperationalState boundary = states.derive(1, new BigDecimal("0.2"), latitude, SINGAPORE_LONGITUDE, "Singapore");
+
+		assertThat(boundary.description()).isEqualTo("At anchor near Singapore");
+	}
+
+	@Test
 	void recognisesThePortNameInAnyCaseAndUsesAnotherKnownPort() {
 		assertThat(states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE, "  singapore, SG ")
 				.description()).isEqualTo("At anchor near Singapore");
 		assertThat(states.derive(5, new BigDecimal("0.0"), PELEPAS_LATITUDE, PELEPAS_LONGITUDE, "Tanjung Pelepas")
+				.description()).isEqualTo("Moored near Tanjung Pelepas");
+	}
+
+	@Test
+	void recognisesPortCodesAbbreviationsAndConcatenatedNames() {
+		assertThat(states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE, "SGSIN")
+				.description()).isEqualTo("At anchor near Singapore");
+		assertThat(states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE, "SingaporePort")
+				.description()).isEqualTo("At anchor near Singapore");
+		assertThat(states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE, "Port of Singapore")
+				.description()).isEqualTo("At anchor near Singapore");
+		assertThat(states.derive(5, new BigDecimal("0.0"), PELEPAS_LATITUDE, PELEPAS_LONGITUDE, "MYTPP")
+				.description()).isEqualTo("Moored near Tanjung Pelepas");
+		assertThat(states.derive(5, new BigDecimal("0.0"), PELEPAS_LATITUDE, PELEPAS_LONGITUDE, "Tg. Pelepas")
+				.description()).isEqualTo("Moored near Tanjung Pelepas");
+		assertThat(states.derive(5, new BigDecimal("0.0"), PELEPAS_LATITUDE, PELEPAS_LONGITUDE, "TanjungPelepas")
 				.description()).isEqualTo("Moored near Tanjung Pelepas");
 	}
 
