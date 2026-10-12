@@ -91,6 +91,18 @@ describe('shipment importer API', () => {
     expect(detail.importer?.id).toBe(2);
   });
 
+  it.each(['ACTIVE', 'ARCHIVED'] as const)('keeps a %s shipment status', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, status })));
+    const detail = await getShipment('token', '9');
+    expect(detail.status).toBe(status);
+  });
+
+  it.each([undefined, null, '', 'REMOVED'])('clears a missing or unknown status %s', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, status })));
+    const detail = await getShipment('token', '9');
+    expect(detail.status).toBeNull();
+  });
+
   it.each([undefined, null, 0, -1, 1.5, '1'])('hides an invalid company id %s by clearing it', async companyId => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, companyId })));
     const detail = await getShipment('token', '9');

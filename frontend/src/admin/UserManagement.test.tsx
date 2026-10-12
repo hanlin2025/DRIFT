@@ -165,6 +165,8 @@ describe('user management', () => {
       version: 0,
       companyId: 1,
       connectionWindow: null,
+      risk: null,
+      status: null,
       motherVesselPosition: null,
       feederVesselPosition: null,
     });

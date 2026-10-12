@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
+import { getShipment, getShipmentTracking, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RemoveShipment } from './RemoveShipment';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
@@ -142,7 +142,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 11;
+const FACT_ROWS = 12;
 
 function ShipmentSkeleton() {
   return (
@@ -206,12 +206,17 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
             <dt>Connection window</dt>
             <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
           </div>
+          <div><dt>Risk</dt>{shipment.risk
+            ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
+            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
     </>
   );
 }
+
+const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
 
 function formatLive(position: VesselPosition | null) {
   if (!position) return 'No live AIS position';

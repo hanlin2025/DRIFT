@@ -119,7 +119,7 @@ public class ShipmentService {
 		if (account.getRole() != Role.ADMIN && account.getRole() != Role.LOGISTICS_MANAGER) {
 			throw new ShipmentArchiveForbiddenException();
 		}
-		if (Shipment.ARCHIVED.equals(shipment.getStatus())) {
+		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentAlreadyArchivedException();
 		}
 		shipment.archive();
@@ -131,7 +131,7 @@ public class ShipmentService {
 	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request) {
 		ShipmentDetails details = validatedDetails(request);
 		Shipment shipment = editableShipment(principal, shipmentId);
-		if (Shipment.ARCHIVED.equals(shipment.getStatus())) {
+		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentNotEditableException();
 		}
 		if (!request.version().equals(shipment.getVersion())) {
@@ -232,7 +232,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, window(shipment),
+		return ShipmentDetailResponse.from(shipment, calculation(shipment),
 				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
 	}
 
@@ -258,8 +258,12 @@ public class ShipmentService {
 	}
 
 	private ConnectionWindow window(Shipment shipment) {
+		return calculation(shipment).window();
+	}
+
+	private ConnectionWindowCalculation calculation(Shipment shipment) {
 		return connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt()).window();
+				shipment.getPlannedFeederDepartureAt());
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

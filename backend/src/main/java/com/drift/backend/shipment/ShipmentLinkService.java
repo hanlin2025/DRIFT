@@ -86,9 +86,9 @@ public class ShipmentLinkService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		ConnectionWindow window = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt()).window();
-		return ShipmentDetailResponse.from(shipment, window,
+		ConnectionWindowCalculation calculation = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt());
+		return ShipmentDetailResponse.from(shipment, calculation,
 				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
 	}
 
