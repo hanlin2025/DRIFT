@@ -39,7 +39,7 @@ import com.jayway.jsonpath.PathNotFoundException;
 @ContextConfiguration(initializers = ShipmentStatusDatabaseGuard.class)
 class ShipmentStatusContractTest {
 
-	private static final String V18_SHA256 = "d1dfc6b2b861d716115a875f4796eda3db49e1a8725a3d5b496caf5d26cf1053";
+	private static final String V21_SHA256 = "d1dfc6b2b861d716115a875f4796eda3db49e1a8725a3d5b496caf5d26cf1053";
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
@@ -78,13 +78,13 @@ class ShipmentStatusContractTest {
 				.isEqualTo(environment.getProperty("spring.flyway.url"))
 				.matches(ShipmentStatusDatabaseGuard.URL.pattern());
 		assertThat(environment.getProperty("app.ais.enabled")).isEqualTo("false");
-		byte[] migration = getClass().getClassLoader().getResourceAsStream("db/migration/V18__add_shipment_status.sql")
+		byte[] migration = getClass().getClassLoader().getResourceAsStream("db/migration/V21__add_shipment_status.sql")
 				.readAllBytes();
-		assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(migration))).isEqualTo(V18_SHA256);
+		assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(migration))).isEqualTo(V21_SHA256);
 		assertThat(new String(migration, StandardCharsets.UTF_8)).contains("VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'")
 				.contains("CHECK (status IN ('ACTIVE', 'ARCHIVED'))");
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "18");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21");
 		assertThat(jdbc.queryForMap("""
 				SELECT data_type, character_maximum_length, is_nullable, column_default
 				FROM information_schema.columns

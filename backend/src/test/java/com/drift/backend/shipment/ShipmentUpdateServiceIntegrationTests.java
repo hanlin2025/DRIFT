@@ -115,7 +115,7 @@ class ShipmentUpdateServiceIntegrationTests {
 		Long shipmentId = create(forwarder, "HBL-MISSING");
 
 		assertThatThrownBy(() -> shipments.update(forwarder, shipmentId,
-				new UpdateShipmentRequest("", null, "", "", "", null, "", null, -1L)))
+				new UpdateShipmentRequest("", null, "", "", "", null, "", null, null, null, null, null, null, null, -1L)))
 				.isInstanceOfSatisfying(InvalidShipmentRequestException.class, exception ->
 						assertThat(exception.getErrors()).containsKeys("shipmentReference", "origin", "destination",
 								"transshipmentPort", "motherVessel", "plannedMotherArrivalAt", "feederVessel",
@@ -151,7 +151,7 @@ class ShipmentUpdateServiceIntegrationTests {
 	private Long create(AuthenticatedUser principal, String reference) {
 		return shipments.create(principal, new CreateShipmentRequest(reference, "Shanghai, CN", "Jakarta, ID", "Singapore",
 				"MV Pacific Horizon", OffsetDateTime.parse("2026-10-15T08:00:00+08:00"), "MV Strait Runner",
-				OffsetDateTime.parse("2026-10-16T12:00:00+08:00"))).id();
+				OffsetDateTime.parse("2026-10-16T12:00:00+08:00"), null, null, null, null, null, null)).id();
 	}
 
 	private Shipment shipment(Long shipmentId) {
@@ -166,7 +166,8 @@ class ShipmentUpdateServiceIntegrationTests {
 	private UpdateShipmentRequest request(String reference, Long version, String origin, String destination,
 			String transshipmentPort, String motherVessel, String motherArrival, String feederVessel, String feederDeparture) {
 		return new UpdateShipmentRequest(reference, origin, destination, transshipmentPort, motherVessel,
-				OffsetDateTime.parse(motherArrival), feederVessel, OffsetDateTime.parse(feederDeparture), version);
+				OffsetDateTime.parse(motherArrival), feederVessel, OffsetDateTime.parse(feederDeparture),
+				null, null, null, null, null, null, version);
 	}
 
 	private AuthenticatedUser account(String prefix, Role role, Long assignedCompanyId) {

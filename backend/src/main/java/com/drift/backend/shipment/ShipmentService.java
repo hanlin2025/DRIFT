@@ -11,6 +11,7 @@ import jakarta.validation.Validator;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,10 @@ import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 @Service
 public class ShipmentService {
 
@@ -41,23 +46,30 @@ public class ShipmentService {
 	private final LatestAisPositions latestPositions;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
+	private final ObjectMapper objectMapper;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
-			ShipmentAccessPolicy accessPolicy) {
+			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
+		this.objectMapper = objectMapper;
 	}
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal) {
+		return list(principal, ShipmentFilterCriteria.none());
+	}
+
+	@Transactional(readOnly = true)
+	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
 		Company company = activeCompany(principal);
-		return shipments.findVisibleByCompanyIdOrderByCreatedAtDesc(company.getId()).stream()
-				.filter(shipment -> accessPolicy.canView(company, shipment))
+		return shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+				Sort.by(Sort.Direction.DESC, "createdAt")).stream()
 				.map(this::respond)
 				.toList();
 	}
@@ -97,12 +109,31 @@ public class ShipmentService {
 	public void createImported(Company managingCompany, UserAccount creator, ShipmentImportRow row, Company importerCompany) {
 		ShipmentDetails details = validatedDetails(new CreateShipmentRequest(row.shipmentReference(), row.origin(),
 				row.destination(), row.transshipmentPort(), row.motherVessel(), row.plannedMotherArrivalAt(),
-				row.feederVessel(), row.plannedFeederDepartureAt()));
+				row.feederVessel(), row.plannedFeederDepartureAt(), null, null, null, null, null, null));
 		persistNewShipment(managingCompany, creator, details, importerCompany);
 	}
 
 	@Transactional
+	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, JsonNode body) {
+		if (body == null || !body.isObject()) {
+			throw new InvalidShipmentRequestException(Map.of());
+		}
+		UpdateShipmentRequest request;
+		try {
+			request = objectMapper.convertValue(body, UpdateShipmentRequest.class);
+		} catch (IllegalArgumentException | JacksonException ex) {
+			throw new InvalidShipmentRequestException(Map.of());
+		}
+		return update(principal, shipmentId, request, VesselIdentityPresence.from(body));
+	}
+
+	@Transactional
 	public ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request) {
+		return update(principal, shipmentId, request, VesselIdentityPresence.omitted());
+	}
+
+	private ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request,
+			VesselIdentityPresence identity) {
 		ShipmentDetails details = validatedDetails(request);
 		Shipment shipment = editableShipment(principal, shipmentId);
 		if (!request.version().equals(shipment.getVersion())) {
@@ -117,6 +148,7 @@ public class ShipmentService {
 
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		shipment.replaceDetails(details, editor, Instant.now());
+		shipment.applySpecifiedIdentity(details, identity);
 		try {
 			return respond(shipments.saveAndFlush(shipment));
 		} catch (DataIntegrityViolationException ex) {
@@ -134,6 +166,10 @@ public class ShipmentService {
 		for (ConstraintViolation<ShipmentDetailsRequest> violation : validator.validate(request)) {
 			errors.putIfAbsent(violation.getPropertyPath().toString(), violation.getMessage());
 		}
+		checkDigits(request.motherVesselImo(), "motherVesselImo", "Mother vessel IMO must be 7 digits.", 7, errors);
+		checkDigits(request.motherVesselMmsi(), "motherVesselMmsi", "Mother vessel MMSI must be 9 digits.", 9, errors);
+		checkDigits(request.feederVesselImo(), "feederVesselImo", "Feeder vessel IMO must be 7 digits.", 7, errors);
+		checkDigits(request.feederVesselMmsi(), "feederVesselMmsi", "Feeder vessel MMSI must be 9 digits.", 9, errors);
 		if (!errors.isEmpty()) {
 			throw new InvalidShipmentRequestException(errors);
 		}
@@ -143,6 +179,15 @@ public class ShipmentService {
 			throw new InvalidItineraryException();
 		}
 		return details;
+	}
+
+	private static void checkDigits(String raw, String field, String message, int length, Map<String, String> errors) {
+		if (raw == null || raw.isBlank()) {
+			return;
+		}
+		if (!raw.strip().matches("\\d{" + length + "}")) {
+			errors.putIfAbsent(field, message);
+		}
 	}
 
 	private static boolean isDuplicateReference(DataIntegrityViolationException ex) {
@@ -166,6 +211,7 @@ public class ShipmentService {
 		Shipment shipment = new Shipment(company, creator, details.shipmentReference(), details.origin(),
 				details.destination(), details.transshipmentPort(), details.motherVessel(), details.plannedMotherArrivalAt(),
 				details.feederVessel(), details.plannedFeederDepartureAt());
+		shipment.recordVesselIdentity(details);
 		if (importerCompany != null) {
 			shipment.linkImporter(importerCompany);
 		}

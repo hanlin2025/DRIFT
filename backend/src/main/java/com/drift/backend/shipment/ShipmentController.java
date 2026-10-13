@@ -1,16 +1,19 @@
 package com.drift.backend.shipment;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.drift.backend.account.authentication.AuthenticatedUser;
@@ -29,6 +32,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+import tools.jackson.databind.JsonNode;
+
 @RestController
 @Tag(name = "Shipments", description = "Create shipments and their planned transshipment itineraries.")
 public class ShipmentController {
@@ -42,11 +47,16 @@ public class ShipmentController {
 	@GetMapping("/api/shipments")
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
-			+ "Each shipment includes the planned connection window calculated from its stored schedule.",
+			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
+			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
+								"""))),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
@@ -56,12 +66,17 @@ public class ShipmentController {
 								{"message":"Your account must belong to an active company to view shipments"}
 								"""))) })
 	public ResponseEntity<List<ShipmentResponse>> list(
-			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user) {
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the shipment reference", example = "HBL-2026") @RequestParam(required = false) String reference,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of either the mother vessel or feeder vessel", example = "Pacific") @RequestParam(required = false) String vessel,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the linked importer Company Code or Company Name", example = "IMPORTER-SG") @RequestParam(required = false) String customer,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
+			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.list(user));
+				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate)));
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
@@ -170,7 +185,8 @@ public class ShipmentController {
 	}
 
 	@PutMapping("/api/shipments/{shipmentId}")
-	@Operation(summary = "Replace a shipment", description = "Replaces all editable shipment details for a shipment managed by the authenticated user's active company. "
+	@Operation(summary = "Replace a shipment", description = "Replaces the editable shipment itinerary for a shipment managed by the authenticated user's active company. "
+			+ "An omitted vessel IMO, MMSI, or operator stays as stored. Sending that field as null or blank clears it. "
 			+ "A linked importer may view and track a shipment but cannot replace it. "
 			+ "Supply the version returned when the shipment was last read. A stale version returns 409 Conflict; refresh the shipment before trying again. "
 			+ "Shipment references remain unique within the company, ignoring letter case.",
@@ -209,11 +225,13 @@ public class ShipmentController {
 	public ResponseEntity<ShipmentResponse> update(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Identifier of the shipment to replace", example = "42") @PathVariable Long shipmentId,
-			@Valid @RequestBody UpdateShipmentRequest request) {
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = UpdateShipmentRequest.class)))
+			@RequestBody JsonNode body) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.update(user, shipmentId, request));
+				.body(shipmentService.update(user, shipmentId, body));
 	}
 }

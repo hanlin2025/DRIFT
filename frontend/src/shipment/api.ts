@@ -1,4 +1,5 @@
 import { ApiError } from '../signup/api';
+import { shipmentFilterSearchParams, type ShipmentFilters } from './shipmentFilters';
 import { type ShipmentFields } from './validation';
 
 export type ConnectionWindow = {
@@ -58,8 +59,9 @@ export type Shipment = {
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
 
-export async function listShipments(token: string): Promise<Shipment[]> {
-  const data = await send('/api/shipments', token);
+export async function listShipments(token: string, filters?: ShipmentFilters): Promise<Shipment[]> {
+  const query = filters ? shipmentFilterSearchParams(filters).toString() : '';
+  const data = await send(query ? `/api/shipments?${query}` : '/api/shipments', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
   const shipments = data.map(asShipment);
   if (shipments.some(shipment => shipment === null)) throw new ApiError(UNEXPECTED, 502);
