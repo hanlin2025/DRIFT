@@ -38,5 +38,19 @@ public record CreateShipmentRequest(
 		String feederVessel,
 		@Schema(description = "Planned feeder-vessel departure from the transshipment port, including a UTC offset. It must be after the mother-vessel arrival.", example = "2026-10-16T12:00:00+08:00", requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotNull(message = "Planned feeder-vessel departure is required")
-		OffsetDateTime plannedFeederDepartureAt) implements ShipmentDetailsRequest {
+		OffsetDateTime plannedFeederDepartureAt,
+		@Schema(description = "Optional 7-digit IMO number of the mother vessel. Omit it when it is not known. This is stored shipment data, not a value copied from an AIS position.", example = "9387421", nullable = true)
+		String motherVesselImo,
+		@Schema(description = "Optional 9-digit MMSI of the mother vessel. Omit it when it is not known.", example = "563123456", nullable = true)
+		String motherVesselMmsi,
+		@Schema(description = "Optional operator of the mother vessel. Omit it when it is not known.", example = "Harbourline", nullable = true)
+		@Size(max = 200, message = "Mother vessel operator must be at most 200 characters.")
+		String motherVesselOperator,
+		@Schema(description = "Optional 7-digit IMO number of the feeder vessel. Omit it when it is not known.", example = "9411882", nullable = true)
+		String feederVesselImo,
+		@Schema(description = "Optional 9-digit MMSI of the feeder vessel. Omit it when it is not known.", example = "565987654", nullable = true)
+		String feederVesselMmsi,
+		@Schema(description = "Optional operator of the feeder vessel. Omit it when it is not known.", example = "Strait Feeders", nullable = true)
+		@Size(max = 200, message = "Feeder vessel operator must be at most 200 characters.")
+		String feederVesselOperator) implements ShipmentDetailsRequest {
 }

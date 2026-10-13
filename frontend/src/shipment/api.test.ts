@@ -38,6 +38,32 @@ describe('shipment importer API', () => {
     }));
   });
 
+  it('sends only supported nonblank shipment filters', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+
+    await listShipments('token', {
+      reference: 'HBL-2026',
+      vessel: '',
+      customer: 'STRAITS',
+      arrivalDate: '',
+    });
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
+  });
+
+  it('omits blank filters and encodes filter text with URLSearchParams', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+
+    await listShipments('token', {
+      reference: 'HBL 123',
+      vessel: '  ',
+      customer: 'A&B Logistics',
+      arrivalDate: '2026-10-12',
+    });
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
+  });
+
   it('reads the importer on a shipment detail', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       ...shipment,
