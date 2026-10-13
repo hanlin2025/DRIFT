@@ -6,8 +6,9 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getShipment, getShipmentTracking, listShipments, updateShipment, type Shipment, type ShipmentTracking } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, listShipments, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
+import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn() }));
@@ -53,6 +54,7 @@ const shipment: Shipment = {
     ingestedAt: '2026-10-05T03:00:00Z',
   },
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 
 function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }
@@ -544,6 +546,23 @@ describe('vessel identity on the shipment detail', () => {
     expect(within(record).getByText('Ever Steady')).toBeInTheDocument();
   });
 
+  it('clears a detail name warning when loaded tracking returns an explicit null', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherVesselNameWarning: MOTHER_WARNING,
+      feederVesselNameWarning: FEEDER_WARNING,
+    });
+    vi.mocked(getShipmentTracking).mockResolvedValue({
+      ...tracking,
+      motherVesselNameWarning: null,
+      feederVesselNameWarning: null,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
+    expect(within(record).queryByText(FEEDER_WARNING)).not.toBeInTheDocument();
+  });
+
   it('keeps the detail warning beside the recorded position when tracking cannot be loaded', async () => {
     vi.mocked(getShipment).mockResolvedValue({
       ...shipment,
@@ -631,6 +650,11 @@ describe('shipment detail decoding', () => {
     return api.getShipment('token', '7').finally(() => vi.unstubAllGlobals());
   }
 
+  it('accepts a detail response that omits arrivalComparison', async () => {
+    const { arrivalComparison: _comparison, ...omitted } = shipment;
+    await expect(decode(omitted)).resolves.toMatchObject({ arrivalComparison: null, connectionWindow: shipment.connectionWindow });
+  });
+
   it('accepts an explicitly unassigned feeder vessel', async () => {
     await expect(decode({ ...shipment, feederVessel: null, plannedFeederDepartureAt: null }))
       .resolves.toMatchObject({ feederVessel: null, plannedFeederDepartureAt: null });
@@ -661,5 +685,96 @@ describe('shipment detail decoding', () => {
   it('rejects a response that omits the feeder vessel fields', async () => {
     const { feederVessel: _vessel, plannedFeederDepartureAt: _departure, ...omitted } = shipment;
     await expect(decode(omitted)).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+const LIMITATION = 'Approximate arrival — based on straight-line distance and current speed.';
+
+function availableComparison(classification: ArrivalClassification, difference: string, possiblyOutdated = false): ArrivalComparison {
+  return {
+    estimatedArrivalAt: '2026-10-02T01:30:00Z',
+    limitation: LIMITATION,
+    speedOverGroundKnots: 12.375,
+    classification,
+    difference,
+    differenceSeconds: classification === 'AHEAD_OF_PLAN' ? -5400 : 5400,
+    differenceNanos: 0,
+    lastReceivedAt: '2026-10-01T18:00:00Z',
+    possiblyOutdated,
+    unavailableReason: null,
+  };
+}
+
+describe('arrival comparison on the shipment detail', () => {
+  async function recordFor(comparison: ArrivalComparison | null) {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, arrivalComparison: comparison });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    return screen.findByRole('article', { name: 'Shipment HL-1001' });
+  }
+
+  it('keeps the planned arrival when the comparison is omitted', async () => {
+    const record = await recordFor(null);
+    expect(within(record).queryByText('Estimated arrival')).not.toBeInTheDocument();
+    expect(within(record).queryByText(LIMITATION)).not.toBeInTheDocument();
+    expect(within(record).queryByText('Possibly outdated')).not.toBeInTheDocument();
+    expect(within(record).getByText(formatWhen(shipment.plannedMotherArrivalAt))).toBeInTheDocument();
+    expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+    expect(within(record).getByText('Low')).toHaveClass('risk-badge', 'risk-low');
+  });
+
+  it('shows an on-schedule gap beside the planned arrival', async () => {
+    const comparison = availableComparison('ON_SCHEDULE', 'On schedule · estimated 1h 30m later than planned');
+    const record = await recordFor(comparison);
+    const planned = within(record).getByText('Planned arrival').parentElement;
+    expect(planned).toContainElement(within(record).getByText('Estimated arrival'));
+    expect(within(record).getByText(formatWhen(shipment.plannedMotherArrivalAt))).toBeInTheDocument();
+    expect(within(record).getByText(formatWhen('2026-10-02T01:30:00Z'))).toBeInTheDocument();
+    expect(within(record).getByText('On schedule · estimated 1h 30m later than planned')).toBeInTheDocument();
+    expect(within(record).getByText(LIMITATION)).toBeInTheDocument();
+    expect(within(record).getByText('12.375 knots')).toBeInTheDocument();
+    expect(within(record).getByText('Last received')).toBeInTheDocument();
+    expect(within(record).getByText(formatWhen('2026-10-01T18:00:00Z'))).toBeInTheDocument();
+    expect(within(record).queryByText('Possibly outdated')).not.toBeInTheDocument();
+    expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+    expect(within(record).getByText(/At least 24 hours to transfer cargo between vessels\./)).toBeInTheDocument();
+  });
+
+  it('shows an arrival ahead of plan', async () => {
+    const record = await recordFor(availableComparison('AHEAD_OF_PLAN', 'Ahead of plan · estimated 1h 30m earlier than planned'));
+    expect(within(record).getByText('Ahead of plan · estimated 1h 30m earlier than planned')).toBeInTheDocument();
+  });
+
+  it('shows an arrival behind plan', async () => {
+    const record = await recordFor(availableComparison('BEHIND_PLAN', 'Behind plan · estimated 6h later than planned'));
+    expect(within(record).getByText('Behind plan · estimated 6h later than planned')).toBeInTheDocument();
+  });
+
+  it('explains an unavailable comparison without an arrival time', async () => {
+    const record = await recordFor({
+      estimatedArrivalAt: null,
+      limitation: null,
+      speedOverGroundKnots: null,
+      classification: null,
+      difference: null,
+      differenceSeconds: null,
+      differenceNanos: null,
+      lastReceivedAt: null,
+      possiblyOutdated: null,
+      unavailableReason: { code: 'NO_POSITION', message: 'No AIS position has been received for the mother vessel.' },
+    });
+    expect(within(record).getByText('No AIS position has been received for the mother vessel.')).toBeInTheDocument();
+    expect(within(record).queryByText(LIMITATION)).not.toBeInTheDocument();
+    expect(within(record).queryByText('12.375 knots')).not.toBeInTheDocument();
+    expect(within(record).queryByText(formatWhen('2026-10-02T01:30:00Z'))).not.toBeInTheDocument();
+    expect(within(record).getByText(formatWhen(shipment.plannedMotherArrivalAt))).toBeInTheDocument();
+    expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
+    expect(within(record).getByText('Low')).toBeInTheDocument();
+  });
+
+  it('says when the retained position may be outdated', async () => {
+    const record = await recordFor(availableComparison('ON_SCHEDULE', 'On schedule · estimated at the planned time', true));
+    expect(within(record).getByText('Possibly outdated')).toBeInTheDocument();
+    expect(within(record).getByText('On schedule · estimated at the planned time')).toBeInTheDocument();
+    expect(within(record).getByText(formatWhen('2026-10-02T01:30:00Z'))).toBeInTheDocument();
   });
 });

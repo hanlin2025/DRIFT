@@ -40,6 +40,32 @@ export type OrganisationPage = {
   total: number;
 };
 
+export type ArrivalClassification = 'AHEAD_OF_PLAN' | 'ON_SCHEDULE' | 'BEHIND_PLAN';
+
+export type ArrivalComparison = {
+  estimatedArrivalAt: string;
+  limitation: string;
+  speedOverGroundKnots: number;
+  classification: ArrivalClassification;
+  difference: string;
+  differenceSeconds: number;
+  differenceNanos: number;
+  lastReceivedAt: string;
+  possiblyOutdated: boolean;
+  unavailableReason: null;
+} | {
+  estimatedArrivalAt: null;
+  limitation: null;
+  speedOverGroundKnots: null;
+  classification: null;
+  difference: null;
+  differenceSeconds: null;
+  differenceNanos: null;
+  lastReceivedAt: null;
+  possiblyOutdated: null;
+  unavailableReason: { code: string; message: string };
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -67,6 +93,7 @@ export type Shipment = {
   feederVesselOperator?: string | null;
   motherVesselNameWarning?: string | null;
   feederVesselNameWarning?: string | null;
+  arrivalComparison: ArrivalComparison | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -325,6 +352,8 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselNameWarning = optionalIdentity(value, 'feederVesselNameWarning');
   if ([motherVesselImo, motherVesselMmsi, motherVesselOperator, feederVesselImo, feederVesselMmsi,
     feederVesselOperator, motherVesselNameWarning, feederVesselNameWarning].some(item => item === undefined)) return null;
+  const arrivalComparison = arrivalComparisonOf(value);
+  if (arrivalComparison === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -352,7 +381,79 @@ function asShipment(value: unknown): Shipment | null {
     feederVesselOperator,
     motherVesselNameWarning,
     feederVesselNameWarning,
+    arrivalComparison,
   };
+}
+
+const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
+const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+function arrivalComparisonOf(value: Record<string, unknown>): ArrivalComparison | null | undefined {
+  if (!('arrivalComparison' in value) || value.arrivalComparison == null) return null;
+  return parseArrivalComparison(value.arrivalComparison);
+}
+
+function parseArrivalComparison(value: unknown): ArrivalComparison | undefined {
+  if (!isRecord(value) || !ARRIVAL_FIELDS.every(field => field in value) || !('unavailableReason' in value)) return undefined;
+  if (value.unavailableReason == null) return availableComparison(value);
+  const reason = value.unavailableReason;
+  if (!ARRIVAL_FIELDS.every(field => value[field] === null) || !isUnavailableReason(reason)) return undefined;
+  return {
+    estimatedArrivalAt: null,
+    limitation: null,
+    speedOverGroundKnots: null,
+    classification: null,
+    difference: null,
+    differenceSeconds: null,
+    differenceNanos: null,
+    lastReceivedAt: null,
+    possiblyOutdated: null,
+    unavailableReason: { code: reason.code, message: reason.message },
+  };
+}
+
+function availableComparison(value: Record<string, unknown>): ArrivalComparison | undefined {
+  if (value.unavailableReason !== null || !isPresentText(value.estimatedArrivalAt) || !isPresentText(value.limitation)
+    || !isFiniteNumber(value.speedOverGroundKnots) || !isArrivalClassification(value.classification)
+    || !isPresentText(value.difference) || !isSignedSeconds(value.differenceSeconds) || !isNanos(value.differenceNanos)
+    || !signsAgree(value.differenceSeconds, value.differenceNanos) || !isPresentText(value.lastReceivedAt)
+    || typeof value.possiblyOutdated !== 'boolean') return undefined;
+  return {
+    estimatedArrivalAt: value.estimatedArrivalAt,
+    limitation: value.limitation,
+    speedOverGroundKnots: value.speedOverGroundKnots,
+    classification: value.classification,
+    difference: value.difference,
+    differenceSeconds: value.differenceSeconds,
+    differenceNanos: value.differenceNanos,
+    lastReceivedAt: value.lastReceivedAt,
+    possiblyOutdated: value.possiblyOutdated,
+    unavailableReason: null,
+  };
+}
+
+function isUnavailableReason(value: unknown): value is { code: string; message: string } {
+  return isRecord(value) && isPresentText(value.code) && isPresentText(value.message);
+}
+
+function isArrivalClassification(value: unknown): value is ArrivalClassification {
+  return ARRIVAL_CLASSIFICATIONS.some(classification => classification === value);
+}
+
+function isPresentText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isSignedSeconds(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
+
+function isNanos(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 999_999_999;
+}
+
+function signsAgree(seconds: number, nanos: number) {
+  return seconds === 0 || nanos === 0 || Math.sign(seconds) === Math.sign(nanos);
 }
 
 function shipmentStatusOf(value: unknown): ShipmentStatus | null {

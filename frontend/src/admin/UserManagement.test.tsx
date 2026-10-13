@@ -170,6 +170,7 @@ describe('user management', () => {
       status: null,
       motherVesselPosition: null,
       feederVesselPosition: null,
+      arrivalComparison: null,
     });
     vi.mocked(getShipmentTracking).mockResolvedValue({ motherVesselName: 'Ever Steady', motherVessel: null, motherVesselNameWarning: null, feederVesselName: 'Straits Feeder', feederVessel: null, feederVesselNameWarning: null });
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/15']}><AppRoutes /><Location /></MemoryRouter>);

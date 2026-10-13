@@ -48,6 +48,7 @@ const shipment: Shipment = {
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 
 function routeText() {
