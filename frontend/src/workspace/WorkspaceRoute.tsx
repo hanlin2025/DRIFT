@@ -6,7 +6,7 @@ import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
-import { hasShipmentFilters, shipmentFiltersFromSearchParams, type ShipmentFilters } from '../shipment/shipmentFilters';
+import { applyShipmentFilters, EMPTY_SHIPMENT_FILTERS, hasShipmentFilters, shipmentFiltersFromSearchParams, type ShipmentFilters } from '../shipment/shipmentFilters';
 import { ApiError } from '../signup/api';
 import { ShipmentFilterControls } from './ShipmentFilterControls';
 import { ShipmentList } from './ShipmentList';
@@ -27,11 +27,12 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   page?: 'portfolio' | 'import';
 }) {
   const { shipmentId, jobId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [registered, setRegistered] = useState(0);
   const importer = account.role === 'IMPORTER';
   const basePath = homePath(account.role);
   const filters = shipmentFiltersFromSearchParams(searchParams);
+  const clearFilters = () => setSearchParams(applyShipmentFilters(searchParams, EMPTY_SHIPMENT_FILTERS));
   return (
     <div className="workspace">
       <header className="workspace-bar">
@@ -63,7 +64,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
             <ShipmentFilterControls />
-            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} filters={filters} onSessionEnded={onSessionEnded} />
+            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} filters={filters} onClearFilters={clearFilters} onSessionEnded={onSessionEnded} />
             {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
           </>}
       </main>
@@ -142,21 +143,25 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
   return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, basePath, refreshKey, filters, onSessionEnded }: {
+function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters, onSessionEnded }: {
   token: string;
   basePath: string;
   refreshKey: number;
   filters: ShipmentFilters;
+  onClearFilters: () => void;
   onSessionEnded: () => void;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
   const [problem, setProblem] = useState('');
+  const [arrivalDateProblem, setArrivalDateProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
   const { reference, vessel, customer, arrivalDate } = filters;
+  const filtersActive = hasShipmentFilters(filters);
 
   useEffect(() => {
     let active = true;
     setProblem('');
+    setArrivalDateProblem('');
     setShipments(null);
     const appliedFilters = { reference, vessel, customer, arrivalDate };
     const request = hasShipmentFilters(appliedFilters)
@@ -170,17 +175,22 @@ function CompanyShipments({ token, basePath, refreshKey, filters, onSessionEnded
         onSessionEnded();
         return;
       }
+      if (reason instanceof ApiError && reason.status === 400 && reason.fields.arrivalDate) {
+        setArrivalDateProblem(reason.fields.arrivalDate);
+      }
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
   }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate]);
 
   if (problem) {
-    return <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>;
+    return <div className="error-notice" role="alert">{arrivalDateProblem || problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>{arrivalDateProblem && <><br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></>}</div>;
   }
   if (shipments === null) return <div className="notice">Loading shipments...</div>;
   if (shipments.length === 0) {
-    return <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
+    return filtersActive
+      ? <div className="notice">No shipments match your current filters.<br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></div>
+      : <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
   return <ShipmentList shipments={shipments} basePath={basePath} />;
 }
