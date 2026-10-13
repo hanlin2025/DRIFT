@@ -30,7 +30,9 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Latest retained AIS position whose vessel name matches the feeder vessel. Null when the livestream has not retained one.")
 		VesselPosition feederVesselPosition,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
-		OrganisationResponse importer) {
+		OrganisationResponse importer,
+		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
+		ShipmentStatus status) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
 			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition) {
@@ -40,7 +42,7 @@ public record ShipmentDetailResponse(
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
 				shipment.getVersion(), calculation.window(), ShipmentRisk.of(calculation),
 				motherVesselPosition, feederVesselPosition,
-				organisation(shipment.getImporterCompany()));
+				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
 
 	private static OrganisationResponse organisation(Company company) {
