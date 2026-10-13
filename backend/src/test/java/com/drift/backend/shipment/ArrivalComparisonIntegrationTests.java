@@ -230,7 +230,8 @@ class ArrivalComparisonIntegrationTests {
 	private void assertRetainedRecord(JsonNode body, String motherWarning) {
 		assertThat(body.get("companyId").asLong()).isEqualTo(forwarderCompanyId);
 		assertThat(body.get("status").asText()).isEqualTo("ACTIVE");
-		assertThat(body.get("plannedMotherArrivalAt").asText()).isEqualTo(plannedArrival.toString());
+		assertThat(OffsetDateTime.parse(body.get("plannedMotherArrivalAt").asText()).toInstant())
+				.isEqualTo(plannedArrival.toInstant());
 		for (String field : new String[] {"motherVesselImo", "motherVesselMmsi", "motherVesselOperator",
 				"feederVesselImo", "feederVesselMmsi", "feederVesselOperator"}) {
 			assertThat(body.has(field)).isTrue();
