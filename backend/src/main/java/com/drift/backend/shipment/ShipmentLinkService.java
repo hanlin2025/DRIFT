@@ -1,7 +1,9 @@
 package com.drift.backend.shipment;
 
+import java.time.Clock;
 import java.time.Instant;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,15 +31,20 @@ public class ShipmentLinkService {
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
 	private final EntityManager entityManager;
+	private final ArrivalEstimateCalculator arrivalEstimates;
+	private final Clock clock;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, EntityManager entityManager) {
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, EntityManager entityManager,
+			ArrivalEstimateCalculator arrivalEstimates, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 		this.entityManager = entityManager;
+		this.arrivalEstimates = arrivalEstimates;
+		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
 	@Transactional
@@ -88,8 +95,11 @@ public class ShipmentLinkService {
 	private ShipmentDetailResponse detail(Shipment shipment) {
 		ConnectionWindowCalculation calculation = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
 				shipment.getPlannedFeederDepartureAt());
-		return ShipmentDetailResponse.from(shipment, calculation,
-				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
+		VesselPosition motherVesselPosition = livePosition(shipment.getMotherVessel());
+		return ShipmentDetailResponse.from(shipment, calculation, motherVesselPosition,
+				livePosition(shipment.getFeederVessel()),
+				arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition), shipment.getTransshipmentPort(),
+						shipment.getPlannedMotherArrivalAt(), clock));
 	}
 
 	private VesselPosition livePosition(String vesselName) {

@@ -47,13 +47,15 @@ public record ShipmentDetailResponse(
 		VesselPosition feederVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored feeder vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
 		String feederVesselNameWarning,
+		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null.")
+		ArrivalEstimate arrivalComparison,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
 		ShipmentStatus status) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
-			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition) {
+			VesselPosition motherVesselPosition, VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -62,6 +64,7 @@ public record ShipmentDetailResponse(
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), ShipmentRisk.of(calculation),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
+				arrivalComparison,
 				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

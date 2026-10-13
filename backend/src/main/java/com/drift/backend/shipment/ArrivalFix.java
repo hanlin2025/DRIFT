@@ -12,4 +12,12 @@ public record ArrivalFix(
 		BigDecimal longitude,
 		BigDecimal speedOverGroundKnots,
 		Instant ingestedAt) {
+
+	static ArrivalFix from(VesselPosition position) {
+		if (position == null) {
+			return null;
+		}
+		return new ArrivalFix(position.latitude(), position.longitude(), position.speedOverGroundKnots(),
+				position.ingestedAt());
+	}
 }
