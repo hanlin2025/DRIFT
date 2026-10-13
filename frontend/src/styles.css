@@ -155,7 +155,22 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
+.shipment-filters { margin-top: 28px; padding: 22px 0 4px; border-top: 1px solid var(--line); }
+.shipment-filters fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.shipment-filters legend { font-family: 'Fraunces Variable', Georgia, serif; font-size: 22px; letter-spacing: -.4px; margin-bottom: 18px; }
+.shipment-filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.shipment-filter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.shipment-filter-actions .primary-button { width: auto; margin: 0; min-width: 150px; }
+.shipment-filter-actions .secondary-button { min-height: 47px; }
 .shipment-import { max-width: 640px; }
+.profile-page { max-width: 640px; }
+.profile-page fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
+.profile-page legend { font-family: 'Fraunces Variable', Georgia, serif; font-size: 22px; letter-spacing: -.4px; margin: 12px 0 16px; }
+.profile-page select { width: 100%; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 12px 13px; color: var(--ink); font: inherit; font-size: 12px; min-height: 44px; }
+.profile-page select:focus { outline: none; border-color: #54775f; box-shadow: 0 0 0 3px #54775f15; }
+.profile-check { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; margin: 6px 0 18px; font-size: 12px; line-height: 1.5; font-weight: 650; }
+.profile-check input { width: 18px; min-height: 18px; margin-top: 2px; }
+.profile-page .primary-button { width: auto; min-width: 180px; }
 .shipment-import .back-link { margin-bottom: 28px; }
 .template-link { color: #214e40; font-size: 12px; font-weight: 750; text-underline-offset: 3px; }
 .shipment-import-form { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 24px; }
@@ -244,7 +259,9 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .session-facts div, .shipment-record dl div { display: block; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .pair-grid { grid-template-columns: 1fr; }
+  .shipment-filter-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }
+  .profile-page .primary-button { width: 100%; }
   .route-chart-stage, .skeleton-map { height: 340px; }
   .shipment-record .skeleton-value { margin-left: 0; margin-top: 6px; }
   .shipment-detail .back-link { min-height: 44px; margin-bottom: 16px; }

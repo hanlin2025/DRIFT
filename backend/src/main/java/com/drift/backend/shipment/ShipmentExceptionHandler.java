@@ -1,5 +1,6 @@
 package com.drift.backend.shipment;
 
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -95,20 +96,28 @@ public class ShipmentExceptionHandler {
 
 	@ExceptionHandler(ShipmentNotFoundException.class)
 	public ResponseEntity<Map<String, String>> handleNotFound() {
+		return notFound();
+	}
+
+	private ResponseEntity<Map<String, String>> notFound() {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
-	public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException exception,
+	public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException exception,
 			HttpServletRequest request) {
+		if (LocalDate.class.equals(exception.getRequiredType())) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(body("Shipment information is missing or invalid",
+							Map.of(exception.getName(), "Arrival date must use ISO format YYYY-MM-DD")));
+		}
 		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
 				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {
 			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 					.body(Map.of("message", InvalidShipmentIdException.MESSAGE));
 		}
-		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
-				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
+		return notFound();
 	}
 
 	@ExceptionHandler(SessionEndedException.class)

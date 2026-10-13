@@ -20,7 +20,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 final class ShipmentDisposableDatabaseGuard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
 	static final Pattern URL = Pattern.compile(
-			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg81(?:archive|visibility)_[0-9]{14}_[a-f0-9]{12})$");
+			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg81(?:archive|visibility|filterapi|filterservice|identity)_[0-9]{14}_[a-f0-9]{12})$");
 
 	@Override
 	public void initialize(ConfigurableApplicationContext applicationContext) {
