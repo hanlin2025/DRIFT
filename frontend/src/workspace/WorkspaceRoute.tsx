@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
 import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
+import { hasShipmentFilters, shipmentFiltersFromSearchParams, type ShipmentFilters } from '../shipment/shipmentFilters';
 import { ApiError } from '../signup/api';
 import { ShipmentFilterControls } from './ShipmentFilterControls';
 import { ShipmentList } from './ShipmentList';
@@ -26,9 +27,11 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   page?: 'portfolio' | 'import';
 }) {
   const { shipmentId, jobId } = useParams();
+  const [searchParams] = useSearchParams();
   const [registered, setRegistered] = useState(0);
   const importer = account.role === 'IMPORTER';
   const basePath = homePath(account.role);
+  const filters = shipmentFiltersFromSearchParams(searchParams);
   return (
     <div className="workspace">
       <header className="workspace-bar">
@@ -60,7 +63,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
             <ShipmentFilterControls />
-            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} onSessionEnded={onSessionEnded} />
+            <CompanyShipments token={account.token} basePath={basePath} refreshKey={registered} filters={filters} onSessionEnded={onSessionEnded} />
             {importer ? null : <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} />}
           </>}
       </main>
@@ -139,21 +142,27 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
   return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
+function CompanyShipments({ token, basePath, refreshKey, filters, onSessionEnded }: {
   token: string;
   basePath: string;
   refreshKey: number;
+  filters: ShipmentFilters;
   onSessionEnded: () => void;
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
   const [problem, setProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const { reference, vessel, customer, arrivalDate } = filters;
 
   useEffect(() => {
     let active = true;
     setProblem('');
     setShipments(null);
-    listShipments(token).then(found => {
+    const appliedFilters = { reference, vessel, customer, arrivalDate };
+    const request = hasShipmentFilters(appliedFilters)
+      ? listShipments(token, appliedFilters)
+      : listShipments(token);
+    request.then(found => {
       if (active) setShipments(found);
     }).catch((reason: unknown) => {
       if (!active) return;
@@ -164,7 +173,7 @@ function CompanyShipments({ token, basePath, refreshKey, onSessionEnded }: {
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [token, refreshKey, attempt, onSessionEnded]);
+  }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate]);
 
   if (problem) {
     return <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>;
