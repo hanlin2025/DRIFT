@@ -65,6 +65,24 @@ public class Shipment {
 	@Column(name = "planned_feeder_departure_at", nullable = false)
 	private OffsetDateTime plannedFeederDepartureAt;
 
+	@Column(name = "mother_vessel_imo", length = 7)
+	private String motherVesselImo;
+
+	@Column(name = "mother_vessel_mmsi", length = 9)
+	private String motherVesselMmsi;
+
+	@Column(name = "mother_vessel_operator", length = 200)
+	private String motherVesselOperator;
+
+	@Column(name = "feeder_vessel_imo", length = 7)
+	private String feederVesselImo;
+
+	@Column(name = "feeder_vessel_mmsi", length = 9)
+	private String feederVesselMmsi;
+
+	@Column(name = "feeder_vessel_operator", length = 200)
+	private String feederVesselOperator;
+
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
@@ -114,6 +132,36 @@ public class Shipment {
 		markUpdated(updatedBy, updatedAt);
 	}
 
+	void applySpecifiedIdentity(ShipmentDetails details, VesselIdentityPresence presence) {
+		if (presence.motherVesselImo()) {
+			this.motherVesselImo = details.motherVesselImo();
+		}
+		if (presence.motherVesselMmsi()) {
+			this.motherVesselMmsi = details.motherVesselMmsi();
+		}
+		if (presence.motherVesselOperator()) {
+			this.motherVesselOperator = details.motherVesselOperator();
+		}
+		if (presence.feederVesselImo()) {
+			this.feederVesselImo = details.feederVesselImo();
+		}
+		if (presence.feederVesselMmsi()) {
+			this.feederVesselMmsi = details.feederVesselMmsi();
+		}
+		if (presence.feederVesselOperator()) {
+			this.feederVesselOperator = details.feederVesselOperator();
+		}
+	}
+
+	void recordVesselIdentity(ShipmentDetails details) {
+		this.motherVesselImo = details.motherVesselImo();
+		this.motherVesselMmsi = details.motherVesselMmsi();
+		this.motherVesselOperator = details.motherVesselOperator();
+		this.feederVesselImo = details.feederVesselImo();
+		this.feederVesselMmsi = details.feederVesselMmsi();
+		this.feederVesselOperator = details.feederVesselOperator();
+	}
+
 	public Long getId() { return id; }
 	public String getShipmentReference() { return shipmentReference; }
 	public String getOrigin() { return origin; }
@@ -123,6 +171,12 @@ public class Shipment {
 	public OffsetDateTime getPlannedMotherArrivalAt() { return plannedMotherArrivalAt; }
 	public String getFeederVessel() { return feederVessel; }
 	public OffsetDateTime getPlannedFeederDepartureAt() { return plannedFeederDepartureAt; }
+	public String getMotherVesselImo() { return motherVesselImo; }
+	public String getMotherVesselMmsi() { return motherVesselMmsi; }
+	public String getMotherVesselOperator() { return motherVesselOperator; }
+	public String getFeederVesselImo() { return feederVesselImo; }
+	public String getFeederVesselMmsi() { return feederVesselMmsi; }
+	public String getFeederVesselOperator() { return feederVesselOperator; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public UserAccount getUpdatedBy() { return updatedBy; }
