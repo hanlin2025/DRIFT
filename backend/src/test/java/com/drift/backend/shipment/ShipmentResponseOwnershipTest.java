@@ -67,7 +67,8 @@ class ShipmentResponseOwnershipTest {
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
 		return ShipmentDetailResponse.from(shipment, new ConnectionWindowService().calculate(
-				shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()), null, null);
+				shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()), null, null,
+				ArrivalEstimate.unavailable("NO_POSITION", "No AIS position has been received for the mother vessel."));
 	}
 
 	private static Shipment shipment(Company owner) {
