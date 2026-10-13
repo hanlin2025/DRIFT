@@ -57,6 +57,7 @@ beforeEach(() => {
     ...shipment,
     connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
     risk: null,
+    status: null,
     motherVesselPosition: null,
     feederVesselPosition: null,
   }));
@@ -95,6 +96,7 @@ const listed: Shipment = {
   version: 0,
   connectionWindow: null,
   risk: null,
+  status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
@@ -222,7 +224,8 @@ describe('importer linking', () => {
     writeSession(manager);
     vi.mocked(loadSession).mockImplementation(async token => ({ ...manager, token }));
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Link importer')).not.toBeInTheDocument();
     cleanup();
 
@@ -278,6 +281,7 @@ describe('importer linking', () => {
       version: 1,
       connectionWindow: null,
       risk: null,
+      status: null,
       motherVesselPosition: null,
       feederVesselPosition: null,
       importer: importerCompanyId == null ? null : straits,
@@ -312,6 +316,7 @@ describe('importer linking', () => {
         version: 1,
         connectionWindow: null,
         risk: null,
+        status: null,
         motherVesselPosition: null,
         feederVesselPosition: null,
         importer: straits,

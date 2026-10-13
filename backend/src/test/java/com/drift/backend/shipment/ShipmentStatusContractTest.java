@@ -122,7 +122,7 @@ class ShipmentStatusContractTest {
 		assertThat(created.getResponse().getStatus()).as(created.getResponse().getContentAsString()).isEqualTo(201);
 		String createdJson = created.getResponse().getContentAsString();
 		System.out.println("SAMPLE_LIST_ITEM " + createdJson);
-		assertShipmentFields(createdJson, "HBL-API-ACTIVE", "ACTIVE");
+		assertShipmentFields(createdJson, "HBL-API-ACTIVE", "ACTIVE", companyId);
 		Long createdId = ((Number) JsonPath.read(createdJson, "$.id")).longValue();
 		assertThat(storedStatus(createdId)).isEqualTo("ACTIVE");
 		assertThat(shipments.findById(createdId).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.ACTIVE);
@@ -140,7 +140,7 @@ class ShipmentStatusContractTest {
 				.andExpect(status().isOk())
 				.andReturn().getResponse().getContentAsString();
 		System.out.println("SAMPLE_DETAIL " + detailJson);
-		assertShipmentFields(detailJson, "HBL-CSV-ACTIVE", "ACTIVE");
+		assertShipmentFields(detailJson, "HBL-CSV-ACTIVE", "ACTIVE", companyId);
 		assertThat((Object) JsonPath.read(detailJson, "$.motherVesselPosition")).isNull();
 		assertThat((Object) JsonPath.read(detailJson, "$.feederVesselPosition")).isNull();
 		assertThat((Object) JsonPath.read(detailJson, "$.importer")).isNull();
@@ -254,7 +254,7 @@ class ShipmentStatusContractTest {
 		return jdbc.queryForObject("SELECT status FROM shipments WHERE id = ?", String.class, shipmentId);
 	}
 
-	private static void assertShipmentFields(String json, String reference, String status) {
+	private static void assertShipmentFields(String json, String reference, String status, Long companyId) {
 		assertThat(((Number) JsonPath.read(json, "$.id")).longValue()).isPositive();
 		assertThat(JsonPath.read(json, "$.shipmentReference").toString()).isEqualTo(reference);
 		assertThat(JsonPath.read(json, "$.origin").toString()).isEqualTo("Shanghai, CN");
@@ -269,7 +269,7 @@ class ShipmentStatusContractTest {
 		assertThat(JsonPath.read(json, "$.connectionWindow.duration").toString()).isEqualTo("1 day 4 hours");
 		assertThat(((Number) JsonPath.read(json, "$.connectionWindow.totalSeconds")).longValue()).isEqualTo(100800L);
 		assertThat(JsonPath.read(json, "$.status").toString()).isEqualTo(status);
-		assertThatThrownBy(() -> JsonPath.read(json, "$.companyId")).isInstanceOf(PathNotFoundException.class);
+		assertThat(((Number) JsonPath.read(json, "$.companyId")).longValue()).isEqualTo(companyId);
 	}
 
 	private static String shipment(String reference, String status) {

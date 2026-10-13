@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getShipment, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -104,5 +104,79 @@ describe('shipment importer API', () => {
     const error = await linkShipmentImporter('token', 9, 2).catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ message: 'Invalid or inactive importer organisation selected.', status: 400 });
+  });
+
+  it('reads the owning company id rather than the linked importer id', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      companyId: 1,
+      importer: { id: 2, code: 'STRAITS_FRESH_DEMO', name: 'Straits Fresh Imports (Demo)' },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.companyId).toBe(1);
+    expect(detail.importer?.id).toBe(2);
+  });
+
+  it.each(['ACTIVE', 'ARCHIVED'] as const)('keeps a %s shipment status', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, status })));
+    const detail = await getShipment('token', '9');
+    expect(detail.status).toBe(status);
+  });
+
+  it.each([undefined, null, '', 'REMOVED'])('clears a missing or unknown status %s', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, status })));
+    const detail = await getShipment('token', '9');
+    expect(detail.status).toBeNull();
+  });
+
+  it.each([undefined, null, 0, -1, 1.5, '1'])('hides an invalid company id %s by clearing it', async companyId => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, companyId })));
+    const detail = await getShipment('token', '9');
+    expect(detail.companyId).toBeNull();
+  });
+});
+
+describe('archiveShipment', () => {
+  it('patches the shipment status with the bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ message: 'Shipment removed successfully' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(archiveShipment('token-1', 7)).resolves.toBe('Shipment removed successfully');
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/7/status', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'ARCHIVED' }),
+      cache: 'no-store',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer token-1',
+        'Content-Type': 'application/json',
+      }),
+    }));
+  });
+
+  it('treats any non-blank message on a successful response as success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Archived and retained.' })));
+    await expect(archiveShipment('token-1', 12)).resolves.toBe('Archived and retained.');
+  });
+
+  it('rejects a successful response that does not include a message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ status: 'ARCHIVED' })));
+    await expect(archiveShipment('token-1', 7)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('does not treat a non-blank message on an error response as success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Shipment removed successfully' }, 403)));
+    await expect(archiveShipment('token-1', 7)).rejects.toMatchObject({
+      status: 403,
+      message: 'Shipment removed successfully',
+    });
+  });
+
+  it.each([
+    [400, 'Invalid Shipment ID.'],
+    [403, 'You do not have permission to archive this shipment.'],
+    [404, 'Shipment not found'],
+    [409, 'Shipment is already removed or does not exist.'],
+  ] as const)('returns the server message for status %s', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
+    await expect(archiveShipment('token-1', 7)).rejects.toMatchObject({ status, message });
   });
 });

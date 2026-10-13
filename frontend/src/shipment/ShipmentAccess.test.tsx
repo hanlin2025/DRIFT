@@ -56,6 +56,7 @@ const shipment: Shipment = {
   version: 0,
   connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
   risk: null,
+  status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };

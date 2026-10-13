@@ -27,7 +27,11 @@ export function AppRoutes() {
   return <Routes>
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+    <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
+    <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin" element={<AdminRoute />} />
+    <Route path="/logistics-manager/shipments/:shipmentId" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
+    <Route path="/logistics-manager" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
     <Route path="/profile" element={<ProfileRoute />} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />

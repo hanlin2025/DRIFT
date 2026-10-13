@@ -14,6 +14,8 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
+
 export type VesselPosition = {
   mmsi: string;
   vesselName: string | null;
@@ -50,8 +52,10 @@ export type Shipment = {
   plannedFeederDepartureAt: string | null;
   createdAt: string;
   version: number;
+  companyId?: number | null;
   connectionWindow: ConnectionWindow | null;
   risk: ShipmentRisk | null;
+  status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
   importer?: ImporterOrganisation | null;
@@ -81,6 +85,18 @@ export type ShipmentTracking = {
   feederVesselName: string | null;
   feederVessel: VesselPosition | null;
 };
+
+export async function archiveShipment(token: string, shipmentId: number): Promise<string> {
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/status`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'ARCHIVED' }),
+  });
+  if (!isRecord(data) || typeof data.message !== 'string' || data.message.trim() === '') {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+  return data.message;
+}
 
 export async function getShipmentTracking(token: string, shipmentId: string): Promise<ShipmentTracking> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/tracking`, token);
@@ -296,12 +312,23 @@ function asShipment(value: unknown): Shipment | null {
     plannedFeederDepartureAt: value.plannedFeederDepartureAt,
     createdAt: value.createdAt as string,
     version: value.version,
+    companyId: companyIdOf(value.companyId),
     connectionWindow: window ?? null,
     risk: risk ?? null,
+    status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
     importer,
   };
+}
+
+function shipmentStatusOf(value: unknown): ShipmentStatus | null {
+  return value === 'ACTIVE' || value === 'ARCHIVED' ? value : null;
+}
+
+function companyIdOf(value: unknown) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) return null;
+  return value;
 }
 
 function organisationOf(value: unknown): ImporterOrganisation | null | undefined {

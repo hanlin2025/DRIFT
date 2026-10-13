@@ -1,17 +1,17 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { getShipment, getShipmentTracking, listShipments, type Shipment } from '../shipment/api';
+import { archiveShipment, getShipment, getShipmentTracking, listShipments, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -26,7 +26,9 @@ const newer: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
+  companyId: 1,
   risk: null,
+  status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
@@ -43,7 +45,9 @@ const older: Shipment = {
   createdAt: '2026-09-28T04:00:00Z',
   version: 0,
   connectionWindow: null,
+  companyId: 1,
   risk: null,
+  status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
@@ -93,12 +97,18 @@ function NavigateToFilters() {
   </>;
 }
 
+function workspacePath(role: Session['role']) {
+  if (role === 'ADMIN') return '/admin/shipments';
+  if (role === 'LOGISTICS_MANAGER') return '/logistics-manager';
+  if (role === 'IMPORTER') return '/importer';
+  return '/freight-forwarder';
+}
+
 function openWorkspace(role: Session['role'] = 'FREIGHT_FORWARDER', path?: string) {
   const current = account(role);
   writeSession(current);
   vi.mocked(loadSession).mockImplementation(async token => ({ ...current, token }));
-  const entry = path ?? (role === 'IMPORTER' ? '/importer' : '/freight-forwarder');
-  render(<MemoryRouter initialEntries={[entry]}><AppRoutes /><NavigateToFilters /><Location /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path ?? workspacePath(role)]}><AppRoutes /><NavigateToFilters /><Location /></MemoryRouter>);
 }
 
 describe('shipment list', () => {
@@ -480,5 +490,209 @@ describe('workspace shipment retrieval', () => {
     resolveList([newer]);
     await Promise.resolve();
     expect(screen.queryByRole('cell', { name: 'HBL-NEWER' })).not.toBeInTheDocument();
+  });
+});
+
+async function openRemoval(reference: string) {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: `Remove ${reference}` }));
+  const dialog = await screen.findByRole('dialog', { name: 'Remove shipment' });
+  expect(within(dialog).getByText(`Removing ${reference} archives it and keeps its record. It leaves your company's active shipments.`)).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  return { user, dialog };
+}
+
+describe('shipment removal', () => {
+  it.each(['ADMIN', 'LOGISTICS_MANAGER'] as const)('shows removal only for shipments owned by the %s company', async role => {
+    const linked = { ...older, id: 8, shipmentReference: 'HBL-LINKED', companyId: 99 };
+    vi.mocked(listShipments).mockResolvedValue([newer, linked]);
+    openWorkspace(role);
+    expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.getByText('You are signed in to the shipments registered for your company.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Remove HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', role === 'ADMIN' ? '/admin/shipments/2' : '/logistics-manager/shipments/2');
+    expect(screen.getByRole('link', { name: 'HBL-LINKED' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-LINKED' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Import shipments' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each(['ADMIN', 'LOGISTICS_MANAGER'] as const)('hides removal on a directly opened importer-linked shipment for a %s', async role => {
+    vi.mocked(getShipment).mockResolvedValue({ ...newer, companyId: 99 });
+    openWorkspace(role, role === 'ADMIN' ? '/admin/shipments/2' : '/logistics-manager/shipments/2');
+    expect(await screen.findByRole('heading', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-NEWER' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [undefined],
+    [null],
+    [0],
+    [1.5],
+  ] as const)('hides removal when companyId is %s', async companyId => {
+    vi.mocked(listShipments).mockResolvedValue([{ ...newer, companyId }]);
+    openWorkspace('ADMIN');
+    expect(await screen.findByRole('link', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-NEWER' })).not.toBeInTheDocument();
+  });
+
+  it.each(['FREIGHT_FORWARDER', 'IMPORTER'] as const)('hides removal from a %s', async role => {
+    openWorkspace(role);
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+  });
+
+  it('leaves the shipment unchanged when removal is cancelled', async () => {
+    openWorkspace('ADMIN');
+    const opener = await screen.findByRole('button', { name: 'Remove HBL-NEWER' });
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the confirmation with Escape before a request starts', async () => {
+    openWorkspace('LOGISTICS_MANAGER');
+    const { user } = await openRemoval('HBL-OLDER');
+    await user.keyboard('{Escape}');
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove HBL-OLDER' })).toHaveFocus();
+  });
+
+  it('closes the confirmation from the backdrop before a request starts', async () => {
+    openWorkspace('ADMIN');
+    const { dialog } = await openRemoval('HBL-NEWER');
+    fireEvent.click(dialog);
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove HBL-NEWER' })).toHaveFocus();
+  });
+
+  it('refreshes the active list and shows the server message after removal', async () => {
+    let resolveList: (rows: Shipment[]) => void = () => {};
+    vi.mocked(listShipments)
+      .mockResolvedValueOnce([newer, older])
+      .mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve; }));
+    vi.mocked(archiveShipment).mockResolvedValue('Shipment removed successfully');
+    openWorkspace('ADMIN');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(archiveShipment).toHaveBeenCalledWith('session-token', 2);
+    expect(await screen.findByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Loading shipments...')).toBeInTheDocument();
+    expect(screen.getByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    resolveList([older]);
+    expect(await screen.findByRole('link', { name: 'HBL-OLDER' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'HBL-NEWER' })).not.toBeInTheDocument();
+    expect(screen.getByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('refreshes a filtered list without clearing the applied filters', async () => {
+    const filters = { reference: 'HBL', vessel: 'Pacific', customer: 'Harbour', arrivalDate: '2026-10-04' };
+    vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
+    vi.mocked(archiveShipment).mockResolvedValue('Shipment removed successfully');
+    openWorkspace('ADMIN', '/admin/shipments?reference=HBL&vessel=Pacific&customer=Harbour&arrivalDate=2026-10-04');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    expect(listShipments).toHaveBeenNthCalledWith(1, 'session-token', filters);
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', filters);
+    expect(listShipments).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments?reference=HBL&vessel=Pacific&customer=Harbour&arrivalDate=2026-10-04');
+  });
+
+  it('shows a different server message without treating one sentence as the only success', async () => {
+    vi.mocked(listShipments).mockResolvedValueOnce([newer]).mockResolvedValueOnce([]);
+    vi.mocked(archiveShipment).mockResolvedValue('Archived and retained.');
+    openWorkspace('LOGISTICS_MANAGER');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('Archived and retained.')).toHaveAttribute('role', 'status');
+    expect(screen.queryByText('Shipment removed successfully')).not.toBeInTheDocument();
+  });
+
+  it('sends one request and keeps the dialog open until it finishes', async () => {
+    let resolveArchive: (message: string) => void = () => {};
+    vi.mocked(archiveShipment).mockImplementation(() => new Promise(resolve => { resolveArchive = resolve; }));
+    vi.mocked(listShipments).mockResolvedValue([newer]);
+    openWorkspace('ADMIN');
+    const { dialog } = await openRemoval('HBL-NEWER');
+    const confirm = within(dialog).getByRole('button', { name: 'Remove' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.click(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(archiveShipment).toHaveBeenCalledTimes(1);
+    expect(dialog).toHaveAttribute('open');
+    resolveArchive('Shipment removed successfully');
+    expect(await screen.findByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [400, 'Invalid Shipment ID.'],
+    [403, 'You do not have permission to archive this shipment.'],
+    [404, 'Shipment not found'],
+    [0, 'We could not reach DRIFT. Check your connection and try again.'],
+  ] as const)('keeps the shipment and shows a %s failure', async (status, message) => {
+    vi.mocked(archiveShipment).mockRejectedValue(new ApiError(message, status));
+    openWorkspace('ADMIN');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText('Shipment removed successfully')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('refreshes a stale row after a conflict and still shows the failure', async () => {
+    vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
+    vi.mocked(archiveShipment).mockRejectedValue(new ApiError('Shipment is already removed or does not exist.', 409));
+    openWorkspace('LOGISTICS_MANAGER');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment is already removed or does not exist.');
+    expect(screen.queryByText('Shipment removed successfully')).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'HBL-OLDER' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'HBL-NEWER' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Shipment is already removed or does not exist.');
+    expect(listShipments).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes a filtered list after a conflict and keeps the failure notice', async () => {
+    const filters = { reference: 'HBL', vessel: '', customer: '', arrivalDate: '' };
+    vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
+    vi.mocked(archiveShipment).mockRejectedValue(new ApiError('Shipment is already removed or does not exist.', 409));
+    openWorkspace('LOGISTICS_MANAGER', '/logistics-manager?reference=HBL');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment is already removed or does not exist.');
+    expect(listShipments).toHaveBeenNthCalledWith(1, 'session-token', filters);
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', filters);
+    expect(listShipments).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('location')).toHaveTextContent('/logistics-manager?reference=HBL');
+    expect(screen.getByRole('alert')).toHaveTextContent('Shipment is already removed or does not exist.');
+  });
+
+  it('ends the session when removal is unauthorized by an ended session', async () => {
+    vi.mocked(archiveShipment).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    openWorkspace('ADMIN');
+    const { user, dialog } = await openRemoval('HBL-NEWER');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+    expect(screen.queryByText('Shipment removed successfully')).not.toBeInTheDocument();
   });
 });

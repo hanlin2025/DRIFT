@@ -6,11 +6,11 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments, updateShipment, type Shipment, type ShipmentTracking } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, listShipments, updateShipment, type Shipment, type ShipmentTracking } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -23,6 +23,8 @@ const importer: Session = {
 };
 
 const forwarder: Session = { ...importer, token: 'forwarder-token', id: 4, role: 'FREIGHT_FORWARDER' };
+const admin: Session = { ...forwarder, token: 'admin-token', id: 2, role: 'ADMIN' };
+const manager: Session = { ...forwarder, token: 'manager-token', id: 3, role: 'LOGISTICS_MANAGER' };
 
 const shipment: Shipment = {
   id: 7,
@@ -36,8 +38,10 @@ const shipment: Shipment = {
   plannedFeederDepartureAt: '2026-10-03T10:00:00Z',
   createdAt: '2026-09-29T04:00:00Z',
   version: 3,
+  companyId: 2,
   connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
   risk: { level: 'LOW', explanation: 'At least 24 hours to transfer cargo between vessels.' },
+  status: null,
   motherVesselPosition: {
     mmsi: '563001234',
     vesselName: 'PACIFIC HORIZON',
@@ -420,6 +424,43 @@ describe('connection window on the shipment detail', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
     await user.click(screen.getByRole('button', { name: 'Save shipment' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Shipment not found or has been removed.');
+  });
+
+  it('shows an archived shipment edit rejection without marking the reference invalid', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
+    vi.mocked(updateShipment).mockRejectedValueOnce(new ApiError('This shipment cannot be edited in its current status.', 403));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment cannot be edited in its current status.');
+    expect(screen.getByLabelText('Shipment reference')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('heading', { name: 'Edit shipment' })).toBeInTheDocument();
+  });
+
+  it.each([admin, manager])('shows Remove on an owned shipment opened directly by a $role', async account => {
+    open(account, account.role === 'ADMIN' ? '/admin/shipments/7' : '/logistics-manager/shipments/7');
+    expect(await screen.findByRole('button', { name: 'Remove HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it.each([admin, manager])('hides Remove when a $role opens an importer-linked shipment directly', async account => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, companyId: 11 });
+    open(account, account.role === 'ADMIN' ? '/admin/shipments/7' : '/logistics-manager/shipments/7');
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HL-1001' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the admin shipment list with the server message after removal', async () => {
+    vi.mocked(archiveShipment).mockResolvedValue('Shipment removed successfully');
+    open(admin, '/admin/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Remove HL-1001' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }));
+    expect(archiveShipment).toHaveBeenCalledWith('admin-token', 7);
+    expect(await screen.findByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments');
+    expect(screen.getByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
   });
 });
 

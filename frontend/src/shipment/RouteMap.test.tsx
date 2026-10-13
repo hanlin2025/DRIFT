@@ -45,6 +45,7 @@ const shipment: Shipment = {
   version: 0,
   connectionWindow: null,
   risk: null,
+  status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
 };
