@@ -192,14 +192,14 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
-          <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shipment.motherVesselNameWarning)}</dd></div>
+          <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shownWarning(tracking, tracking?.motherVesselNameWarning, shipment.motherVesselNameWarning))}</dd></div>
           <div><dt>Mother vessel IMO</dt><dd className={missing(shipment.motherVesselImo)}>{recorded(shipment.motherVesselImo, 'Not available')}</dd></div>
           <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
           <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
-          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shipment.feederVesselNameWarning)}</dd></div>
+          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
           <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
           <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
           <div><dt>Feeder vessel operator</dt><dd className={missing(shipment.feederVesselOperator)}>{recorded(shipment.feederVesselOperator, 'Not available')}</dd></div>
@@ -238,6 +238,10 @@ function recorded(value: string | null | undefined, fallback = 'Not recorded') {
 
 function missing(value: string | null | undefined) {
   return value?.trim() ? undefined : 'is-missing';
+}
+
+function shownWarning(tracking: ShipmentTracking | null, fromTracking: string | null | undefined, fromDetail: string | null | undefined) {
+  return tracking ? fromTracking ?? null : fromDetail;
 }
 
 function nameWarning(warning: string | null | undefined) {

@@ -77,8 +77,10 @@ beforeEach(() => {
     return {
       motherVesselName: found?.motherVessel ?? '',
       motherVessel: null,
+      motherVesselNameWarning: null,
       feederVesselName: found?.feederVessel ?? '',
       feederVessel: null,
+      feederVesselNameWarning: null,
     };
   });
 });

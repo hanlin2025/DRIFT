@@ -90,8 +90,10 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
 export type ShipmentTracking = {
   motherVesselName: string;
   motherVessel: VesselPosition | null;
+  motherVesselNameWarning: string | null;
   feederVesselName: string | null;
   feederVessel: VesselPosition | null;
+  feederVesselNameWarning: string | null;
 };
 
 export async function archiveShipment(token: string, shipmentId: number): Promise<string> {
@@ -284,11 +286,16 @@ function asTracking(value: unknown): ShipmentTracking | null {
   if (!isRecord(value) || typeof value.motherVesselName !== 'string' || !isNullableText(value.feederVesselName)) return null;
   if (value.motherVessel != null && !isVesselPosition(value.motherVessel)) return null;
   if (value.feederVessel != null && !isVesselPosition(value.feederVessel)) return null;
+  const motherVesselNameWarning = optionalIdentity(value, 'motherVesselNameWarning');
+  const feederVesselNameWarning = optionalIdentity(value, 'feederVesselNameWarning');
+  if (motherVesselNameWarning === undefined || feederVesselNameWarning === undefined) return null;
   return {
     motherVesselName: value.motherVesselName,
     motherVessel: value.motherVessel ?? null,
+    motherVesselNameWarning,
     feederVesselName: value.feederVesselName,
     feederVessel: value.feederVessel ?? null,
+    feederVesselNameWarning,
   };
 }
 

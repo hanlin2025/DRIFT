@@ -111,6 +111,8 @@ class OpenApiIntegrationTests {
 						.value(org.hamcrest.Matchers.contains("object", "null")))
 				.andExpect(jsonPath("$.components.schemas.ShipmentTrackingResponse.properties.feederVessel.$ref")
 						.value("#/components/schemas/VesselPosition"))
+				.andExpect(jsonPath("$.components.schemas.ShipmentTrackingResponse.properties.motherVesselNameWarning").exists())
+				.andExpect(jsonPath("$.components.schemas.ShipmentTrackingResponse.properties.feederVesselNameWarning").exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/tracking'].get.responses['404']").exists())

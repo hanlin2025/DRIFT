@@ -153,6 +153,30 @@ class VesselDetailsIntegrationTests {
 	}
 
 	@Test
+	void trackingWarningFollowsThePositionReturnedForThatRequest() throws Exception {
+		latestPositions.record(position("563123456", "mv   pacific   horizon"));
+		latestPositions.record(position("565000222", "STRAIT RUNNER"));
+		long id = create(shipment("HBL-145-TRACK-WARN", ""));
+
+		tracking(forwarderToken, id)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherVessel.vesselName").value("mv   pacific   horizon"))
+				.andExpect(jsonPath("$.motherVesselNameWarning").value(org.hamcrest.Matchers.nullValue()))
+				.andExpect(jsonPath("$.feederVessel.vesselName").value("STRAIT RUNNER"))
+				.andExpect(jsonPath("$.feederVesselNameWarning").value(VesselNames.FEEDER_MISMATCH));
+
+		latestPositions.record(positionAt("563123456", "PACIFIC HORIZON", "2026-10-05T04:00:00Z"));
+		latestPositions.record(positionAt("565000222", "mv   strait   runner", "2026-10-05T04:00:00Z"));
+
+		tracking(forwarderToken, id)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.motherVessel.vesselName").value("PACIFIC HORIZON"))
+				.andExpect(jsonPath("$.motherVesselNameWarning").value(VesselNames.MOTHER_MISMATCH))
+				.andExpect(jsonPath("$.feederVessel.vesselName").value("mv   strait   runner"))
+				.andExpect(jsonPath("$.feederVesselNameWarning").value(org.hamcrest.Matchers.nullValue()));
+	}
+
+	@Test
 	void staysQuietWhenTheAisNameMatchesOrThereIsNoNamedPosition() throws Exception {
 		latestPositions.record(position("563123456", "mv   pacific   horizon"));
 		long matched = create(shipment("HBL-145-MATCH", ""));
@@ -174,6 +198,10 @@ class VesselDetailsIntegrationTests {
 
 	private org.springframework.test.web.servlet.ResultActions detail(String token, long id) throws Exception {
 		return mvc.perform(get("/api/shipments/" + id).header("Authorization", "Bearer " + token));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions tracking(String token, long id) throws Exception {
+		return mvc.perform(get("/api/shipments/" + id + "/tracking").header("Authorization", "Bearer " + token));
 	}
 
 	private long create(String body) throws Exception {
@@ -224,8 +252,12 @@ class VesselDetailsIntegrationTests {
 	}
 
 	private static AisPosition position(String mmsi, String name) {
+		return positionAt(mmsi, name, "2026-10-05T03:00:00Z");
+	}
+
+	private static AisPosition positionAt(String mmsi, String name, String ingestedAt) {
 		return new AisPosition(mmsi, name, new BigDecimal("1.264"), new BigDecimal("103.82"),
 				new BigDecimal("12.4"), new BigDecimal("175.0"), 176, 0, true, 42,
-				Instant.parse("2026-10-05T03:00:00Z"), AisPositionSource.AIS_STREAM);
+				Instant.parse(ingestedAt), AisPositionSource.AIS_STREAM);
 	}
 }

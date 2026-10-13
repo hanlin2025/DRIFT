@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -135,6 +135,41 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, companyId })));
     const detail = await getShipment('token', '9');
     expect(detail.companyId).toBeNull();
+  });
+});
+
+describe('shipment tracking', () => {
+  it('reads an explicit null warning as a clear and rejects a non-text warning', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      motherVesselName: 'MV Pacific Horizon',
+      motherVessel: null,
+      motherVesselNameWarning: null,
+      feederVesselName: 'MV Strait Runner',
+      feederVessel: {
+        mmsi: '565000222',
+        vesselName: 'STRAIT RUNNER',
+        latitude: 1.25,
+        longitude: 103.7,
+        speedOverGroundKnots: 8.1,
+        courseOverGroundDegrees: 10,
+        trueHeadingDegrees: 11,
+        ingestedAt: '2026-10-05T03:00:00Z',
+      },
+      feederVesselNameWarning: 'The AIS vessel name does not match the stored feeder vessel.',
+    })));
+    await expect(getShipmentTracking('token', '9')).resolves.toMatchObject({
+      motherVesselNameWarning: null,
+      feederVesselNameWarning: 'The AIS vessel name does not match the stored feeder vessel.',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      motherVesselName: 'MV Pacific Horizon',
+      motherVessel: null,
+      motherVesselNameWarning: 1,
+      feederVesselName: null,
+      feederVessel: null,
+      feederVesselNameWarning: null,
+    })));
+    await expect(getShipmentTracking('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 });
 

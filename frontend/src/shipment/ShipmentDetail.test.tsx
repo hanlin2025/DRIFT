@@ -63,11 +63,39 @@ function open(account: Session, path: string) {
   return render(<MemoryRouter initialEntries={[path]}><AppRoutes /><Location /></MemoryRouter>);
 }
 
+const MOTHER_WARNING = 'The AIS vessel name does not match the stored mother vessel.';
+const FEEDER_WARNING = 'The AIS vessel name does not match the stored feeder vessel.';
+
+function namedFix(vesselName: string, latitude: number) {
+  return { ...shipment.motherVesselPosition!, vesselName, latitude };
+}
+
+function positionText(record: HTMLElement, text: string) {
+  return within(record).getByText((_, node) => node?.tagName === 'DD' && node.textContent === text);
+}
+
+async function findPosition(record: HTMLElement, text: string) {
+  return within(record).findByText((_, node) => node?.tagName === 'DD' && node.textContent === text);
+}
+
+function tracked(motherName: string, motherWarning: string | null, feederName: string, feederWarning: string | null, motherLatitude: number, feederLatitude: number): ShipmentTracking {
+  return {
+    motherVesselName: shipment.motherVessel,
+    motherVessel: namedFix(motherName, motherLatitude),
+    motherVesselNameWarning: motherWarning,
+    feederVesselName: shipment.feederVessel,
+    feederVessel: namedFix(feederName, feederLatitude),
+    feederVesselNameWarning: feederWarning,
+  };
+}
+
 const tracking: ShipmentTracking = {
   motherVesselName: shipment.motherVessel,
   motherVessel: shipment.motherVesselPosition,
+  motherVesselNameWarning: null,
   feederVesselName: shipment.feederVessel,
   feederVessel: shipment.feederVesselPosition,
+  feederVesselNameWarning: null,
 };
 
 beforeEach(() => {
@@ -117,8 +145,10 @@ describe('connection window on the shipment detail', () => {
     vi.mocked(getShipmentTracking).mockResolvedValue({
       motherVesselName: shipment.motherVessel,
       motherVessel: null,
+      motherVesselNameWarning: null,
       feederVesselName: shipment.feederVessel,
       feederVessel: null,
+      feederVesselNameWarning: null,
     });
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
@@ -291,8 +321,10 @@ describe('connection window on the shipment detail', () => {
     vi.mocked(getShipmentTracking).mockResolvedValue({
       motherVesselName: shipment.motherVessel,
       motherVessel: null,
+      motherVesselNameWarning: null,
       feederVesselName: shipment.feederVessel,
       feederVessel: null,
+      feederVesselNameWarning: null,
     });
     open(forwarder, '/freight-forwarder/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
@@ -304,8 +336,10 @@ describe('connection window on the shipment detail', () => {
     const refreshedTracking: ShipmentTracking = {
       motherVesselName: updated.motherVessel,
       motherVessel: { ...shipment.motherVesselPosition!, vesselName: 'NEW MOTHER POSITION', latitude: 1.31 },
+      motherVesselNameWarning: null,
       feederVesselName: updated.feederVessel,
       feederVessel: null,
+      feederVesselNameWarning: null,
     };
     vi.mocked(updateShipment).mockResolvedValue(updated);
     vi.mocked(getShipment).mockReset();
@@ -492,6 +526,11 @@ describe('vessel identity on the shipment detail', () => {
       motherVesselNameWarning: 'The AIS vessel name does not match the stored mother vessel.',
       feederVesselNameWarning: null,
     });
+    vi.mocked(getShipmentTracking).mockResolvedValue({
+      ...tracking,
+      motherVesselNameWarning: 'The AIS vessel name does not match the stored mother vessel.',
+      feederVesselNameWarning: null,
+    });
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getByText('9387421')).toBeInTheDocument();
@@ -503,6 +542,82 @@ describe('vessel identity on the shipment detail', () => {
     expect(within(record).getByText('The AIS vessel name does not match the stored mother vessel.')).toHaveClass('vessel-name-warning');
     expect(within(record).queryByText('The AIS vessel name does not match the stored feeder vessel.')).not.toBeInTheDocument();
     expect(within(record).getByText('Ever Steady')).toBeInTheDocument();
+  });
+
+  it('keeps the detail warning beside the recorded position when tracking cannot be loaded', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherVesselNameWarning: MOTHER_WARNING,
+      feederVesselNameWarning: FEEDER_WARNING,
+      feederVesselPosition: namedFix('STRAIT RUNNER', 2),
+    });
+    vi.mocked(getShipmentTracking).mockRejectedValue(new ApiError('Shipment not found', 404));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText('STRAIT RUNNER · 2, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText(MOTHER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
+  });
+
+  it('moves both vessel warnings with the position returned by refresh', async () => {
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracked('mv   pacific   horizon', null, 'STRAIT RUNNER', FEEDER_WARNING, 1.1, 2.2))
+      .mockResolvedValueOnce(tracked('PACIFIC HORIZON', MOTHER_WARNING, 'mv   strait   runner', null, 1.4, 2.4))
+      .mockResolvedValueOnce(tracked('mv   pacific   horizon', null, 'STRAIT RUNNER', FEEDER_WARNING, 1.1, 2.2));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(positionText(record, 'mv   pacific   horizon · 1.1, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
+    expect(positionText(record, 'STRAIT RUNNER · 2.2, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await findPosition(record, 'PACIFIC HORIZON · 1.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText(MOTHER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(positionText(record, 'mv   strait   runner · 2.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).queryByText(FEEDER_WARNING)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await findPosition(record, 'mv   pacific   horizon · 1.1, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
+    expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipmentTracking).toHaveBeenCalledTimes(3);
+  });
+
+  it('applies the same warning transition when tracking is polled', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracked('mv   pacific   horizon', null, 'mv   strait   runner', null, 1.1, 2.2))
+      .mockResolvedValueOnce(tracked('PACIFIC HORIZON', MOTHER_WARNING, 'STRAIT RUNNER', FEEDER_WARNING, 1.4, 2.4));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
+    expect(within(record).queryByText(FEEDER_WARNING)).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+    expect(await within(record).findByText(MOTHER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(within(record).getByText('PACIFIC HORIZON · 1.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText('STRAIT RUNNER · 2.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('keeps the current warnings when a refresh fails', async () => {
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracked('PACIFIC HORIZON', MOTHER_WARNING, 'STRAIT RUNNER', FEEDER_WARNING, 1.4, 2.4))
+      .mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).getByText(MOTHER_WARNING)).toBeInTheDocument();
+    expect(within(record).getByText(FEEDER_WARNING)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('The latest position could not be loaded. The map is still showing the last position it received.')).toBeInTheDocument();
+    expect(within(record).getByText('PACIFIC HORIZON · 1.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText('STRAIT RUNNER · 2.4, 103.82 · 12.4 kn')).toBeInTheDocument();
+    expect(within(record).getByText(MOTHER_WARNING)).toHaveClass('vessel-name-warning');
+    expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
   });
 });
 

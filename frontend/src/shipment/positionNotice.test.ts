@@ -17,8 +17,10 @@ function tracking(ingestedAt: string | null): ShipmentTracking {
       trueHeadingDegrees: 176,
       ingestedAt,
     },
+    motherVesselNameWarning: null,
     feederVesselName: 'MV Strait Runner',
     feederVessel: null,
+    feederVesselNameWarning: null,
   };
 }
 

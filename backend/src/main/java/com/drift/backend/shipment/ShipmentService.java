@@ -94,8 +94,12 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public ShipmentTrackingResponse tracking(AuthenticatedUser principal, Long shipmentId) {
 		Shipment shipment = visibleShipment(principal, shipmentId);
-		return new ShipmentTrackingResponse(shipment.getMotherVessel(), livePosition(shipment.getMotherVessel()),
-				shipment.getFeederVessel(), livePosition(shipment.getFeederVessel()));
+		VesselPosition motherVessel = livePosition(shipment.getMotherVessel());
+		VesselPosition feederVessel = livePosition(shipment.getFeederVessel());
+		return new ShipmentTrackingResponse(shipment.getMotherVessel(), motherVessel,
+				VesselNames.warning(shipment.getMotherVessel(), motherVessel, VesselNames.MOTHER_MISMATCH),
+				shipment.getFeederVessel(), feederVessel,
+				VesselNames.warning(shipment.getFeederVessel(), feederVessel, VesselNames.FEEDER_MISMATCH));
 	}
 
 	@Transactional
