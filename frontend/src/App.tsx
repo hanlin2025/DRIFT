@@ -4,6 +4,7 @@ import './admin/admin.css';
 import './shipment/importer-link.css';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
+import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
@@ -31,6 +32,7 @@ export function AppRoutes() {
     <Route path="/admin" element={<AdminRoute />} />
     <Route path="/logistics-manager/shipments/:shipmentId" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
     <Route path="/logistics-manager" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
+    <Route path="/profile" element={<ProfileRoute />} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/freight-forwarder/import/:jobId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />

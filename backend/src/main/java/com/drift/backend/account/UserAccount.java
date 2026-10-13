@@ -2,16 +2,19 @@ package com.drift.backend.account;
 
 import java.time.Instant;
 
+import com.drift.backend.account.exception.InvalidProfileException;
 import com.drift.backend.company.Company;
 
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
@@ -45,6 +48,13 @@ public class UserAccount {
 	@Column(name = "session_generation", nullable = false)
 	private long sessionGeneration;
 
+	@Column(name = "risk_email_notifications_enabled", nullable = false)
+	private boolean riskEmailNotificationsEnabled;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "minimum_risk_notification_level", nullable = false, length = 16)
+	private RiskNotificationLevel minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
+
 	protected UserAccount() {
 	}
 
@@ -56,6 +66,8 @@ public class UserAccount {
 		this.company = company;
 		this.createdAt = Instant.now();
 		this.sessionGeneration = 0;
+		this.riskEmailNotificationsEnabled = false;
+		this.minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
 	}
 
 	public Long getId() {
@@ -84,6 +96,45 @@ public class UserAccount {
 
 	public long getSessionGeneration() {
 		return sessionGeneration;
+	}
+
+	public boolean isRiskEmailNotificationsEnabled() {
+		return riskEmailNotificationsEnabled;
+	}
+
+	public RiskNotificationLevel getMinimumRiskNotificationLevel() {
+		return minimumRiskNotificationLevel;
+	}
+
+	public void rename(String fullName) {
+		if (fullName == null || fullName.isBlank()) {
+			throw new InvalidProfileException(InvalidProfileException.NAME_REQUIRED);
+		}
+		String trimmed = fullName.strip();
+		if (trimmed.length() > 200) {
+			throw new InvalidProfileException(InvalidProfileException.NAME_TOO_LONG);
+		}
+		this.fullName = trimmed;
+	}
+
+	public void replacePasswordHash(String passwordHash) {
+		if (passwordHash == null || passwordHash.isBlank()) {
+			throw new IllegalArgumentException("Password hash is required");
+		}
+		this.passwordHash = passwordHash;
+		sessionGeneration++;
+	}
+
+	public void chooseRiskNotifications(boolean enabled, RiskNotificationLevel minimum) {
+		if (minimum == null) {
+			throw new InvalidProfileException(InvalidProfileException.RISK_LEVEL);
+		}
+		this.riskEmailNotificationsEnabled = enabled;
+		this.minimumRiskNotificationLevel = minimum;
+	}
+
+	public boolean notifiesFor(RiskNotificationLevel actual) {
+		return riskEmailNotificationsEnabled && minimumRiskNotificationLevel.includes(actual);
 	}
 
 	public boolean assign(AccountRole nextRole, Company nextCompany) {

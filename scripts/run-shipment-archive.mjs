@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,23 +12,78 @@ const port = '5432';
 const dbUser = 'drift';
 const dbPassword = 'drift';
 const adminDatabase = 'postgres';
-const container = 'drift-postgres';
 const ownedName = /^drift_cdg83_[0-9]{14}_[a-f0-9]{12}$/;
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const createdByThisProcess = new Set();
+let connection = null;
 let activeBackend = null;
 let activePlaywright = null;
 let signals = 0;
 
 function psql(database, statement) {
+  if (!connection) throw new Error('PostgreSQL connection has not been selected.');
   if (!/^[A-Za-z0-9_]+$/.test(database)) {
     throw new Error(`Refusing database name ${database}`);
   }
-  return execFileSync('docker', [
-    'exec', '-i', '-e', `PGPASSWORD=${dbPassword}`, container,
-    'psql', '-h', host, '-p', port, '-U', dbUser, '-d', database,
-    '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement,
-  ], { encoding: 'utf8' }).trim();
+  const common = ['-U', connection.user, '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement];
+  if (connection.mode === 'compose') {
+    return execFileSync('docker', ['compose', '-p', connection.project, 'exec', '-T', 'postgres', 'psql', ...common], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PGPASSWORD: connection.password },
+    }).trim();
+  }
+  return execFileSync('psql', ['-h', connection.host, '-p', connection.port, ...common], {
+    encoding: 'utf8',
+    env: { ...process.env, PGPASSWORD: connection.password },
+  }).trim();
+}
+
+function selectConnection() {
+  const compose = spawnSync('docker', ['compose', 'version'], { cwd: root, encoding: 'utf8' });
+  if (compose.status === 0) {
+    const published = execFileSync('docker', [
+      'ps', '--filter', 'publish=5432',
+      '--format', '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}\t{{.ID}}',
+    ], { encoding: 'utf8' }).trim();
+    const rows = published ? published.split('\n') : [];
+    if (rows.length !== 1) {
+      throw new Error(`docker compose is available, but ${rows.length} containers publish port 5432. Refusing to create a database or choose a different instance.`);
+    }
+    const [project, service] = rows[0].split('\t');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(project) || service !== 'postgres') {
+      throw new Error('Port 5432 is not served by the Compose postgres service. Refusing to use another connection.');
+    }
+    connection = { mode: 'compose', project, host, port, user: dbUser, password: dbPassword, systemIdentifier: '' };
+    const identity = psql(adminDatabase, 'SELECT system_identifier::text FROM pg_control_system()');
+    const serverPort = psql(adminDatabase, 'SHOW port');
+    if (!/^[0-9]+$/.test(identity) || serverPort !== port) {
+      throw new Error('The selected Compose Postgres did not identify itself on port 5432. No database was created.');
+    }
+    connection.systemIdentifier = identity;
+    console.log(`PostgreSQL connection: mode=compose project=${project} service=postgres system_identifier=${identity} host=${host} port=${port}`);
+    return;
+  }
+  connection = { mode: 'local', project: '', host, port, user: dbUser, password: dbPassword, systemIdentifier: '' };
+  let identity = '';
+  try {
+    identity = psql(adminDatabase, 'SELECT system_identifier::text FROM pg_control_system()');
+  } catch (error) {
+    throw new Error(`docker compose is unavailable and local psql could not reach ${host}:${port}. No database was created. ${error instanceof Error ? error.message : error}`);
+  }
+  const serverPort = psql(adminDatabase, 'SHOW port');
+  if (!/^[0-9]+$/.test(identity) || serverPort !== port) {
+    throw new Error('The selected local Postgres did not identify itself on port 5432. No database was created.');
+  }
+  connection.systemIdentifier = identity;
+  console.log(`PostgreSQL connection: mode=local system_identifier=${identity} host=${host} port=${port}`);
+}
+
+function assertSameInstance(database) {
+  const found = psql(database, 'SELECT system_identifier::text FROM pg_control_system()');
+  if (found !== connection.systemIdentifier) {
+    throw new Error(`PostgreSQL instance changed from ${connection.systemIdentifier} to ${found}.`);
+  }
 }
 
 function generateName() {
@@ -281,11 +336,13 @@ function runPlaywright(owned, reportPath) {
       DRIFT_E2E_DATABASE: owned.name,
       DRIFT_E2E_OWNER_TOKEN: owned.token,
       DRIFT_E2E_GUARD_REPORT: reportPath,
+      DRIFT_E2E_DB_MODE: connection.mode,
+      DRIFT_E2E_COMPOSE_PROJECT: connection.project,
+      DRIFT_E2E_SYSTEM_IDENTIFIER: connection.systemIdentifier,
       DRIFT_E2E_DB_HOST: host,
       DRIFT_E2E_DB_PORT: port,
       DRIFT_E2E_DB_USER: dbUser,
       DRIFT_E2E_DB_PASSWORD: dbPassword,
-      DRIFT_E2E_DB_CONTAINER: container,
       DRIFT_API_ORIGIN: `http://${host}:8080`,
     },
     stdio: 'inherit',
@@ -316,6 +373,7 @@ async function stopProcessGroup(child) {
 
 async function run() {
   assertPortsAvailable();
+  selectConnection();
   compileTests();
   const owned = createOwnedDatabase();
   let reportPath = '';
@@ -323,6 +381,7 @@ async function run() {
   let failure = null;
   const failures = [];
   try {
+    assertSameInstance(owned.name);
     const launched = spawnBackend(owned);
     activeBackend = launched.child;
     reportPath = launched.report;
@@ -332,8 +391,9 @@ async function run() {
       assertReport(report, owned);
       console.log(`Pre-migration validation: ${JSON.stringify(report)}`);
       await waitForListener(activeBackend);
-      const migrated = psql(owned.name, 'SELECT COUNT(*) FROM flyway_schema_history');
-      console.log(`Flyway history rows after the validated backend started: ${migrated}`);
+      assertSameInstance(owned.name);
+      const migrated = psql(owned.name, "SELECT string_agg(version, ',' ORDER BY installed_rank) FROM flyway_schema_history");
+      console.log(`Flyway history after the validated backend started: ${migrated}`);
     } catch (error) {
       const detail = log();
       throw new Error(`${error.message}${detail ? `\n${detail}` : ''}`);

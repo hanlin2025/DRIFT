@@ -9,6 +9,7 @@
   display: inline-flex;
   align-items: center;
 }
+.workspace-bar .workspace-nav + .workspace-nav,
 .workspace-bar .workspace-nav + .sign-out { margin-left: 16px; }
 .admin-layout { display: grid; gap: 22px; }
 .user-choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }

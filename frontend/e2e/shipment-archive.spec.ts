@@ -2,7 +2,9 @@ import { test, expect, type APIRequestContext, type APIResponse, type Page } fro
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const host = process.env.DRIFT_E2E_DB_HOST ?? '';
 const port = process.env.DRIFT_E2E_DB_PORT ?? '';
 const dbUser = process.env.DRIFT_E2E_DB_USER ?? '';
@@ -10,33 +12,53 @@ const dbPassword = process.env.DRIFT_E2E_DB_PASSWORD ?? '';
 const database = process.env.DRIFT_E2E_DATABASE ?? '';
 const ownerToken = process.env.DRIFT_E2E_OWNER_TOKEN ?? '';
 const guardReport = process.env.DRIFT_E2E_GUARD_REPORT ?? '';
-const container = process.env.DRIFT_E2E_DB_CONTAINER ?? '';
+const dbMode = process.env.DRIFT_E2E_DB_MODE ?? '';
+const composeProject = process.env.DRIFT_E2E_COMPOSE_PROJECT ?? '';
+const systemIdentifier = process.env.DRIFT_E2E_SYSTEM_IDENTIFIER ?? '';
 const password = 'Example123';
 const removedMessage = 'Shipment removed successfully';
 const archiveForbidden = 'You do not have permission to archive this shipment.';
 const notFound = 'Shipment not found';
 
 function assertRunContext() {
-  if (host !== '127.0.0.1' || port !== '5432' || dbUser !== 'drift' || dbPassword !== 'drift' || container !== 'drift-postgres') {
-    throw new Error('Host, port, database user, password, and container must be set explicitly.');
+  if (host !== '127.0.0.1' || port !== '5432' || dbUser !== 'drift' || dbPassword !== 'drift') {
+    throw new Error('Host, port, database user, and password must be set explicitly.');
+  }
+  if (dbMode === 'compose' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(composeProject)) {
+    throw new Error('The archive runner must pass the selected Compose project.');
+  }
+  if (dbMode === 'local' && composeProject !== '') {
+    throw new Error('A local psql connection must not also name a Compose project.');
+  }
+  if ((dbMode !== 'compose' && dbMode !== 'local') || !/^[0-9]+$/.test(systemIdentifier)) {
+    throw new Error('Run this spec through npm run test:e2e:archive.');
   }
   if (!/^drift_cdg83_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken)) {
     throw new Error('Run this spec through npm run test:e2e:archive.');
   }
   const current = sql('SELECT current_database();');
   const comment = sql("SELECT coalesce(pg_catalog.shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = current_database();");
-  if (current !== database || comment !== ownerToken) {
+  const identity = sql('SELECT system_identifier::text FROM pg_control_system();');
+  if (current !== database || comment !== ownerToken || identity !== systemIdentifier) {
     throw new Error('This database has no matching ownership record for this run.');
   }
 }
 
 function sql(query: string, variables: Record<string, string> = {}) {
   const variableArgs = Object.entries(variables).flatMap(([key, value]) => ['-v', `${key}=${value}`]);
-  return execFileSync('docker', [
-    'exec', '-i', '-e', `PGPASSWORD=${dbPassword}`, container,
-    'psql', '-h', host, '-p', port, '-U', dbUser, '-d', database,
-    '-v', 'ON_ERROR_STOP=1', '-At', ...variableArgs,
-  ], { encoding: 'utf8', input: query }).trim();
+  const common = ['-U', dbUser, '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', ...variableArgs];
+  const env = { ...process.env, PGPASSWORD: dbPassword };
+  if (dbMode === 'compose') {
+    return execFileSync('docker', ['compose', '-p', composeProject, 'exec', '-T', 'postgres', 'psql', ...common], {
+      cwd: root, encoding: 'utf8', input: query, env,
+    }).trim();
+  }
+  if (dbMode === 'local') {
+    return execFileSync('psql', ['-h', host, '-p', port, ...common], {
+      encoding: 'utf8', input: query, env,
+    }).trim();
+  }
+  throw new Error('Run this spec through npm run test:e2e:archive.');
 }
 
 type Account = { email: string; token: string; id: number; role: string; companyId: number; companyCode: string };
@@ -186,7 +208,7 @@ test.beforeAll(() => {
     mailPort: '1025',
   });
   expect(sql("SELECT string_agg(version, ',' ORDER BY installed_rank) FROM flyway_schema_history;"))
-    .toBe('1,2,3,4,5,6,7,8,13,14,15,16,17,18');
+    .toBe('1,2,3,4,5,6,7,8,13,14,15,16,17,19,20,21');
 });
 
 test('an owning admin archives from the list and the stored row leaves both active lists', { tag: '@disposable-database' }, async ({ page, request }) => {
@@ -211,10 +233,18 @@ test('an owning admin archives from the list and the stored row leaves both acti
   await signIn(page, admin.email, '/admin');
   await page.getByRole('link', { name: 'Company shipments' }).click();
   await expect(page).toHaveURL('/admin/shipments');
+  await expect(page.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');
+  await expect(page.getByLabel('Filter by shipment reference')).toBeVisible();
+  await expect(page.getByLabel('Filter by vessel')).toBeVisible();
+  await expect(page.getByLabel('Filter by customer')).toBeVisible();
+  await expect(page.getByLabel('Filter by arrival date')).toBeVisible();
+  await page.getByLabel('Filter by shipment reference').fill(owned.shipmentReference);
+  await page.getByRole('button', { name: 'Apply filters' }).click();
+  await expect(page).toHaveURL(`/admin/shipments?reference=${owned.shipmentReference}`);
   await expect(page.getByRole('link', { name: owned.shipmentReference })).toBeVisible();
   await expect(page.getByRole('button', { name: `Remove ${owned.shipmentReference}` })).toBeVisible();
-  await expect(page.getByRole('link', { name: foreign.shipmentReference })).toBeVisible();
-  await expect(page.getByRole('button', { name: `Remove ${foreign.shipmentReference}` })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: keeper.shipmentReference })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: foreign.shipmentReference })).toHaveCount(0);
   const listed = await listReferences(request, admin.token);
   expect(listed.find(item => item.id === owned.id)?.companyId).toBe(admin.companyId);
   expect(listed.find(item => item.id === foreign.id)?.companyId).toBe(otherForwarder.companyId);
@@ -225,9 +255,15 @@ test('an owning admin archives from the list and the stored row leaves both acti
   await expect(dialog.getByText(`Removing ${owned.shipmentReference} archives it and keeps its record.`)).toBeVisible();
   await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText(removedMessage);
+  await expect(page).toHaveURL(`/admin/shipments?reference=${owned.shipmentReference}`);
+  await expect(page.getByRole('link', { name: owned.shipmentReference })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page).toHaveURL('/admin/shipments');
+  await expect(page.getByRole('status')).toHaveText(removedMessage);
   await expect(page.getByRole('link', { name: owned.shipmentReference })).toHaveCount(0);
   await expect(page.getByRole('link', { name: keeper.shipmentReference })).toBeVisible();
   await expect(page.getByRole('link', { name: foreign.shipmentReference })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Remove ${foreign.shipmentReference}` })).toHaveCount(0);
   expect((await listReferences(request, importerAccount.token)).map(item => item.id)).not.toContain(owned.id);
   expect(shipmentStatus(owned.id)).toBe('ARCHIVED');
   const archivedDetail = await request.get(`/api/shipments/${owned.id}`, { headers: bearer(admin.token) });

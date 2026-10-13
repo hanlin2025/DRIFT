@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -103,6 +104,21 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isEmpty())
 				.andExpect(jsonPath("$[?(@.id == " + activeId + ")].status")
 						.value(org.hamcrest.Matchers.contains("ACTIVE")));
+		filteredList(adminToken, "CDG81-ADMIN")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isEmpty())
+				.andExpect(jsonPath("$.length()").value(0));
+		filteredList(importerToken, "CDG81-ADMIN")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(0));
+		filteredList(adminToken, "CDG81-STILL")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id == " + activeId + ")].status")
+						.value(org.hamcrest.Matchers.contains("ACTIVE")))
+				.andExpect(jsonPath("$.length()").value(1));
+		filteredList(importerToken, "CDG81-STILL")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1));
 		detail(adminToken, shipmentId).andExpect(status().isOk())
 				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"))
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
@@ -299,6 +315,34 @@ class ShipmentArchiveIntegrationTests {
 	}
 
 	@Test
+	void archivePreservesVesselIdentityAndAnOmittedUpdateKeepsIt() throws Exception {
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, "HARBOURLINE_DEMO", "FREIGHT_FORWARDER");
+		String token = tokenFor(forwarderEmail);
+		Long archivedId = createShipmentWithIdentity(token, "CDG81-IDENTITY");
+		Map<String, Object> archivedIdentity = identity(archivedId);
+		String adminEmail = email("admin");
+		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+
+		archive(tokenFor(adminEmail), archivedId.toString(), "{\"status\":\"ARCHIVED\"}")
+				.andExpect(status().isOk());
+
+		assertThat(identity(archivedId)).isEqualTo(archivedIdentity);
+		assertThat(row(archivedId).status()).isEqualTo("ARCHIVED");
+		assertThat(row(archivedId).reference()).isEqualTo("CDG81-IDENTITY");
+		assertThat(row(archivedId).destination()).isEqualTo("Jakarta, ID");
+
+		Long activeId = createShipmentWithIdentity(token, "CDG81-KEEP-IDENTITY");
+		Map<String, Object> stored = identity(activeId);
+		replace(token, activeId, "CDG81-KEPT-IDENTITY", row(activeId).version())
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.shipmentReference").value("CDG81-KEPT-IDENTITY"))
+				.andExpect(jsonPath("$.status").value("ACTIVE"));
+		assertThat(identity(activeId)).isEqualTo(stored);
+		assertThat(row(activeId).destination()).isEqualTo("Jakarta, ID");
+	}
+
+	@Test
 	void documentsArchiveAndAppliesOnlyTheMainMigrationSequence() throws Exception {
 		mvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
@@ -309,7 +353,7 @@ class ShipmentArchiveIntegrationTests {
 
 		assertThat(jdbc.queryForList(
 				"SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "18");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21");
 		assertThat(jdbc.queryForObject(
 				"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role'",
 				Integer.class)).isZero();
@@ -324,6 +368,11 @@ class ShipmentArchiveIntegrationTests {
 
 	private ResultActions list(String bearerToken) throws Exception {
 		return mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + bearerToken));
+	}
+
+	private ResultActions filteredList(String bearerToken, String reference) throws Exception {
+		return mvc.perform(get("/api/shipments").param("reference", reference)
+				.header("Authorization", "Bearer " + bearerToken));
 	}
 
 	private ResultActions detail(String bearerToken, Long shipmentId) throws Exception {
@@ -354,6 +403,41 @@ class ShipmentArchiveIntegrationTests {
 						  "version": %d
 						}
 						""".formatted(reference, version)));
+	}
+
+	private Long createShipmentWithIdentity(String bearerToken, String reference) throws Exception {
+		MvcResult result = mvc.perform(post("/api/shipments")
+				.header("Authorization", "Bearer " + bearerToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(shipmentJson(reference).replace("\n}", """
+						,
+						  "motherVesselImo": "9387421",
+						  "motherVesselMmsi": "563000111",
+						  "motherVesselOperator": "Harbourline",
+						  "feederVesselImo": "9411882",
+						  "feederVesselMmsi": "565987654",
+						  "feederVesselOperator": "Strait Feeders"
+						}
+						""")))
+				.andExpect(status().isCreated())
+				.andReturn();
+		Number id = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
+		assertThat(identity(id.longValue()))
+				.containsEntry("mother_vessel_imo", "9387421")
+				.containsEntry("mother_vessel_mmsi", "563000111")
+				.containsEntry("mother_vessel_operator", "Harbourline")
+				.containsEntry("feeder_vessel_imo", "9411882")
+				.containsEntry("feeder_vessel_mmsi", "565987654")
+				.containsEntry("feeder_vessel_operator", "Strait Feeders");
+		return id.longValue();
+	}
+
+	private Map<String, Object> identity(Long shipmentId) {
+		return jdbc.queryForMap("""
+				SELECT mother_vessel_imo, mother_vessel_mmsi, mother_vessel_operator,
+					feeder_vessel_imo, feeder_vessel_mmsi, feeder_vessel_operator
+				FROM shipments WHERE id = ?
+				""", shipmentId);
 	}
 
 	private Long createShipment(String bearerToken, String reference) throws Exception {
