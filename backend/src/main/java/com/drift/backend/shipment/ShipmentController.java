@@ -122,7 +122,8 @@ public class ShipmentController {
 			+ "of one shipment visible to the authenticated user's active company. "
 			+ "Each position includes coordinates, speed, course, heading, and the time it was ingested. "
 			+ "A missing position is null. This is a live fix, not an arrival estimate. "
-			+ "A shipment of another company is reported as not found.",
+			+ "A name warning is returned for the position in this response when its AIS name differs from the stored vessel name after trimming, collapsing whitespace, and ignoring case. The MV / M/V prefix is kept. "
+			+ "A null warning clears any older warning. A shipment of another company is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Tracking for the shipment, with a null position where no AIS report is retained", content = @Content(

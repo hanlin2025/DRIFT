@@ -77,8 +77,10 @@ beforeEach(() => {
   vi.mocked(getShipmentTracking).mockResolvedValue({
     motherVesselName: shipment.motherVessel,
     motherVessel: null,
+    motherVesselNameWarning: null,
     feederVesselName: shipment.feederVessel,
     feederVessel: null,
+    feederVesselNameWarning: null,
   });
 });
 
@@ -117,8 +119,10 @@ describe('map permission and missing position', () => {
         trueHeadingDegrees: null,
         ingestedAt: '2020-01-01T00:00:00Z',
       },
+      motherVesselNameWarning: null,
       feederVesselName: shipment.feederVessel,
       feederVessel: null,
+      feederVesselNameWarning: null,
     }} />);
     expect(screen.getByText(STALE_NOTICE)).toBeInTheDocument();
     expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON/)).toBeInTheDocument();

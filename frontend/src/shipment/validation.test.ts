@@ -10,6 +10,12 @@ const valid: ShipmentFields = {
   plannedMotherArrivalAt: '2026-10-02T08:00',
   feederVessel: 'Straits Feeder',
   plannedFeederDepartureAt: '2026-10-03T18:00',
+  motherVesselImo: '',
+  motherVesselMmsi: '',
+  motherVesselOperator: '',
+  feederVesselImo: '',
+  feederVesselMmsi: '',
+  feederVesselOperator: '',
 };
 
 describe('shipment validation', () => {
@@ -27,6 +33,12 @@ describe('shipment validation', () => {
       plannedMotherArrivalAt: '',
       feederVessel: '',
       plannedFeederDepartureAt: '',
+      motherVesselImo: '',
+      motherVesselMmsi: '',
+      motherVesselOperator: '',
+      feederVesselImo: '',
+      feederVesselMmsi: '',
+      feederVesselOperator: '',
     })).toEqual({
       shipmentReference: 'Shipment reference is required',
       origin: 'Origin is required',
@@ -52,6 +64,30 @@ describe('shipment validation', () => {
   it('rejects a transshipment port longer than the column allows', () => {
     expect(validateShipment({ ...valid, transshipmentPort: 'P'.repeat(201) }).transshipmentPort)
       .toBe('Transshipment port must be at most 200 characters');
+  });
+
+  it('accepts a blank vessel identity and rejects a malformed one', () => {
+    expect(validateShipment({
+      ...valid,
+      motherVesselImo: ' 9387421 ',
+      motherVesselMmsi: '563000111',
+      motherVesselOperator: ' Harbourline ',
+      feederVesselImo: '9411882',
+      feederVesselMmsi: '565987654',
+      feederVesselOperator: 'Strait Feeders',
+    })).toEqual({});
+    expect(validateShipment({
+      ...valid,
+      motherVesselImo: 'IMO9387421',
+      feederVesselMmsi: '123',
+      motherVesselOperator: 'H'.repeat(201),
+      feederVesselOperator: 'S'.repeat(201),
+    })).toEqual({
+      motherVesselImo: 'Mother vessel IMO must be 7 digits.',
+      feederVesselMmsi: 'Feeder vessel MMSI must be 9 digits.',
+      motherVesselOperator: 'Mother vessel operator must be at most 200 characters.',
+      feederVesselOperator: 'Feeder vessel operator must be at most 200 characters.',
+    });
   });
 
   it('keeps the same instant when the local time is sent to the API', () => {

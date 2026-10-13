@@ -7,6 +7,12 @@ export type ShipmentFields = {
   plannedMotherArrivalAt: string;
   feederVessel: string;
   plannedFeederDepartureAt: string;
+  motherVesselImo: string;
+  motherVesselMmsi: string;
+  motherVesselOperator: string;
+  feederVesselImo: string;
+  feederVesselMmsi: string;
+  feederVesselOperator: string;
 };
 
 export type ShipmentErrors = Partial<Record<keyof ShipmentFields, string>>;
@@ -44,7 +50,28 @@ export function validateShipment(fields: ShipmentFields): ShipmentErrors {
   else if (arrival && departure.getTime() <= arrival.getTime()) {
     errors.plannedFeederDepartureAt = 'Planned feeder-vessel departure must be after planned mother-vessel arrival';
   }
+
+  const motherVesselImo = digits(fields.motherVesselImo, 7, 'Mother vessel IMO must be 7 digits.');
+  const motherVesselMmsi = digits(fields.motherVesselMmsi, 9, 'Mother vessel MMSI must be 9 digits.');
+  const feederVesselImo = digits(fields.feederVesselImo, 7, 'Feeder vessel IMO must be 7 digits.');
+  const feederVesselMmsi = digits(fields.feederVesselMmsi, 9, 'Feeder vessel MMSI must be 9 digits.');
+  if (motherVesselImo) errors.motherVesselImo = motherVesselImo;
+  if (motherVesselMmsi) errors.motherVesselMmsi = motherVesselMmsi;
+  if (feederVesselImo) errors.feederVesselImo = feederVesselImo;
+  if (feederVesselMmsi) errors.feederVesselMmsi = feederVesselMmsi;
+  if (fields.motherVesselOperator.trim().length > 200) {
+    errors.motherVesselOperator = 'Mother vessel operator must be at most 200 characters.';
+  }
+  if (fields.feederVesselOperator.trim().length > 200) {
+    errors.feederVesselOperator = 'Feeder vessel operator must be at most 200 characters.';
+  }
   return errors;
+}
+
+function digits(value: string, length: number, message: string): string | undefined {
+  const text = value.trim();
+  if (!text) return undefined;
+  return new RegExp(`^\\d{${length}}$`).test(text) ? undefined : message;
 }
 
 export function toOffsetDateTime(value: string): string {

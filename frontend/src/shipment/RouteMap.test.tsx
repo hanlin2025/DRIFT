@@ -66,8 +66,10 @@ const loneTracking: ShipmentTracking = {
     trueHeadingDegrees: 176,
     ingestedAt: '2026-10-05T03:00:00Z',
   },
+  motherVesselNameWarning: null,
   feederVesselName: 'MV Strait Runner',
   feederVessel: null,
+  feederVesselNameWarning: null,
 };
 
 describe('shipment route display', () => {
@@ -118,8 +120,10 @@ describe('shipment route display', () => {
         trueHeadingDegrees: 176,
         ingestedAt: '2026-10-05T03:00:00Z',
       },
+      motherVesselNameWarning: null,
       feederVesselName: 'MV Strait Runner',
       feederVessel: null,
+      feederVesselNameWarning: null,
     };
     render(<RouteMap shipment={shipment} tracking={tracking} />);
     expect(routeText().slice(0, 5)).toEqual([

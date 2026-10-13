@@ -411,7 +411,9 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.feederVesselName").value("MV Strait Runner"))
 				.andExpect(jsonPath("$.feederVessel.mmsi").value("563009999"))
 				.andExpect(jsonPath("$.feederVessel.latitude").value(1.25))
-				.andExpect(jsonPath("$.feederVessel.speedOverGroundKnots").value(8.1));
+				.andExpect(jsonPath("$.feederVessel.speedOverGroundKnots").value(8.1))
+				.andExpect(jsonPath("$.motherVesselNameWarning").value(VesselNames.MOTHER_MISMATCH))
+				.andExpect(jsonPath("$.feederVesselNameWarning").value(nullValue()));
 	}
 
 	@Test
@@ -447,8 +449,10 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.motherVesselName").value("MV Pacific Horizon"))
 				.andExpect(jsonPath("$.motherVessel").value(nullValue()))
+				.andExpect(jsonPath("$.motherVesselNameWarning").value(nullValue()))
 				.andExpect(jsonPath("$.feederVesselName").value("MV Strait Runner"))
-				.andExpect(jsonPath("$.feederVessel").value(nullValue()));
+				.andExpect(jsonPath("$.feederVessel").value(nullValue()))
+				.andExpect(jsonPath("$.feederVesselNameWarning").value(nullValue()));
 	}
 
 	@Test
