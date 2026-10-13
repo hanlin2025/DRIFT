@@ -112,6 +112,11 @@ public class ShipmentExceptionHandler {
 					.body(body("Shipment information is missing or invalid",
 							Map.of(exception.getName(), "Arrival date must use ISO format YYYY-MM-DD")));
 		}
+		if (ShipmentStatus.class.equals(exception.getRequiredType())) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(body("Shipment information is missing or invalid",
+							Map.of(exception.getName(), "Status must be ACTIVE or ARCHIVED")));
+		}
 		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
 				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {
 			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())

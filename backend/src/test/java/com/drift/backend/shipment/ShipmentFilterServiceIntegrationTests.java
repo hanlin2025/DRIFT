@@ -149,6 +149,31 @@ class ShipmentFilterServiceIntegrationTests {
 		assertThat(references(unrelatedUser, criteria)).isEmpty();
 	}
 
+	@Test
+	void statusFilterUsesActiveByDefaultAndLetsAuthorizedUsersExplicitlySearchArchivedShipments() {
+		insert(forwarder, linkedImporter, "HBL-ACTIVE-STATUS", "MV Pacific Horizon", "MV Feeder",
+				at("2026-10-12T08:00:00+08:00"), Instant.now());
+		insert(forwarder, linkedImporter, "HBL-ARCHIVED-STATUS", "MV Pacific Horizon", "MV Feeder",
+				at("2026-10-12T08:00:00+08:00"), Instant.now());
+		insert(unrelatedCompany, null, "HBL-HIDDEN-ARCHIVED", "MV Pacific Horizon", "MV Feeder",
+				at("2026-10-12T08:00:00+08:00"), Instant.now());
+		archive("HBL-ARCHIVED-STATUS");
+		archive("HBL-HIDDEN-ARCHIVED");
+
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.none())).containsExactly("HBL-ACTIVE-STATUS");
+		assertThat(references(forwarderUser,
+				ShipmentFilterCriteria.of(null, null, null, null, ShipmentStatus.ACTIVE)))
+				.containsExactly("HBL-ACTIVE-STATUS");
+		ShipmentFilterCriteria archivedPacific = ShipmentFilterCriteria.of("archived", "pacific",
+				linkedImporter.code(), LocalDate.of(2026, 10, 12), ShipmentStatus.ARCHIVED);
+		assertThat(references(forwarderUser, archivedPacific)).containsExactly("HBL-ARCHIVED-STATUS");
+		assertThat(references(linkedImporterUser,
+				ShipmentFilterCriteria.of(null, null, null, null, ShipmentStatus.ARCHIVED)))
+				.containsExactly("HBL-ARCHIVED-STATUS");
+		assertThat(references(unrelatedUser,
+				ShipmentFilterCriteria.of(null, null, null, null, ShipmentStatus.ARCHIVED))).isEmpty();
+	}
+
 	private List<String> references(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
 		return shipments.list(principal, criteria).stream().map(ShipmentResponse::shipmentReference).toList();
 	}
@@ -189,6 +214,10 @@ class ShipmentFilterServiceIntegrationTests {
 
 	private static OffsetDateTime at(String value) {
 		return OffsetDateTime.parse(value);
+	}
+
+	private void archive(String reference) {
+		jdbc.update("UPDATE shipments SET status = 'ARCHIVED' WHERE shipment_reference = ?", reference);
 	}
 
 	private record CompanyFixture(Long id, String code, String name) {

@@ -49,14 +49,14 @@ public class ShipmentController {
 	@GetMapping("/api/shipments")
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
-			+ "Archived shipments are excluded. "
+			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
 			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date or unsupported status", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
 								"""))),
@@ -74,12 +74,13 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of either the mother vessel or feeder vessel", example = "Pacific") @RequestParam(required = false) String vessel,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the linked importer Company Code or Company Name", example = "IMPORTER-SG") @RequestParam(required = false) String customer,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
-			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate) {
+			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate)));
+				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status)));
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
