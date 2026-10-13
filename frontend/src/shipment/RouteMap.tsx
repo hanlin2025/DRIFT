@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Shipment, ShipmentTracking, VesselPosition } from './api';
+import type { Shipment, ShipmentTracking, VesselPosition, VesselTrack } from './api';
 import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
 import { trackingNotice } from './positionNotice';
 import { along, arc, locate, type LngLat } from './places';
+import { trackPoints, trackSegments } from './trackSegments';
 
 type Stop = {
   id: string;
@@ -118,6 +119,59 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
   }
 }
 
+const TRACK_LINE = '#2a6f97';
+const TRACK_SLOW = '#c2410c';
+const NO_SELECTION = -1;
+
+function emptyTrack() {
+  return { type: 'FeatureCollection' as const, features: [] };
+}
+
+function addTrackLayers(globe: LiveGlobe['map']) {
+  globe.addSource('vessel-track', { type: 'geojson', data: emptyTrack() });
+  globe.addSource('vessel-track-points', { type: 'geojson', data: emptyTrack() });
+  globe.addLayer({
+    id: 'vessel-track',
+    type: 'line',
+    source: 'vessel-track',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ['case', ['get', 'slow'], TRACK_SLOW, TRACK_LINE],
+      'line-width': ['case', ['get', 'slow'], 5, 3],
+    },
+  });
+  globe.addLayer({
+    id: 'vessel-track-points',
+    type: 'circle',
+    source: 'vessel-track-points',
+    paint: {
+      'circle-radius': 4,
+      'circle-color': ['case', ['get', 'slow'], TRACK_SLOW, TRACK_LINE],
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1.5,
+    },
+  });
+  globe.addLayer({
+    id: 'vessel-track-selected',
+    type: 'circle',
+    source: 'vessel-track-points',
+    filter: ['==', ['get', 'index'], NO_SELECTION],
+    paint: { 'circle-radius': 8, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#10231c', 'circle-stroke-width': 2.5 },
+  });
+}
+
+function placeTrack(handle: LiveGlobe, history: VesselTrack | null | undefined) {
+  const points = history?.points ?? [];
+  const threshold = history?.slowdownThresholdKnots ?? 0;
+  type GeoJsonSource = { setData: (data: unknown) => void };
+  (handle.map.getSource('vessel-track') as GeoJsonSource | undefined)?.setData(trackSegments(points, threshold));
+  (handle.map.getSource('vessel-track-points') as GeoJsonSource | undefined)?.setData(trackPoints(points, threshold));
+}
+
+function markSelected(handle: LiveGlobe, selected: number | null | undefined) {
+  handle.map.setFilter('vessel-track-selected', ['==', ['get', 'index'], selected ?? NO_SELECTION]);
+}
+
 function livePin(fix: LiveFix) {
   const root = document.createElement('div');
   root.className = `globe-pin live ${fix.id}`;
@@ -128,8 +182,20 @@ function livePin(fix: LiveFix) {
   return root;
 }
 
-export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?: ShipmentTracking | null }) {
+export function RouteMap({ shipment, tracking, history, selectedPoint, onSelectPoint }: {
+  shipment: Shipment;
+  tracking?: ShipmentTracking | null;
+  history?: VesselTrack | null;
+  selectedPoint?: number | null;
+  onSelectPoint?: (index: number) => void;
+}) {
   const stage = useRef<HTMLDivElement>(null);
+  const historyRef = useRef(history);
+  const selectedRef = useRef(selectedPoint);
+  const onSelectRef = useRef(onSelectPoint);
+  historyRef.current = history;
+  selectedRef.current = selectedPoint;
+  onSelectRef.current = onSelectPoint;
   const globeRef = useRef<LiveGlobe | null>(null);
   const fixesRef = useRef<LiveFix[]>([]);
   const mapReadyRef = useRef(false);
@@ -179,9 +245,18 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
             paint: { 'line-color': '#214e40', 'line-width': 2.4, 'line-dasharray': [1.2, 1.2] },
           });
         }
+        addTrackLayers(globe);
+        globe.on('click', 'vessel-track-points', event => {
+          const index = event.features?.[0]?.properties?.index;
+          if (typeof index === 'number') onSelectRef.current?.(index);
+        });
+        globe.on('mouseenter', 'vessel-track-points', () => { globe.getCanvas().style.cursor = 'pointer'; });
+        globe.on('mouseleave', 'vessel-track-points', () => { globe.getCanvas().style.cursor = ''; });
         for (const stop of plotted) {
           new maplibre.Marker({ element: pin(stop), anchor: 'center' }).setLngLat(stop.at).addTo(globe);
         }
+        placeTrack(handle, historyRef.current);
+        markSelected(handle, selectedRef.current);
         placeLive(handle, fixesRef.current);
       });
     }).catch(() => undefined);
@@ -199,6 +274,18 @@ export function RouteMap({ shipment, tracking }: { shipment: Shipment; tracking?
     if (!handle || !mapReadyRef.current) return;
     placeLive(handle, fixes);
   }, [tracking]);
+
+  useEffect(() => {
+    const handle = globeRef.current;
+    if (!handle || !mapReadyRef.current) return;
+    placeTrack(handle, history);
+  }, [history]);
+
+  useEffect(() => {
+    const handle = globeRef.current;
+    if (!handle || !mapReadyRef.current) return;
+    markSelected(handle, selectedPoint);
+  }, [selectedPoint]);
 
   return (
     <figure className="route-chart" aria-label="Planned route">

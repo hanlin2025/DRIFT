@@ -235,6 +235,30 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .tracking-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
   .vessel-panel { margin-top: 0; }
 }
+.tracking-map { min-width: 0; }
+.track-history { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
+.track-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.track-toggle { display: inline-flex; border: 1px solid #9aad9f; border-radius: 4px; overflow: hidden; }
+.track-toggle button { border: 0; background: #fcfcf8; color: var(--green); min-height: 40px; padding: 8px 14px; font-size: 11px; font-weight: 700; }
+.track-toggle button + button { border-left: 1px solid #9aad9f; }
+.track-toggle button[aria-pressed="true"] { background: var(--green); color: #fffefa; }
+.track-toggle button:disabled { color: #9aa79f; cursor: not-allowed; }
+.track-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+.track-swatch { display: inline-block; width: 18px; height: 3px; border-radius: 2px; background: #2a6f97; }
+.track-swatch.slow { height: 5px; margin-left: 10px; background: #c2410c; }
+.track-summary, .track-hint, .track-note, .track-empty { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink); }
+.track-hint { color: var(--muted); }
+.track-note { color: #8a5a12; font-weight: 700; }
+.track-empty { font-weight: 700; }
+.track-point { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; }
+.track-point div { padding: 8px 10px; background: #fcfcf8; border: 1px solid var(--line); border-radius: 4px; }
+.track-point dt { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.track-point dd { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--ink); }
+.track-list { margin-top: 10px; font-size: 12px; }
+.track-list summary { cursor: pointer; color: var(--green); font-weight: 700; min-height: 32px; display: flex; align-items: center; }
+.track-list ol { margin: 6px 0 0; padding-left: 20px; max-height: 180px; overflow-y: auto; }
+.track-list button { border: 0; background: none; padding: 4px 0; color: var(--ink); font-size: 12px; text-align: left; }
+.track-list button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
 .globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
@@ -302,5 +326,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 }
 @media (max-width: 480px) {
   .route-chart-stage, .skeleton-map { height: 260px; }
+  .track-point { grid-template-columns: 1fr; }
+  .track-toggle { width: 100%; }
+  .track-toggle button { flex: 1; }
   .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
 }

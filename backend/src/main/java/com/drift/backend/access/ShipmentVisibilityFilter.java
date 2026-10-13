@@ -82,7 +82,7 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			return;
 		}
 		Long shipmentId = shipmentId(path);
-		if (path.matches("/api/shipments/\\d+/tracking")) {
+		if (path.matches("/api/shipments/\\d+/(tracking|track-history)")) {
 			if (shipmentId == null) {
 				chain.doFilter(request, response);
 				return;

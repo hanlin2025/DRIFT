@@ -142,6 +142,39 @@ export async function getShipmentTracking(token: string, shipmentId: string): Pr
   return tracking;
 }
 
+export type TrackVessel = 'MOTHER' | 'FEEDER';
+export type TrackWindow = 6 | 24 | 72;
+
+export type TrackPoint = {
+  latitude: number;
+  longitude: number;
+  speedOverGroundKnots: number | null;
+  courseOverGroundDegrees: number | null;
+  trueHeadingDegrees: number | null;
+  ingestedAt: string;
+};
+
+export type VesselTrack = {
+  vessel: TrackVessel;
+  vesselName: string | null;
+  mmsi: string | null;
+  windowHours: number;
+  from: string;
+  to: string;
+  slowdownThresholdKnots: number;
+  pointLimit: number;
+  truncated: boolean;
+  points: TrackPoint[];
+};
+
+export async function getVesselTrack(token: string, shipmentId: string, vessel: TrackVessel, hours: TrackWindow): Promise<VesselTrack> {
+  const query = new URLSearchParams({ vessel, hours: String(hours) }).toString();
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/track-history?${query}`, token);
+  const track = asTrack(data);
+  if (!track) throw new ApiError(UNEXPECTED, 502);
+  return track;
+}
+
 export async function createShipment(token: string, shipment: ShipmentFields): Promise<Shipment> {
   const data = await send('/api/shipments', token, {
     method: 'POST',
@@ -323,6 +356,43 @@ function asTracking(value: unknown): ShipmentTracking | null {
     feederVesselName: value.feederVesselName,
     feederVessel: value.feederVessel ?? null,
     feederVesselNameWarning,
+  };
+}
+
+function isTrackPoint(value: unknown): value is TrackPoint {
+  return isRecord(value)
+    && isFiniteNumber(value.latitude)
+    && isFiniteNumber(value.longitude)
+    && isOptionalFiniteNumber(value.speedOverGroundKnots)
+    && isOptionalFiniteNumber(value.courseOverGroundDegrees)
+    && isOptionalFiniteNumber(value.trueHeadingDegrees)
+    && typeof value.ingestedAt === 'string';
+}
+
+function asTrack(value: unknown): VesselTrack | null {
+  if (!isRecord(value) || (value.vessel !== 'MOTHER' && value.vessel !== 'FEEDER')) return null;
+  if (!isNullableText(value.vesselName ?? null) || !isNullableText(value.mmsi ?? null)) return null;
+  if (!isFiniteNumber(value.windowHours) || !isFiniteNumber(value.slowdownThresholdKnots) || !isFiniteNumber(value.pointLimit)) return null;
+  if (typeof value.from !== 'string' || typeof value.to !== 'string' || typeof value.truncated !== 'boolean') return null;
+  if (!Array.isArray(value.points) || !value.points.every(isTrackPoint)) return null;
+  return {
+    vessel: value.vessel,
+    vesselName: (value.vesselName ?? null) as string | null,
+    mmsi: (value.mmsi ?? null) as string | null,
+    windowHours: value.windowHours,
+    from: value.from,
+    to: value.to,
+    slowdownThresholdKnots: value.slowdownThresholdKnots,
+    pointLimit: value.pointLimit,
+    truncated: value.truncated,
+    points: value.points.map(point => ({
+      latitude: point.latitude,
+      longitude: point.longitude,
+      speedOverGroundKnots: point.speedOverGroundKnots ?? null,
+      courseOverGroundDegrees: point.courseOverGroundDegrees ?? null,
+      trueHeadingDegrees: point.trueHeadingDegrees ?? null,
+      ingestedAt: point.ingestedAt,
+    })),
   };
 }
 

@@ -6,12 +6,12 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getShipment, getShipmentTracking, listShipments, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, listShipments, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -100,12 +100,30 @@ const tracking: ShipmentTracking = {
   feederVesselNameWarning: null,
 };
 
+const track: VesselTrack = {
+  vessel: 'MOTHER',
+  vesselName: 'Ever Steady',
+  mmsi: '563001234',
+  windowHours: 24,
+  from: '2026-10-04T03:00:00Z',
+  to: '2026-10-05T03:00:00Z',
+  slowdownThresholdKnots: 3,
+  pointLimit: 500,
+  truncated: false,
+  points: [
+    { latitude: 1.1, longitude: 103.6, speedOverGroundKnots: 11, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-05T01:00:00Z' },
+    { latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 180, trueHeadingDegrees: 182, ingestedAt: '2026-10-05T02:00:00Z' },
+    { latitude: 1.25, longitude: 103.75, speedOverGroundKnots: 0.4, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-05T03:00:00Z' },
+  ],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(listShipments).mockResolvedValue([shipment]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
+  vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
 describe('connection window on the shipment detail', () => {
@@ -807,5 +825,70 @@ describe('arrival comparison on the shipment detail', () => {
     expect(within(record).getByText('Possibly outdated')).toBeInTheDocument();
     expect(within(record).getByText('On schedule · estimated at the planned time')).toBeInTheDocument();
     expect(within(record).getByText(formatWhen('2026-10-02T01:30:00Z'))).toBeInTheDocument();
+  });
+});
+
+describe('vessel track history on the shipment detail', () => {
+  it('loads the mother vessel over the last 24 hours and shows a selected point', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    const history = await screen.findByRole('region', { name: 'Track history' });
+
+    expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24);
+    expect(within(history).getByRole('button', { name: 'Mother vessel' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(history).getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
+    expect(await within(history).findByText('3 positions in the last 24 hours · 1 slowdown segment')).toBeInTheDocument();
+    expect(within(history).getByText(/Below 3 kn \(slowdown\)/)).toBeInTheDocument();
+
+    const points = within(history).getByRole('list', { name: 'Track points' });
+    await user.click(within(points).getAllByRole('button')[1]);
+    const selected = within(history).getByLabelText('Selected track point');
+    expect(within(selected).getByText('1.5 kn')).toBeInTheDocument();
+    expect(within(selected).getByText('182° S')).toBeInTheDocument();
+    expect(selected.querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
+  });
+
+  it('reloads the track for another window or vessel', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    const history = await screen.findByRole('region', { name: 'Track history' });
+    await within(history).findByText(/3 positions/);
+
+    vi.mocked(getVesselTrack).mockResolvedValue({ ...track, windowHours: 6, points: track.points.slice(1) });
+    await user.click(within(history).getByRole('button', { name: '6h' }));
+    expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 6);
+    expect(await within(history).findByText('2 positions in the last 6 hours · 1 slowdown segment')).toBeInTheDocument();
+    expect(within(history).getByRole('button', { name: '6h' })).toHaveAttribute('aria-pressed', 'true');
+
+    vi.mocked(getVesselTrack).mockResolvedValue({ ...track, vessel: 'FEEDER', vesselName: 'Straits Feeder', mmsi: null, windowHours: 6, points: [] });
+    await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
+    expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6);
+    expect(await within(history).findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
+  });
+
+  it('shows insufficient history for a single observation', async () => {
+    vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: track.points.slice(0, 1) });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Track points' })).not.toBeInTheDocument();
+  });
+
+  it('disables the feeder track when no feeder vessel is assigned', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, feederVessel: null, plannedFeederDepartureAt: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const history = await screen.findByRole('region', { name: 'Track history' });
+    expect(within(history).getByRole('button', { name: 'Feeder vessel' })).toBeDisabled();
+  });
+
+  it('keeps the page when the track cannot be loaded and hides it when access is denied', async () => {
+    vi.mocked(getVesselTrack).mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByText('Track history could not be loaded. Try Refresh.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+
+    vi.mocked(getVesselTrack).mockRejectedValueOnce(new ApiError('You do not have access to this shipment', 403));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Track history' })).not.toBeInTheDocument();
   });
 });

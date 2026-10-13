@@ -1,5 +1,7 @@
 package com.drift.backend.ais.position;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,4 +32,17 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 			LIMIT 1
 			""", nativeQuery = true)
 	Optional<VesselObservation> findLatestByNormalizedVesselName(@Param("normalizedName") String normalizedName);
+
+	@Query(value = """
+			SELECT *
+			FROM vessel_observations
+			WHERE mmsi = :mmsi
+				AND ingested_at > :from
+				AND ingested_at <= :to
+				AND position_valid IS NOT FALSE
+			ORDER BY ingested_at DESC, id DESC
+			LIMIT :limit
+			""", nativeQuery = true)
+	List<VesselObservation> findNewestValidInWindow(@Param("mmsi") String mmsi, @Param("from") Instant from,
+			@Param("to") Instant to, @Param("limit") int limit);
 }

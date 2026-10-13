@@ -19,6 +19,7 @@ vi.mock('./api', () => ({
   createShipment: vi.fn(),
   getShipment: vi.fn(),
   getShipmentTracking: vi.fn(),
+  getVesselTrack: vi.fn(),
   getShipmentImportErrors: vi.fn(),
   getShipmentImportJob: vi.fn(),
   listShipments: vi.fn(),

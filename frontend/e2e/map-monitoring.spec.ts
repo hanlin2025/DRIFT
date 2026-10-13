@@ -103,6 +103,18 @@ function seedObservation(vessel: string, identifier: string, stale: boolean) {
     { mmsi: identifier, vessel });
 }
 
+function seedTrack(vessel: string, identifier: string, fixes: { hoursAgo: number; speed: number; valid: boolean; longitude: number }[]) {
+  for (const fix of fixes) {
+    sql(`INSERT INTO vessel_observations (
+        mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
+        course_over_ground_degrees, true_heading_degrees, navigational_status,
+        position_valid, ais_utc_second, ingested_at, source
+      ) VALUES (:'mmsi', :'vessel', 1.264, ${fix.longitude}, ${fix.speed}, 90, 91, 0, ${fix.valid}, 12,
+        NOW() - INTERVAL '${fix.hoursAgo} hours', 'SEEDED');`,
+      { mmsi: identifier, vessel });
+  }
+}
+
 function cleanup(emails: string[], identifiers: string[]) {
   for (const email of emails) {
     sql(`DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
@@ -176,7 +188,7 @@ test('a stale fix stays on the map as the last known position', { tag: '@disposa
     await signIn(page, owner.email);
     await openMap(page, shipment.id);
     await expect(page.locator('.route-warning')).toHaveText(LAST_KNOWN);
-    await expect(page.getByRole('status')).toHaveText(LAST_KNOWN);
+    await expect(page.getByRole('figure', { name: 'Planned route' }).getByRole('status')).toHaveText(LAST_KNOWN);
     await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel}`);
     await expect(page.locator('.route-live')).toContainText('Last updated');
     await expect(page.locator('.globe-pin.live.mother .globe-dot')).toBeVisible();
@@ -345,5 +357,55 @@ test('drag and ctrl-wheel move the map without reloading the shipment', { tag: '
     expect(navigations.count).toBe(0);
   } finally {
     cleanup([owner.email], [identifier]);
+  }
+});
+
+test('a freight forwarder reads the recent track with slowdowns and preset windows', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The map is covered once on desktop.');
+  test.setTimeout(90_000);
+  const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  const other = await registerAccount(request, 'IMPORTER', 'STRAITS_FRESH_DEMO');
+  const vessel = `Ever Steady ${randomBytes(3).toString('hex')}`;
+  const identifier = mmsi();
+  const shipment = await createShipment(request, owner.token, vessel);
+  seedTrack(vessel, identifier, [
+    { hoursAgo: 48, speed: 14, valid: true, longitude: 103.1 },
+    { hoursAgo: 20, speed: 12, valid: true, longitude: 103.3 },
+    { hoursAgo: 10, speed: 9, valid: false, longitude: 110.0 },
+    { hoursAgo: 4, speed: 2.1, valid: true, longitude: 103.5 },
+    { hoursAgo: 2, speed: 0.4, valid: true, longitude: 103.6 },
+  ]);
+  try {
+    const api = await request.get(`/api/shipments/${shipment.id}/track-history?hours=24`, {
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    expect(api.status()).toBe(200);
+    const body = await api.json();
+    expect(body.points.map((point: { longitude: number }) => point.longitude)).toEqual([103.3, 103.5, 103.6]);
+    const hidden = await request.get(`/api/shipments/${shipment.id}/track-history`, {
+      headers: { Authorization: `Bearer ${other.token}` },
+    });
+    expect(hidden.status()).toBe(404);
+    expect(await hidden.json()).toEqual({ message: NOT_FOUND });
+
+    await signIn(page, owner.email);
+    await openMap(page, shipment.id);
+    const history = page.getByRole('region', { name: 'Track history' });
+    await expect(history.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(history).toContainText('3 positions in the last 24 hours · 1 slowdown segment');
+
+    const sixHours = page.waitForResponse(response => new URL(response.url()).search.includes('hours=6'));
+    await history.getByRole('button', { name: '6h' }).click();
+    expect((await sixHours).status()).toBe(200);
+    await expect(history).toContainText('2 positions in the last 6 hours · 1 slowdown segment');
+    await history.getByText('All positions').click();
+    await history.getByRole('list', { name: 'Track points' }).getByRole('button').last().click();
+    await expect(history.getByLabel('Selected track point')).toContainText('0.4 kn');
+    await expect(history.getByLabel('Selected track point')).toContainText('91° E');
+
+    await history.getByRole('button', { name: 'Feeder vessel' }).click();
+    await expect(history).toContainText('Insufficient history to draw a track for this window.');
+  } finally {
+    cleanup([owner.email, other.email], [identifier]);
   }
 });
