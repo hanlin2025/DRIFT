@@ -184,3 +184,24 @@ npm run test:e2e:detail
 That command runs `scripts/run-shipment-detail.mjs`, which creates, uses, and drops its own
 `drift_cdg101_*` database the same way the map monitoring runner does. `npm run test:e2e` does
 not run this spec.
+
+### Profile
+
+`e2e/profile.spec.ts` opens `/profile` from the signed-in workspace. A renamed user and a
+CRITICAL notification choice are still there after sign-out and sign-in. Email, company, and
+role stay read-only. The wrong current password and a password that misses the registration
+rules are shown as the API message, and the old password still signs in. A compliant new
+password returns to login, rejects the old password, and accepts the new one. An empty name
+and a name over 200 characters are rejected without leaving the page. A second user sees only
+their own profile, and a patch that names the first user returns 403.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:profile
+```
+
+That command runs `scripts/run-profile.mjs`, which creates, uses, and drops its own
+`drift_cdg143_*` database the same way the shipment detail runner does. It covers desktop and
+mobile. `npm run test:e2e` does not run this spec.
