@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
@@ -18,6 +19,9 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.operation.OperationalState;
+import com.drift.backend.ais.operation.OperationalStateService;
+import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
@@ -39,16 +43,18 @@ public class ShipmentService {
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
+	private final OperationalStateService operationalStates;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
-			ShipmentAccessPolicy accessPolicy) {
+			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions,
+			OperationalStateService operationalStates, Validator validator, ShipmentAccessPolicy accessPolicy) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
+		this.operationalStates = operationalStates;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
 	}
@@ -204,14 +210,28 @@ public class ShipmentService {
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
 		return ShipmentDetailResponse.from(shipment, calculation(shipment),
-				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()));
+				livePosition(shipment.getMotherVessel()), livePosition(shipment.getFeederVessel()),
+				operationalState(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
+				operationalState(shipment.getFeederVessel(), shipment.getTransshipmentPort()));
 	}
 
 	private VesselPosition livePosition(String vesselName) {
+		return latestFix(vesselName).map(VesselPosition::from).orElse(null);
+	}
+
+	private OperationalState operationalState(String vesselName, String transshipmentPort) {
+		if (vesselName == null || vesselName.isBlank()) {
+			return null;
+		}
+		return latestFix(vesselName)
+				.map(position -> operationalStates.derive(position.navigationalStatus(),
+						position.speedOverGroundKnots(), position.latitude(), position.longitude(), transshipmentPort))
+				.orElseGet(() -> operationalStates.derive(null, null, null, null, transshipmentPort));
+	}
+
+	private Optional<AisPosition> latestFix(String vesselName) {
 		return latestPositions.findByVesselName(vesselName)
-				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
-				.map(VesselPosition::from)
-				.orElse(null);
+				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)));
 	}
 
 	private static String withoutVesselPrefix(String vesselName) {
