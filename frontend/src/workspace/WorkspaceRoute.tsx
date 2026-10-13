@@ -154,17 +154,17 @@ function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters
 }) {
   const [shipments, setShipments] = useState<Shipment[] | null>(null);
   const [problem, setProblem] = useState('');
-  const [arrivalDateProblem, setArrivalDateProblem] = useState('');
+  const [filterProblem, setFilterProblem] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const { reference, vessel, customer, arrivalDate } = filters;
+  const { reference, vessel, customer, arrivalDate, status } = filters;
   const filtersActive = hasShipmentFilters(filters);
 
   useEffect(() => {
     let active = true;
     setProblem('');
-    setArrivalDateProblem('');
+    setFilterProblem('');
     setShipments(null);
-    const appliedFilters = { reference, vessel, customer, arrivalDate };
+    const appliedFilters = { reference, vessel, customer, arrivalDate, status };
     const request = hasShipmentFilters(appliedFilters)
       ? listShipments(token, appliedFilters)
       : listShipments(token);
@@ -176,16 +176,16 @@ function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters
         onSessionEnded();
         return;
       }
-      if (reason instanceof ApiError && reason.status === 400 && reason.fields.arrivalDate) {
-        setArrivalDateProblem(reason.fields.arrivalDate);
+      if (reason instanceof ApiError && reason.status === 400) {
+        setFilterProblem(reason.fields.arrivalDate ?? reason.fields.status ?? '');
       }
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate]);
+  }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate, status]);
 
   if (problem) {
-    return <div className="error-notice" role="alert">{arrivalDateProblem || problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>{arrivalDateProblem && <><br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></>}</div>;
+    return <div className="error-notice" role="alert">{filterProblem || problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>{filterProblem && <><br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></>}</div>;
   }
   if (shipments === null) return <div className="notice">Loading shipments...</div>;
   if (shipments.length === 0) {

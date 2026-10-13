@@ -25,7 +25,7 @@ function renderControls(entry = '/freight-forwarder') {
 }
 
 describe('ShipmentFilterControls', () => {
-  it('renders the four supported controls and no status control', () => {
+  it('renders the supported controls with an implicit Active status default', () => {
     renderControls();
 
     expect(screen.getByRole('textbox', { name: 'Filter by shipment reference' })).toBeInTheDocument();
@@ -34,19 +34,19 @@ describe('ShipmentFilterControls', () => {
     expect(screen.getByLabelText('Filter by arrival date')).toHaveAttribute('type', 'date');
     expect(screen.getByRole('button', { name: 'Apply filters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: /status/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('ACTIVE');
   });
 
   it('initializes from the URL and keeps typing as draft state until apply', async () => {
     const user = userEvent.setup();
-    renderControls('/freight-forwarder?reference=HBL-1&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12');
+    renderControls('/freight-forwarder?reference=HBL-1&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12&status=ARCHIVED');
 
     const reference = screen.getByRole('textbox', { name: 'Filter by shipment reference' });
     expect(reference).toHaveValue('HBL-1');
     expect(screen.getByRole('textbox', { name: 'Filter by vessel' })).toHaveValue('Pacific');
     expect(screen.getByRole('textbox', { name: 'Filter by customer' })).toHaveValue('ACME');
     expect(screen.getByLabelText('Filter by arrival date')).toHaveValue('2026-10-12');
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('ARCHIVED');
 
     await user.clear(reference);
     await user.type(reference, 'HBL-2');
@@ -62,15 +62,16 @@ describe('ShipmentFilterControls', () => {
     await user.type(screen.getByRole('textbox', { name: 'Filter by vessel' }), ' Pacific ');
     await user.type(screen.getByRole('textbox', { name: 'Filter by customer' }), ' ACME ');
     await user.type(screen.getByLabelText('Filter by arrival date'), '2026-10-12');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filter by status' }), 'ARCHIVED');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
 
-    expect(screen.getByTestId('location')).toHaveTextContent('?view=table&reference=HBL-2026&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12');
+    expect(screen.getByTestId('location')).toHaveTextContent('?view=table&reference=HBL-2026&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12&status=ARCHIVED');
     expect(screen.getByRole('textbox', { name: 'Filter by shipment reference' })).toHaveValue('HBL-2026');
   });
 
   it('omits blank values and clear removes only shipment filter parameters', async () => {
     const user = userEvent.setup();
-    renderControls('/freight-forwarder?reference=HBL-1&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12&view=table');
+    renderControls('/freight-forwarder?reference=HBL-1&vessel=Pacific&customer=ACME&arrivalDate=2026-10-12&status=ARCHIVED&view=table');
 
     await user.clear(screen.getByRole('textbox', { name: 'Filter by shipment reference' }));
     await user.type(screen.getByRole('textbox', { name: 'Filter by shipment reference' }), '   ');
@@ -83,6 +84,7 @@ describe('ShipmentFilterControls', () => {
     expect(screen.getByRole('textbox', { name: 'Filter by vessel' })).toHaveValue('');
     expect(screen.getByRole('textbox', { name: 'Filter by customer' })).toHaveValue('');
     expect(screen.getByLabelText('Filter by arrival date')).toHaveValue('');
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('ACTIVE');
   });
 
   it('resynchronizes draft controls when navigation changes applied URL filters', async () => {
@@ -96,5 +98,17 @@ describe('ShipmentFilterControls', () => {
 
     expect(screen.getByTestId('location')).toHaveTextContent('?reference=A');
     expect(reference).toHaveValue('A');
+  });
+
+  it('preserves an invalid raw URL status until the user deliberately changes or clears it', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?status=banana');
+
+    const status = screen.getByRole('combobox', { name: 'Filter by status' });
+    expect(status).toHaveValue('banana');
+    expect(screen.getByRole('option', { name: 'Invalid status' })).toBeInTheDocument();
+    await user.selectOptions(status, 'ARCHIVED');
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?status=ARCHIVED');
   });
 });

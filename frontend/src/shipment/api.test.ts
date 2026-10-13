@@ -46,6 +46,7 @@ describe('shipment importer API', () => {
       vessel: '',
       customer: 'STRAITS',
       arrivalDate: '',
+    status: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
@@ -59,9 +60,20 @@ describe('shipment importer API', () => {
       vessel: '  ',
       customer: 'A&B Logistics',
       arrivalDate: '2026-10-12',
+    status: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
+  });
+
+  it('sends an explicit shipment status and never adds one when absent', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+    });
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
   });
 
   it('reads the importer on a shipment detail', async () => {
