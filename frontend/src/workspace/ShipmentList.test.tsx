@@ -342,9 +342,109 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
   });
 
-  it('ends the session and returns to login when the list request is rejected', async () => {
-    vi.mocked(listShipments).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+  it('keeps the normal empty state when only unrelated URL parameters are present', async () => {
+    vi.mocked(listShipments).mockResolvedValue([]);
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?tab=overview');
+
+    expect(await screen.findByText('No shipments yet. Shipments registered for your company will appear here.')).toBeInTheDocument();
+    expect(screen.queryByText('No shipments match your current filters.')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    '/freight-forwarder?reference=HBL-404',
+    '/freight-forwarder?vessel=Pacific',
+    '/freight-forwarder?customer=STRAITS',
+    '/freight-forwarder?arrivalDate=2026-10-12',
+  ])('shows filtered no-results for %s', async path => {
+    vi.mocked(listShipments).mockResolvedValue([]);
+    openWorkspace('FREIGHT_FORWARDER', path);
+
+    expect(await screen.findByText('No shipments match your current filters.')).toBeInTheDocument();
+    const resultNotice = screen.getByText('No shipments match your current filters.').closest('.notice');
+    expect(resultNotice).not.toBeNull();
+    expect(within(resultNotice as HTMLElement).getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+    expect(screen.queryByText('No shipments yet. Shipments registered for your company will appear here.')).not.toBeInTheDocument();
+  });
+
+  it('clears filtered empty results through the URL while preserving unrelated parameters', async () => {
+    vi.mocked(listShipments).mockResolvedValueOnce([]).mockResolvedValueOnce([newer]);
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-404&tab=overview');
+
+    expect(await screen.findByText('No shipments match your current filters.')).toBeInTheDocument();
+    const resultNotice = screen.getByText('No shipments match your current filters.').closest('.notice');
+    expect(resultNotice).not.toBeNull();
+    await user.click(within(resultNotice as HTMLElement).getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?tab=overview');
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+  });
+
+  it('keeps controls visible and replaces prior rows with loading when filters change', async () => {
+    let resolveFiltered: (rows: Shipment[]) => void = () => {};
+    vi.mocked(listShipments)
+      .mockResolvedValueOnce([older])
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFiltered = resolve; }));
+    const user = userEvent.setup();
     openWorkspace();
+    expect(await screen.findByRole('cell', { name: 'HBL-OLDER' })).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Filter by shipment reference' }), 'HBL-NEWER');
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    expect(await screen.findByText('Loading shipments...')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Filter by shipment reference' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'HBL-OLDER' })).not.toBeInTheDocument();
+    resolveFiltered([newer]);
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+  });
+
+  it('keeps applied filters after an ordinary failure and retries with them', async () => {
+    vi.mocked(listShipments).mockRejectedValue(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-404');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('We could not reach DRIFT. Check your connection and try again.');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?reference=HBL-404');
+    expect(screen.getByRole('textbox', { name: 'Filter by shipment reference' })).toHaveValue('HBL-404');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', {
+      reference: 'HBL-404', vessel: '', customer: '', arrivalDate: '',
+    });
+  });
+
+  it('shows a safe arrival-date validation error and lets the user clear it', async () => {
+    vi.mocked(listShipments)
+      .mockRejectedValueOnce(new ApiError('Shipment information is missing or invalid', 400, {
+        arrivalDate: 'Arrival date must use ISO format YYYY-MM-DD',
+      }))
+      .mockResolvedValueOnce([newer]);
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?arrivalDate=banana&tab=overview');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Arrival date must use ISO format YYYY-MM-DD');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?arrivalDate=banana&tab=overview');
+    await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?tab=overview');
+  });
+
+  it('uses the generic safe API message when a 400 has no arrival-date field', async () => {
+    vi.mocked(listShipments).mockRejectedValue(new ApiError('Shipment information is missing or invalid', 400));
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-404');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Shipment information is missing or invalid');
+  });
+
+  it('ends the session and returns to login when a filtered list request is rejected', async () => {
+    vi.mocked(listShipments).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?reference=HBL-404');
     expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(sessionStorage.getItem('drift.session')).toBeNull();
