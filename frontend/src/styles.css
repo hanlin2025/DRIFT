@@ -207,6 +207,24 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .route-live li { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
 .route-live li + li { margin-top: 4px; }
 .route-warning { margin: 0; padding: 10px 16px 12px; color: #8a5a12; background: #f8efd8; border-top: 1px solid #e2d3a8; font-size: 12px; font-weight: 700; }
+.tracking-layout { margin: 0 0 18px; }
+.tracking-layout .route-chart { margin: 0; }
+.vessel-panel { background: #e8ede2; border: 1px solid #c8d9bf; border-radius: 8px; padding: 16px 16px 4px; margin-top: 18px; }
+.vessel-panel .eyebrow { margin: 0; color: #64806b; }
+.vessel-panel strong { display: block; font-size: 16px; margin: 6px 0 2px; overflow-wrap: anywhere; }
+.vessel-mmsi { margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+.vessel-empty { margin: 8px 0 14px; color: var(--muted); font-size: 12px; }
+.vessel-stale { margin: 0 0 10px; padding: 8px 10px; color: #8a5a12; background: #f8efd8; border: 1px solid #e2d3a8; border-radius: 5px; font-size: 12px; font-weight: 700; }
+.vessel-stale-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: #8a5a12; color: #f8efd8; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.vessel-panel dl { margin: 0; }
+.vessel-panel dl div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #d5e0cc; padding: 10px 0; }
+.vessel-panel dt { color: var(--muted); font-size: 11px; }
+.vessel-panel dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+.vessel-panel dd.is-missing { color: var(--muted); font-weight: 500; }
+@media (min-width: 1051px) {
+  .tracking-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  .vessel-panel { margin-top: 0; }
+}
 .globe-pin { position: relative; width: 0; height: 0; pointer-events: none; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }

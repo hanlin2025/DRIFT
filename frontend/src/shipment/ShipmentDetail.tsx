@@ -4,6 +4,7 @@ import { ApiError } from '../signup/api';
 import { getShipment, getShipmentTracking, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
+import { VesselPanel } from './VesselPanel';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
@@ -179,7 +180,10 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       </div>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}
-      <RouteMap shipment={shipment} tracking={tracking} />
+      <div className="tracking-layout">
+        <RouteMap shipment={shipment} tracking={tracking} />
+        <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />
+      </div>
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>

@@ -50,6 +50,8 @@ The registration form stays on the freight-forwarder page. It collects the requi
 
 The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A Risk badge rates that window: Critical when the feeder departs at or before the mother vessel's arrival, High under 12 hours, Medium under 24 hours and Low otherwise, with a one-line explanation. It shows Pending assignment until the feeder departure is scheduled. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
 
+Next to the map, a Mother vessel panel shows the latest AIS fix returned by `GET /api/shipments/{id}/tracking`. It lists the reported name and MMSI, the position with hemispheres, the speed in knots, and the course and heading in degrees with a compass point. A field the vessel did not report shows "Not reported". "Updated 12 min ago" counts from the time DRIFT received the report; hover it for the exact time. A fix more than six hours old carries a **Stale** badge. A vessel with no retained report shows "No position received yet". The panel follows the page's 60-second tracking poll and the Refresh button, and the age advances every 30 seconds without a reload. On wide screens the panel sits beside the map; on narrower screens it moves below it. It is hidden with the rest of the page when the shipment is forbidden. Track history, ETA and alerts are not part of it.
+
 ## Profile
 
 The workspace header and the administrator header open `/profile` for the signed-in user. The page loads `GET /api/profile`. Full name is editable. Email, company, and role are read-only, and a user with no company sees "No company assigned". The shipment-risk section stores whether those emails are on and the minimum level, one of LOW, MEDIUM, HIGH, or CRITICAL. HIGH includes HIGH and CRITICAL. The password section uses the same four rules as registration. Save sends `PATCH /api/profile` and leaves both password fields out when they are empty. A validation failure shows the API message and stays on the page. A successful password change ends the session and returns to login with "Your password was changed. Log in with the new password." The page does not edit the email address, offer a photo, or send a notification email.
@@ -109,7 +111,8 @@ open a shipment detail page.
 detail page. It checks that a fresh vessel observation draws the live marker and the
 last-updated line, that an observation older than six hours keeps that marker and shows the
 last-known-position warning, and that a shipment with no observation shows the no-position
-warning with no live marker. A freight forwarder from another company receives 403 from the
+warning with no live marker. The same three cases check the Mother vessel panel: its position,
+speed, course, heading and age, its Stale badge, and "No position received yet". A freight forwarder from another company receives 403 from the
 shipment detail API and 404 from the tracking API, and the page shows that access alert
 instead of the globe. A request with no session receives 401. Dragging the globe and zooming
 with Ctrl plus the wheel move the marker without leaving the shipment URL.
