@@ -205,3 +205,27 @@ npm run test:e2e:profile
 That command runs `scripts/run-profile.mjs`, which creates, uses, and drops its own
 `drift_cdg143_*` database the same way the shipment detail runner does. It covers desktop and
 mobile. `npm run test:e2e` does not run this spec.
+
+### Vessel details
+
+`e2e/vessel-details.spec.ts` opens a shipment whose name, IMO, MMSI, operator, and planned
+schedule were stored through the API. A freight forwarder and a linked importer see those
+values on the detail page, including after reload. The create and list bodies do not include
+the identity. An omitted IMO, MMSI, or operator is shown as Not available. A latest AIS name
+that differs from the stored mother vessel shows "The AIS vessel name does not match the stored
+mother vessel." A feeder name that matches after trim, collapsed whitespace, and case shows no
+warning, and the stored MMSI stays the one on the shipment. A freight forwarder from another
+company receives 403 "You do not have access to this shipment" from the detail API and 404
+"Shipment not found" from tracking. Neither body contains the vessel details, and the page
+shows the detail message without them. The detail record has no editor for these fields.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:vessel-details
+```
+
+That command runs `scripts/run-vessel-details.mjs`, which creates, uses, and drops its own
+`drift_cdg147_*` database the same way the shipment detail runner does. It covers desktop and
+mobile. `npm run test:e2e` does not run this spec.
