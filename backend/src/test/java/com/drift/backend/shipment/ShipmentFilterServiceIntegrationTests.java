@@ -16,13 +16,25 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.Role;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+		"spring.datasource.url=${DRIFT_CDG81_FILTER_SERVICE_JDBC_URL}",
+		"spring.flyway.url=${DRIFT_CDG81_FILTER_SERVICE_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"spring.flyway.user=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"app.ais.enabled=false",
+		"drift.startup-guard.expected-url=${DRIFT_CDG81_FILTER_SERVICE_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG81_FILTER_SERVICE_OWNERSHIP_TOKEN}"
+})
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = ShipmentDisposableDatabaseGuard.class)
 @Transactional
 class ShipmentFilterServiceIntegrationTests {
 

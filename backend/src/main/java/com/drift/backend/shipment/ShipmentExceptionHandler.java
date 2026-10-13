@@ -13,13 +13,19 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
+import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
+import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
@@ -71,20 +77,21 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler({ ShipmentAccessForbiddenException.class, ShipmentDetailForbiddenException.class })
+	@ExceptionHandler({
+			ShipmentAccessForbiddenException.class,
+			ShipmentDetailForbiddenException.class,
+			ShipmentArchiveForbiddenException.class,
+			ShipmentNotEditableException.class
+	})
 	public ResponseEntity<Map<String, String>> handleAccessForbidden(RuntimeException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}
 
-	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
-	public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-		if (LocalDate.class.equals(ex.getRequiredType())) {
-			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
-					.body(body("Shipment information is missing or invalid",
-							Map.of(ex.getName(), "Arrival date must use ISO format YYYY-MM-DD")));
-		}
-		return notFound();
+	@ExceptionHandler(ShipmentAlreadyArchivedException.class)
+	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ShipmentAlreadyArchivedException.MESSAGE));
 	}
 
 	@ExceptionHandler(ShipmentNotFoundException.class)
@@ -95,6 +102,22 @@ public class ShipmentExceptionHandler {
 	private ResponseEntity<Map<String, String>> notFound() {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentNotFoundException.MESSAGE));
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException exception,
+			HttpServletRequest request) {
+		if (LocalDate.class.equals(exception.getRequiredType())) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(body("Shipment information is missing or invalid",
+							Map.of(exception.getName(), "Arrival date must use ISO format YYYY-MM-DD")));
+		}
+		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
+				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(Map.of("message", InvalidShipmentIdException.MESSAGE));
+		}
+		return notFound();
 	}
 
 	@ExceptionHandler(SessionEndedException.class)

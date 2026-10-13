@@ -122,6 +122,10 @@ public class Shipment {
 		this.updatedAt = now;
 	}
 
+	void archive() {
+		this.status = ShipmentStatus.ARCHIVED;
+	}
+
 	void markUpdated(UserAccount updatedBy, Instant updatedAt) {
 		this.updatedBy = updatedBy;
 		this.updatedAt = updatedAt;

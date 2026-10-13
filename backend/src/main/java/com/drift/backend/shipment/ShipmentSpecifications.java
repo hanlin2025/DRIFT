@@ -43,9 +43,11 @@ final class ShipmentSpecifications {
 	static Specification<Shipment> visibleToCompany(Long companyId) {
 		return (root, query, builder) -> {
 			Join<Shipment, Company> importer = root.join("importerCompany", JoinType.LEFT);
-			return builder.or(
-					builder.equal(root.get("company").get("id"), companyId),
-					builder.equal(importer.get("id"), companyId));
+			return builder.and(
+					builder.or(
+							builder.equal(root.get("company").get("id"), companyId),
+							builder.equal(importer.get("id"), companyId)),
+					builder.equal(root.get("status"), ShipmentStatus.ACTIVE));
 		};
 	}
 

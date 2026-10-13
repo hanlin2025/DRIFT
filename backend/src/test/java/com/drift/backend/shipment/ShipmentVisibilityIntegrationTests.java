@@ -24,6 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,9 +37,20 @@ import com.jayway.jsonpath.JsonPath;
 
 import jakarta.persistence.EntityManager;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+		"spring.datasource.url=${DRIFT_CDG81_VISIBILITY_JDBC_URL}",
+		"spring.flyway.url=${DRIFT_CDG81_VISIBILITY_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"spring.flyway.user=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"app.ais.enabled=false",
+		"drift.startup-guard.expected-url=${DRIFT_CDG81_VISIBILITY_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG81_VISIBILITY_OWNERSHIP_TOKEN}"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = ShipmentDisposableDatabaseGuard.class)
 @Transactional
 class ShipmentVisibilityIntegrationTests {
 

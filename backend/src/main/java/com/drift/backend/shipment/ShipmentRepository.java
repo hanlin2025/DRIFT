@@ -13,7 +13,8 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 
 	@Query("""
 			SELECT shipment FROM Shipment shipment
-			WHERE shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId
+			WHERE (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)
+				AND shipment.status = com.drift.backend.shipment.ShipmentStatus.ACTIVE
 			ORDER BY shipment.createdAt DESC
 			""")
 	List<Shipment> findVisibleByCompanyIdOrderByCreatedAtDesc(@Param("companyId") Long companyId);

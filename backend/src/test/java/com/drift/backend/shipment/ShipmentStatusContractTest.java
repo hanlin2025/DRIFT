@@ -34,7 +34,18 @@ import com.drift.backend.shipment.csvimport.ShipmentImportShipmentCreator;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+		"spring.datasource.url=${DRIFT_CDG81_STATUS_JDBC_URL}",
+		"spring.flyway.url=${DRIFT_CDG81_STATUS_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"spring.flyway.user=${DRIFT_CDG81_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG81_DB_PASSWORD}",
+		"app.ais.enabled=false",
+		"app.jwt.secret=test-only-jwt-secret-not-used-outside-tests",
+		"drift.startup-guard.expected-url=${DRIFT_CDG81_STATUS_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG81_STATUS_OWNERSHIP_TOKEN}"
+})
 @AutoConfigureMockMvc
 @ContextConfiguration(initializers = ShipmentStatusDatabaseGuard.class)
 class ShipmentStatusContractTest {
@@ -97,9 +108,14 @@ class ShipmentStatusContractTest {
 				String.class)).contains("ACTIVE");
 		assertThat(jdbc.queryForObject("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'shipments_status_check'",
 				String.class)).contains("ACTIVE").contains("ARCHIVED");
-		assertThat(List.of(Shipment.class.getDeclaredMethods())).noneMatch(method -> method.getName().equals("setStatus")
-				|| method.getName().equals("archive"));
-		assertThat(ShipmentRepository.class.getMethod("findVisibleByCompanyIdOrderByCreatedAtDesc", Long.class)
+		assertThat(List.of(Shipment.class.getDeclaredMethods())).noneMatch(method -> method.getName().equals("setStatus"));
+		assertThat(List.of(Shipment.class.getDeclaredMethods())).anyMatch(method -> method.getName().equals("archive"));
+		String activeListQuery = ShipmentRepository.class
+				.getMethod("findVisibleByCompanyIdOrderByCreatedAtDesc", Long.class)
+				.getAnnotation(Query.class).value();
+		assertThat(activeListQuery).contains("shipment.status = com.drift.backend.shipment.ShipmentStatus.ACTIVE")
+				.doesNotContain("'ACTIVE'");
+		assertThat(ShipmentRepository.class.getMethod("findByIdVisibleToCompanyId", Long.class, Long.class)
 				.getAnnotation(Query.class).value()).doesNotContain("status");
 
 		MvcResult created = create(shipment("HBL-API-ACTIVE", null));
@@ -167,7 +183,7 @@ class ShipmentStatusContractTest {
 	}
 
 	@Test
-	void readsAnArchivedDatabaseValueAndKeepsItInTheCurrentList() throws Exception {
+	void readsAnArchivedDatabaseValueAndOmitsItFromTheActiveList() throws Exception {
 		MvcResult created = create(shipment("HBL-STILL-ACTIVE", null));
 		assertThat(created.getResponse().getStatus()).as(created.getResponse().getContentAsString()).isEqualTo(201);
 		Long activeId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
@@ -205,7 +221,20 @@ class ShipmentStatusContractTest {
 		assertThat((List<String>) JsonPath.read(listJson, "$[?(@.shipmentReference == 'HBL-STILL-ACTIVE')].status"))
 				.containsExactly("ACTIVE");
 		assertThat((List<String>) JsonPath.read(listJson, "$[?(@.shipmentReference == 'HBL-ARCHIVED-FIXTURE')].status"))
-				.containsExactly("ARCHIVED");
+				.isEmpty();
+		String filteredJson = mvc.perform(get("/api/shipments").param("reference", "ARCHIVED-FIXTURE")
+				.header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		assertThat((List<String>) JsonPath.read(filteredJson, "$[?(@.shipmentReference == 'HBL-ARCHIVED-FIXTURE')].status"))
+				.isEmpty();
+		assertThat((List<?>) JsonPath.read(filteredJson, "$")).isEmpty();
+		String activeFilterJson = mvc.perform(get("/api/shipments").param("reference", "HBL-STILL")
+				.header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		assertThat((List<String>) JsonPath.read(activeFilterJson, "$[?(@.shipmentReference == 'HBL-STILL-ACTIVE')].status"))
+				.containsExactly("ACTIVE");
 
 		mvc.perform(get("/api/shipments/" + archivedId + "/tracking").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
