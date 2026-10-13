@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
+import { getShipment, getShipmentTracking, type ArrivalComparison, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RemoveShipment } from './RemoveShipment';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
@@ -197,7 +197,11 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
           <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
-          <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
+          <div>
+            <dt>Planned arrival</dt>
+            <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
+            {shipment.arrivalComparison && <ArrivalComparisonFacts comparison={shipment.arrivalComparison} />}
+          </div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
           <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
@@ -223,6 +227,26 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
 }
 
 const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+
+function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
+  if (comparison.unavailableReason) {
+    return (
+      <dl className="arrival-comparison">
+        <div><dt>Estimated arrival</dt><dd>{comparison.unavailableReason.message}</dd></div>
+      </dl>
+    );
+  }
+  return (
+    <dl className="arrival-comparison">
+      <div><dt>Estimated arrival</dt><dd><time dateTime={comparison.estimatedArrivalAt}>{formatWhen(comparison.estimatedArrivalAt)}</time></dd></div>
+      <div><dt>Comparison</dt><dd>{comparison.difference}</dd></div>
+      <div><dt>Limitation</dt><dd>{comparison.limitation}</dd></div>
+      <div><dt>Speed used</dt><dd>{comparison.speedOverGroundKnots} knots</dd></div>
+      <div><dt>Last received</dt><dd><time dateTime={comparison.lastReceivedAt}>{formatWhen(comparison.lastReceivedAt)}</time></dd></div>
+      {comparison.possiblyOutdated && <div><dt>Position freshness</dt><dd>Possibly outdated</dd></div>}
+    </dl>
+  );
+}
 
 function formatLive(position: VesselPosition | null) {
   if (!position) return 'No live AIS position';

@@ -60,6 +60,7 @@ beforeEach(() => {
     status: null,
     motherVesselPosition: null,
     feederVesselPosition: null,
+    arrivalComparison: null,
   }));
 });
 
@@ -99,6 +100,7 @@ const listed: Shipment = {
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 
 describe('shipment registration', () => {
@@ -290,6 +292,7 @@ describe('importer linking', () => {
       status: null,
       motherVesselPosition: null,
       feederVesselPosition: null,
+      arrivalComparison: null,
       importer: importerCompanyId == null ? null : straits,
     }));
     await openPortfolio();
@@ -325,6 +328,7 @@ describe('importer linking', () => {
         status: null,
         motherVesselPosition: null,
         feederVesselPosition: null,
+        arrivalComparison: null,
         importer: straits,
       }));
     await openPortfolio();

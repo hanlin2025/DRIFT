@@ -35,6 +35,7 @@ describe('shipment importer API', () => {
     expect(listed[0].importer).toBeNull();
     expect(listed[0].motherVesselImo).toBeNull();
     expect(listed[0].motherVesselNameWarning).toBeNull();
+    expect(listed[0].arrivalComparison).toBeNull();
     expect(fetch).toHaveBeenCalledWith('/api/shipments', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
@@ -206,7 +207,95 @@ describe('archiveShipment', () => {
       message: 'Shipment removed successfully',
     });
   });
+});
 
+describe('arrival comparison parsing', () => {
+  const limitation = 'Approximate arrival — based on straight-line distance and current speed.';
+
+  function available(classification: 'AHEAD_OF_PLAN' | 'ON_SCHEDULE' | 'BEHIND_PLAN', difference: string, possiblyOutdated = false) {
+    return {
+      estimatedArrivalAt: '2026-10-02T01:30:00Z',
+      limitation,
+      speedOverGroundKnots: 12.375,
+      classification,
+      difference,
+      differenceSeconds: classification === 'AHEAD_OF_PLAN' ? -5400 : 5400,
+      differenceNanos: classification === 'AHEAD_OF_PLAN' ? -1 : 0,
+      lastReceivedAt: '2026-10-01T18:00:00.123456Z',
+      possiblyOutdated,
+      unavailableReason: null,
+    };
+  }
+
+  function unavailable(code: string, message: string) {
+    return {
+      estimatedArrivalAt: null,
+      limitation: null,
+      speedOverGroundKnots: null,
+      classification: null,
+      difference: null,
+      differenceSeconds: null,
+      differenceNanos: null,
+      lastReceivedAt: null,
+      possiblyOutdated: null,
+      unavailableReason: { code, message },
+    };
+  }
+
+  it('reads a detail response that omits the comparison', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    const detail = await getShipment('token', '9');
+    expect(detail.arrivalComparison).toBeNull();
+    expect(detail.connectionWindow).toBeNull();
+  });
+
+  it('reads an explicit null comparison on a list item', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, arrivalComparison: null }])));
+    const listed = await listShipments('token');
+    expect(listed[0].arrivalComparison).toBeNull();
+  });
+
+  it.each([
+    ['AHEAD_OF_PLAN', 'Ahead of plan · estimated 1h 30m earlier than planned'],
+    ['ON_SCHEDULE', 'On schedule · estimated 1h 30m later than planned'],
+    ['BEHIND_PLAN', 'Behind plan · estimated 6h later than planned'],
+  ] as const)('reads an available %s comparison', async (classification, difference) => {
+    const comparison = available(classification, difference, classification === 'BEHIND_PLAN');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, arrivalComparison: comparison })));
+    const detail = await getShipment('token', '9');
+    expect(detail.arrivalComparison).toEqual(comparison);
+  });
+
+  it('reads an unavailable comparison with null arrival fields', async () => {
+    const comparison = unavailable('NO_POSITION', 'No AIS position has been received for the mother vessel.');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, arrivalComparison: comparison })));
+    const detail = await getShipment('token', '9');
+    expect(detail.arrivalComparison).toEqual(comparison);
+    expect(detail.arrivalComparison?.estimatedArrivalAt).toBeNull();
+  });
+
+  it.each([
+    'soon',
+    { estimatedArrivalAt: '2026-10-02T01:30:00Z' },
+    { ...available('ON_SCHEDULE', 'On schedule · estimated 1h 30m later than planned'), unavailableReason: { code: 'NO_POSITION', message: 'No AIS position has been received for the mother vessel.' } },
+    { ...unavailable('NO_POSITION', 'No AIS position has been received for the mother vessel.'), estimatedArrivalAt: '2026-10-02T01:30:00Z' },
+    { ...available('ON_SCHEDULE', 'On schedule · estimated at the planned time'), classification: 'LATE' },
+    { ...unavailable('NO_POSITION', 'No AIS position has been received for the mother vessel.'), possiblyOutdated: false },
+  ])('rejects a malformed comparison instead of treating it as omitted %#', async comparison => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, arrivalComparison: comparison })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('rejects a list when one comparison is malformed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([
+      shipment,
+      { ...shipment, id: 10, arrivalComparison: { estimatedArrivalAt: '2026-10-02T01:30:00Z' } },
+    ])));
+    await expect(listShipments('token')).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe('archiveShipment', () => {
   it.each([
     [400, 'Invalid Shipment ID.'],
     [403, 'You do not have permission to archive this shipment.'],

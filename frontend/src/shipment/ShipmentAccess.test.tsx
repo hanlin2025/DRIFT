@@ -59,6 +59,7 @@ const shipment: Shipment = {
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 
 function Location() { return <output data-testid="location">{useLocation().pathname}</output>; }

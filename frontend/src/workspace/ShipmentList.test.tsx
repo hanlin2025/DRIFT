@@ -31,6 +31,7 @@ const newer: Shipment = {
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 const older: Shipment = {
   id: 1,
@@ -50,6 +51,7 @@ const older: Shipment = {
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
+  arrivalComparison: null,
 };
 
 const account = (role: Session['role']): Session => ({
