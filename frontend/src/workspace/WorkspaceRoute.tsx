@@ -39,6 +39,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
         <Wordmark href={basePath} />
         {account.role === 'FREIGHT_FORWARDER' ? <Link className="workspace-nav" to="/freight-forwarder/import">Import shipments</Link> : null}
         {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
+        <Link className="workspace-nav" to="/profile">Profile</Link>
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <main className="workspace-main">

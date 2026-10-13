@@ -50,6 +50,10 @@ The registration form stays on the freight-forwarder page. It collects the requi
 
 The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A Risk badge rates that window: Critical when the feeder departs at or before the mother vessel's arrival, High under 12 hours, Medium under 24 hours and Low otherwise, with a one-line explanation. It shows Pending assignment until the feeder departure is scheduled. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
 
+## Profile
+
+The workspace header and the administrator header open `/profile` for the signed-in user. The page loads `GET /api/profile`. Full name is editable. Email, company, and role are read-only, and a user with no company sees "No company assigned". The shipment-risk section stores whether those emails are on and the minimum level, one of LOW, MEDIUM, HIGH, or CRITICAL. HIGH includes HIGH and CRITICAL. The password section uses the same four rules as registration. Save sends `PATCH /api/profile` and leaves both password fields out when they are empty. A validation failure shows the API message and stays on the page. A successful password change ends the session and returns to login with "Your password was changed. Log in with the new password." The page does not edit the email address, offer a photo, or send a notification email.
+
 ## Browser tests
 
 With the backend running on port 8080 against the default `drift` database:
