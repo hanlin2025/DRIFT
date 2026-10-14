@@ -7,7 +7,8 @@ public record ShipmentFilterCriteria(
 		String reference,
 		String vessel,
 		String customer,
-		LocalDate arrivalDate) {
+		LocalDate arrivalDate,
+		ShipmentStatus status) {
 
 	public ShipmentFilterCriteria {
 		reference = optionalText(reference);
@@ -16,11 +17,16 @@ public record ShipmentFilterCriteria(
 	}
 
 	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate) {
-		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate);
+		return of(reference, vessel, customer, arrivalDate, null);
+	}
+
+	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate,
+			ShipmentStatus status) {
+		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate, status);
 	}
 
 	public static ShipmentFilterCriteria none() {
-		return new ShipmentFilterCriteria(null, null, null, null);
+		return new ShipmentFilterCriteria(null, null, null, null, null);
 	}
 
 	private static String optionalText(String value) {

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   applyShipmentFilters,
   EMPTY_SHIPMENT_FILTERS,
+  isShipmentStatus,
   shipmentFiltersFromSearchParams,
   type ShipmentFilters,
 } from '../shipment/shipmentFilters';
@@ -14,7 +15,7 @@ export function ShipmentFilterControls() {
 
   useEffect(() => {
     setDraft(applied);
-  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate]);
+  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate, applied.status]);
 
   function update(field: keyof ShipmentFilters, value: string) {
     setDraft(current => ({ ...current, [field]: value }));
@@ -51,6 +52,14 @@ export function ShipmentFilterControls() {
           <div className="field">
             <label htmlFor="shipment-filter-arrival-date">Filter by arrival date</label>
             <input id="shipment-filter-arrival-date" type="date" value={draft.arrivalDate} onChange={event => update('arrivalDate', event.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="shipment-filter-status">Filter by status</label>
+            <select id="shipment-filter-status" value={draft.status || 'ACTIVE'} onChange={event => update('status', event.target.value)}>
+              {draft.status && !isShipmentStatus(draft.status) ? <option value={draft.status} disabled>Invalid status</option> : null}
+              <option value="ACTIVE">Active</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
           </div>
         </div>
         <div className="shipment-filter-actions">

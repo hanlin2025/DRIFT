@@ -149,6 +149,42 @@ class ShipmentFilterApiIntegrationTests {
 	}
 
 	@Test
+	void filtersExplicitStatusWithoutCombiningItWithTheDefaultActiveScope() throws Exception {
+		insert(forwarder, linkedImporter, "HBL-ACTIVE-STATUS", "MV Pacific Horizon", "MV Feeder", "2026-10-12T09:00:00+08:00",
+				"2026-10-01T00:00:00Z");
+		insert(forwarder, linkedImporter, "HBL-ARCHIVED-STATUS", "MV Pacific Horizon", "MV Feeder", "2026-10-12T09:00:00+08:00",
+				"2026-10-02T00:00:00Z");
+		insert(unrelated, null, "HBL-HIDDEN-ARCHIVED", "MV Pacific Horizon", "MV Feeder", "2026-10-12T09:00:00+08:00",
+				"2026-10-03T00:00:00Z");
+		archive("HBL-ARCHIVED-STATUS");
+		archive("HBL-HIDDEN-ARCHIVED");
+
+		list(forwarderToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ACTIVE-STATUS')]").isNotEmpty())
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ARCHIVED-STATUS')]").isEmpty());
+		list(forwarderToken, "status", "ACTIVE").andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ACTIVE-STATUS')]").isNotEmpty())
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ARCHIVED-STATUS')]").isEmpty());
+		list(forwarderToken, "status", "ARCHIVED", "reference", "archived", "vessel", "pacific", "customer",
+				linkedImporter.code(), "arrivalDate", "2026-10-12").andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-ARCHIVED-STATUS"))
+				.andExpect(jsonPath("$.length()").value(1));
+		list(linkedImporterToken, "status", "ARCHIVED").andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-ARCHIVED-STATUS"));
+		list(unrelatedToken, "status", "ARCHIVED").andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+	}
+
+	@Test
+	void returnsStructuredBadRequestForUnsupportedStatusAndKeepsArrivalDateValidation() throws Exception {
+		list(forwarderToken, "status", "banana").andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Shipment information is missing or invalid"))
+				.andExpect(jsonPath("$.errors.status").value("Status must be ACTIVE or ARCHIVED"));
+		list(forwarderToken, "arrivalDate", "banana").andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.arrivalDate").value("Arrival date must use ISO format YYYY-MM-DD"));
+	}
+
+	@Test
 	void preservesUnauthenticatedListBehaviour() throws Exception {
 		mvc.perform(get("/api/shipments")).andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
@@ -203,5 +239,9 @@ class ShipmentFilterApiIntegrationTests {
 	}
 
 	private record CompanyFixture(Long id, String code) {
+	}
+
+	private void archive(String reference) {
+		jdbc.update("UPDATE shipments SET status = 'ARCHIVED' WHERE shipment_reference = ?", reference);
 	}
 }

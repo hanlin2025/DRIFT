@@ -1,17 +1,21 @@
+export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
+
 export type ShipmentFilters = {
   reference: string;
   vessel: string;
   customer: string;
   arrivalDate: string;
+	 status: string;
 };
 
-export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate'] as const;
+export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate', 'status'] as const;
 
 export const EMPTY_SHIPMENT_FILTERS: ShipmentFilters = {
   reference: '',
   vessel: '',
   customer: '',
   arrivalDate: '',
+	 status: '',
 };
 
 export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFilters {
@@ -20,6 +24,7 @@ export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): 
     vessel: searchParams.get('vessel') ?? '',
     customer: searchParams.get('customer') ?? '',
     arrivalDate: searchParams.get('arrivalDate') ?? '',
+	 status: searchParams.get('status') ?? '',
   };
 }
 
@@ -31,7 +36,12 @@ export function applyShipmentFilters(searchParams: URLSearchParams, filters: Shi
   setText(next, 'vessel', filters.vessel);
   setText(next, 'customer', filters.customer);
   setText(next, 'arrivalDate', filters.arrivalDate);
+	 setText(next, 'status', filters.status);
   return next;
+}
+
+export function isShipmentStatus(value: string): value is ShipmentStatus {
+	return value === 'ACTIVE' || value === 'ARCHIVED';
 }
 
 export function shipmentFilterSearchParams(filters: ShipmentFilters): URLSearchParams {

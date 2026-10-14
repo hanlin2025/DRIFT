@@ -24,7 +24,8 @@ final class ShipmentSpecifications {
 	}
 
 	static Specification<Shipment> matching(Long companyId, ShipmentFilterCriteria criteria) {
-		Specification<Shipment> specification = visibleToCompany(companyId);
+		Specification<Shipment> specification = authorizedToCompany(companyId)
+				.and(statusEquals(criteria.status() == null ? ShipmentStatus.ACTIVE : criteria.status()));
 		if (criteria.reference() != null) {
 			specification = specification.and(referenceContains(criteria.reference()));
 		}
@@ -40,15 +41,17 @@ final class ShipmentSpecifications {
 		return specification;
 	}
 
-	static Specification<Shipment> visibleToCompany(Long companyId) {
+	static Specification<Shipment> authorizedToCompany(Long companyId) {
 		return (root, query, builder) -> {
 			Join<Shipment, Company> importer = root.join("importerCompany", JoinType.LEFT);
-			return builder.and(
-					builder.or(
-							builder.equal(root.get("company").get("id"), companyId),
-							builder.equal(importer.get("id"), companyId)),
-					builder.equal(root.get("status"), ShipmentStatus.ACTIVE));
+			return builder.or(
+					builder.equal(root.get("company").get("id"), companyId),
+					builder.equal(importer.get("id"), companyId));
 		};
+	}
+
+	static Specification<Shipment> statusEquals(ShipmentStatus status) {
+		return (root, query, builder) -> builder.equal(root.get("status"), status);
 	}
 
 	static Specification<Shipment> referenceContains(String reference) {
