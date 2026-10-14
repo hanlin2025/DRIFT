@@ -180,3 +180,20 @@ npm run test:e2e:detail
 That command runs `scripts/run-shipment-detail.mjs`, which creates, uses, and drops its own
 `drift_cdg101_*` database the same way the map monitoring runner does. `npm run test:e2e` does
 not run this spec.
+
+### Operational state
+
+`e2e/operational-state.spec.ts` opens an authorised shipment and checks the vessel state.
+With no AIS report the state is Unknown. A newer report updates it on reload: at anchor near
+Singapore, moored near Singapore, moored while moving with "This state may be unreliable.",
+under way and far from the port, then Unknown near Singapore. A freight forwarder from another
+company gets 403 and sees Access denied, without the state.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npm run test:e2e:operational-state
+```
+
+That command uses the shipment detail runner to create, use, and drop a `drift_cdg139_*`
+database. `npm run test:e2e` does not run this spec.

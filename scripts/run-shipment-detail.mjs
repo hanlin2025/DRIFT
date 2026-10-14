@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(root, 'frontend');
 const backendDir = path.join(root, 'backend');
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
-const ownedName = /^drift_cdg101_[0-9]{14}_[a-f0-9]{12}$/;
+const ownedName = /^drift_cdg(?:101|139)_[0-9]{14}_[a-f0-9]{12}$/;
 const createdByThisProcess = new Set();
 let activeBackend = null;
 let activePlaywright = null;
@@ -37,13 +37,16 @@ function databaseExists(name) {
   return psql('postgres', `SELECT COUNT(*) FROM pg_database WHERE datname = '${name}'`).trim() !== '0';
 }
 
-function generateName() {
+function generateName(prefix) {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
-  return `drift_cdg101_${stamp}_${randomBytes(6).toString('hex')}`;
+  return `${prefix}_${stamp}_${randomBytes(6).toString('hex')}`;
 }
 
-export async function createOwnedDatabase({ names } = {}) {
-  const candidates = names ?? Array.from({ length: 5 }, generateName);
+export async function createOwnedDatabase({ names, prefix = 'drift_cdg101' } = {}) {
+  if (!/^drift_cdg(?:101|139)$/.test(prefix)) {
+    throw new Error(`Refusing to create a database with prefix ${prefix}.`);
+  }
+  const candidates = names ?? Array.from({ length: 5 }, () => generateName(prefix));
   for (const name of candidates) {
     if (blocked.has(name) || !ownedName.test(name)) continue;
     if (databaseExists(name)) continue;
@@ -234,9 +237,20 @@ async function stopProcessGroup(child) {
   throw new Error('A process this runner started did not exit after it was signalled.');
 }
 
+function installSignals() {
+  if (installSignals.installed) return;
+  installSignals.installed = true;
+  process.on('SIGINT', stopForSignal);
+  process.on('SIGTERM', stopForSignal);
+}
+
 export async function runShipmentDetail(options = {}) {
+  installSignals();
   assertPortsAvailable();
-  const owned = await (options.createDatabase ?? createOwnedDatabase)();
+  const createDatabase = options.createDatabase ?? (
+    () => createOwnedDatabase({ prefix: options.databasePrefix ?? 'drift_cdg101' })
+  );
+  const owned = await createDatabase();
   let testCode = 1;
   let failure = null;
   const failures = [];
@@ -288,8 +302,6 @@ function stopForSignal() {
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  process.on('SIGINT', stopForSignal);
-  process.on('SIGTERM', stopForSignal);
   runShipmentDetail().then(code => {
     process.exitCode = signals > 0 ? 130 : code;
   }).catch(error => {
