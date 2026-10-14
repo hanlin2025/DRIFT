@@ -229,3 +229,24 @@ npm run test:e2e:vessel-details
 That command runs `scripts/run-vessel-details.mjs`, which creates, uses, and drops its own
 `drift_cdg147_*` database the same way the shipment detail runner does. It covers desktop and
 mobile. `npm run test:e2e` does not run this spec.
+
+### Arrival comparison
+
+`e2e/arrival-comparison.spec.ts` opens a shipment whose arrival comparison comes from the live
+detail API. The page shows the planned arrival beside the estimate, the limitation, the speed
+in knots, the difference, and the last-received time. It covers an arrival ahead of plan, one
+90 minutes later, one 6 hours later, and a position 7 hours old. Opening that first shipment
+again leaves the estimated time unchanged. The connection window stays 6 hours and the risk
+stays High.
+
+From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:arrival-comparison
+```
+
+That command runs `scripts/run-arrival-comparison.mjs`, which creates and uses its own
+`drift_cdg152_browser_*` database. SQL uses Docker Compose when it is available and `psql` on
+`127.0.0.1` otherwise. The spec uses the path the runner selected. It covers desktop and mobile.
+The runner leaves the database in place. `npm run test:e2e` does not run this spec.

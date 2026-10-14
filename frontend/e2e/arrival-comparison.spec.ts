@@ -1,8 +1,11 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const database = process.env.DRIFT_E2E_DATABASE ?? '';
+const access = process.env.DRIFT_E2E_PSQL ?? '';
 const ownerToken = process.env.DRIFT_E2E_OWNER_TOKEN ?? '';
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const password = 'Example123';
@@ -10,7 +13,7 @@ const LIMITATION = 'Approximate arrival — based on straight-line distance and 
 
 function assertOwnedDatabase() {
   if (blocked.has(database) || !/^drift_cdg152_browser_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken)) {
-    throw new Error('Run this spec through node scripts/run-arrival-comparison.mjs. A database name is not proof that this run created the database.');
+    throw new Error('Run this spec through npm run test:e2e:arrival-comparison. A database name is not proof that this run created the database.');
   }
   const current = sql('SELECT current_database();');
   const comment = sql("SELECT coalesce(pg_catalog.shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = current_database();");
@@ -20,10 +23,18 @@ function assertOwnedDatabase() {
 }
 
 function sql(query: string, variables: Record<string, string> = {}) {
-  return execFileSync('docker', ['exec', '-i', '-e', 'PGPASSWORD=drift', 'drift-postgres', 'psql',
-    '-h', '127.0.0.1', '-p', '5432', '-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At',
-    ...Object.entries(variables).flatMap(([key, value]) => ['-v', `${key}=${value}`])],
-    { input: query, encoding: 'utf8' }).trim();
+  if (access !== 'compose' && access !== 'host') {
+    throw new Error('Run this spec through npm run test:e2e:arrival-comparison. The runner chooses the database access path.');
+  }
+  const common = ['-h', '127.0.0.1', '-p', '5432', '-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At',
+    ...Object.entries(variables).flatMap(([key, value]) => ['-v', `${key}=${value}`])];
+  if (access === 'compose') {
+    return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', ...common],
+      { cwd: root, input: query, encoding: 'utf8', env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' } }).trim();
+  }
+  return execFileSync('psql', common, {
+    cwd: root, input: query, encoding: 'utf8', env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' },
+  }).trim();
 }
 
 function mmsi() {

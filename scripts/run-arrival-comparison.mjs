@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -12,10 +12,44 @@ let activeBackend = null;
 let activePlaywright = null;
 let signals = 0;
 
+function commandWorks(command, args) {
+  return spawnSync(command, args, { cwd: root, encoding: 'utf8' }).status === 0;
+}
+
+function selectAccess() {
+  const requested = process.env.DRIFT_E2E_PSQL;
+  if (requested === 'compose') {
+    if (!commandWorks('docker', ['compose', 'version'])) {
+      throw new Error('DRIFT_E2E_PSQL=compose but Docker Compose is not available. No other database path was tried.');
+    }
+    return 'compose';
+  }
+  if (requested === 'host') {
+    if (!commandWorks('psql', ['--version'])) {
+      throw new Error('DRIFT_E2E_PSQL=host but psql is not available. No other database path was tried.');
+    }
+    return 'host';
+  }
+  if (requested) {
+    throw new Error(`DRIFT_E2E_PSQL=${requested} is not a database access path. No database was contacted.`);
+  }
+  if (commandWorks('docker', ['compose', 'version'])) return 'compose';
+  if (commandWorks('psql', ['--version'])) return 'host';
+  throw new Error('Neither Docker Compose nor host psql is available. No database was contacted.');
+}
+
+const access = selectAccess();
+
 function psql(database, statement) {
-  return execFileSync('docker', ['exec', '-e', 'PGPASSWORD=drift', 'drift-postgres', 'psql',
-    '-h', '127.0.0.1', '-p', '5432', '-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement],
-    { encoding: 'utf8' });
+  const common = ['-h', '127.0.0.1', '-p', '5432', '-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement];
+  if (access === 'compose') {
+    return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', ...common],
+      { cwd: root, encoding: 'utf8', env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' } });
+  }
+  return execFileSync('psql', common, {
+    encoding: 'utf8',
+    env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' },
+  });
 }
 
 function generateName() {
@@ -132,7 +166,7 @@ function waitForBackend(child, owned) {
 function runPlaywright(owned) {
   const child = spawn('npx', ['playwright', 'test', 'e2e/arrival-comparison.spec.ts', '--grep', '@disposable-database'], {
     cwd: frontendDir,
-    env: { ...process.env, DRIFT_E2E_DATABASE: owned.name, DRIFT_E2E_OWNER_TOKEN: owned.token, CI: '1' },
+    env: { ...process.env, DRIFT_E2E_DATABASE: owned.name, DRIFT_E2E_OWNER_TOKEN: owned.token, DRIFT_E2E_PSQL: access, CI: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   activePlaywright = child;
@@ -196,6 +230,7 @@ async function stopProcessGroup(child) {
 }
 
 export async function runArrivalComparison() {
+  console.log(`Database access: ${access === 'compose' ? 'docker compose exec' : 'psql -h 127.0.0.1'}.`);
   assertPortsAvailable();
   const owned = createOwnedDatabase();
   console.log(`Arrival comparison browser database: ${owned.name}`);
