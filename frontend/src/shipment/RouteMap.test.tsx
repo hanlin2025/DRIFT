@@ -236,13 +236,13 @@ describe('shipment route display', () => {
     };
     expect(segments.features.map(feature => feature.properties.slow)).toEqual([false, true]);
 
-    mapCalls.layerHandlers.get('click:vessel-track-points')!({ features: [{ properties: { index: 2 } }] });
-    expect(onSelectPoint).toHaveBeenCalledWith(2);
+    mapCalls.layerHandlers.get('click:vessel-track-points')!({ features: [{ properties: { ingestedAt: '2026-10-05T03:00:00Z' } }] });
+    expect(onSelectPoint).toHaveBeenCalledWith('2026-10-05T03:00:00Z');
 
-    rerender(<RouteMap shipment={shipment} history={history} selectedPoint={2} onSelectPoint={onSelectPoint} />);
-    await waitFor(() => expect(mapCalls.setFilter).toHaveBeenLastCalledWith('vessel-track-selected', ['==', ['get', 'index'], 2]));
+    rerender(<RouteMap shipment={shipment} history={history} selectedAt="2026-10-05T03:00:00Z" onSelectPoint={onSelectPoint} />);
+    await waitFor(() => expect(mapCalls.setFilter).toHaveBeenLastCalledWith('vessel-track-selected', ['==', ['get', 'ingestedAt'], '2026-10-05T03:00:00Z']));
 
-    rerender(<RouteMap shipment={shipment} history={{ ...history, points: [] }} selectedPoint={null} onSelectPoint={onSelectPoint} />);
+    rerender(<RouteMap shipment={shipment} history={{ ...history, points: [] }} selectedAt={null} onSelectPoint={onSelectPoint} />);
     await waitFor(() => expect(mapCalls.setData).toHaveBeenLastCalledWith('vessel-track-points', { type: 'FeatureCollection', features: [] }));
   });
 });

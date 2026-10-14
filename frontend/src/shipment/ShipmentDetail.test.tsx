@@ -8,6 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, listShipments, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
+import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
@@ -846,6 +847,63 @@ describe('vessel track history on the shipment detail', () => {
     expect(within(selected).getByText('1.5 kn')).toBeInTheDocument();
     expect(within(selected).getByText('182° S')).toBeInTheDocument();
     expect(selected.querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
+  });
+
+  it('keeps the selected observation across polls and clears it once that observation leaves the window', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup();
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      const points = await within(history).findByRole('list', { name: 'Track points' });
+      await user.click(within(points).getAllByRole('button')[1]);
+      expect(within(history).getByLabelText('Selected track point').querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
+
+      const later = { latitude: 1.3, longitude: 103.8, speedOverGroundKnots: 7, courseOverGroundDegrees: 45, trueHeadingDegrees: 45, ingestedAt: '2026-10-05T04:00:00Z' };
+      vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: [...track.points.slice(1), later] });
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getVesselTrack).toHaveBeenCalledTimes(2);
+      const selected = within(history).getByLabelText('Selected track point');
+      expect(selected.querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
+      expect(within(selected).getByText('1.5 kn')).toBeInTheDocument();
+
+      vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: [track.points[2], later] });
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getVesselTrack).toHaveBeenCalledTimes(3);
+      expect(within(history).queryByLabelText('Selected track point')).not.toBeInTheDocument();
+      expect(within(history).getByText(SELECT_POINT)).toBeInTheDocument();
+
+      vi.mocked(getVesselTrack).mockResolvedValue(track);
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getVesselTrack).toHaveBeenCalledTimes(4);
+      expect(within(history).queryByLabelText('Selected track point')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not restore a selection after a failed window switch and a later successful poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup();
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      const points = await within(history).findByRole('list', { name: 'Track points' });
+      await user.click(within(points).getAllByRole('button')[1]);
+      expect(within(history).getByLabelText('Selected track point')).toBeInTheDocument();
+
+      vi.mocked(getVesselTrack).mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+      await user.click(within(history).getByRole('button', { name: '6h' }));
+      expect(await within(history).findByText(TRACK_LOAD_FAILED)).toBeInTheDocument();
+
+      vi.mocked(getVesselTrack).mockResolvedValue({ ...track, windowHours: 6 });
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 6);
+      expect(await within(history).findByText(/3 positions in the last 6 hours/)).toBeInTheDocument();
+      expect(within(history).queryByLabelText('Selected track point')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reloads the track for another window or vessel', async () => {

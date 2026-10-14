@@ -36,7 +36,7 @@ describe('track history helpers', () => {
     expect(segments.features.map(feature => feature.properties.slow)).toEqual([false, true, false]);
     expect(segments.features[1].geometry.coordinates).toEqual([[103.2, 1.2], [103.3, 1.2]]);
     expect(slowdownCount(points, 3)).toBe(1);
-    expect(trackPoints(points, 3).features.map(feature => feature.properties.index)).toEqual([0, 1, 2, 3]);
+    expect(trackPoints(points, 3).features.map(feature => feature.properties.ingestedAt)).toEqual(points.map(point => point.ingestedAt));
   });
 
   it('formats speed and heading for the point readout', () => {

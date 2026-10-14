@@ -17,7 +17,7 @@ export type TrackSegmentFeature = {
 
 export type TrackPointFeature = {
   type: 'Feature';
-  properties: { index: number; slow: boolean };
+  properties: { ingestedAt: string; slow: boolean };
   geometry: { type: 'Point'; coordinates: Position };
 };
 
@@ -53,9 +53,9 @@ export function trackSegments(points: readonly TrackPoint[], threshold: number) 
 }
 
 export function trackPoints(points: readonly TrackPoint[], threshold: number) {
-  const features: TrackPointFeature[] = points.map((point, index) => ({
+  const features: TrackPointFeature[] = points.map(point => ({
     type: 'Feature',
-    properties: { index, slow: isSlow(point.speedOverGroundKnots, threshold) },
+    properties: { ingestedAt: point.ingestedAt, slow: isSlow(point.speedOverGroundKnots, threshold) },
     geometry: { type: 'Point', coordinates: lngLat(point) },
   }));
   return { type: 'FeatureCollection' as const, features };

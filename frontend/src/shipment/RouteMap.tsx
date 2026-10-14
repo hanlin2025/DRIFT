@@ -121,7 +121,7 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
 
 const TRACK_LINE = '#2a6f97';
 const TRACK_SLOW = '#c2410c';
-const NO_SELECTION = -1;
+const NO_SELECTION = '';
 
 function emptyTrack() {
   return { type: 'FeatureCollection' as const, features: [] };
@@ -155,7 +155,7 @@ function addTrackLayers(globe: LiveGlobe['map']) {
     id: 'vessel-track-selected',
     type: 'circle',
     source: 'vessel-track-points',
-    filter: ['==', ['get', 'index'], NO_SELECTION],
+    filter: ['==', ['get', 'ingestedAt'], NO_SELECTION],
     paint: { 'circle-radius': 8, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#10231c', 'circle-stroke-width': 2.5 },
   });
 }
@@ -168,8 +168,8 @@ function placeTrack(handle: LiveGlobe, history: VesselTrack | null | undefined) 
   (handle.map.getSource('vessel-track-points') as GeoJsonSource | undefined)?.setData(trackPoints(points, threshold));
 }
 
-function markSelected(handle: LiveGlobe, selected: number | null | undefined) {
-  handle.map.setFilter('vessel-track-selected', ['==', ['get', 'index'], selected ?? NO_SELECTION]);
+function markSelected(handle: LiveGlobe, selectedAt: string | null | undefined) {
+  handle.map.setFilter('vessel-track-selected', ['==', ['get', 'ingestedAt'], selectedAt ?? NO_SELECTION]);
 }
 
 function livePin(fix: LiveFix) {
@@ -182,19 +182,19 @@ function livePin(fix: LiveFix) {
   return root;
 }
 
-export function RouteMap({ shipment, tracking, history, selectedPoint, onSelectPoint }: {
+export function RouteMap({ shipment, tracking, history, selectedAt, onSelectPoint }: {
   shipment: Shipment;
   tracking?: ShipmentTracking | null;
   history?: VesselTrack | null;
-  selectedPoint?: number | null;
-  onSelectPoint?: (index: number) => void;
+  selectedAt?: string | null;
+  onSelectPoint?: (ingestedAt: string) => void;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const historyRef = useRef(history);
-  const selectedRef = useRef(selectedPoint);
+  const selectedRef = useRef(selectedAt);
   const onSelectRef = useRef(onSelectPoint);
   historyRef.current = history;
-  selectedRef.current = selectedPoint;
+  selectedRef.current = selectedAt;
   onSelectRef.current = onSelectPoint;
   const globeRef = useRef<LiveGlobe | null>(null);
   const fixesRef = useRef<LiveFix[]>([]);
@@ -247,8 +247,8 @@ export function RouteMap({ shipment, tracking, history, selectedPoint, onSelectP
         }
         addTrackLayers(globe);
         globe.on('click', 'vessel-track-points', event => {
-          const index = event.features?.[0]?.properties?.index;
-          if (typeof index === 'number') onSelectRef.current?.(index);
+          const ingestedAt = event.features?.[0]?.properties?.ingestedAt;
+          if (typeof ingestedAt === 'string') onSelectRef.current?.(ingestedAt);
         });
         globe.on('mouseenter', 'vessel-track-points', () => { globe.getCanvas().style.cursor = 'pointer'; });
         globe.on('mouseleave', 'vessel-track-points', () => { globe.getCanvas().style.cursor = ''; });
@@ -284,8 +284,8 @@ export function RouteMap({ shipment, tracking, history, selectedPoint, onSelectP
   useEffect(() => {
     const handle = globeRef.current;
     if (!handle || !mapReadyRef.current) return;
-    markSelected(handle, selectedPoint);
-  }, [selectedPoint]);
+    markSelected(handle, selectedAt);
+  }, [selectedAt]);
 
   return (
     <figure className="route-chart" aria-label="Planned route">

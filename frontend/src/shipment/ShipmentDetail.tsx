@@ -38,10 +38,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [history, setHistory] = useState<VesselTrack | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
-  const [selectedPoint, setSelectedPoint] = useState<number | null>(null);
+  const [selectedAt, setSelectedAt] = useState<string | null>(null);
   const historySeq = useRef(0);
 
-  const reloadHistory = useCallback(async (keepSelection: boolean) => {
+  const reloadHistory = useCallback(async () => {
     const requestId = ++historySeq.current;
     setHistoryLoading(true);
     try {
@@ -49,7 +49,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (requestId !== historySeq.current) return;
       setHistory(found);
       setHistoryFailed(false);
-      if (!keepSelection) setSelectedPoint(null);
+      setSelectedAt(current => current !== null && found.points.some(point => point.ingestedAt === current) ? current : null);
     } catch (reason: unknown) {
       if (requestId !== historySeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
@@ -99,7 +99,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshNote(null);
     setRefreshing(false);
     setHistory(null);
-    setSelectedPoint(null);
+    setSelectedAt(null);
     getShipment(token, shipmentId).then(found => {
       if (active) setShipment(found);
     }).catch((reason: unknown) => {
@@ -145,13 +145,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   useEffect(() => {
     if (!shipmentLoaded) return;
     setHistory(null);
-    void reloadHistory(false);
+    void reloadHistory();
     return () => { historySeq.current += 1; };
   }, [shipmentLoaded, reloadHistory]);
 
   useEffect(() => {
     if (problem || !shipmentLoaded) return;
-    const timer = window.setInterval(() => { void reloadHistory(true); }, TRACKING_POLL_MS);
+    const timer = window.setInterval(() => { void reloadHistory(); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
   }, [problem, shipmentLoaded, reloadHistory]);
 
@@ -178,17 +178,25 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
             : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
-                  void reloadHistory(true);
+                  void reloadHistory();
                 }}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <RemoveShipment token={archive.token} shipmentId={shipment.id} reference={shipment.shipmentReference} onSessionEnded={archive.onSessionEnded} onRemoved={archive.onRemoved} onFailed={archive.onFailed} />
                   : null}
                 track={(
                   <TrackHistory vessel={trackVessel} hours={trackHours} history={history} loading={historyLoading}
-                    failed={historyFailed} feederAssigned={Boolean(shipment.feederVessel?.trim())} selectedPoint={selectedPoint}
-                    onVessel={setTrackVessel} onHours={setTrackHours} onSelectPoint={setSelectedPoint} />
+                    failed={historyFailed} feederAssigned={Boolean(shipment.feederVessel?.trim())} selectedAt={selectedAt}
+                    onVessel={vessel => {
+                      setSelectedAt(null);
+                      setTrackVessel(vessel);
+                    }}
+                    onHours={hours => {
+                      setSelectedAt(null);
+                      setTrackHours(hours);
+                    }}
+                    onSelectPoint={setSelectedAt} />
                 )}
-                history={history} selectedPoint={selectedPoint} onSelectPoint={setSelectedPoint} />}
+                history={history} selectedAt={selectedAt} onSelectPoint={setSelectedAt} />}
     </section>
   );
 }
@@ -227,7 +235,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedPoint, onSelectPoint }: {
+function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedAt, onSelectPoint }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   refreshing: boolean;
@@ -238,8 +246,8 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
   action: ReactNode;
   track: ReactNode;
   history: VesselTrack | null;
-  selectedPoint: number | null;
-  onSelectPoint: (index: number) => void;
+  selectedAt: string | null;
+  onSelectPoint: (ingestedAt: string) => void;
 }) {
   return (
     <>
@@ -256,7 +264,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}
       <div className="tracking-layout">
         <div className="tracking-map">
-          <RouteMap shipment={shipment} tracking={tracking} history={history} selectedPoint={selectedPoint} onSelectPoint={onSelectPoint} />
+          <RouteMap shipment={shipment} tracking={tracking} history={history} selectedAt={selectedAt} onSelectPoint={onSelectPoint} />
           {track}
         </div>
         <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />

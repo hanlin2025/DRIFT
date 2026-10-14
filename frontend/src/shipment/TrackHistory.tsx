@@ -10,21 +10,21 @@ const VESSELS: { id: TrackVessel; label: string }[] = [
   { id: 'FEEDER', label: 'Feeder vessel' },
 ];
 
-export function TrackHistory({ vessel, hours, history, loading, failed, feederAssigned, selectedPoint, onVessel, onHours, onSelectPoint }: {
+export function TrackHistory({ vessel, hours, history, loading, failed, feederAssigned, selectedAt, onVessel, onHours, onSelectPoint }: {
   vessel: TrackVessel;
   hours: TrackWindow;
   history: VesselTrack | null;
   loading: boolean;
   failed: boolean;
   feederAssigned: boolean;
-  selectedPoint: number | null;
+  selectedAt: string | null;
   onVessel: (vessel: TrackVessel) => void;
   onHours: (hours: TrackWindow) => void;
-  onSelectPoint: (index: number) => void;
+  onSelectPoint: (ingestedAt: string) => void;
 }) {
   const points = history?.points ?? [];
   const threshold = history?.slowdownThresholdKnots ?? 3;
-  const selected = selectedPoint == null ? null : points[selectedPoint] ?? null;
+  const selected = selectedAt == null ? null : points.find(point => point.ingestedAt === selectedAt) ?? null;
   const enough = hasEnoughHistory(points);
   const slowdowns = slowdownCount(points, threshold);
 
@@ -74,7 +74,7 @@ export function TrackHistory({ vessel, hours, history, loading, failed, feederAs
             <ol aria-label="Track points">
               {points.map((point, index) => (
                 <li key={`${point.ingestedAt}-${index}`}>
-                  <button type="button" aria-pressed={selectedPoint === index} onClick={() => onSelectPoint(index)}>
+                  <button type="button" aria-pressed={selectedAt === point.ingestedAt} onClick={() => onSelectPoint(point.ingestedAt)}>
                     {formatWhen(point.ingestedAt)} · {formatSpeed(point.speedOverGroundKnots)}
                   </button>
                 </li>
