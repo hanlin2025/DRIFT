@@ -149,6 +149,14 @@ test('an authorised freight forwarder sees the live vessel marker', { tag: '@dis
     await expect(marker).toHaveAttribute('title', new RegExp(`MOTHER LIVE ${vessel}\\. Last updated`));
     await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel} · 1.264, 103.82 · 12.4 kn · Last updated`);
     await expect(page.locator('.route-warning')).toHaveCount(0);
+    const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
+    await expect(panel).toContainText(vessel);
+    await expect(panel).toContainText('1.2640° N, 103.8200° E');
+    await expect(panel).toContainText('12.4 kn');
+    await expect(panel).toContainText('175° (S)');
+    await expect(panel).toContainText('176° (S)');
+    await expect(panel).toContainText(/Updated (just now|\d+ min ago)/);
+    await expect(panel.locator('.vessel-stale')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible();
     await expect(page).toHaveURL(`/freight-forwarder/shipments/${shipment.id}`);
   } finally {
@@ -172,6 +180,9 @@ test('a stale fix stays on the map as the last known position', { tag: '@disposa
     await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel}`);
     await expect(page.locator('.route-live')).toContainText('Last updated');
     await expect(page.locator('.globe-pin.live.mother .globe-dot')).toBeVisible();
+    const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
+    await expect(panel.locator('.vessel-stale')).toContainText('Stale');
+    await expect(panel).toContainText(/Updated 7 h/);
   } finally {
     cleanup([owner.email], [identifier]);
   }
@@ -194,6 +205,7 @@ test('a shipment with no retained position shows the no-position notice and no l
     await expect(page.locator('.globe-pin.live')).toHaveCount(0);
     await expect(page.locator('.route-live')).toHaveCount(0);
     await expect(page.getByText('No live AIS position', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toContainText('No position received yet');
   } finally {
     cleanup([owner.email], []);
   }
@@ -231,6 +243,7 @@ test('another company cannot load the map or the tracking API', { tag: '@disposa
     await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
     await expect(page.getByRole('alert')).toHaveText(NO_ACCESS);
     await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toHaveCount(0);
     await expect(page.locator('figure.route-chart')).toHaveCount(0);
     await expect(page.locator('.globe-pin')).toHaveCount(0);
     await expect(page).toHaveURL(`/freight-forwarder/shipments/${shipment.id}`);

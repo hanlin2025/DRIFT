@@ -207,6 +207,7 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Mother vessel AIS' })).not.toBeInTheDocument();
   });
 
   it('reports a missing shipment without a retry', async () => {
@@ -331,6 +332,36 @@ describe('connection window on the shipment detail', () => {
     open(forwarder, '/freight-forwarder/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(within(record).getAllByText('No live AIS position')).toHaveLength(2);
+  });
+
+  it('shows the mother vessel speed, course and heading next to the map and updates them on each poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.mocked(getShipmentTracking)
+      .mockResolvedValueOnce(tracking)
+      .mockResolvedValueOnce({
+        ...tracking,
+        motherVessel: { ...tracking.motherVessel!, speedOverGroundKnots: 9.1, courseOverGroundDegrees: 268, trueHeadingDegrees: 270 },
+      });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('complementary', { name: 'Mother vessel AIS' });
+    expect(await within(panel).findByText('12.4 kn')).toBeInTheDocument();
+    expect(within(panel).getByText('175° (S)')).toBeInTheDocument();
+    expect(within(panel).getByText('176° (S)')).toBeInTheDocument();
+    expect(within(panel).getByText(/^Updated /)).toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+    expect(await within(panel).findByText('9.1 kn')).toBeInTheDocument();
+    expect(within(panel).getByText('268° (W)')).toBeInTheDocument();
+    expect(within(panel).getByText('270° (W)')).toBeInTheDocument();
+    expect(getShipment).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('says no mother vessel position has been received when tracking has no fix', async () => {
+    vi.mocked(getShipmentTracking).mockResolvedValue({ ...tracking, motherVessel: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('complementary', { name: 'Mother vessel AIS' });
+    expect(await within(panel).findByText('No position received yet')).toBeInTheDocument();
+    expect(within(panel).getByText('Ever Steady')).toBeInTheDocument();
   });
 
   it('lets an importer edit all shipment fields and sends the hidden version token', async () => {
