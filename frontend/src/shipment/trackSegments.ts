@@ -5,7 +5,6 @@ export const DEFAULT_TRACK_WINDOW: TrackWindow = 24;
 
 export const MIN_TRACK_POINTS = 2;
 export const INSUFFICIENT_HISTORY = 'Insufficient history to draw a track for this window.';
-export const NOT_REPORTED = 'Not reported';
 
 type Position = [number, number];
 
@@ -69,15 +68,11 @@ export function slowdownCount(points: readonly TrackPoint[], threshold: number) 
   return count;
 }
 
+/** Speed rounded to one decimal; null when the vessel did not report it. */
 export function formatSpeed(knots: number | null) {
-  return knots == null ? NOT_REPORTED : `${knots} kn`;
+  return knots == null ? null : `${knots.toFixed(1)} kn`;
 }
 
-export function formatHeading(degrees: number | null) {
-  if (degrees == null) return NOT_REPORTED;
-  const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round((((degrees % 360) + 360) % 360) / 45) % 8];
-  return `${degrees}° ${compass}`;
-}
 
 function lngLat(point: TrackPoint): Position {
   return [point.longitude, point.latitude];

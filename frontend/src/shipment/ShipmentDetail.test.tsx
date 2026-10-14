@@ -845,8 +845,14 @@ describe('vessel track history on the shipment detail', () => {
     await user.click(within(points).getAllByRole('button')[1]);
     const selected = within(history).getByLabelText('Selected track point');
     expect(within(selected).getByText('1.5 kn')).toBeInTheDocument();
-    expect(within(selected).getByText('182° S')).toBeInTheDocument();
+    expect(within(selected).getByText('182° (S)')).toBeInTheDocument();
     expect(selected.querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
+
+    await user.click(within(points).getAllByRole('button')[2]);
+    const quiet = within(history).getByLabelText('Selected track point');
+    expect(within(quiet).getByText('0.4 kn')).toBeInTheDocument();
+    expect(within(quiet).getByText('Heading').nextElementSibling).toHaveTextContent('Not reported');
+    expect(within(quiet).getByText('Heading').nextElementSibling).toHaveClass('is-missing');
   });
 
   it('keeps the selected observation across polls and clears it once that observation leaves the window', async () => {

@@ -401,7 +401,7 @@ test('a freight forwarder reads the recent track with slowdowns and preset windo
     await history.getByText('All positions').click();
     await history.getByRole('list', { name: 'Track points' }).getByRole('button').last().click();
     await expect(history.getByLabel('Selected track point')).toContainText('0.4 kn');
-    await expect(history.getByLabel('Selected track point')).toContainText('91° E');
+    await expect(history.getByLabel('Selected track point')).toContainText('91° (E)');
 
     await history.getByRole('button', { name: 'Feeder vessel' }).click();
     await expect(history).toContainText('Insufficient history to draw a track for this window.');

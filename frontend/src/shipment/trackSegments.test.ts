@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TrackPoint } from './api';
-import { formatHeading, formatSpeed, hasEnoughHistory, isSlowSegment, slowdownCount, trackPoints, trackSegments } from './trackSegments';
+import { formatSpeed, hasEnoughHistory, isSlowSegment, slowdownCount, trackPoints, trackSegments } from './trackSegments';
 
 function point(speed: number | null, longitude = 103.8): TrackPoint {
   return {
@@ -39,11 +39,10 @@ describe('track history helpers', () => {
     expect(trackPoints(points, 3).features.map(feature => feature.properties.ingestedAt)).toEqual(points.map(point => point.ingestedAt));
   });
 
-  it('formats speed and heading for the point readout', () => {
+  it('rounds speed to one decimal for the point readout', () => {
     expect(formatSpeed(2.4)).toBe('2.4 kn');
-    expect(formatSpeed(null)).toBe('Not reported');
-    expect(formatHeading(91)).toBe('91° E');
-    expect(formatHeading(359)).toBe('359° N');
-    expect(formatHeading(null)).toBe('Not reported');
+    expect(formatSpeed(2.456)).toBe('2.5 kn');
+    expect(formatSpeed(12)).toBe('12.0 kn');
+    expect(formatSpeed(null)).toBeNull();
   });
 });

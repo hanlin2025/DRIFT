@@ -1,6 +1,7 @@
 import type { TrackVessel, TrackWindow, VesselTrack } from './api';
 import { formatWhen } from './ShipmentForm';
-import { formatHeading, formatSpeed, hasEnoughHistory, INSUFFICIENT_HISTORY, slowdownCount, TRACK_WINDOWS } from './trackSegments';
+import { formatSpeed, hasEnoughHistory, INSUFFICIENT_HISTORY, slowdownCount, TRACK_WINDOWS } from './trackSegments';
+import { formatBearing, NOT_REPORTED } from './VesselPanel';
 
 export const TRACK_LOAD_FAILED = 'Track history could not be loaded. Try Refresh.';
 export const SELECT_POINT = 'Select a point on the track to see its time, speed and heading.';
@@ -64,8 +65,8 @@ export function TrackHistory({ vessel, hours, history, loading, failed, feederAs
             ? (
               <dl className="track-point" aria-label="Selected track point">
                 <div><dt>Time</dt><dd><time dateTime={selected.ingestedAt}>{formatWhen(selected.ingestedAt)}</time></dd></div>
-                <div><dt>Speed</dt><dd>{formatSpeed(selected.speedOverGroundKnots)}</dd></div>
-                <div><dt>Heading</dt><dd>{formatHeading(selected.trueHeadingDegrees)}</dd></div>
+                <Reading label="Speed" value={formatSpeed(selected.speedOverGroundKnots)} />
+                <Reading label="Heading" value={formatBearing(selected.trueHeadingDegrees)} />
               </dl>
             )
             : <p className="track-hint">{SELECT_POINT}</p>}
@@ -75,7 +76,7 @@ export function TrackHistory({ vessel, hours, history, loading, failed, feederAs
               {points.map((point, index) => (
                 <li key={`${point.ingestedAt}-${index}`}>
                   <button type="button" aria-pressed={selectedAt === point.ingestedAt} onClick={() => onSelectPoint(point.ingestedAt)}>
-                    {formatWhen(point.ingestedAt)} · {formatSpeed(point.speedOverGroundKnots)}
+                    {formatWhen(point.ingestedAt)} · {formatSpeed(point.speedOverGroundKnots) ?? NOT_REPORTED}
                   </button>
                 </li>
               ))}
@@ -85,4 +86,8 @@ export function TrackHistory({ vessel, hours, history, loading, failed, feederAs
       )}
     </section>
   );
+}
+
+function Reading({ label, value }: { label: string; value: string | null }) {
+  return <div><dt>{label}</dt><dd className={value === null ? 'is-missing' : undefined}>{value ?? NOT_REPORTED}</dd></div>;
 }

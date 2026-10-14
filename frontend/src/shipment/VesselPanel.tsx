@@ -6,7 +6,7 @@ import { formatWhen } from './ShipmentForm';
 export const AGE_TICK_MS = 30_000;
 export const NO_POSITION = 'No position received yet';
 export const STALE_DETAIL = 'Older than 6 hours. The vessel may have moved.';
-const NOT_REPORTED = 'Not reported';
+export const NOT_REPORTED = 'Not reported';
 const MINUTE_MS = 60_000;
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
@@ -61,7 +61,7 @@ export function compassPoint(degrees: number) {
   return COMPASS[Math.round(normalised / 45) % COMPASS.length];
 }
 
-function formatBearing(degrees: number | null) {
+export function formatBearing(degrees: number | null) {
   if (degrees == null) return null;
   return `${degrees}° (${compassPoint(degrees)})`;
 }
