@@ -330,8 +330,8 @@ const track = {
   pointLimit: 500,
   truncated: false,
   points: [
-    { latitude: 1.2, longitude: 103.8, speedOverGroundKnots: 2.4, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-13T07:00:00Z' },
-    { latitude: 1.3, longitude: 103.9, speedOverGroundKnots: null, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-13T08:00:00Z' },
+    { id: 7001, latitude: 1.2, longitude: 103.8, speedOverGroundKnots: 2.4, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-13T07:00:00Z' },
+    { id: 7002, latitude: 1.3, longitude: 103.9, speedOverGroundKnots: null, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-13T08:00:00Z' },
   ],
 };
 
@@ -361,6 +361,15 @@ describe('vessel track history API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, points: [{ latitude: 'north' }] })));
 
     await expect(getVesselTrack('token', '7', 'FEEDER', 6)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('rejects a point without an integer observation id', async () => {
+    const [first, second] = track.points;
+    const { id: _id, ...withoutId } = first;
+    for (const points of [[withoutId, second], [{ ...first, id: '7001' }, second], [{ ...first, id: 1.5 }, second]]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, points })));
+      await expect(getVesselTrack('token', '7', 'FEEDER', 6)).rejects.toMatchObject({ status: 502 });
+    }
   });
 
   it('passes the API message for an unsupported window', async () => {

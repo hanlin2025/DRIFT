@@ -15,8 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.drift.backend.account.authentication.AuthenticatedUser;
-import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.LatestAisPositions;
+import com.drift.backend.ais.position.StoredAisPosition;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 
 /**
@@ -58,7 +58,7 @@ public class VesselTrackService {
 		Instant to = clock.instant();
 		Instant from = to.minus(Duration.ofHours(windowHours));
 		String mmsi = latest == null ? null : latest.mmsi();
-		List<AisPosition> newestFirst = mmsi == null ? List.of() : positions.history(mmsi, from, to, MAX_POINTS + 1);
+		List<StoredAisPosition> newestFirst = mmsi == null ? List.of() : positions.history(mmsi, from, to, MAX_POINTS + 1);
 		boolean truncated = newestFirst.size() > MAX_POINTS;
 		List<TrackPoint> points = new ArrayList<>(newestFirst.subList(0, Math.min(newestFirst.size(), MAX_POINTS))
 				.stream().map(TrackPoint::from).toList());

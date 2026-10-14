@@ -112,9 +112,9 @@ const track: VesselTrack = {
   pointLimit: 500,
   truncated: false,
   points: [
-    { latitude: 1.1, longitude: 103.6, speedOverGroundKnots: 11, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-05T01:00:00Z' },
-    { latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 180, trueHeadingDegrees: 182, ingestedAt: '2026-10-05T02:00:00Z' },
-    { latitude: 1.25, longitude: 103.75, speedOverGroundKnots: 0.4, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-05T03:00:00Z' },
+    { id: 101, latitude: 1.1, longitude: 103.6, speedOverGroundKnots: 11, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-05T01:00:00Z' },
+    { id: 102, latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 180, trueHeadingDegrees: 182, ingestedAt: '2026-10-05T02:00:00Z' },
+    { id: 103, latitude: 1.25, longitude: 103.75, speedOverGroundKnots: 0.4, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-05T03:00:00Z' },
   ],
 };
 
@@ -865,7 +865,7 @@ describe('vessel track history on the shipment detail', () => {
       await user.click(within(points).getAllByRole('button')[1]);
       expect(within(history).getByLabelText('Selected track point').querySelector('time')).toHaveAttribute('dateTime', '2026-10-05T02:00:00Z');
 
-      const later = { latitude: 1.3, longitude: 103.8, speedOverGroundKnots: 7, courseOverGroundDegrees: 45, trueHeadingDegrees: 45, ingestedAt: '2026-10-05T04:00:00Z' };
+      const later = { id: 104, latitude: 1.3, longitude: 103.8, speedOverGroundKnots: 7, courseOverGroundDegrees: 45, trueHeadingDegrees: 45, ingestedAt: '2026-10-05T04:00:00Z' };
       vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: [...track.points.slice(1), later] });
       await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
       expect(getVesselTrack).toHaveBeenCalledTimes(2);
@@ -883,6 +883,31 @@ describe('vessel track history on the shipment detail', () => {
       await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
       expect(getVesselTrack).toHaveBeenCalledTimes(4);
       expect(within(history).queryByLabelText('Selected track point')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tells apart two observations that share a timestamp', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const twin = { ...track.points[1], id: 105, speedOverGroundKnots: 6.2, trueHeadingDegrees: 90 };
+      vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: [track.points[0], track.points[1], twin, track.points[2]] });
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup();
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      const points = await within(history).findByRole('list', { name: 'Track points' });
+      const buttons = within(points).getAllByRole('button');
+      await user.click(buttons[2]);
+
+      const selected = within(history).getByLabelText('Selected track point');
+      expect(within(selected).getByText('6.2 kn')).toBeInTheDocument();
+      expect(within(selected).getByText('90° (E)')).toBeInTheDocument();
+      expect(buttons.map(button => button.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true', 'false']);
+
+      vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: [twin, track.points[2]] });
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(within(within(history).getByLabelText('Selected track point')).getByText('6.2 kn')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

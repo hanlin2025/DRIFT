@@ -91,9 +91,30 @@ class ShipmentTrackHistoryIntegrationTests {
 				.andExpect(jsonPath("$.pointLimit").value(500))
 				.andExpect(jsonPath("$.truncated").value(false))
 				.andExpect(jsonPath("$.points[*].speedOverGroundKnots").value(contains(11.5, 2.1, 12.4)))
+				.andExpect(jsonPath("$.points[0].id").isNumber())
 				.andExpect(jsonPath("$.points[0].trueHeadingDegrees").value(176))
 				.andExpect(jsonPath("$.points[0].courseOverGroundDegrees").value(175.0))
 				.andExpect(jsonPath("$.points[0].ingestedAt").exists());
+	}
+
+	@Test
+	void keepsTwoReportsWithTheSameTimestampAsDistinctPoints() throws Exception {
+		Long shipmentId = create("HBL-CDG32-TIE");
+		Instant tied = ago(2);
+		record(motherMmsi, motherName, tied, "1.5", true);
+		record(motherMmsi, motherName, tied, "6.2", true);
+
+		MvcResult result = history(forwarderToken, shipmentId, "")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.points.length()").value(2))
+				.andExpect(jsonPath("$.points[*].speedOverGroundKnots").value(contains(1.5, 6.2)))
+				.andReturn();
+		String body = result.getResponse().getContentAsString();
+		long first = ((Number) JsonPath.read(body, "$.points[0].id")).longValue();
+		long second = ((Number) JsonPath.read(body, "$.points[1].id")).longValue();
+		org.assertj.core.api.Assertions.assertThat(first).isLessThan(second);
+		org.assertj.core.api.Assertions.assertThat(JsonPath.<String>read(body, "$.points[0].ingestedAt"))
+				.isEqualTo(JsonPath.<String>read(body, "$.points[1].ingestedAt"));
 	}
 
 	@Test

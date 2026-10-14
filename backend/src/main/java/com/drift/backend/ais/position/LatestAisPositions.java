@@ -63,14 +63,14 @@ public class LatestAisPositions {
 
 	/**
 	 * Stored observations for one MMSI ingested after {@code from} and up to {@code to}, newest first,
-	 * at most {@code limit} of them. Reports flagged as invalid positions are left out.
+	 * at most {@code limit} of them, each with its observation id. Reports flagged as invalid positions are left out.
 	 */
-	public List<AisPosition> history(String mmsi, Instant from, Instant to, int limit) {
+	public List<StoredAisPosition> history(String mmsi, Instant from, Instant to, int limit) {
 		if (mmsi == null || mmsi.isBlank()) {
 			return List.of();
 		}
 		return observations.findNewestValidInWindow(mmsi.strip(), from, to, limit).stream()
-				.map(VesselObservation::toAisPosition)
+				.map(VesselObservation::toStoredPosition)
 				.toList();
 	}
 

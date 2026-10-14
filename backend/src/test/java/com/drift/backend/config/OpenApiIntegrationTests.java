@@ -126,6 +126,7 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/track-history'].get.responses['404']").exists())
 				.andExpect(jsonPath("$.components.schemas.VesselTrackResponse.properties.points.items.$ref")
 						.value("#/components/schemas/TrackPoint"))
+				.andExpect(jsonPath("$.components.schemas.TrackPoint.properties.id").exists())
 				.andExpect(jsonPath("$.components.schemas.ShipmentDetailResponse.properties.importer.$ref")
 						.value("#/components/schemas/Organisation"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/link-importer'].patch.summary")

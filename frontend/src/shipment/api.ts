@@ -146,6 +146,7 @@ export type TrackVessel = 'MOTHER' | 'FEEDER';
 export type TrackWindow = 6 | 24 | 72;
 
 export type TrackPoint = {
+  id: number;
   latitude: number;
   longitude: number;
   speedOverGroundKnots: number | null;
@@ -361,6 +362,7 @@ function asTracking(value: unknown): ShipmentTracking | null {
 
 function isTrackPoint(value: unknown): value is TrackPoint {
   return isRecord(value)
+    && typeof value.id === 'number' && Number.isInteger(value.id) && value.id > 0
     && isFiniteNumber(value.latitude)
     && isFiniteNumber(value.longitude)
     && isOptionalFiniteNumber(value.speedOverGroundKnots)
@@ -386,6 +388,7 @@ function asTrack(value: unknown): VesselTrack | null {
     pointLimit: value.pointLimit,
     truncated: value.truncated,
     points: value.points.map(point => ({
+      id: point.id,
       latitude: point.latitude,
       longitude: point.longitude,
       speedOverGroundKnots: point.speedOverGroundKnots ?? null,

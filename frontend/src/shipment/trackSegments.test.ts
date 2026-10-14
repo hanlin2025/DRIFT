@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { TrackPoint } from './api';
 import { formatSpeed, hasEnoughHistory, isSlowSegment, slowdownCount, trackPoints, trackSegments } from './trackSegments';
 
+let nextId = 1;
+
 function point(speed: number | null, longitude = 103.8): TrackPoint {
   return {
+    id: nextId++,
     latitude: 1.2,
     longitude,
     speedOverGroundKnots: speed,
@@ -36,7 +39,7 @@ describe('track history helpers', () => {
     expect(segments.features.map(feature => feature.properties.slow)).toEqual([false, true, false]);
     expect(segments.features[1].geometry.coordinates).toEqual([[103.2, 1.2], [103.3, 1.2]]);
     expect(slowdownCount(points, 3)).toBe(1);
-    expect(trackPoints(points, 3).features.map(feature => feature.properties.ingestedAt)).toEqual(points.map(point => point.ingestedAt));
+    expect(trackPoints(points, 3).features.map(feature => feature.properties.id)).toEqual(points.map(point => point.id));
   });
 
   it('rounds speed to one decimal for the point readout', () => {

@@ -27,6 +27,7 @@ import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.LatestAisPositions;
+import com.drift.backend.ais.position.StoredAisPosition;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
@@ -51,7 +52,7 @@ class VesselTrackServiceTest {
 	void readsTheMotherVesselOverTheLast24HoursByDefaultInTimeOrder() {
 		when(shipments.tracking(USER, 4L)).thenReturn(tracking(latest("563001234"), null));
 		when(positions.history("563001234", NOW.minusSeconds(24 * 3600), NOW, VesselTrackService.MAX_POINTS + 1))
-				.thenReturn(List.of(fix("2026-10-13T11:00:00Z", "2.0"), fix("2026-10-13T09:00:00Z", "12.0")));
+				.thenReturn(List.of(fix(2, "2026-10-13T11:00:00Z", "2.0"), fix(1, "2026-10-13T09:00:00Z", "12.0")));
 
 		VesselTrackResponse track = service.history(USER, 4L, null, null);
 
@@ -65,6 +66,22 @@ class VesselTrackServiceTest {
 		assertThat(track.truncated()).isFalse();
 		assertThat(track.points()).extracting(TrackPoint::ingestedAt)
 				.containsExactly(Instant.parse("2026-10-13T09:00:00Z"), Instant.parse("2026-10-13T11:00:00Z"));
+		assertThat(track.points()).extracting(TrackPoint::id).containsExactly(1L, 2L);
+	}
+
+	@Test
+	void keepsBothObservationsThatShareATimestampInIdOrder() {
+		when(shipments.tracking(USER, 4L)).thenReturn(tracking(latest("563001234"), null));
+		when(positions.history(anyString(), any(), any(), anyInt())).thenReturn(List.of(
+				fix(12, "2026-10-13T11:00:00Z", "6.2"),
+				fix(11, "2026-10-13T11:00:00Z", "1.5"),
+				fix(10, "2026-10-13T10:00:00Z", "9.0")));
+
+		VesselTrackResponse track = service.history(USER, 4L, null, null);
+
+		assertThat(track.points()).extracting(TrackPoint::id).containsExactly(10L, 11L, 12L);
+		assertThat(track.points()).extracting(point -> point.speedOverGroundKnots().toPlainString())
+				.containsExactly("9.0", "1.5", "6.2");
 	}
 
 	@Test
@@ -83,9 +100,9 @@ class VesselTrackServiceTest {
 
 	@Test
 	void capsThePointsAndKeepsTheNewest() {
-		List<AisPosition> newestFirst = new ArrayList<>();
+		List<StoredAisPosition> newestFirst = new ArrayList<>();
 		for (int i = 0; i <= VesselTrackService.MAX_POINTS; i++) {
-			newestFirst.add(fix(NOW.minusSeconds(60L * (i + 1)).toString(), "10"));
+			newestFirst.add(fix(10_000 - i, NOW.minusSeconds(60L * (i + 1)).toString(), "10"));
 		}
 		when(shipments.tracking(USER, 4L)).thenReturn(tracking(latest("563001234"), null));
 		when(positions.history(anyString(), any(), any(), anyInt())).thenReturn(newestFirst);
@@ -140,9 +157,9 @@ class VesselTrackServiceTest {
 				new BigDecimal("12.4"), new BigDecimal("175.0"), 176, NOW);
 	}
 
-	private static AisPosition fix(String at, String speed) {
-		return new AisPosition("563001234", "PACIFIC HORIZON", new BigDecimal("1.264"), new BigDecimal("103.82"),
+	private static StoredAisPosition fix(long id, String at, String speed) {
+		return new StoredAisPosition(id, new AisPosition("563001234", "PACIFIC HORIZON", new BigDecimal("1.264"), new BigDecimal("103.82"),
 				new BigDecimal(speed), new BigDecimal("175.0"), 176, 0, true, 12, Instant.parse(at),
-				AisPositionSource.SEEDED);
+				AisPositionSource.SEEDED));
 	}
 }

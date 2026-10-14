@@ -38,7 +38,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [history, setHistory] = useState<VesselTrack | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
-  const [selectedAt, setSelectedAt] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const historySeq = useRef(0);
 
   const reloadHistory = useCallback(async () => {
@@ -49,7 +49,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (requestId !== historySeq.current) return;
       setHistory(found);
       setHistoryFailed(false);
-      setSelectedAt(current => current !== null && found.points.some(point => point.ingestedAt === current) ? current : null);
+      setSelectedId(current => current !== null && found.points.some(point => point.id === current) ? current : null);
     } catch (reason: unknown) {
       if (requestId !== historySeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
@@ -99,7 +99,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshNote(null);
     setRefreshing(false);
     setHistory(null);
-    setSelectedAt(null);
+    setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
       if (active) setShipment(found);
     }).catch((reason: unknown) => {
@@ -185,18 +185,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   : null}
                 track={(
                   <TrackHistory vessel={trackVessel} hours={trackHours} history={history} loading={historyLoading}
-                    failed={historyFailed} feederAssigned={Boolean(shipment.feederVessel?.trim())} selectedAt={selectedAt}
+                    failed={historyFailed} feederAssigned={Boolean(shipment.feederVessel?.trim())} selectedId={selectedId}
                     onVessel={vessel => {
-                      setSelectedAt(null);
+                      setSelectedId(null);
                       setTrackVessel(vessel);
                     }}
                     onHours={hours => {
-                      setSelectedAt(null);
+                      setSelectedId(null);
                       setTrackHours(hours);
                     }}
-                    onSelectPoint={setSelectedAt} />
+                    onSelectPoint={setSelectedId} />
                 )}
-                history={history} selectedAt={selectedAt} onSelectPoint={setSelectedAt} />}
+                history={history} selectedId={selectedId} onSelectPoint={setSelectedId} />}
     </section>
   );
 }
@@ -235,7 +235,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedAt, onSelectPoint }: {
+function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   refreshing: boolean;
@@ -246,8 +246,8 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
   action: ReactNode;
   track: ReactNode;
   history: VesselTrack | null;
-  selectedAt: string | null;
-  onSelectPoint: (ingestedAt: string) => void;
+  selectedId: number | null;
+  onSelectPoint: (id: number) => void;
 }) {
   return (
     <>
@@ -264,7 +264,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}
       <div className="tracking-layout">
         <div className="tracking-map">
-          <RouteMap shipment={shipment} tracking={tracking} history={history} selectedAt={selectedAt} onSelectPoint={onSelectPoint} />
+          <RouteMap shipment={shipment} tracking={tracking} history={history} selectedId={selectedId} onSelectPoint={onSelectPoint} />
           {track}
         </div>
         <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />
