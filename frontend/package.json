@@ -17,8 +17,7 @@
     "test:e2e:map": "node ../scripts/run-map-monitoring.mjs",
     "test:e2e:import": "node ../scripts/run-shipment-import.mjs",
     "test:e2e:assignment": "node ../scripts/run-assignment-isolation.mjs",
-    "test:e2e:detail": "node ../scripts/run-shipment-detail.mjs",
-    "test:e2e:operational-state": "node ../scripts/run-operational-state.mjs"
+    "test:e2e:detail": "node ../scripts/run-shipment-detail.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
