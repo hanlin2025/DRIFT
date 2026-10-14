@@ -38,6 +38,32 @@ describe('shipment importer API', () => {
     }));
   });
 
+  it('reads operational state on a shipment detail', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: { label: 'At anchor', description: 'At anchor near Singapore', unreliable: false },
+      feederOperationalState: { label: 'Moored', description: 'Moored near Singapore', unreliable: true },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.motherOperationalState).toEqual({ label: 'At anchor', description: 'At anchor near Singapore', unreliable: false });
+    expect(detail.feederOperationalState).toEqual({ label: 'Moored', description: 'Moored near Singapore', unreliable: true });
+  });
+
+  it('leaves operational state empty when the list payload omits it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    const listed = await listShipments('token');
+    expect(listed[0].motherOperationalState).toBeNull();
+    expect(listed[0].feederOperationalState).toBeNull();
+  });
+
+  it('rejects an operational state whose description does not match its label', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: { label: 'Moored', description: 'At anchor near Singapore', unreliable: false },
+    })));
+    await expect(getShipment('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+
   it('reads the importer on a shipment detail', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       ...shipment,

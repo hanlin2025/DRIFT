@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
+import { getShipment, getShipmentTracking, type OperationalState, type RiskLevel, type Shipment, type ShipmentTracking, type VesselPosition } from './api';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 
@@ -136,7 +136,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 12;
+const FACT_ROWS = 14;
 
 function ShipmentSkeleton() {
   return (
@@ -185,10 +185,12 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
           <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}>{recorded(shipment.motherVessel)}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
+          <OperationalStateFact label="Mother vessel state" state={shipment.motherOperationalState} />
           <div><dt>Planned arrival</dt><dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd></div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</dd></div>
           <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
+          <OperationalStateFact label="Feeder vessel state" state={shipment.feederOperationalState} />
           <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
             ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
             : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
@@ -208,6 +210,20 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
 }
 
 const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+const UNRELIABLE_STATE = 'This state may be unreliable.';
+
+function OperationalStateFact({ label, state }: { label: string; state: OperationalState | null | undefined }) {
+  if (!state) return null;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {state.description}
+        {state.unreliable && <span className="state-warning">{UNRELIABLE_STATE}</span>}
+      </dd>
+    </div>
+  );
+}
 
 function formatLive(position: VesselPosition | null) {
   if (!position) return 'No live AIS position';
