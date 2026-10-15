@@ -180,3 +180,104 @@ test('a missing feeder vessel and live positions show placeholders instead of bl
     cleanup([owner.email]);
   }
 });
+
+const UNRELIABLE = 'This state may be unreliable.';
+const MOTHER_MMSI = '563139001';
+const FEEDER_MMSI = '563139002';
+
+function report(mmsi: string, name: string, latitude: string, longitude: string, speed: string, status: string, ingested: string) {
+  sql(`INSERT INTO vessel_observations (
+      mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
+      navigational_status, position_valid, ingested_at, source)
+    VALUES (:'mmsi', :'name', :'latitude', :'longitude', :'speed', :'status', true, :'ingested', 'SEEDED');`, {
+    mmsi, name, latitude, longitude, speed, status, ingested,
+  });
+}
+
+function clearReports() {
+  sql(`DELETE FROM vessel_observations WHERE mmsi IN ('${MOTHER_MMSI}', '${FEEDER_MMSI}');`);
+}
+
+test('an authorised user sees the operational state change when a newer AIS report arrives', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The detail page is covered once on desktop.');
+  test.setTimeout(90_000);
+  const owner = await registerAccount(request, 'HARBOURLINE_DEMO');
+  try {
+    const shipment = await createShipment(request, owner.token);
+    await signIn(page, owner.email);
+    await expect(page.getByText('Mother vessel state')).toHaveCount(0);
+
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    await expect(fact(page, 'Mother vessel state')).toHaveText('Unknown');
+    await expect(fact(page, 'Feeder vessel state')).toHaveText('Unknown');
+    await expect(page.locator('.state-warning')).toHaveCount(0);
+
+    report(MOTHER_MMSI, 'EVER STEADY', '1.264', '103.840', '0.2', '1', '2026-10-14T01:00:00Z');
+    report(FEEDER_MMSI, 'STRAITS FEEDER', '1.264', '103.840', '0.1', '5', '2026-10-14T01:00:00Z');
+    await page.reload();
+    await expect(fact(page, 'Mother vessel state')).toHaveText('At anchor near Singapore');
+    await expect(fact(page, 'Feeder vessel state')).toHaveText('Moored near Singapore');
+    await expect(page.locator('.state-warning')).toHaveCount(0);
+
+    const listed = await request.get('/api/shipments', { headers: { Authorization: `Bearer ${owner.token}` } });
+    expect(listed.ok()).toBeTruthy();
+    expect(JSON.stringify(await listed.json())).not.toContain('OperationalState');
+
+    report(MOTHER_MMSI, 'EVER STEADY', '1.264', '103.840', '4.0', '5', '2026-10-14T02:00:00Z');
+    await page.reload();
+    await expect(fact(page, 'Mother vessel state')).toContainText('Moored near Singapore');
+    await expect(fact(page, 'Mother vessel state').locator('.state-warning')).toHaveText(UNRELIABLE);
+    await expect(fact(page, 'Feeder vessel state')).toHaveText('Moored near Singapore');
+    await expect(fact(page, 'Feeder vessel state').locator('.state-warning')).toHaveCount(0);
+
+    report(MOTHER_MMSI, 'EVER STEADY', '10.0', '110.0', '14.0', '0', '2026-10-14T03:00:00Z');
+    await page.reload();
+    await expect(fact(page, 'Mother vessel state')).toHaveText('Under way, far from port');
+    await expect(fact(page, 'Mother vessel state').locator('.state-warning')).toHaveCount(0);
+
+    report(MOTHER_MMSI, 'EVER STEADY', '1.264', '103.840', '0.2', '15', '2026-10-14T04:00:00Z');
+    await page.reload();
+    await expect(fact(page, 'Mother vessel state')).toHaveText('Unknown near Singapore');
+    await expect(page.locator('.state-warning')).toHaveCount(0);
+  } finally {
+    clearReports();
+    cleanup([owner.email]);
+  }
+});
+
+test('another company cannot see the operational state', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The detail page is covered once on desktop.');
+  const owner = await registerAccount(request, 'HARBOURLINE_DEMO');
+  const outsider = await registerAccount(request, 'STRAITS_FRESH_DEMO');
+  try {
+    const shipment = await createShipment(request, owner.token);
+    report(MOTHER_MMSI, 'EVER STEADY', '1.264', '103.840', '0.2', '1', '2026-10-14T01:00:00Z');
+
+    const visible = await request.get(`/api/shipments/${shipment.id}`, {
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    expect(visible.ok()).toBeTruthy();
+    expect((await visible.json()).motherOperationalState).toEqual({
+      label: 'At anchor', description: 'At anchor near Singapore', unreliable: false,
+    });
+
+    const denied = await request.get(`/api/shipments/${shipment.id}`, {
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(denied.status()).toBe(403);
+    const deniedBody = await denied.text();
+    expect(deniedBody).not.toContain('operationalState');
+    expect(deniedBody).not.toContain('At anchor near Singapore');
+
+    await signIn(page, outsider.email);
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+    await expect(page.getByText(NO_ACCESS)).toBeVisible();
+    await expect(page.getByText('Mother vessel state')).toHaveCount(0);
+    await expect(page.getByText('At anchor near Singapore')).toHaveCount(0);
+    await expect(page.getByText(shipment.shipmentReference)).toHaveCount(0);
+  } finally {
+    clearReports();
+    cleanup([owner.email, outsider.email]);
+  }
+});
