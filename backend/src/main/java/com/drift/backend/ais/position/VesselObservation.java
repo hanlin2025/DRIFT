@@ -75,6 +75,10 @@ public class VesselObservation {
 		this.source = position.source();
 	}
 
+	StoredAisPosition toStoredPosition() {
+		return new StoredAisPosition(id, toAisPosition());
+	}
+
 	AisPosition toAisPosition() {
 		return new AisPosition(mmsi, vesselName, latitude, longitude, speedOverGroundKnots,
 				courseOverGroundDegrees, trueHeadingDegrees, navigationalStatus, positionValid, aisUtcSecond,

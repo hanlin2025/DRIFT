@@ -1,19 +1,29 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteMap } from './RouteMap';
-import type { Shipment, ShipmentTracking } from './api';
+import type { Shipment, ShipmentTracking, VesselTrack } from './api';
 
 const mapCalls = vi.hoisted(() => ({
   jumpTo: vi.fn(),
   fitBounds: vi.fn(),
+  addLayer: vi.fn(),
+  setData: vi.fn(),
+  setFilter: vi.fn(),
+  layerHandlers: new Map<string, (event: unknown) => void>(),
 }));
 
 vi.mock('maplibre-gl', () => ({
   Map: class Map {
-    on(_event: string, callback: () => void) { callback(); }
+    on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
+      if (typeof layerOrCallback === 'function') layerOrCallback();
+      else if (handler) mapCalls.layerHandlers.set(`${event}:${layerOrCallback}`, handler);
+    }
     setProjection() {}
     addSource() {}
-    addLayer() {}
+    addLayer(layer: unknown) { mapCalls.addLayer(layer); }
+    getSource(id: string) { return { setData: (data: unknown) => mapCalls.setData(id, data) }; }
+    setFilter(id: string, filter: unknown) { mapCalls.setFilter(id, filter); }
+    getCanvas() { return { style: {} }; }
     loaded() { return false; }
     remove() {}
     addControl() {}
@@ -77,6 +87,10 @@ describe('shipment route display', () => {
   beforeEach(() => {
     mapCalls.jumpTo.mockClear();
     mapCalls.fitBounds.mockClear();
+    mapCalls.addLayer.mockClear();
+    mapCalls.setData.mockClear();
+    mapCalls.setFilter.mockClear();
+    mapCalls.layerHandlers.clear();
   });
 
   it('lists the stored route in connection order', () => {
@@ -192,5 +206,43 @@ describe('shipment route display', () => {
     expect(screen.getByText('Not placed on the globe: Not A Port, Atlantis')).toBeInTheDocument();
     expect(routeText()[0]).toBe('DEPARTURE Not A Port');
     expect(routeText()[4]).toBe('DESTINATION Atlantis');
+  });
+
+  it('draws the vessel track with slowdowns highlighted and selects a clicked point', async () => {
+    const history: VesselTrack = {
+      vessel: 'MOTHER',
+      vesselName: 'MV Pacific Horizon',
+      mmsi: '563001234',
+      windowHours: 24,
+      from: '2026-10-04T12:00:00Z',
+      to: '2026-10-05T12:00:00Z',
+      slowdownThresholdKnots: 3,
+      pointLimit: 500,
+      truncated: false,
+      points: [
+        { id: 101, latitude: 1.1, longitude: 103.6, speedOverGroundKnots: 11, courseOverGroundDegrees: 90, trueHeadingDegrees: 90, ingestedAt: '2026-10-05T01:00:00Z' },
+        { id: 102, latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 90, trueHeadingDegrees: 90, ingestedAt: '2026-10-05T02:00:00Z' },
+        { id: 103, latitude: 1.25, longitude: 103.75, speedOverGroundKnots: 0.4, courseOverGroundDegrees: 90, trueHeadingDegrees: 90, ingestedAt: '2026-10-05T03:00:00Z' },
+      ],
+    };
+    const onSelectPoint = vi.fn();
+    const { rerender } = render(<RouteMap shipment={shipment} history={history} onSelectPoint={onSelectPoint} />);
+
+    await waitFor(() => expect(mapCalls.setData).toHaveBeenCalledWith('vessel-track', expect.anything()));
+    const ids = mapCalls.addLayer.mock.calls.map(([layer]) => (layer as { id: string }).id);
+    expect(ids).toEqual(expect.arrayContaining(['vessel-track', 'vessel-track-points', 'vessel-track-selected']));
+    const segments = mapCalls.setData.mock.calls.find(([id]) => id === 'vessel-track')![1] as {
+      features: { properties: { slow: boolean } }[];
+    };
+    expect(segments.features.map(feature => feature.properties.slow)).toEqual([false, true]);
+
+    mapCalls.layerHandlers.get('click:vessel-track-points')!({ features: [{ properties: { id: 103 } }] });
+    expect(onSelectPoint).toHaveBeenCalledWith(103);
+
+    rerender(<RouteMap shipment={shipment} history={history} selectedId={103} onSelectPoint={onSelectPoint} />);
+    await waitFor(() => expect(mapCalls.setFilter).toHaveBeenLastCalledWith('vessel-track-selected', ['==', ['get', 'id'], 103]));
+
+    rerender(<RouteMap shipment={shipment} history={{ ...history, points: [] }} selectedId={null} onSelectPoint={onSelectPoint} />);
+    await waitFor(() => expect(mapCalls.setData).toHaveBeenLastCalledWith('vessel-track-points', { type: 'FeatureCollection', features: [] }));
   });
 });

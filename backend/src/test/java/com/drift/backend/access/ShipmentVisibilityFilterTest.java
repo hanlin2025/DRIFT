@@ -157,6 +157,24 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void hidesTrackHistoryForAnUnrelatedShipmentAndLetsAVisibleOneThrough() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+		MockHttpServletResponse hidden = new MockHttpServletResponse();
+		filter.doFilter(request("GET", "/api/shipments/8/track-history"), hidden, chain);
+
+		verify(chain, never()).doFilter(any(), any());
+		assertThat(hidden.getStatus()).isEqualTo(404);
+		assertThat(hidden.getContentAsString()).isEqualTo(
+				"{\"message\":\"" + ShipmentNotFoundException.MESSAGE + "\"}");
+
+		when(shipments.find(9L)).thenReturn(Optional.of(new ShipmentVisibility(9L, 10L, COMPANY_ID)));
+		filter.doFilter(request("GET", "/api/shipments/9/track-history"), new MockHttpServletResponse(), chain);
+
+		verify(chain).doFilter(any(), any());
+	}
+
+	@Test
 	void stripsHiddenRowsFromTheListAndKeepsExtraFieldsOnVisibleRows() throws Exception {
 		signIn();
 		byte[] original = """

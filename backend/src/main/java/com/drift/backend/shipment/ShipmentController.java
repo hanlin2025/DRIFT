@@ -41,9 +41,11 @@ import tools.jackson.databind.JsonNode;
 public class ShipmentController {
 
 	private final ShipmentService shipmentService;
+	private final VesselTrackService vesselTracks;
 
-	public ShipmentController(ShipmentService shipmentService) {
+	public ShipmentController(ShipmentService shipmentService, VesselTrackService vesselTracks) {
 		this.shipmentService = shipmentService;
+		this.vesselTracks = vesselTracks;
 	}
 
 	@GetMapping("/api/shipments")
@@ -149,6 +151,46 @@ public class ShipmentController {
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(shipmentService.tracking(user, shipmentId));
+	}
+
+	@GetMapping("/api/shipments/{shipmentId}/track-history")
+	@Operation(summary = "Get vessel track history", description = "Returns the recent track of the mother vessel or the feeder vessel "
+			+ "of one shipment visible to the authenticated user's active company, built from stored AIS observations in time order. "
+			+ "The window is the last 6, 24 or 72 hours, 24 by default. Observations flagged as invalid positions are left out. "
+			+ "At most 500 points are returned; when the window holds more, the newest are kept and truncated is true. "
+			+ "Segments slower than slowdownThresholdKnots are slowdowns. "
+			+ "A vessel with no retained AIS report returns no points. "
+			+ "A shipment of another company is reported as not found.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Track history for the vessel, possibly with no points", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = VesselTrackResponse.class))),
+				@ApiResponse(responseCode = "400", description = "Unknown vessel or unsupported window", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment information is missing or invalid","errors":{"hours":"Window must be 6, 24 or 72 hours"}}
+								"""))),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Log in again."}
+								"""))),
+				@ApiResponse(responseCode = "403", description = "Authenticated account has no active company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your account must belong to an active company to view shipments"}
+								"""))),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id is visible to the authenticated user's company", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))) })
+	public ResponseEntity<VesselTrackResponse> trackHistory(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable Long shipmentId,
+			@io.swagger.v3.oas.annotations.Parameter(description = "MOTHER or FEEDER; MOTHER by default", example = "MOTHER") @RequestParam(required = false) String vessel,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Window length in hours: 6, 24 or 72; 24 by default", example = "24") @RequestParam(required = false) String hours) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(vesselTracks.history(user, shipmentId, vessel, hours));
 	}
 
 	@PostMapping("/api/shipments")

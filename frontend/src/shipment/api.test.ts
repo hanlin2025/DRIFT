@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -316,5 +316,68 @@ describe('archiveShipment', () => {
   ] as const)('returns the server message for status %s', async (status, message) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
     await expect(archiveShipment('token-1', 7)).rejects.toMatchObject({ status, message });
+  });
+});
+
+const track = {
+  vessel: 'FEEDER',
+  vesselName: 'MV Strait Runner',
+  mmsi: '533000111',
+  windowHours: 6,
+  from: '2026-10-13T06:00:00Z',
+  to: '2026-10-13T12:00:00Z',
+  slowdownThresholdKnots: 3,
+  pointLimit: 500,
+  truncated: false,
+  points: [
+    { id: 7001, latitude: 1.2, longitude: 103.8, speedOverGroundKnots: 2.4, courseOverGroundDegrees: 90, trueHeadingDegrees: 91, ingestedAt: '2026-10-13T07:00:00Z' },
+    { id: 7002, latitude: 1.3, longitude: 103.9, speedOverGroundKnots: null, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-13T08:00:00Z' },
+  ],
+};
+
+describe('vessel track history API', () => {
+  it('requests the chosen vessel and window and keeps the points in order', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(track)));
+
+    const found = await getVesselTrack('token', '7', 'FEEDER', 6);
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/7/track-history?vessel=FEEDER&hours=6', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+    expect(found.points.map(point => point.ingestedAt)).toEqual(['2026-10-13T07:00:00Z', '2026-10-13T08:00:00Z']);
+    expect(found.slowdownThresholdKnots).toBe(3);
+  });
+
+  it('accepts a vessel with no report', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, vessel: 'MOTHER', mmsi: null, points: [] })));
+
+    const found = await getVesselTrack('token', '7', 'MOTHER', 24);
+
+    expect(found.mmsi).toBeNull();
+    expect(found.points).toEqual([]);
+  });
+
+  it('rejects a malformed track', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, points: [{ latitude: 'north' }] })));
+
+    await expect(getVesselTrack('token', '7', 'FEEDER', 6)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('rejects a point without an integer observation id', async () => {
+    const [first, second] = track.points;
+    const { id: _id, ...withoutId } = first;
+    for (const points of [[withoutId, second], [{ ...first, id: '7001' }, second], [{ ...first, id: 1.5 }, second]]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, points })));
+      await expect(getVesselTrack('token', '7', 'FEEDER', 6)).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  it('passes the API message for an unsupported window', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      message: 'Shipment information is missing or invalid',
+      errors: { hours: 'Window must be 6, 24 or 72 hours' },
+    }, 400)));
+
+    await expect(getVesselTrack('token', '7', 'MOTHER', 24)).rejects.toBeInstanceOf(ApiError);
   });
 });
