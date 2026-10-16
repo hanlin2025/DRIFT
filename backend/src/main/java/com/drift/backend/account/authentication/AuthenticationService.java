@@ -4,6 +4,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.exception.InvalidCredentialsException;
@@ -29,6 +30,9 @@ public class AuthenticationService {
 		UserAccount account = users.findByEmailIgnoreCase(request.email()).orElse(null);
 		String hash = account == null ? unknownPasswordHash : account.getPasswordHash();
 		if (account == null || !passwordEncoder.matches(request.password(), hash)) {
+			throw new InvalidCredentialsException();
+		}
+		if (account.getStatus() == AccountStatus.REMOVED) {
 			throw new InvalidCredentialsException();
 		}
 		return LoginResponse.of(account, tokens.issue(account));
