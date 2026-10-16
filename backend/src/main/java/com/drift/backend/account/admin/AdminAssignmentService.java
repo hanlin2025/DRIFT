@@ -41,8 +41,11 @@ public class AdminAssignmentService {
 
 	@Transactional(readOnly = true)
 	public List<AdminUserResponse> users(AuthenticatedUser principal) {
-		requireAdmin(principal);
-		return users.findAllForAssignment().stream().map(AdminUserResponse::from).toList();
+		Company company = administeredCompany(principal);
+		if (company == null) {
+			return List.of();
+		}
+		return users.findAllForAssignment(company.getId()).stream().map(AdminUserResponse::from).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -56,16 +59,20 @@ public class AdminAssignmentService {
 
 	@Transactional(readOnly = true)
 	public List<AdminOrganisationResponse> organisations(AuthenticatedUser principal) {
-		requireAdmin(principal);
-		return companies.findByActiveTrueOrderByNameAscIdAsc().stream()
-				.map(AdminOrganisationResponse::from)
-				.toList();
+		Company company = administeredCompany(principal);
+		if (company == null || !company.isActive()) {
+			return List.of();
+		}
+		return List.of(AdminOrganisationResponse.from(company));
 	}
 
 	@Transactional(readOnly = true)
 	public List<AssignmentAuditResponse> audits(AuthenticatedUser principal) {
-		requireAdmin(principal);
-		return audits.findAllByOrderByRecordedAtDescIdDesc().stream().map(AssignmentAuditResponse::from).toList();
+		Company company = administeredCompany(principal);
+		if (company == null) {
+			return List.of();
+		}
+		return audits.findForCompany(company.getId()).stream().map(AssignmentAuditResponse::from).toList();
 	}
 
 	@Transactional
@@ -74,10 +81,20 @@ public class AdminAssignmentService {
 		if (request == null) {
 			throw new InvalidAssignmentException();
 		}
+		Company operatorCompany = operator.getCompany();
+		if (operatorCompany == null || !operatorCompany.isActive()) {
+			throw new InvalidAssignmentException();
+		}
 		UserAccount target = users.findById(userId).orElseThrow(AssignedUserNotFoundException::new);
+		if (target.getCompany() == null || !operatorCompany.getId().equals(target.getCompany().getId())) {
+			throw new AssignedUserNotFoundException();
+		}
 		Role previousRole = target.getRole();
 		Company previousOrganisation = target.getCompany();
 		Company nextOrganisation = organisation(request.organisationId());
+		if (!operatorCompany.getId().equals(nextOrganisation.getId())) {
+			throw new InvalidAssignmentException();
+		}
 		boolean changed = target.assign(role(request.role()), nextOrganisation);
 		try {
 			users.saveAndFlush(target);
@@ -100,6 +117,10 @@ public class AdminAssignmentService {
 			throw new AssignmentForbiddenException();
 		}
 		return account;
+	}
+
+	private Company administeredCompany(AuthenticatedUser principal) {
+		return requireAdmin(principal).getCompany();
 	}
 
 	private AccountRole role(String code) {
