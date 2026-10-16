@@ -59,16 +59,16 @@ class AdminAssignmentIntegrationTests {
 		String previousToken = tokenFor(email);
 		Long userId = userId(email);
 
-		assign(adminToken, userId, straitsId, "LOGISTICS_MANAGER")
+		assign(adminToken, userId, harbourlineId, "LOGISTICS_MANAGER")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.message").value(AssignmentResponse.MESSAGE))
 				.andExpect(jsonPath("$.user.email").value(email))
 				.andExpect(jsonPath("$.user.role").value("LOGISTICS_MANAGER"))
-				.andExpect(jsonPath("$.user.organisation.code").value("STRAITS_FRESH_DEMO"));
+				.andExpect(jsonPath("$.user.organisation.code").value("HARBOURLINE_DEMO"));
 
 		assertThat(jdbc.queryForObject("SELECT code FROM roles JOIN users ON users.role_id = roles.id WHERE users.id = ?",
 				String.class, userId)).isEqualTo("LOGISTICS_MANAGER");
-		assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE id = ?", Long.class, userId)).isEqualTo(straitsId);
+		assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE id = ?", Long.class, userId)).isEqualTo(harbourlineId);
 		assertThat(jdbc.queryForObject("SELECT session_generation FROM users WHERE id = ?", Long.class, userId)).isEqualTo(1L);
 
 		mvc.perform(get("/api/session").header("Authorization", "Bearer " + previousToken))
@@ -77,15 +77,15 @@ class AdminAssignmentIntegrationTests {
 		mvc.perform(get("/api/session").header("Authorization", "Bearer " + tokenFor(email)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.role").value("LOGISTICS_MANAGER"))
-				.andExpect(jsonPath("$.company.code").value("STRAITS_FRESH_DEMO"));
+				.andExpect(jsonPath("$.company.code").value("HARBOURLINE_DEMO"));
 	}
 
 	@Test
 	void keepsTheSessionWhenTheAssignmentDoesNotChange() throws Exception {
-		String email = createUser("Same Assignment", "IMPORTER", straitsId);
+		String email = createUser("Same Assignment", "IMPORTER", harbourlineId);
 		String previousToken = tokenFor(email);
 
-		assign(adminToken, userId(email), straitsId, "IMPORTER")
+		assign(adminToken, userId(email), harbourlineId, "IMPORTER")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.message").value(AssignmentResponse.MESSAGE));
 
@@ -101,6 +101,9 @@ class AdminAssignmentIntegrationTests {
 		Long inactiveId = inactiveCompany();
 
 		assign(adminToken, userId, inactiveId, "IMPORTER")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidAssignmentException.MESSAGE));
+		assign(adminToken, userId, straitsId, "IMPORTER")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value(InvalidAssignmentException.MESSAGE));
 		assign(adminToken, userId, 999999L, "IMPORTER")
@@ -156,22 +159,45 @@ class AdminAssignmentIntegrationTests {
 	}
 
 	@Test
+	void hidesUsersAndOrganisationsOutsideTheAdministratorsCompany() throws Exception {
+		String outsider = createUser("Other Company", "FREIGHT_FORWARDER", straitsId);
+		Long outsiderId = userId(outsider);
+
+		mvc.perform(get("/api/admin/users").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.email == '" + outsider + "')]").isEmpty());
+		assign(adminToken, outsiderId, harbourlineId, "IMPORTER")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(AssignedUserNotFoundException.MESSAGE));
+		assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE id = ?", Long.class, outsiderId)).isEqualTo(straitsId);
+
+		mvc.perform(get("/api/admin/organisations").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].code").value("HARBOURLINE_DEMO"));
+	}
+
+	@Test
 	void listsUsersRolesAndActiveOrganisationsForAnAdministratorOnly() throws Exception {
 		String email = createUser("Listed User", "IMPORTER", straitsId);
+		String ownEmail = createUser("Own User", "IMPORTER", harbourlineId);
 		inactiveCompany();
 		String importerToken = tokenFor(createUser("Blocked Importer", "IMPORTER", harbourlineId));
 
 		mvc.perform(get("/api/admin/users").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[?(@.email == '" + email + "')].role").value("IMPORTER"))
-				.andExpect(jsonPath("$[?(@.email == '" + email + "')].organisation.name").value("Straits Fresh Imports (Demo)"));
+				.andExpect(jsonPath("$[?(@.email == '" + email + "')]").isEmpty())
+				.andExpect(jsonPath("$[?(@.email == '" + ownEmail + "')].role").value("IMPORTER"))
+				.andExpect(jsonPath("$[?(@.email == '" + ownEmail + "')].organisation.name").value("Harbourline Logistics (Demo)"));
 		mvc.perform(get("/api/admin/roles").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[?(@.code == 'LOGISTICS_MANAGER')].label").value("Logistics manager"))
 				.andExpect(jsonPath("$.length()").value(4));
 		mvc.perform(get("/api/admin/organisations").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
 				.andExpect(jsonPath("$[?(@.code == 'CLOSED_CO') ]").isEmpty())
+				.andExpect(jsonPath("$[?(@.code == 'STRAITS_FRESH_DEMO')]").isEmpty())
 				.andExpect(jsonPath("$[?(@.code == 'HARBOURLINE_DEMO')].name").value("Harbourline Logistics (Demo)"));
 
 		mvc.perform(get("/api/admin/users").header("Authorization", "Bearer " + importerToken))

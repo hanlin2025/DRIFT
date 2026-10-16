@@ -105,7 +105,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       <main className="workspace-main">
         <p className="eyebrow">ADMINISTRATOR</p>
         <h2>User management</h2>
-        <p className="intro">Assign each person to an organisation and a role. Changing either one ends their current session.</p>
+        <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session.</p>
         {problem && users === null ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div> : null}
         {users === null && !problem ? <div className="notice" role="status">Loading users...</div> : null}
         {users !== null ? (

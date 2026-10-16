@@ -36,8 +36,8 @@ public class AdminAssignmentController {
 	}
 
 	@GetMapping("/api/admin/users")
-	@Operation(summary = "List users for assignment", description = "Lists every user, ordered by name then id, so an administrator can choose who to assign. "
-			+ "Each user includes the current role and organisation.",
+	@Operation(summary = "List users for assignment", description = "Lists the users in the administrator's own organisation, ordered by name then id. "
+			+ "Users in another organisation are omitted. Each user includes the current role and organisation.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Users, possibly empty", content = @Content(
@@ -81,8 +81,8 @@ public class AdminAssignmentController {
 	}
 
 	@GetMapping("/api/admin/organisations")
-	@Operation(summary = "List organisations for assignment", description = "Lists active organisations, ordered by name then id. "
-			+ "An organisation is a company. Inactive organisations are omitted and cannot be assigned.",
+	@Operation(summary = "List organisations for assignment", description = "Lists the administrator's own organisation when it is active. "
+			+ "An organisation is a company. Another organisation is omitted, and an inactive organisation cannot be assigned.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Active organisations", content = @Content(
@@ -104,7 +104,8 @@ public class AdminAssignmentController {
 	}
 
 	@GetMapping("/api/admin/assignment-audits")
-	@Operation(summary = "List assignment changes", description = "Lists every saved organisation or role change, newest first. "
+	@Operation(summary = "List assignment changes", description = "Lists saved organisation or role changes for the administrator's own organisation, newest first. "
+			+ "A change is included when the previous or new organisation is that company. "
 			+ "Each entry records the administrator, the user, the previous and new role, the previous and new organisation, and the time. "
 			+ "Saving the same organisation and role does not add an entry. A rejected assignment does not add an entry.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
@@ -128,16 +129,18 @@ public class AdminAssignmentController {
 	}
 
 	@PatchMapping("/api/admin/users/{userId}/assign")
-	@Operation(summary = "Assign a user to an organisation and role", description = "Stores the organisation and role for one user. "
-			+ "The organisation must be an active company and the role must be one of the stored roles. "
+	@Operation(summary = "Assign a user to an organisation and role", description = "Stores the organisation and role for one user in the administrator's own organisation. "
+			+ "The user must already belong to that organisation, and the organisation in the request must be that same active company. "
+			+ "The role must be one of the stored roles. "
 			+ "A company can have only one administrator. "
-			+ "When the role or organisation changes, the user's existing session stops working, they must log in again, and the change is recorded in the assignment audit. "
+			+ "A user from another organisation is reported as not found. "
+			+ "When the role changes, the user's existing session stops working, they must log in again, and the change is recorded in the assignment audit. "
 			+ "Saving the same organisation and role leaves the current session valid.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Assignment saved", content = @Content(
 					mediaType = "application/json", schema = @Schema(implementation = AssignmentResponse.class))),
-			@ApiResponse(responseCode = "400", description = "The role does not exist or the organisation is missing or inactive", content = @Content(
+			@ApiResponse(responseCode = "400", description = "The role does not exist, or the organisation is missing, inactive, or not the administrator's own organisation", content = @Content(
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"Invalid role or organisation selected."}
 							"""))),
@@ -149,7 +152,7 @@ public class AdminAssignmentController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"Only an administrator can assign users"}
 							"""))),
-			@ApiResponse(responseCode = "404", description = "No user exists with this id", content = @Content(
+			@ApiResponse(responseCode = "404", description = "No user in the administrator's organisation exists with this id", content = @Content(
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
