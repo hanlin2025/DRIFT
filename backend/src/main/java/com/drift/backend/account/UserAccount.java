@@ -55,6 +55,10 @@ public class UserAccount {
 	@Column(name = "minimum_risk_notification_level", nullable = false, length = 16)
 	private RiskNotificationLevel minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "status", nullable = false, length = 16)
+	private AccountStatus status = AccountStatus.ACTIVE;
+
 	protected UserAccount() {
 	}
 
@@ -68,6 +72,7 @@ public class UserAccount {
 		this.sessionGeneration = 0;
 		this.riskEmailNotificationsEnabled = false;
 		this.minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
+		this.status = AccountStatus.ACTIVE;
 	}
 
 	public Long getId() {
@@ -104,6 +109,10 @@ public class UserAccount {
 
 	public RiskNotificationLevel getMinimumRiskNotificationLevel() {
 		return minimumRiskNotificationLevel;
+	}
+
+	public AccountStatus getStatus() {
+		return status;
 	}
 
 	public void rename(String fullName) {
