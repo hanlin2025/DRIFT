@@ -157,4 +157,12 @@ public class UserAccount {
 		sessionGeneration++;
 		return true;
 	}
+
+	public void remove() {
+		if (status == AccountStatus.REMOVED) {
+			throw new IllegalStateException("Account is already removed");
+		}
+		this.status = AccountStatus.REMOVED;
+		sessionGeneration++;
+	}
 }
