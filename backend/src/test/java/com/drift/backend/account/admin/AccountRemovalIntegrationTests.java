@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
+import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
+import com.drift.backend.account.admin.exception.InvalidRemovalException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -40,13 +42,15 @@ class AccountRemovalIntegrationTests {
 	@Autowired PasswordEncoder passwords;
 	@Autowired EntityManager entityManager;
 
+	private String adminEmail;
 	private String adminToken;
 	private Long harbourlineId;
 
 	@BeforeEach
 	void administrator() throws Exception {
 		harbourlineId = companyId("HARBOURLINE_DEMO");
-		adminToken = tokenFor(createUser("Admin User", "ADMIN", harbourlineId));
+		adminEmail = createUser("Admin User", "ADMIN", harbourlineId);
+		adminToken = tokenFor(adminEmail);
 	}
 
 	@Test
@@ -99,6 +103,78 @@ class AccountRemovalIntegrationTests {
 	}
 
 	@Test
+	void reportsAnotherCompanysUserAsNotFoundAndLeavesItActive() throws Exception {
+		Long userId = userId(createUser("Other Company", "IMPORTER", companyId("STRAITS_FRESH_DEMO")));
+
+		remove(adminToken, userId)
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(AssignedUserNotFoundException.MESSAGE));
+
+		assertUnchanged(userId);
+	}
+
+	@Test
+	void reportsAUserWithoutACompanyAsNotFound() throws Exception {
+		Long userId = userId(createUser("No Company", "IMPORTER", null));
+
+		remove(adminToken, userId)
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(AssignedUserNotFoundException.MESSAGE));
+
+		assertUnchanged(userId);
+	}
+
+	@Test
+	void rejectsRemovingTheAdministratorsOwnAccount() throws Exception {
+		remove(adminToken, userId(adminEmail))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidRemovalException.OWN_ACCOUNT));
+
+		assertUnchanged(userId(adminEmail));
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void rejectsAnAdministratorWhoseCompanyIsInactive() throws Exception {
+		jdbc.update("INSERT INTO companies (code, name, active) VALUES ('CLOSED_CO', 'Closed Company', false)");
+		Long closedId = companyId("CLOSED_CO");
+		String closedAdminToken = tokenFor(createUser("Closed Admin", "ADMIN", closedId));
+		Long userId = userId(createUser("Closed User", "IMPORTER", closedId));
+
+		remove(closedAdminToken, userId)
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidRemovalException.ORGANISATION));
+
+		assertUnchanged(userId);
+	}
+
+	@Test
+	void forbidsRolesOtherThanAdministrator() throws Exception {
+		Long userId = userId(createUser("Target User", "IMPORTER", harbourlineId));
+
+		for (String role : new String[] { "IMPORTER", "FREIGHT_FORWARDER", "LOGISTICS_MANAGER" }) {
+			String token = tokenFor(createUser("Not Admin " + role, role, harbourlineId));
+			remove(token, userId)
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.message").value(AssignmentForbiddenException.MESSAGE));
+		}
+
+		assertUnchanged(userId);
+	}
+
+	@Test
+	void requiresASession() throws Exception {
+		Long userId = userId(createUser("Target User", "IMPORTER", harbourlineId));
+
+		mvc.perform(patch("/api/admin/users/" + userId + "/remove"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
+
+		assertUnchanged(userId);
+	}
+
+	@Test
 	void listsTheAccountStatus() throws Exception {
 		String email = createUser("Listed User", "IMPORTER", harbourlineId);
 
@@ -116,12 +192,21 @@ class AccountRemovalIntegrationTests {
 				.andExpect(jsonPath(path + ".security[0].bearerAuth").exists())
 				.andExpect(jsonPath(path + ".responses['200'].content['application/json'].schema.$ref")
 						.value("#/components/schemas/AdminUser"))
+				.andExpect(jsonPath(path + ".responses['400'].content['application/json'].examples['Own account'].value.message")
+						.value(InvalidRemovalException.OWN_ACCOUNT))
+				.andExpect(jsonPath(path + ".responses['400'].content['application/json'].examples['Organisation missing or inactive'].value.message")
+						.value(InvalidRemovalException.ORGANISATION))
 				.andExpect(jsonPath(path + ".responses['401'].content['application/json'].example.message")
 						.value(SessionEndedException.MESSAGE))
 				.andExpect(jsonPath(path + ".responses['404'].content['application/json'].example.message")
 						.value(AssignedUserNotFoundException.MESSAGE))
 				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].example.message")
 						.value(AccountAlreadyRemovedException.MESSAGE));
+	}
+
+	private void assertUnchanged(Long userId) {
+		assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, userId)).isEqualTo("ACTIVE");
+		assertThat(jdbc.queryForObject("SELECT session_generation FROM users WHERE id = ?", Long.class, userId)).isZero();
 	}
 
 	private org.springframework.test.web.servlet.ResultActions remove(String token, Long userId) throws Exception {
