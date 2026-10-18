@@ -36,6 +36,8 @@ describe('shipment importer API', () => {
     expect(listed[0].motherVesselImo).toBeNull();
     expect(listed[0].motherVesselNameWarning).toBeNull();
     expect(listed[0].arrivalComparison).toBeNull();
+    expect(listed[0].updatedAt).toBeNull();
+    expect(listed[0].updatedByName).toBeNull();
     expect(fetch).toHaveBeenCalledWith('/api/shipments', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
@@ -77,6 +79,22 @@ describe('shipment importer API', () => {
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
+  });
+
+  it('reads who last updated a shipment on the list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{
+      ...shipment,
+      updatedAt: '2026-10-18T02:15:00Z',
+      updatedByName: 'Ada Admin',
+    }])));
+    const listed = await listShipments('token');
+    expect(listed[0].updatedAt).toBe('2026-10-18T02:15:00Z');
+    expect(listed[0].updatedByName).toBe('Ada Admin');
+  });
+
+  it('rejects a list shipment whose last update is not text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, updatedAt: 1, updatedByName: 'Ada Admin' }])));
+    await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
 
   it('reads the importer on a shipment detail', async () => {

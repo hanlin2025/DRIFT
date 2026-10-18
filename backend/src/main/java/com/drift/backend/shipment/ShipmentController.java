@@ -52,7 +52,8 @@ public class ShipmentController {
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
-			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
+			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
+			+ "and who last updated it and when. "
 			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({

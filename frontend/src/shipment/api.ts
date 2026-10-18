@@ -127,6 +127,8 @@ export type Shipment = {
   feederOperationalState?: OperationalState | null;
   aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
+  updatedAt?: string | null;
+  updatedByName?: string | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -533,6 +535,9 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const updatedAt = optionalIdentity(value, 'updatedAt');
+  const updatedByName = optionalIdentity(value, 'updatedByName');
+  if (updatedAt === undefined || updatedByName === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -565,6 +570,8 @@ function asShipment(value: unknown): Shipment | null {
     feederOperationalState,
     aisFeed,
     arrivalComparison,
+    updatedAt,
+    updatedByName,
   };
 }
 
