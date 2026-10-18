@@ -35,15 +35,20 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detail.companyId()).isEqualTo(11L);
 		assertThat(detail.status()).isEqualTo(ShipmentStatus.ACTIVE);
 		assertThat(detail.importer().id()).isEqualTo(22L);
+		assertThat(detail.remainingConnectionWindow()).isNull();
 		assertThat(detail.risk().level()).isEqualTo(ShipmentRisk.Level.LOW);
-		assertThat(detail.risk().explanation()).isEqualTo("At least 24 hours to transfer cargo between vessels.");
+		assertThat(detail.risk().explanation()).isEqualTo(
+				"At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
 
 		JsonNode listedJson = json.valueToTree(listed);
 		JsonNode detailJson = json.valueToTree(detail);
 		assertThat(listedJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(listedJson.has("risk")).isFalse();
+		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
 		assertThat(listedJson.has("importer")).isFalse();
+		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
+		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
 		assertThat(detailJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
@@ -66,9 +71,13 @@ class ShipmentResponseOwnershipTest {
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, new ConnectionWindowService().calculate(
-				shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()), null, null,
-				ArrivalEstimate.unavailable("NO_POSITION", "No AIS position has been received for the mother vessel."));
+		ConnectionWindowService windows = new ConnectionWindowService();
+		ConnectionWindowCalculation planned = windows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt());
+		ArrivalEstimate estimate = ArrivalEstimate.unavailable("NO_POSITION",
+				"No AIS position has been received for the mother vessel.");
+		return ShipmentDetailResponse.from(shipment, planned,
+				windows.remaining(shipment.getPlannedFeederDepartureAt(), estimate), null, null, estimate);
 	}
 
 	private static Shipment shipment(Company owner) {

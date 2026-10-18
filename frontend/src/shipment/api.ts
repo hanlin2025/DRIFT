@@ -7,6 +7,20 @@ export type ConnectionWindow = {
   totalSeconds: number;
 };
 
+export type RemainingConnectionWindow = {
+  status: 'AVAILABLE';
+  duration: string;
+  totalSeconds: number;
+  missedBy: null;
+  missedBySeconds: null;
+} | {
+  status: 'MISSED';
+  duration: null;
+  totalSeconds: null;
+  missedBy: string;
+  missedBySeconds: number;
+};
+
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export type ShipmentRisk = {
@@ -80,6 +94,7 @@ export type Shipment = {
   version: number;
   companyId?: number | null;
   connectionWindow: ConnectionWindow | null;
+  remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
@@ -315,6 +330,34 @@ function isConnectionWindow(value: unknown): value is ConnectionWindow {
 
 const RISK_LEVELS: readonly unknown[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
+function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingConnectionWindow | null | undefined {
+  if (!('remainingConnectionWindow' in value) || value.remainingConnectionWindow == null) return null;
+  const window = value.remainingConnectionWindow;
+  if (!isRecord(window) || (window.status !== 'AVAILABLE' && window.status !== 'MISSED')) return undefined;
+  if (window.status === 'AVAILABLE') {
+    if (typeof window.duration !== 'string' || window.duration.trim().length === 0) return undefined;
+    if (typeof window.totalSeconds !== 'number' || !Number.isFinite(window.totalSeconds) || window.totalSeconds < 0) return undefined;
+    if (window.missedBy != null || window.missedBySeconds != null) return undefined;
+    return {
+      status: 'AVAILABLE',
+      duration: window.duration,
+      totalSeconds: window.totalSeconds,
+      missedBy: null,
+      missedBySeconds: null,
+    };
+  }
+  if (window.duration != null || window.totalSeconds != null) return undefined;
+  if (typeof window.missedBy !== 'string' || window.missedBy.trim().length === 0) return undefined;
+  if (typeof window.missedBySeconds !== 'number' || !Number.isFinite(window.missedBySeconds) || window.missedBySeconds < 0) return undefined;
+  return {
+    status: 'MISSED',
+    duration: null,
+    totalSeconds: null,
+    missedBy: window.missedBy,
+    missedBySeconds: window.missedBySeconds,
+  };
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
@@ -407,6 +450,8 @@ function asShipment(value: unknown): Shipment | null {
   if (!isNullableText(value.feederVessel) || !isNullableText(value.plannedFeederDepartureAt)) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
+  const remainingConnectionWindow = remainingConnectionWindowOf(value);
+  if (remainingConnectionWindow === undefined) return null;
   const risk = value.risk;
   if (risk != null && !isRisk(risk)) return null;
   const motherVesselPosition = value.motherVesselPosition;
@@ -441,6 +486,7 @@ function asShipment(value: unknown): Shipment | null {
     version: value.version,
     companyId: companyIdOf(value.companyId),
     connectionWindow: window ?? null,
+    remainingConnectionWindow,
     risk: risk ?? null,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,

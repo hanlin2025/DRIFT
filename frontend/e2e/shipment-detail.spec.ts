@@ -118,7 +118,7 @@ test('an authorised freight forwarder opens a shipment from the list and sees ev
       await expect(fact(page, 'Feeder vessel')).toHaveText(itinerary.feederVessel);
       await expect(fact(page, 'Planned arrival').locator('time')).toHaveAttribute('datetime', shipment.plannedMotherArrivalAt);
       await expect(fact(page, 'Planned departure').locator('time')).toHaveAttribute('datetime', shipment.plannedFeederDepartureAt);
-      await expect(fact(page, 'Risk')).toHaveText('High Less than 12 hours to transfer cargo between vessels.');
+      await expect(fact(page, 'Risk')).toHaveText('High Less than 12 hours to transfer cargo between vessels. The planned connection window is being used.');
     }
   } finally {
     cleanup([owner.email]);

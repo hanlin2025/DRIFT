@@ -290,10 +290,12 @@ public class ShipmentService {
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
 		VesselPosition motherVesselPosition = livePosition(shipment.getMotherVessel());
-		return ShipmentDetailResponse.from(shipment, calculation(shipment), motherVesselPosition,
-				livePosition(shipment.getFeederVessel()),
-				arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition), shipment.getTransshipmentPort(),
-						shipment.getPlannedMotherArrivalAt(), clock));
+		ArrivalEstimate arrivalComparison = arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
+				shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
+		ConnectionWindowCalculation calculation = calculation(shipment);
+		return ShipmentDetailResponse.from(shipment, calculation,
+				connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(), arrivalComparison),
+				motherVesselPosition, livePosition(shipment.getFeederVessel()), arrivalComparison);
 	}
 
 	private VesselPosition livePosition(String vesselName) {

@@ -42,6 +42,7 @@ const shipment: Shipment = {
   version: 3,
   companyId: 2,
   connectionWindow: { duration: '1 day 10 hours', totalSeconds: 122400 },
+  remainingConnectionWindow: null,
   risk: { level: 'LOW', explanation: 'At least 24 hours to transfer cargo between vessels.' },
   status: null,
   motherVesselPosition: {
@@ -702,7 +703,11 @@ describe('shipment detail decoding', () => {
 
   it('accepts a detail response that omits arrivalComparison', async () => {
     const { arrivalComparison: _comparison, ...omitted } = shipment;
-    await expect(decode(omitted)).resolves.toMatchObject({ arrivalComparison: null, connectionWindow: shipment.connectionWindow });
+    await expect(decode(omitted)).resolves.toMatchObject({
+      arrivalComparison: null,
+      connectionWindow: shipment.connectionWindow,
+      remainingConnectionWindow: null,
+    });
   });
 
   it('accepts an explicitly unassigned feeder vessel', async () => {

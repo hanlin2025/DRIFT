@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -123,8 +124,9 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"))
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
+				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
 				.andExpect(jsonPath("$.risk.explanation")
-						.value("At least 24 hours to transfer cargo between vessels."));
+						.value("At least 24 hours to transfer cargo between vessels. The planned connection window is being used."));
 		detail(importerToken, shipmentId).andExpect(status().isOk());
 		mvc.perform(get("/api/shipments/" + shipmentId + "/tracking").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())

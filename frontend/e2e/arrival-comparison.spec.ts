@@ -105,7 +105,18 @@ type Detail = {
   shipmentReference: string;
   plannedMotherArrivalAt: string;
   arrivalComparison: Comparison;
+  connectionWindow: { duration: string; totalSeconds: number };
+  remainingConnectionWindow: {
+    status: 'AVAILABLE' | 'MISSED';
+    duration: string | null;
+    totalSeconds: number | null;
+    missedBy: string | null;
+    missedBySeconds: number | null;
+  } | null;
+  risk: { level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'; explanation: string };
 };
+
+const RISK_LABELS = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' } as const;
 
 function sameInstant(actual: string | null, expected: string) {
   expect(actual, 'a time element needs a dateTime value').toBeTruthy();
@@ -134,7 +145,8 @@ async function expectComparison(page: Page, detail: Detail) {
   await expect(comparison.getByText(LIMITATION, { exact: true })).toBeVisible();
   await expect(comparison.getByText(`${detail.arrivalComparison.speedOverGroundKnots} knots`, { exact: true })).toBeVisible();
   await expect(page.getByText('6 hours', { exact: true })).toBeVisible();
-  await expect(page.getByText('High', { exact: true })).toBeVisible();
+  const risk = page.locator('.route-facts dl > div').filter({ has: page.getByText('Risk', { exact: true }) }).locator('dd');
+  await expect(risk).toHaveText(`${RISK_LABELS[detail.risk.level]} ${detail.risk.explanation}`);
   if (detail.arrivalComparison.possiblyOutdated) {
     await expect(comparison.getByText('Possibly outdated', { exact: true })).toBeVisible();
   } else {
@@ -169,6 +181,26 @@ test('the detail page shows the persisted arrival comparison', { tag: '@disposab
     expect(Date.parse(detail.arrivalComparison.estimatedArrivalAt)).toBe(Date.parse(item.ingested));
     expect(Date.parse(detail.arrivalComparison.lastReceivedAt)).toBe(Date.parse(item.ingested));
     expect(detail.arrivalComparison.possiblyOutdated).toBe(item.vessel === 'Arrival Old');
+    expect(detail.connectionWindow).toEqual({ duration: '6 hours', totalSeconds: 21600 });
+    if (item.vessel === 'Arrival Old') {
+      expect(detail.remainingConnectionWindow).toBeNull();
+      expect(detail.risk).toEqual({
+        level: 'HIGH',
+        explanation: 'Less than 12 hours to transfer cargo between vessels. The planned connection window is being used.',
+      });
+    } else if (item.vessel === 'Arrival Behind') {
+      expect(detail.remainingConnectionWindow).toEqual({
+        status: 'MISSED', duration: null, totalSeconds: null, missedBy: '0 seconds', missedBySeconds: 0,
+      });
+      expect(detail.risk).toEqual({
+        level: 'CRITICAL',
+        explanation: "The connection is expected to be missed. The mother vessel's estimated arrival is at the planned feeder departure.",
+      });
+    } else {
+      expect(detail.remainingConnectionWindow?.status).toBe('AVAILABLE');
+      expect(detail.risk.level).toBe('HIGH');
+      expect(detail.risk.explanation).toBe("Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival.");
+    }
     details.push(detail);
   }
 
