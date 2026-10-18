@@ -145,10 +145,6 @@ function insertCompany(code: string, name: string, active: boolean) {
   sql(`INSERT INTO companies (code, name, active) VALUES (:'code', :'name', ${active ? 'TRUE' : 'FALSE'});`, { code, name });
 }
 
-function setCompanyActive(code: string, active: boolean) {
-  sql(`UPDATE companies SET active = ${active ? 'TRUE' : 'FALSE'} WHERE code = :'code';`, { code });
-}
-
 type Shipment = { id: number; shipmentReference: string; vessel: string; version: number };
 
 function shipmentData(shipmentReference: string, vessel: string, version?: number) {
@@ -202,6 +198,8 @@ function cleanup(emails: string[], companies: string[] = []) {
   for (const email of emails) {
     sql(`DELETE FROM shipment_import_jobs WHERE requested_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
+      DELETE FROM user_assignment_audits WHERE operator_user_id = (SELECT id FROM users WHERE email = :'email')
+        OR target_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM invitations WHERE email = :'email';
       DELETE FROM users WHERE email = :'email';`, { email });
   }
@@ -240,7 +238,7 @@ test.beforeAll(() => {
   assertOwnedDatabase();
 });
 
-test('an administrator assigns a user and the new organisation and role take effect at the next login', { tag: '@disposable-database' }, async ({ page, browser, request }, testInfo) => {
+test('an administrator assigns a role in their own organisation and it takes effect at the next login', { tag: '@disposable-database' }, async ({ page, browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Assignment is covered once on desktop.');
   test.setTimeout(90_000);
   const member = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO', 'Alice Tan');
@@ -261,20 +259,33 @@ test('an administrator assigns a user and the new organisation and role take eff
     await signIn(adminPage, administrator.email, '/admin');
     await expect(adminPage.getByRole('heading', { name: 'User management' })).toBeVisible();
     await expect(adminPage.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
+    const users = await request.get('/api/admin/users', { headers: bearer(adminSession.token) });
+    const usersBody = await users.text();
+    expect(users.status(), usersBody).toBe(200);
+    const listed = JSON.parse(usersBody) as { email: string; organisation: { code: string } | null }[];
+    expect(listed.some(item => item.email === member.email)).toBe(true);
+    expect(listed.every(item => item.organisation?.code === 'HARBOURLINE_DEMO')).toBe(true);
+    const organisations = await request.get('/api/admin/organisations', { headers: bearer(adminSession.token) });
+    const organisationBody = await organisations.text();
+    expect(organisations.status(), organisationBody).toBe(200);
+    expect((JSON.parse(organisationBody) as { code: string }[]).map(item => item.code)).toEqual(['HARBOURLINE_DEMO']);
+    await expectMessage(await assign(request, adminSession.token, member.id, companyId('STRAITS_FRESH_DEMO'), 'IMPORTER'), 400, INVALID);
+
     const choice = adminPage.getByRole('radio', { name: /Alice Tan/ });
     await choice.check();
-    await adminPage.locator('#assignment-organisation').selectOption({ label: 'Straits Fresh Imports (Demo)' });
-    await adminPage.locator('#assignment-role').selectOption({ label: 'Importer' });
+    await expect(adminPage.locator('#assignment-organisation option')).toHaveText(['Select an organisation', 'Harbourline Logistics (Demo)']);
+    await adminPage.locator('#assignment-organisation').selectOption({ label: 'Harbourline Logistics (Demo)' });
+    await adminPage.locator('#assignment-role').selectOption({ label: 'Logistics manager' });
     await adminPage.getByRole('button', { name: /Save assignment/ }).click();
     await expect(adminPage.getByRole('status')).toHaveText(ASSIGNED);
-    await expect(choice).toHaveAccessibleName(/Importer/);
-    await expect(choice).toHaveAccessibleName(/Straits Fresh Imports \(Demo\)/);
+    await expect(choice).toHaveAccessibleName(/Logistics manager/);
+    await expect(choice).toHaveAccessibleName(/Harbourline Logistics \(Demo\)/);
 
     await adminPage.reload();
     await expect(adminPage).toHaveURL('/admin');
     await expect(adminPage.getByRole('heading', { name: 'User management' })).toBeVisible();
     await expect(adminPage.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
-    await expect(adminPage.getByRole('radio', { name: /Alice Tan/ })).toHaveAccessibleName(/Importer/);
+    await expect(adminPage.getByRole('radio', { name: /Alice Tan/ })).toHaveAccessibleName(/Logistics manager/);
 
     const adminStillSignedIn = await request.get('/api/session', { headers: bearer(adminSession.token) });
     expect(adminStillSignedIn.status()).toBe(200);
@@ -284,20 +295,16 @@ test('an administrator assigns a user and the new organisation and role take eff
     await expect(page).toHaveURL('/login');
     await expect(page.getByRole('alert')).toHaveText(SESSION_ENDED);
 
-    await signIn(page, member.email, '/importer');
-    await expect(page.getByRole('heading', { name: 'Shipment overview' })).toBeVisible();
-    await expect(page.locator('.company-card strong')).toHaveText('Straits Fresh Imports (Demo)');
+    await signIn(page, member.email, '/logistics-manager');
+    await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Register a shipment' })).toHaveCount(0);
+    await expect(page.locator('.company-card strong')).toHaveText('Harbourline Logistics (Demo)');
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
-    await expect(page.getByText(EMPTY_LIST)).toBeVisible();
-    await expect(page.getByRole('link', { name: shipment.shipmentReference })).toHaveCount(0);
-    await page.goto(`/importer/shipments/${shipment.id}`);
-    await expect(page.getByRole('alert')).toHaveText(NO_ACCESS);
+    await expect(page.getByRole('link', { name: shipment.shipmentReference })).toBeVisible();
 
     const refreshed = await signInApi(request, member.email);
-    expect(refreshed.role).toBe('IMPORTER');
-    expect(refreshed.companyCode).toBe('STRAITS_FRESH_DEMO');
-    await expectHiddenShipment(request, refreshed.token, shipment);
+    expect(refreshed.role).toBe('LOGISTICS_MANAGER');
+    expect(refreshed.companyCode).toBe('HARBOURLINE_DEMO');
   } finally {
     await adminPage.close();
     cleanup([member.email, administrator.email]);
@@ -335,8 +342,8 @@ test('an invalid role or inactive organisation is rejected and the current assig
     const organisationBody = await organisations.text();
     expect(organisations.status(), organisationBody).toBe(200);
     const organisationNames = (JSON.parse(organisationBody) as { name: string }[]).map(item => item.name);
-    expect(organisationNames).toContain('Harbourline Logistics (Demo)');
-    expect(organisationNames).toContain(northwindName);
+    expect(organisationNames).toEqual(['Harbourline Logistics (Demo)']);
+    expect(organisationNames).not.toContain(northwindName);
     expect(organisationNames).not.toContain(archivedName);
     const roles = await request.get('/api/admin/roles', { headers: bearer(adminSession.token) });
     const roleBody = await roles.text();
@@ -350,13 +357,9 @@ test('an invalid role or inactive organisation is rejected and the current assig
     for (const label of ROLE_LABELS) expect(roleLabels).toContain(label);
     expect(roleLabels.join('\n')).not.toMatch(/Planner/);
     const organisationLabels = await page.locator('#assignment-organisation option').allTextContents();
-    expect(organisationLabels).toContain(northwindName);
+    expect(organisationLabels).toEqual(['Select an organisation', 'Harbourline Logistics (Demo)']);
+    expect(organisationLabels).not.toContain(northwindName);
     expect(organisationLabels).not.toContain(archivedName);
-    await page.locator('#assignment-organisation').selectOption({ label: northwindName });
-    await page.locator('#assignment-role').selectOption({ label: 'Importer' });
-    setCompanyActive(northwindCode, false);
-    await page.getByRole('button', { name: /Save assignment/ }).click();
-    await expect(page.getByRole('alert')).toHaveText(INVALID);
     await expect(page.getByRole('radio', { name: new RegExp(`Pat Lim ${suffix}`) })).toHaveAccessibleName(/Freight forwarder/);
     await expect(page.getByRole('radio', { name: new RegExp(`Pat Lim ${suffix}`) })).toHaveAccessibleName(/Harbourline Logistics \(Demo\)/);
     const stillForwarder = await signInApi(request, target.email);
@@ -396,12 +399,12 @@ test('someone who is not an administrator cannot assign users or open user manag
     await expect(page).toHaveURL('/importer');
     await expect(page.getByRole('heading', { name: 'User management' })).toHaveCount(0);
 
-    await signIn(page, manager.email, '/freight-forwarder');
-    await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Register a shipment' })).toBeVisible();
+    await signIn(page, manager.email, '/logistics-manager');
+    await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Register a shipment' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
     await page.goto('/admin');
-    await expect(page).toHaveURL('/freight-forwarder');
+    await expect(page).toHaveURL('/logistics-manager');
     await expect(page.getByRole('heading', { name: 'User management' })).toHaveCount(0);
 
     await signIn(page, forwarder.email, '/freight-forwarder');
@@ -428,7 +431,7 @@ test('a real assignment ends the session and an unchanged assignment leaves it i
   const organisationOnly = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO', 'Organisation Only');
   const organisationShipment = await createShipment(request, organisationOnly.token, 'Ever Steady Organisation');
   try {
-    await expectMessage(await assign(request, adminSession.token, same.id, same.companyId, 'IMPORTER'), 200, ASSIGNED);
+    await expectMessage(await assign(request, adminSession.token, same.id, same.companyId, 'IMPORTER'), 404, USER_NOT_FOUND);
     const kept = await request.get('/api/session', { headers: bearer(same.token) });
     const keptBody = await kept.text();
     expect(kept.status(), keptBody).toBe(200);
@@ -440,7 +443,9 @@ test('a real assignment ends the session and an unchanged assignment leaves it i
     const manager = await signInApi(request, roleOnly.email);
     expect(manager.role).toBe('LOGISTICS_MANAGER');
     expect(manager.companyCode).toBe('HARBOURLINE_DEMO');
-    await signIn(page, roleOnly.email, '/freight-forwarder');
+    await signIn(page, roleOnly.email, '/logistics-manager');
+    await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Register a shipment' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: roleShipment.shipmentReference })).toBeVisible();
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
     const created = await createShipment(request, manager.token, 'Ever Steady Manager');
@@ -455,15 +460,15 @@ test('a real assignment ends the session and an unchanged assignment leaves it i
       data: { importerCompanyId: companyId('STRAITS_FRESH_DEMO') },
     }), 403, LINK_FORBIDDEN);
 
-    await expectMessage(await assign(request, adminSession.token, organisationOnly.id, companyId('STRAITS_FRESH_DEMO'), 'FREIGHT_FORWARDER'), 200, ASSIGNED);
-    await expectMessage(await request.get('/api/session', { headers: bearer(organisationOnly.token) }), 401, SESSION_ENDED);
-    const moved = await signInApi(request, organisationOnly.email);
-    expect(moved.role).toBe('FREIGHT_FORWARDER');
-    expect(moved.companyCode).toBe('STRAITS_FRESH_DEMO');
-    await expectHiddenShipment(request, moved.token, organisationShipment);
+    await expectMessage(await assign(request, adminSession.token, organisationOnly.id, companyId('STRAITS_FRESH_DEMO'), 'FREIGHT_FORWARDER'), 400, INVALID);
+    const stayed = await request.get('/api/session', { headers: bearer(organisationOnly.token) });
+    const stayedBody = await stayed.text();
+    expect(stayed.status(), stayedBody).toBe(200);
+    expect(JSON.parse(stayedBody).role).toBe('FREIGHT_FORWARDER');
+    expect(JSON.parse(stayedBody).company.code).toBe('HARBOURLINE_DEMO');
     await signIn(page, organisationOnly.email, '/freight-forwarder');
-    await expect(page.locator('.company-card strong')).toHaveText('Straits Fresh Imports (Demo)');
-    await expect(page.getByRole('link', { name: organisationShipment.shipmentReference })).toHaveCount(0);
+    await expect(page.locator('.company-card strong')).toHaveText('Harbourline Logistics (Demo)');
+    await expect(page.getByRole('link', { name: organisationShipment.shipmentReference })).toBeVisible();
   } finally {
     cleanup([administrator.email, same.email, roleOnly.email, organisationOnly.email]);
   }
@@ -519,7 +524,8 @@ test('a user only sees shipments and functions authorised for their organisation
     await expect(page.getByText(EMPTY_LIST)).toBeVisible();
     await expect(page.getByText(shipment.vessel)).toHaveCount(0);
     await page.goto(`/importer/shipments/${shipment.id}`);
-    await expect(page.getByRole('alert')).toHaveText(NO_ACCESS);
+    await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+    await expect(page.getByText(NO_ACCESS)).toBeVisible();
     await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toHaveCount(0);
 
     const straitsShipment = await createShipment(request, importer.token, `Straits Vessel ${suffix}`);

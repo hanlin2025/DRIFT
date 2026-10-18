@@ -1,7 +1,6 @@
 package com.drift.backend.account.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,7 +22,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
+import com.drift.backend.account.admin.exception.InvalidAssignmentException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -58,7 +59,7 @@ class AssignmentAuditIntegrationTests {
 		String email = createUser("Alice Tan", "FREIGHT_FORWARDER", harbourlineId);
 		Long userId = userId(email);
 
-		assign(userId, straitsId, "LOGISTICS_MANAGER").andExpect(status().isOk());
+		assign(userId, harbourlineId, "LOGISTICS_MANAGER").andExpect(status().isOk());
 
 		mvc.perform(get("/api/admin/assignment-audits").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
@@ -71,15 +72,18 @@ class AssignmentAuditIntegrationTests {
 				.andExpect(jsonPath("$[0].assignedRole").value("LOGISTICS_MANAGER"))
 				.andExpect(jsonPath("$[0].previousOrganisation.code").value("HARBOURLINE_DEMO"))
 				.andExpect(jsonPath("$[0].previousOrganisation.name").value("Harbourline Logistics (Demo)"))
-				.andExpect(jsonPath("$[0].organisation.code").value("STRAITS_FRESH_DEMO"))
-				.andExpect(jsonPath("$[0].organisation.name").value("Straits Fresh Imports (Demo)"))
+				.andExpect(jsonPath("$[0].organisation.code").value("HARBOURLINE_DEMO"))
+				.andExpect(jsonPath("$[0].organisation.name").value("Harbourline Logistics (Demo)"))
 				.andExpect(jsonPath("$[0].recordedAt").isNotEmpty());
 
-		assign(userId, straitsId, "LOGISTICS_MANAGER").andExpect(status().isOk());
-		assign(userId, straitsId, "PLANNER").andExpect(status().isBadRequest());
+		assign(userId, harbourlineId, "LOGISTICS_MANAGER").andExpect(status().isOk());
+		assign(userId, harbourlineId, "PLANNER").andExpect(status().isBadRequest());
+		assign(userId, straitsId, "IMPORTER")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidAssignmentException.MESSAGE));
 		assertThat(count()).isEqualTo(1);
 
-		assign(userId, straitsId, "IMPORTER").andExpect(status().isOk());
+		assign(userId, harbourlineId, "IMPORTER").andExpect(status().isOk());
 		mvc.perform(get("/api/admin/assignment-audits").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(2))
@@ -89,15 +93,27 @@ class AssignmentAuditIntegrationTests {
 	}
 
 	@Test
-	void recordsAnAssignmentForAUserWhoHadNoOrganisation() throws Exception {
-		String email = createUser("No Company", "FREIGHT_FORWARDER", null);
+	void rejectsAUserOutsideTheCompanyAndHidesTheOtherCompanysHistory() throws Exception {
+		String unassigned = createUser("No Company", "FREIGHT_FORWARDER", null);
+		assign(userId(unassigned), harbourlineId, "IMPORTER")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(AssignedUserNotFoundException.MESSAGE));
+		assertThat(count()).isZero();
 
-		assign(userId(email), straitsId, "IMPORTER").andExpect(status().isOk());
+		String straitsAdmin = createUser("Straits Admin", "ADMIN", straitsId);
+		String straitsUser = createUser("Straits User", "FREIGHT_FORWARDER", straitsId);
+		mvc.perform(patch("/api/admin/users/" + userId(straitsUser) + "/assign")
+				.header("Authorization", "Bearer " + tokenFor(straitsAdmin))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"organisationId\":" + straitsId + ",\"role\":\"IMPORTER\"}"))
+				.andExpect(status().isOk());
 
 		mvc.perform(get("/api/admin/assignment-audits").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].target.email").value(email))
-				.andExpect(jsonPath("$[0].previousOrganisation").value(nullValue()))
+				.andExpect(jsonPath("$[?(@.target.email == '" + straitsUser + "')]").isEmpty());
+		mvc.perform(get("/api/admin/assignment-audits").header("Authorization", "Bearer " + tokenFor(straitsAdmin)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].target.email").value(straitsUser))
 				.andExpect(jsonPath("$[0].organisation.id").value(straitsId));
 	}
 
