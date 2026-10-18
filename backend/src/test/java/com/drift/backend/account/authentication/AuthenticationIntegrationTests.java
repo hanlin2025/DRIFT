@@ -88,6 +88,40 @@ class AuthenticationIntegrationTests {
 	}
 
 	@Test
+	void removedAccountWithTheCorrectPasswordLooksLikeAWrongPassword() throws Exception {
+		String active = "cdg154-active-" + UUID.randomUUID() + "@example.com";
+		createAccount(active, "FREIGHT_FORWARDER", companyId);
+		jdbc.update("UPDATE users SET status = 'REMOVED' WHERE email = ?", email);
+
+		MvcResult removed = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content(login(email, "Example123")))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(InvalidCredentialsException.MESSAGE))
+				.andExpect(jsonPath("$.token").doesNotExist())
+				.andReturn();
+		MvcResult wrongPassword = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content(login(active, "WrongPass1")))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andReturn();
+
+		assertThat(removed.getResponse().getContentAsString())
+				.isEqualTo(wrongPassword.getResponse().getContentAsString());
+	}
+
+	@Test
+	void activeAccountStillSignsIn() throws Exception {
+		assertThat(jdbc.queryForObject("SELECT status FROM users WHERE email = ?", String.class, email))
+				.isEqualTo("ACTIVE");
+
+		String token = tokenFor(email, "Example123");
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.email").value(email));
+	}
+
+	@Test
 	void missingFieldsAreRejected() throws Exception {
 		mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON).content("{}"))
 				.andExpect(status().isBadRequest())
