@@ -3,7 +3,6 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
-import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
 import com.drift.backend.ais.feed.AisFeedStatus;
 import com.drift.backend.ais.operation.OperationalState;
@@ -43,6 +42,8 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow,
 		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the feeder departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Priority ranking for operational attention: severity of the connection risk, urgency to the feeder departure, and confidence in the evidence, with the reasons. The shipment list returns the same value. Null when the risk is not assessed.", nullable = true)
+		ShipmentPriority priority,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -64,29 +65,23 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
 		ShipmentStatus status) {
 
-	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
-			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
-			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+		VesselPosition motherVesselPosition = connection.motherVesselPosition();
+		VesselPosition feederVesselPosition = connection.feederVesselPosition();
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
 				shipment.getMotherVesselOperator(), shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(),
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
-				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
-				ShipmentRisk.of(calculation, remainingConnectionWindow),
+				shipment.getCreatedAt(), shipment.getVersion(), connection.planned().window(), connection.remaining(),
+				connection.risk(), connection.priority(),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
-				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus());
+				connection.arrivalComparison(),
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 
-	private static OrganisationResponse organisation(Company company) {
-		if (company == null) {
-			return null;
-		}
-		return new OrganisationResponse(company.getId(), company.getCode(), company.getName());
-	}
 }

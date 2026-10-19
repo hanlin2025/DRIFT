@@ -52,7 +52,11 @@ public class ShipmentController {
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
-			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
+			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
+			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
+			+ "(null when not assessed), a priority ranking that combines that risk's severity with urgency to the feeder "
+			+ "departure and confidence in the evidence (null when not assessed), and the linked importer organisation "
+			+ "(null when not linked). AIS positions for the whole list are read in one batch. "
 			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
