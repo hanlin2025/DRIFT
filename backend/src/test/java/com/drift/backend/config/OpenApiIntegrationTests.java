@@ -89,6 +89,8 @@ class OpenApiIntegrationTests {
 				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.version.type").value("integer"))
 				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.connectionWindow.$ref")
 						.value("#/components/schemas/ConnectionWindow"))
+				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.risk").exists())
+				.andExpect(jsonPath("$.components.schemas.ShipmentResponse.properties.importer").exists())
 				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.duration.example")
 						.value("1 day 4 hours"))
 				.andExpect(jsonPath("$.components.schemas.ConnectionWindow.properties.totalSeconds.example")

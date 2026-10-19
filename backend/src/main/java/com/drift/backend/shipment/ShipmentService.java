@@ -266,7 +266,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
-		return ShipmentResponse.from(shipment, window(shipment));
+		return ShipmentResponse.from(shipment, calculation(shipment));
 	}
 
 	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {
@@ -315,10 +315,6 @@ public class ShipmentService {
 			return stripped.substring(4);
 		}
 		return stripped;
-	}
-
-	private ConnectionWindow window(Shipment shipment) {
-		return calculation(shipment).window();
 	}
 
 	private ConnectionWindowCalculation calculation(Shipment shipment) {

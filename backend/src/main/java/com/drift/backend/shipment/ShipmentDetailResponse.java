@@ -3,7 +3,6 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
-import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -65,13 +64,7 @@ public record ShipmentDetailResponse(
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus());
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 
-	private static OrganisationResponse organisation(Company company) {
-		if (company == null) {
-			return null;
-		}
-		return new OrganisationResponse(company.getId(), company.getCode(), company.getName());
-	}
 }

@@ -76,6 +76,25 @@ class ShipmentFilterServiceIntegrationTests {
 	}
 
 	@Test
+	void listedShipmentsCarryTheirRiskAndLinkedImporterLikeTheDetail() {
+		insert(forwarder, linkedImporter, "HBL-LINKED", "MV One", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-02T00:00:00Z"));
+		insert(forwarder, null, "HBL-UNLINKED", "MV Two", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-01T00:00:00Z"));
+
+		List<ShipmentResponse> listed = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		assertThat(listed).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-LINKED", "HBL-UNLINKED");
+		ShipmentResponse linked = listed.get(0);
+		assertThat(linked.importer().id()).isEqualTo(linkedImporter.id());
+		assertThat(linked.importer().code()).isEqualTo(linkedImporter.code());
+		assertThat(linked.importer().name()).isEqualTo(linkedImporter.name());
+		assertThat(linked.risk().level()).isEqualTo(ShipmentRisk.Level.HIGH);
+		assertThat(linked.risk()).isEqualTo(shipments.get(forwarderUser, linked.id()).risk());
+		assertThat(listed.get(1).importer()).isNull();
+	}
+
+	@Test
 	void referenceSearchIsCaseInsensitiveAndTreatsPercentAndUnderscoreLiterally() {
 		insert(forwarder, null, "HBL-Alpha_100%", "MV One", "MV Feeder", at("2026-10-12T08:00:00+08:00"), Instant.now());
 		insert(forwarder, null, "HBL-AlphaX100Z", "MV Two", "MV Feeder", at("2026-10-12T08:00:00+08:00"), Instant.now());
