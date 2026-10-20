@@ -1,7 +1,6 @@
 package com.drift.backend.shipment;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.CacheControl;
@@ -53,15 +52,29 @@ public class ShipmentController {
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
-			+ "Optional filters are combined with AND.",
+			+ "Optional filters are combined with AND. "
+			+ "When page, sort, and direction are all omitted, the body is a JSON array of every match, newest created date first. "
+			+ "When any of page, sort, or direction is present, the body is a page object with items, page, size, and total. "
+			+ "An omitted page then means 1, and an omitted sort or direction means created date descending. "
+			+ "A page past the end has an empty items list and the matching total. "
+			+ "The size parameter is rejected because the page size is fixed at 25.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
-				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
-						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date or unsupported status", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
-								"""))),
+				@ApiResponse(responseCode = "200", description = "A JSON array when page, sort, and direction are omitted, or a page object when any of them is present", content = {
+						@Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)), examples = @ExampleObject(name = "Legacy array", value = """
+								[{"shipmentReference":"HBL-2026-001"}]
+								""")),
+						@Content(mediaType = "application/json", schema = @Schema(implementation = ShipmentPage.class), examples = @ExampleObject(name = "Paged shipments", value = """
+								{"items":[{"shipmentReference":"HBL-2026-001"}],"page":1,"size":25,"total":1}
+								""")) }),
+				@ApiResponse(responseCode = "400", description = "Invalid filter, page, sort, or direction, or any size parameter", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Invalid arrival date", value = """
+										{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
+										"""),
+								@ExampleObject(name = "Invalid page", value = """
+										{"message":"Shipment information is missing or invalid","errors":{"page":"Page must be a positive whole number"}}
+										""") })),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
@@ -70,19 +83,28 @@ public class ShipmentController {
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your account must belong to an active company to view shipments"}
 								"""))) })
-	public ResponseEntity<List<ShipmentResponse>> list(
+	public ResponseEntity<?> list(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the shipment reference", example = "HBL-2026") @RequestParam(required = false) String reference,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of either the mother vessel or feeder vessel", example = "Pacific") @RequestParam(required = false) String vessel,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the linked importer Company Code or Company Name", example = "IMPORTER-SG") @RequestParam(required = false) String customer,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status,
+			@io.swagger.v3.oas.annotations.Parameter(description = "One-based page. Present only when requesting a page. Defaults to 1 when sort or direction is present and page is omitted.", example = "1") @RequestParam(required = false) String page,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Sort field used with paging: plannedArrival, reference, or createdAt. Defaults to createdAt when paging is requested and sort is omitted.", example = "createdAt") @RequestParam(required = false) String sort,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Sort direction used with paging: asc or desc. Defaults to desc when paging is requested and direction is omitted.", example = "desc") @RequestParam(required = false) String direction,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Rejected. The page size is fixed at 25.", example = "25") @RequestParam(required = false) String size) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
+		ShipmentFilterCriteria criteria = ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status);
+		ShipmentListQuery query = ShipmentListQuery.parse(page, sort, direction, size);
+		if (query.legacy()) {
+			return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(shipmentService.list(user, criteria));
+		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status)));
+				.body(shipmentService.listPage(user, criteria, query.page(), query.sort()));
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
