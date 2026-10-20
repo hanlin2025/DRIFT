@@ -6,12 +6,12 @@ import { AppRoutes } from '../App';
 import { ApiError } from '../signup/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { loadSession } from '../login/api';
-import { listShipments } from '../shipment/api';
+import { listShipmentPage, listShipments } from '../shipment/api';
 import { getProfile, updateProfile, type Profile } from './api';
 import { ProfilePage } from './ProfilePage';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), listShipmentPage: vi.fn() }));
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return { ...actual, getProfile: vi.fn(), updateProfile: vi.fn() };
@@ -42,6 +42,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...session, token }));
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listShipmentPage).mockResolvedValue({ items: [], page: 1, size: 25, total: 0 });
   vi.mocked(getProfile).mockResolvedValue(profile);
   vi.mocked(updateProfile).mockImplementation(async (_token, update) => ({
     ...profile,

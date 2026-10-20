@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipmentPage, listShipments, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -304,6 +304,54 @@ describe('arrival comparison parsing', () => {
       { ...shipment, id: 10, arrivalComparison: { estimatedArrivalAt: '2026-10-02T01:30:00Z' } },
     ])));
     await expect(listShipments('token')).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe('paged shipment list', () => {
+  const query = {
+    reference: '', vessel: '', customer: '', arrivalDate: '', status: '',
+    page: '1', sort: null, direction: null,
+  };
+
+  it('reads a paged response and always sends page 1 when that is the requested page', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ items: [shipment], page: 1, size: 25, total: 1 })));
+    const page = await listShipmentPage('token', query);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].shipmentReference).toBe('HL-1001');
+    expect(page).toMatchObject({ page: 1, size: 25, total: 1 });
+    expect(fetch).toHaveBeenCalledWith('/api/shipments?page=1', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+  });
+
+  it('sends filters, an explicit page, and both sort directions without a page size', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ items: [], page: 2, size: 25, total: 30 })));
+    await listShipmentPage('token', {
+      ...query,
+      reference: 'HBL 123',
+      page: '2',
+      sort: 'plannedArrival',
+      direction: 'asc',
+    });
+    const url = vi.mocked(fetch).mock.calls[0][0];
+    expect(url).toBe('/api/shipments?reference=HBL+123&page=2&sort=plannedArrival&direction=asc');
+    expect(String(url)).not.toContain('size=');
+  });
+
+  it('sends explicitly invalid page, sort, and direction values unchanged', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Shipment information is missing or invalid', errors: { page: 'Page must be a positive whole number' } }, 400)));
+    await expect(listShipmentPage('token', { ...query, page: 'foo', sort: 'risk', direction: 'descending' })).rejects.toMatchObject({
+      status: 400,
+      fields: { page: 'Page must be a positive whole number' },
+    });
+    expect(fetch).toHaveBeenCalledWith('/api/shipments?page=foo&sort=risk&direction=descending', expect.anything());
+  });
+
+  it('rejects an array and a page whose size is not 25', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    await expect(listShipmentPage('token', query)).rejects.toMatchObject({ status: 502 });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ items: [shipment], page: 1, size: 10, total: 1 })));
+    await expect(listShipmentPage('token', query)).rejects.toMatchObject({ status: 502 });
   });
 });
 

@@ -1,5 +1,5 @@
 import { ApiError } from '../signup/api';
-import { shipmentFilterSearchParams, type ShipmentFilters } from './shipmentFilters';
+import { shipmentFilterSearchParams, shipmentPageSearchParams, type ShipmentFilters, type ShipmentPageQuery } from './shipmentFilters';
 import { type ShipmentFields } from './validation';
 
 export type ConnectionWindow = {
@@ -105,6 +105,20 @@ export async function listShipments(token: string, filters?: ShipmentFilters): P
   const shipments = data.map(asShipment);
   if (shipments.some(shipment => shipment === null)) throw new ApiError(UNEXPECTED, 502);
   return shipments as Shipment[];
+}
+
+export type ShipmentPage = {
+  items: Shipment[];
+  page: number;
+  size: number;
+  total: number;
+};
+
+export async function listShipmentPage(token: string, query: ShipmentPageQuery): Promise<ShipmentPage> {
+  const data = await send(`/api/shipments?${shipmentPageSearchParams(query).toString()}`, token);
+  const page = asShipmentPage(data);
+  if (!page) throw new ApiError(UNEXPECTED, 502);
+  return page;
 }
 
 export async function getShipment(token: string, shipmentId: string): Promise<Shipment> {
@@ -456,6 +470,16 @@ function asShipment(value: unknown): Shipment | null {
     feederVesselNameWarning,
     arrivalComparison,
   };
+}
+
+function asShipmentPage(data: unknown): ShipmentPage | null {
+  if (!isRecord(data) || !Array.isArray(data.items)) return null;
+  if (typeof data.page !== 'number' || !Number.isInteger(data.page) || data.page < 1) return null;
+  if (data.size !== 25) return null;
+  if (typeof data.total !== 'number' || !Number.isInteger(data.total) || data.total < 0) return null;
+  const items = data.items.map(asShipment);
+  if (items.some(item => item === null)) return null;
+  return { items: items as Shipment[], page: data.page, size: 25, total: data.total };
 }
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];

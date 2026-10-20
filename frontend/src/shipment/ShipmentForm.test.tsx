@@ -7,13 +7,14 @@ import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { ShipmentForm } from './ShipmentForm';
-import { createShipment, linkShipmentImporter, listShipments, searchImporterOrganisations, updateShipment, type ImporterOrganisation, type Shipment } from './api';
+import { createShipment, linkShipmentImporter, listShipmentPage, listShipments, searchImporterOrganisations, updateShipment, type ImporterOrganisation, type Shipment } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({
   createShipment: vi.fn(),
   updateShipment: vi.fn(),
   listShipments: vi.fn(),
+  listShipmentPage: vi.fn(),
   searchImporterOrganisations: vi.fn(),
   linkShipmentImporter: vi.fn(),
 }));
@@ -49,6 +50,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(loadSession).mockImplementation(async token => ({ ...forwarder, token }));
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listShipmentPage).mockResolvedValue({ items: [], page: 1, size: 25, total: 0 });
   vi.mocked(searchImporterOrganisations).mockResolvedValue({ items: [], page: 0, size: 20, total: 0 });
   vi.mocked(createShipment).mockImplementation(async (_token, shipment) => ({
     id: 9,
@@ -106,6 +108,7 @@ const listed: Shipment = {
 describe('shipment registration', () => {
   it('offers registration on the freight-forwarder portfolio and not on the importer overview', async () => {
     vi.mocked(listShipments).mockResolvedValue([listed]);
+    vi.mocked(listShipmentPage).mockResolvedValue({ items: [listed], page: 1, size: 25, total: 1 });
     writeSession(importer);
     vi.mocked(loadSession).mockImplementation(async token => ({ ...importer, token }));
     render(<MemoryRouter initialEntries={['/importer']}><AppRoutes /></MemoryRouter>);
@@ -164,18 +167,22 @@ describe('shipment registration', () => {
     expect(body.feederVesselMmsi).toBe('');
     expect(body.feederVesselOperator).toBe('');
     expect(screen.getByLabelText('Shipment reference')).toHaveValue('');
-    expect(listShipments).toHaveBeenCalledWith('session-token');
+    expect(listShipmentPage).toHaveBeenCalledWith('session-token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', page: '1', sort: null, direction: null,
+    });
   });
 
   it('reloads the company list after the shipment is registered', async () => {
-    vi.mocked(listShipments).mockResolvedValueOnce([]).mockResolvedValue([listed]);
+    vi.mocked(listShipmentPage).mockResolvedValueOnce({ items: [], page: 1, size: 25, total: 0 }).mockResolvedValue({ items: [listed], page: 1, size: 25, total: 1 });
     await openPortfolio();
     const user = await fillItinerary();
     await user.click(screen.getByRole('button', { name: /Register shipment/ }));
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(createShipment).toHaveBeenCalledTimes(1);
-    expect(listShipments).toHaveBeenCalledTimes(2);
-    expect(listShipments).toHaveBeenNthCalledWith(2, 'session-token');
+    expect(listShipmentPage).toHaveBeenCalledTimes(2);
+    expect(listShipmentPage).toHaveBeenNthCalledWith(2, 'session-token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', page: '1', sort: null, direction: null,
+    });
   });
 
   it('replaces the saved shipment when the next registration fails', async () => {

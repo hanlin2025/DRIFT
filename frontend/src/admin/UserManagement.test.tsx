@@ -6,12 +6,12 @@ import { AppRoutes } from '../App';
 import { loadSession, login } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments } from '../shipment/api';
+import { getShipment, getShipmentTracking, listShipmentPage, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), listShipmentPage: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
 vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
@@ -53,6 +53,7 @@ beforeEach(() => {
   vi.mocked(loadSession).mockImplementation(async token => ({ ...(token === admin.token ? admin : forwarder), token }));
   vi.mocked(login).mockResolvedValue(admin);
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listShipmentPage).mockResolvedValue({ items: [], page: 1, size: 25, total: 0 });
   vi.mocked(listAssignableUsers).mockResolvedValue(users);
   vi.mocked(listAssignableRoles).mockResolvedValue(roles);
   vi.mocked(listAssignableOrganisations).mockResolvedValue(organisations);

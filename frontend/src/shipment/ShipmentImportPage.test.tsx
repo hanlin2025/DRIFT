@@ -9,6 +9,7 @@ import { ApiError } from '../signup/api';
 import {
   getShipmentImportErrors,
   getShipmentImportJob,
+  listShipmentPage,
   listShipments,
   submitShipmentImport,
   type ShipmentImportJob,
@@ -23,6 +24,7 @@ vi.mock('./api', () => ({
   getShipmentImportErrors: vi.fn(),
   getShipmentImportJob: vi.fn(),
   listShipments: vi.fn(),
+  listShipmentPage: vi.fn(),
   submitShipmentImport: vi.fn(),
   updateShipment: vi.fn(),
 }));
@@ -49,6 +51,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(listShipments).mockResolvedValue([]);
+  vi.mocked(listShipmentPage).mockResolvedValue({ items: [], page: 1, size: 25, total: 0 });
   vi.mocked(getShipmentImportJob).mockResolvedValue(job);
 });
 
