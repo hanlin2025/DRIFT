@@ -126,6 +126,10 @@ public class Shipment {
 		this.status = ShipmentStatus.ARCHIVED;
 	}
 
+	void restore() {
+		this.status = ShipmentStatus.ACTIVE;
+	}
+
 	void markUpdated(UserAccount updatedBy, Instant updatedAt) {
 		this.updatedBy = updatedBy;
 		this.updatedAt = updatedAt;
