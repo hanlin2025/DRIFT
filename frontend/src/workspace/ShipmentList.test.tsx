@@ -135,6 +135,7 @@ describe('shipment list', () => {
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/freight-forwarder/shipments/2');
     expect(screen.queryByText('1 day')).not.toBeInTheDocument();
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
+    expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
   });
 
   it('renders no shipment rows for an empty list', () => {
@@ -289,7 +290,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Risk', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();

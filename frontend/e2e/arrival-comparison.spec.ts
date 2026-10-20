@@ -147,6 +147,15 @@ async function expectComparison(page: Page, detail: Detail) {
   await expect(page.getByText('6 hours', { exact: true })).toBeVisible();
   const risk = page.locator('.route-facts dl > div').filter({ has: page.getByText('Risk', { exact: true }) }).locator('dd');
   await expect(risk).toHaveText(`${RISK_LABELS[detail.risk.level]} ${detail.risk.explanation}`);
+  const remainingFact = page.locator('.route-facts > dl > div').filter({ has: page.getByText('Remaining connection window', { exact: true }) }).locator('dd');
+  const remaining = detail.remainingConnectionWindow;
+  if (remaining?.status === 'AVAILABLE') {
+    await expect(remainingFact).toHaveText(remaining.duration ?? '');
+  } else if (remaining?.status === 'MISSED') {
+    await expect(remainingFact).toHaveText(`The connection is expected to be missed by ${remaining.missedBy}.`);
+  } else if (detail.arrivalComparison.possiblyOutdated) {
+    await expect(remainingFact).toHaveText("The planned connection window is being used because the mother vessel's position is possibly outdated.");
+  }
   if (detail.arrivalComparison.possiblyOutdated) {
     await expect(comparison.getByText('Possibly outdated', { exact: true })).toBeVisible();
   } else {
