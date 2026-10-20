@@ -353,7 +353,7 @@ class ShipmentArchiveIntegrationTests {
 
 		assertThat(jdbc.queryForList(
 				"SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21", "22", "23");
 		assertThat(jdbc.queryForObject(
 				"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role'",
 				Integer.class)).isZero();
