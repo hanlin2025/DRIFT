@@ -13,6 +13,8 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +47,8 @@ import tools.jackson.databind.ObjectMapper;
 public class ShipmentService {
 
 	public static final String REMOVED_MESSAGE = "Shipment removed successfully";
+
+	public static final int PAGE_SIZE = 25;
 
 	private static final String REFERENCE_UNIQUE_CONSTRAINT = "shipments_company_reference_key";
 
@@ -85,6 +89,22 @@ public class ShipmentService {
 				Sort.by(Sort.Direction.DESC, "createdAt")).stream()
 				.map(this::respond)
 				.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public ShipmentPage listPage(AuthenticatedUser principal, ShipmentFilterCriteria criteria, int page,
+			ShipmentSort sort) {
+		if (page < 1) {
+			throw new IllegalArgumentException("Page must be at least 1.");
+		}
+		if (criteria == null || sort == null) {
+			throw new IllegalArgumentException("Filter criteria and sort are required.");
+		}
+		Company company = activeCompany(principal);
+		Page<Shipment> result = shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+				PageRequest.of(page - 1, PAGE_SIZE, sort.toSort()));
+		return new ShipmentPage(result.getContent().stream().map(this::respond).toList(), page, PAGE_SIZE,
+				result.getTotalElements());
 	}
 
 	@Transactional(readOnly = true)
