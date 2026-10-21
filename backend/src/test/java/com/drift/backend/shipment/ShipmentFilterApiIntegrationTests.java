@@ -54,9 +54,11 @@ class ShipmentFilterApiIntegrationTests {
 	private CompanyFixture linkedImporter;
 	private CompanyFixture otherImporter;
 	private CompanyFixture unrelated;
+	private CompanyFixture rivalForwarder;
 	private String forwarderToken;
 	private String linkedImporterToken;
 	private String unrelatedToken;
+	private String rivalForwarderToken;
 
 	@BeforeEach
 	void setUp() throws Exception {
@@ -64,9 +66,11 @@ class ShipmentFilterApiIntegrationTests {
 		linkedImporter = company("API Linked Importer");
 		otherImporter = company("API Other Importer");
 		unrelated = company("API Unrelated Importer");
+		rivalForwarder = company("API Rival Forwarder");
 		forwarderToken = tokenFor(account(forwarder, "FREIGHT_FORWARDER"));
 		linkedImporterToken = tokenFor(account(linkedImporter, "IMPORTER"));
 		unrelatedToken = tokenFor(account(unrelated, "IMPORTER"));
+		rivalForwarderToken = tokenFor(account(rivalForwarder, "FREIGHT_FORWARDER"));
 	}
 
 	@Test
@@ -209,6 +213,63 @@ class ShipmentFilterApiIntegrationTests {
 	}
 
 	@Test
+	void riskSortAndAtRiskFilterOnlyCoverShipmentsVisibleToTheActiveCompany() throws Exception {
+		insert(forwarder, linkedImporter, "HBL-FWD-HIGH-LATE", "MV A", "MV F", "2026-10-13T09:00:00+08:00",
+				"2026-10-01T00:00:00Z", 8);
+		insert(forwarder, null, "HBL-FWD-HIGH-EARLY", "MV A", "MV F", "2026-10-12T09:00:00+08:00",
+				"2026-10-02T00:00:00Z", 8);
+		insert(forwarder, linkedImporter, "HBL-FWD-MEDIUM", "MV A", "MV F", "2026-10-12T09:00:00+08:00",
+				"2026-10-03T00:00:00Z", 18);
+		insert(forwarder, linkedImporter, "HBL-FWD-LOW", "MV A", "MV F", "2026-10-12T09:00:00+08:00",
+				"2026-10-04T00:00:00Z", 48);
+		insert(rivalForwarder, linkedImporter, "HBL-RIVAL-LINKED-HIGH", "MV A", "MV F", "2026-10-11T09:00:00+08:00",
+				"2026-10-05T00:00:00Z", 8);
+		insert(rivalForwarder, null, "HBL-RIVAL-HIGH", "MV A", "MV F", "2026-10-11T10:00:00+08:00",
+				"2026-10-06T00:00:00Z", 8);
+		insert(rivalForwarder, null, "HBL-RIVAL-MEDIUM", "MV A", "MV F", "2026-10-11T09:00:00+08:00",
+				"2026-10-07T00:00:00Z", 18);
+		insert(unrelated, null, "HBL-UNRELATED-HIGH", "MV A", "MV F", "2026-10-11T09:00:00+08:00",
+				"2026-10-08T00:00:00Z", 8);
+		String noShipmentsToken = tokenFor(account(otherImporter, "IMPORTER"));
+
+		list(forwarderToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-FWD-HIGH-EARLY", "HBL-FWD-HIGH-LATE", "HBL-FWD-MEDIUM", "HBL-FWD-LOW"));
+		list(forwarderToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-FWD-HIGH-EARLY", "HBL-FWD-HIGH-LATE"))
+				.andExpect(jsonPath("$[1].risk.level").value("HIGH"));
+		list(forwarderToken, "sort", "risk", "atRisk", "true", "customer", linkedImporter.code())
+				.andExpect(status().isOk())
+				.andExpect(references("HBL-FWD-HIGH-LATE"));
+
+		list(rivalForwarderToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-RIVAL-LINKED-HIGH", "HBL-RIVAL-HIGH", "HBL-RIVAL-MEDIUM"));
+		list(rivalForwarderToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-RIVAL-LINKED-HIGH", "HBL-RIVAL-HIGH"));
+
+		list(linkedImporterToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-RIVAL-LINKED-HIGH", "HBL-FWD-HIGH-LATE", "HBL-FWD-MEDIUM", "HBL-FWD-LOW"));
+		list(linkedImporterToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-RIVAL-LINKED-HIGH", "HBL-FWD-HIGH-LATE"))
+				.andExpect(jsonPath("$[0].importer.code").value(linkedImporter.code()))
+				.andExpect(jsonPath("$[1].importer.code").value(linkedImporter.code()));
+
+		list(unrelatedToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-UNRELATED-HIGH"));
+		list(unrelatedToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-UNRELATED-HIGH"));
+
+		list(noShipmentsToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+		list(noShipmentsToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+	}
+
+	/** The listed shipment references, exactly and in this order. */
+	private static org.springframework.test.web.servlet.ResultMatcher references(String... references) {
+		return jsonPath("$[*].shipmentReference").value(org.hamcrest.Matchers.contains(references));
+	}
+
+	@Test
 	void preservesUnauthenticatedListBehaviour() throws Exception {
 		mvc.perform(get("/api/shipments")).andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
@@ -247,6 +308,11 @@ class ShipmentFilterApiIntegrationTests {
 
 	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
 			String motherVessel, String feederVessel, String arrival, String createdAt) {
+		insert(managingCompany, importerCompany, reference, motherVessel, feederVessel, arrival, createdAt, 8);
+	}
+
+	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
+			String motherVessel, String feederVessel, String arrival, String createdAt, int feederGapHours) {
 		Long creatorId = jdbc.queryForObject("SELECT id FROM users WHERE company_id = ? ORDER BY id LIMIT 1", Long.class,
 				managingCompany.id());
 		OffsetDateTime plannedArrival = OffsetDateTime.parse(arrival);
@@ -258,7 +324,7 @@ class ShipmentFilterApiIntegrationTests {
 					created_at, updated_at, version)
 				VALUES (?, ?, ?, ?, ?, 'Singapore', 'Rotterdam', 'Tanjung Pelepas', ?, ?, ?, ?, ?, ?, 0)
 				""", managingCompany.id(), importerCompany == null ? null : importerCompany.id(), creatorId, creatorId,
-				reference, motherVessel, plannedArrival, feederVessel, plannedArrival.plusHours(8),
+				reference, motherVessel, plannedArrival, feederVessel, plannedArrival.plusHours(feederGapHours),
 				Timestamp.from(Instant.parse(createdAt)), Timestamp.from(Instant.parse(createdAt)));
 	}
 
