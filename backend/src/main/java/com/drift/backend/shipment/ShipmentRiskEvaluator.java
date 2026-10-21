@@ -8,8 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Calculates and persists shipment-risk state and global transition events. Recipient selection and
- * alert delivery deliberately belong to later CDG-49 subtasks.
+	 * Calculates and persists shipment-risk state, transitions, and their initial recipient snapshots.
  */
 @Service
 public class ShipmentRiskEvaluator {
@@ -18,15 +17,17 @@ public class ShipmentRiskEvaluator {
 	private final ShipmentRiskStateStore states;
 	private final ShipmentRiskTransitionRepository transitions;
 	private final ConnectionWindowService connectionWindows;
+	private final ShipmentRiskAlertRecipientResolver recipients;
 	private final Clock clock;
 
 	public ShipmentRiskEvaluator(ShipmentRepository shipments, ShipmentRiskStateStore states,
 			ShipmentRiskTransitionRepository transitions, ConnectionWindowService connectionWindows,
-			ObjectProvider<Clock> clocks) {
+			ShipmentRiskAlertRecipientResolver recipients, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.states = states;
 		this.transitions = transitions;
 		this.connectionWindows = connectionWindows;
+		this.recipients = recipients;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -77,7 +78,8 @@ public class ShipmentRiskEvaluator {
 
 	private void persistTransition(Shipment shipment, ShipmentRiskState state, ShipmentRiskTransitionType type,
 			ShipmentRisk.Level previousRiskLevel, ShipmentRisk risk, Instant occurredAt) {
-		transitions.save(new ShipmentRiskTransition(shipment, state.allocateTransitionSequence(), type,
-				previousRiskLevel, risk, occurredAt));
+		ShipmentRiskTransition transition = transitions.saveAndFlush(new ShipmentRiskTransition(shipment,
+				state.allocateTransitionSequence(), type, previousRiskLevel, risk, occurredAt));
+		recipients.resolveNewTransition(transition);
 	}
 }
