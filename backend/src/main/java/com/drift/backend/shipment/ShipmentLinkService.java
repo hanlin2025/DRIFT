@@ -19,6 +19,7 @@ import com.drift.backend.shipment.exception.InvalidImporterOrganisationException
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
 
 import jakarta.persistence.EntityManager;
 
@@ -32,11 +33,12 @@ public class ShipmentLinkService {
 	private final LatestAisPositions latestPositions;
 	private final EntityManager entityManager;
 	private final ArrivalEstimateCalculator arrivalEstimates;
+	private final ShipmentHistoryRecorder history;
 	private final Clock clock;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, EntityManager entityManager,
-			ArrivalEstimateCalculator arrivalEstimates, ObjectProvider<Clock> clocks) {
+			ArrivalEstimateCalculator arrivalEstimates, ShipmentHistoryRecorder history, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
@@ -44,6 +46,7 @@ public class ShipmentLinkService {
 		this.latestPositions = latestPositions;
 		this.entityManager = entityManager;
 		this.arrivalEstimates = arrivalEstimates;
+		this.history = history;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -55,9 +58,13 @@ public class ShipmentLinkService {
 			throw new ShipmentLinkForbiddenException();
 		}
 		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		Company previousImporter = shipment.getImporterCompany();
+		Instant now = Instant.now();
 		shipment.linkImporter(importer(importerCompanyId, ownerId));
-		shipment.markUpdated(account, Instant.now());
-		return detail(shipments.saveAndFlush(shipment));
+		shipment.markUpdated(account, now);
+		Shipment saved = shipments.saveAndFlush(shipment);
+		history.recordImporterLink(saved, previousImporter, account, now);
+		return detail(saved);
 	}
 
 	private UserAccount forwarder(AuthenticatedUser principal) {

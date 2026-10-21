@@ -36,6 +36,8 @@ import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
+import com.drift.backend.shipment.history.ShipmentSnapshot;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -56,12 +58,13 @@ public class ShipmentService {
 	private final ShipmentAccessPolicy accessPolicy;
 	private final ObjectMapper objectMapper;
 	private final ArrivalEstimateCalculator arrivalEstimates;
+	private final ShipmentHistoryRecorder history;
 	private final Clock clock;
 
 	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ArrivalEstimateCalculator arrivalEstimates,
-			ObjectProvider<Clock> clocks) {
+			ShipmentHistoryRecorder history, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
@@ -70,6 +73,7 @@ public class ShipmentService {
 		this.accessPolicy = accessPolicy;
 		this.objectMapper = objectMapper;
 		this.arrivalEstimates = arrivalEstimates;
+		this.history = history;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -145,9 +149,12 @@ public class ShipmentService {
 		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentAlreadyArchivedException();
 		}
+		ShipmentStatus previousStatus = shipment.getStatus();
+		Instant now = Instant.now();
 		shipment.archive();
-		shipment.markUpdated(account, Instant.now());
+		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
 	}
 
 	@Transactional
@@ -187,10 +194,13 @@ public class ShipmentService {
 		}
 
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
-		shipment.replaceDetails(details, editor, Instant.now());
+		ShipmentSnapshot before = ShipmentSnapshot.of(shipment);
+		Instant now = Instant.now();
+		shipment.replaceDetails(details, editor, now);
 		shipment.applySpecifiedIdentity(details, identity);
+		Shipment saved;
 		try {
-			return respond(shipments.saveAndFlush(shipment));
+			saved = shipments.saveAndFlush(shipment);
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -199,6 +209,8 @@ public class ShipmentService {
 		} catch (OptimisticLockingFailureException ex) {
 			throw new StaleShipmentVersionException();
 		}
+		history.recordUpdate(before, saved, editor, now);
+		return respond(saved);
 	}
 
 	private ShipmentDetails validatedDetails(ShipmentDetailsRequest request) {
@@ -255,14 +267,17 @@ public class ShipmentService {
 		if (importerCompany != null) {
 			shipment.linkImporter(importerCompany);
 		}
+		Shipment saved;
 		try {
-			return shipments.saveAndFlush(shipment);
+			saved = shipments.saveAndFlush(shipment);
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
 			}
 			throw ex;
 		}
+		history.recordCreation(saved, creator);
+		return saved;
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
