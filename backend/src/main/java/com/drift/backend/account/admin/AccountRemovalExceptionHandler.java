@@ -12,10 +12,16 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
+import com.drift.backend.account.admin.exception.InvalidRemovalException;
 import com.drift.backend.account.exception.SessionEndedException;
 
 @RestControllerAdvice(assignableTypes = AccountRemovalController.class)
 public class AccountRemovalExceptionHandler {
+
+	@ExceptionHandler(InvalidRemovalException.class)
+	public ResponseEntity<Map<String, String>> handleInvalid(InvalidRemovalException ex) {
+		return message(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
 
 	@ExceptionHandler(AssignmentForbiddenException.class)
 	public ResponseEntity<Map<String, String>> handleForbidden(AssignmentForbiddenException ex) {

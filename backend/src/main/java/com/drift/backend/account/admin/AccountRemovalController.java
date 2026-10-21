@@ -31,13 +31,26 @@ public class AccountRemovalController {
 	}
 
 	@PatchMapping("/api/admin/users/{userId}/remove")
-	@Operation(summary = "Remove a user account", description = "Marks one user account as removed. The account is kept and is not deleted. "
+	@Operation(summary = "Remove a user account", description = "Marks one user account in the administrator's own organisation as removed. "
+			+ "The account is kept and is not deleted. "
+			+ "The administrator's organisation must be active. "
+			+ "A user from another organisation is reported as not found. "
+			+ "An administrator cannot remove their own account. "
 			+ "The user's existing session stops working. "
-			+ "An account that is already removed cannot be removed again.",
+			+ "An account that is already removed cannot be removed again. "
+			+ "A rejected removal leaves the account unchanged.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Account removed", content = @Content(
 					mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class))),
+			@ApiResponse(responseCode = "400", description = "The administrator tried to remove their own account, or the administrator's organisation is missing or inactive", content = @Content(
+					mediaType = "application/json", examples = {
+							@ExampleObject(name = "Own account", value = """
+									{"message":"You cannot remove your own account."}
+									"""),
+							@ExampleObject(name = "Organisation missing or inactive", value = """
+									{"message":"Your organisation is missing or inactive."}
+									""") })),
 			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"Your session has ended. Log in again."}
@@ -46,7 +59,7 @@ public class AccountRemovalController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"Only an administrator can assign users"}
 							"""))),
-			@ApiResponse(responseCode = "404", description = "No user exists with this id", content = @Content(
+			@ApiResponse(responseCode = "404", description = "No user in the administrator's organisation exists with this id", content = @Content(
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
