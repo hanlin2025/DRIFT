@@ -4,6 +4,7 @@ package com.drift.backend.shipment;
 public enum ShipmentRiskAlertDeliveryResult {
 	SENT,
 	RETRYABLE_FAILURE,
+	EXHAUSTED,
 	SUPPRESSED,
 	NOT_PENDING,
 	CLAIM_LOST

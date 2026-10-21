@@ -4,7 +4,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
-/** Sends one explicitly selected PENDING delivery; CDG-197 will dispatch retryable deliveries. */
+/** Sends one explicitly selected due PENDING or RETRYABLE_FAILURE delivery. */
 @Service
 public class ShipmentRiskAlertDeliveryService {
 
@@ -18,12 +18,15 @@ public class ShipmentRiskAlertDeliveryService {
 	}
 
 	/**
-	 * Submits one pending delivery to SMTP. A successful result means the configured SMTP client
+	 * Submits one due delivery to SMTP. A successful result means the configured SMTP client
 	 * accepted the message, not that it reached a recipient inbox.
 	 */
 	public ShipmentRiskAlertDeliveryResult sendDelivery(Long deliveryId) {
 		JavaMailSender sender = mailSenders.getIfAvailable();
-		ShipmentRiskAlertDeliveryStore.ClaimResult claim = store.claimInitialDelivery(deliveryId, sender != null);
+		ShipmentRiskAlertDeliveryStore.ClaimResult claim = store.claimDueDelivery(deliveryId, sender != null);
+		if (claim.kind() == ShipmentRiskAlertDeliveryStore.ClaimResult.Kind.EXHAUSTED) {
+			return ShipmentRiskAlertDeliveryResult.EXHAUSTED;
+		}
 		if (claim.kind() == ShipmentRiskAlertDeliveryStore.ClaimResult.Kind.SUPPRESSED) {
 			return ShipmentRiskAlertDeliveryResult.SUPPRESSED;
 		}
@@ -36,7 +39,11 @@ public class ShipmentRiskAlertDeliveryService {
 			return store.markSent(deliveryId, claim.token())
 					? ShipmentRiskAlertDeliveryResult.SENT : ShipmentRiskAlertDeliveryResult.CLAIM_LOST;
 		} catch (RuntimeException ex) {
-			return store.markInitialFailure(deliveryId, claim.token(), sanitizedFailure(ex))
+			ShipmentRiskAlertDeliveryStatus status = store.markFailure(deliveryId, claim.token(), sanitizedFailure(ex));
+			if (status == ShipmentRiskAlertDeliveryStatus.EXHAUSTED) {
+				return ShipmentRiskAlertDeliveryResult.EXHAUSTED;
+			}
+			return status == ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE
 					? ShipmentRiskAlertDeliveryResult.RETRYABLE_FAILURE : ShipmentRiskAlertDeliveryResult.CLAIM_LOST;
 		}
 	}

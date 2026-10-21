@@ -19,22 +19,22 @@ import com.drift.backend.company.Company;
 
 /**
  * Performs the short database transactions around an SMTP attempt. Network I/O belongs in
- * {@link ShipmentRiskAlertDeliveryService}, after {@link #claimInitialDelivery(Long, boolean)} commits.
+ * {@link ShipmentRiskAlertDeliveryService}, after {@link #claimDueDelivery(Long, boolean)} commits.
  */
 @Service
 class ShipmentRiskAlertDeliveryStore {
-
-	private static final Duration FIRST_RETRY_DELAY = Duration.ofMinutes(1);
 
 	private final ShipmentRiskAlertDeliveryRepository deliveries;
 	private final ShipmentAccessPolicy access;
 	private final ShipmentRiskAlertMailProperties mail;
 	private final ShipmentRiskAlertEmailComposer composer;
+	private final ShipmentRiskAlertRetryPolicy retryPolicy;
 	private final Clock clock;
 	private final long maximumSmtpAttemptMillis;
 
 	ShipmentRiskAlertDeliveryStore(ShipmentRiskAlertDeliveryRepository deliveries, ShipmentAccessPolicy access,
-			ShipmentRiskAlertMailProperties mail, ShipmentRiskAlertEmailComposer composer, ObjectProvider<Clock> clocks,
+			ShipmentRiskAlertMailProperties mail, ShipmentRiskAlertEmailComposer composer,
+			ShipmentRiskAlertRetryPolicy retryPolicy, ObjectProvider<Clock> clocks,
 			@Value("${spring.mail.properties.mail.smtp.connectiontimeout:0}") long connectionTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.timeout:0}") long readTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.writetimeout:0}") long writeTimeoutMillis) {
@@ -42,21 +42,22 @@ class ShipmentRiskAlertDeliveryStore {
 		this.access = access;
 		this.mail = mail;
 		this.composer = composer;
+		this.retryPolicy = retryPolicy;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 		this.maximumSmtpAttemptMillis = boundedAttemptDuration(connectionTimeoutMillis, readTimeoutMillis, writeTimeoutMillis);
 	}
 
 	/**
-	 * Claims and records exactly one initial SMTP attempt. Retryable failures are deliberately not
-	 * claimable here: CDG-197 will supply the later retry timing policy.
+	 * Claims and records exactly one due SMTP attempt. The increment commits before SMTP begins.
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	ClaimResult claimInitialDelivery(Long deliveryId, boolean javaMailSenderAvailable) {
+	ClaimResult claimDueDelivery(Long deliveryId, boolean javaMailSenderAvailable) {
 		if (deliveryId == null) {
 			throw new IllegalArgumentException("Delivery identifier is required");
 		}
 		ShipmentRiskAlertDelivery delivery = deliveries.findByIdForDeliveryProcessing(deliveryId).orElse(null);
-		if (delivery == null || delivery.getStatus() != ShipmentRiskAlertDeliveryStatus.PENDING) {
+		if (delivery == null || (delivery.getStatus() != ShipmentRiskAlertDeliveryStatus.PENDING
+				&& delivery.getStatus() != ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE)) {
 			return ClaimResult.notPending();
 		}
 
@@ -66,6 +67,11 @@ class ShipmentRiskAlertDeliveryStore {
 		if (lease == null || lease.isZero() || lease.isNegative()
 				|| !delivery.claim(token, now.plus(lease), now)) {
 			return ClaimResult.notPending();
+		}
+		if (delivery.getAttemptCount() >= 4) {
+			delivery.markFailure(token, ShipmentRiskAlertDeliveryStatus.EXHAUSTED,
+					"Delivery claim expired after the maximum SMTP attempts", null, now);
+			return ClaimResult.exhausted();
 		}
 
 		String suppression = mail.unavailableReason(javaMailSenderAvailable);
@@ -97,18 +103,16 @@ class ShipmentRiskAlertDeliveryStore {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	boolean markInitialFailure(Long deliveryId, UUID token, String sanitizedFailure) {
+	ShipmentRiskAlertDeliveryStatus markFailure(Long deliveryId, UUID token, String sanitizedFailure) {
 		ShipmentRiskAlertDelivery delivery = lockedDelivery(deliveryId);
 		if (delivery == null) {
-			return false;
+			return null;
 		}
 		Instant now = Instant.now(clock);
-		ShipmentRiskAlertDeliveryStatus status = delivery.getAttemptCount() >= 4
-				? ShipmentRiskAlertDeliveryStatus.EXHAUSTED
-				: ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE;
-		Instant nextAttemptAt = status == ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE
-				? now.plus(FIRST_RETRY_DELAY) : null;
-		return delivery.markFailure(token, status, sanitizedFailure, nextAttemptAt, now);
+		ShipmentRiskAlertRetryPolicy.RetryDecision decision = retryPolicy.afterFailure(delivery.getAttemptCount());
+		Instant nextAttemptAt = decision.delay() == null ? null : now.plus(decision.delay());
+		return delivery.markFailure(token, decision.status(), sanitizedFailure, nextAttemptAt, now)
+				? decision.status() : null;
 	}
 
 	private ShipmentRiskAlertDelivery lockedDelivery(Long deliveryId) {
@@ -158,7 +162,7 @@ class ShipmentRiskAlertDeliveryStore {
 	}
 
 	record ClaimResult(Kind kind, UUID token, SimpleMailMessage message) {
-		enum Kind { CLAIMED, SUPPRESSED, NOT_PENDING }
+		enum Kind { CLAIMED, EXHAUSTED, SUPPRESSED, NOT_PENDING }
 
 		static ClaimResult claimed(UUID token, SimpleMailMessage message) {
 			return new ClaimResult(Kind.CLAIMED, token, message);
@@ -166,6 +170,10 @@ class ShipmentRiskAlertDeliveryStore {
 
 		static ClaimResult suppressed() {
 			return new ClaimResult(Kind.SUPPRESSED, null, null);
+		}
+
+		static ClaimResult exhausted() {
+			return new ClaimResult(Kind.EXHAUSTED, null, null);
 		}
 
 		static ClaimResult notPending() {
