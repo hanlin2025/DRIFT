@@ -81,9 +81,15 @@ public class ShipmentService {
 
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
-		Company company = activeCompany(principal);
-		return respondAll(shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
-				Sort.by(Sort.Direction.DESC, "createdAt")));
+		return list(principal, criteria, ShipmentSort.CREATED_DATE_DESCENDING);
+	}
+
+	@Transactional(readOnly = true)
+	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria, ShipmentSort sort) {
+		if (criteria == null || sort == null) {
+			throw new IllegalArgumentException("Filter criteria and sort are required.");
+		}
+		return ranked(activeCompany(principal), criteria, sort);
 	}
 
 	@Transactional(readOnly = true)
@@ -96,10 +102,35 @@ public class ShipmentService {
 			throw new IllegalArgumentException("Filter criteria and sort are required.");
 		}
 		Company company = activeCompany(principal);
+		if (sort.computed() || criteria.atRisk()) {
+			List<ShipmentResponse> all = ranked(company, criteria, sort);
+			int from = Math.min(all.size(), (page - 1) * PAGE_SIZE);
+			return new ShipmentPage(all.subList(from, Math.min(all.size(), from + PAGE_SIZE)), page, PAGE_SIZE,
+					all.size());
+		}
 		Page<Shipment> result = shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
 				PageRequest.of(page - 1, PAGE_SIZE, sort.toSort()));
 		return new ShipmentPage(respondAll(result.getContent()), page, PAGE_SIZE,
 				result.getTotalElements());
+	}
+
+	/**
+	 * Every authorised shipment matching the filters, in the requested order. Risk depends on live AIS and is not
+	 * stored, so the at-risk filter and the risk and priority sorts run on the mapped rows after the authorised,
+	 * filtered query, and a page is cut only after ranking. That keeps paging correct at the cost of reading the
+	 * caller's whole filtered portfolio, whose AIS positions come from one batched lookup.
+	 */
+	private List<ShipmentResponse> ranked(Company company, ShipmentFilterCriteria criteria, ShipmentSort sort) {
+		Sort order = (sort.computed() ? ShipmentSort.CREATED_DATE_DESCENDING : sort).toSort();
+		List<ShipmentResponse> rows = respondAll(shipments.findAll(
+				ShipmentSpecifications.matching(company.getId(), criteria), order));
+		if (criteria.atRisk()) {
+			rows = rows.stream().filter(row -> ShipmentFilterCriteria.isAtRisk(row.risk())).toList();
+		}
+		if (sort.computed()) {
+			rows = rows.stream().sorted(sort.comparator()).toList();
+		}
+		return rows;
 	}
 
 	@Transactional(readOnly = true)
