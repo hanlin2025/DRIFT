@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
 import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
-import { RemoveShipment } from './RemoveShipment';
+import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
@@ -181,7 +181,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   void reloadHistory();
                 }}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
-                  ? <RemoveShipment token={archive.token} shipmentId={shipment.id} reference={shipment.shipmentReference} onSessionEnded={archive.onSessionEnded} onRemoved={archive.onRemoved} onFailed={archive.onFailed} />
+                  ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
                 track={(
                   <TrackHistory vessel={trackVessel} hours={trackHours} history={history} loading={historyLoading}

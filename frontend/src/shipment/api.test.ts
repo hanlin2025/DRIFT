@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -218,6 +218,37 @@ describe('archiveShipment', () => {
       status: 403,
       message: 'Shipment removed successfully',
     });
+  });
+});
+
+describe('restoreShipment', () => {
+  it('patches the shipment back to active with the bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ message: 'Shipment restored successfully' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(restoreShipment('token-1', 7)).resolves.toBe('Shipment restored successfully');
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/7/status', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'ACTIVE' }),
+      cache: 'no-store',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer token-1',
+        'Content-Type': 'application/json',
+      }),
+    }));
+  });
+
+  it('rejects a successful response that does not include a message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ status: 'ACTIVE' })));
+    await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it.each([
+    [403, 'You do not have permission to restore this shipment.'],
+    [404, 'Shipment not found'],
+    [409, 'This shipment is already active.'],
+  ] as const)('returns the server message for status %s', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
+    await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status, message });
   });
 });
 
