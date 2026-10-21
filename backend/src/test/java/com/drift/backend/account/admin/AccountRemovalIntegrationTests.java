@@ -1,32 +1,46 @@
 package com.drift.backend.account.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.account.UserAccount;
+import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.admin.exception.StaleAccountVersionException;
 import com.jayway.jsonpath.JsonPath;
 
 import jakarta.persistence.EntityManager;
@@ -41,6 +55,8 @@ class AccountRemovalIntegrationTests {
 	@Autowired JdbcTemplate jdbc;
 	@Autowired PasswordEncoder passwords;
 	@Autowired EntityManager entityManager;
+	@Autowired UserAccountRepository users;
+	@Autowired PlatformTransactionManager transactions;
 
 	private String adminEmail;
 	private String adminToken;
@@ -200,8 +216,126 @@ class AccountRemovalIntegrationTests {
 						.value(SessionEndedException.MESSAGE))
 				.andExpect(jsonPath(path + ".responses['404'].content['application/json'].example.message")
 						.value(AssignedUserNotFoundException.MESSAGE))
-				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].example.message")
-						.value(AccountAlreadyRemovedException.MESSAGE));
+				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].examples['Already removed'].value.message")
+						.value(AccountAlreadyRemovedException.MESSAGE))
+				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].examples['Changed concurrently'].value.message")
+						.value(StaleAccountVersionException.MESSAGE));
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void concurrentRemovalsOfTheSameAccountLetExactlyOneSucceed() throws Exception {
+		Map<String, Long> countsBefore = committedRowCounts();
+		List<Long> committed = new ArrayList<>(List.of(userId(adminEmail)));
+		ExecutorService otherRequest = Executors.newSingleThreadExecutor();
+		try {
+			Long target = userId(createUser("Raced User", "IMPORTER", harbourlineId));
+			committed.add(target);
+			long generationBefore = generation(target);
+			long versionBefore = version(target);
+
+			MvcResult[] results = new TransactionTemplate(transactions).execute(tx -> {
+				try {
+					users.findById(target).orElseThrow();
+					MvcResult winner = otherRequest.submit(() -> remove(adminToken, target).andReturn()).get();
+					MvcResult loser = remove(adminToken, target).andReturn();
+					tx.setRollbackOnly();
+					return new MvcResult[] { winner, loser };
+				} catch (Exception ex) {
+					throw new IllegalStateException(ex);
+				}
+			});
+
+			assertThat(results[0].getResponse().getStatus()).isEqualTo(200);
+			assertThat(results[1].getResponse().getStatus()).isEqualTo(409);
+			assertThat((String) JsonPath.read(results[1].getResponse().getContentAsString(), "$.message"))
+					.isEqualTo(StaleAccountVersionException.MESSAGE);
+			assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, target)).isEqualTo("REMOVED");
+			assertThat(generation(target)).isEqualTo(generationBefore + 1);
+			assertThat(version(target)).isEqualTo(versionBefore + 1);
+			assertThat(auditsFor(target)).isEqualTo(1);
+		} finally {
+			otherRequest.shutdownNow();
+			deleteCommitted(committed);
+		}
+		assertThat(committedRowCounts()).isEqualTo(withoutOneUser(countsBefore));
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void staleWriterCannotRestoreARemovedAccount() throws Exception {
+		Map<String, Long> countsBefore = committedRowCounts();
+		List<Long> committed = new ArrayList<>(List.of(userId(adminEmail)));
+		ExecutorService otherRequest = Executors.newSingleThreadExecutor();
+		try {
+			Long target = userId(createUser("Stale User", "IMPORTER", harbourlineId));
+			committed.add(target);
+			long generationBefore = generation(target);
+			String hashBefore = passwordHash(target);
+
+			new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+				try {
+					UserAccount stale = users.findById(target).orElseThrow();
+					MvcResult removal = otherRequest.submit(() -> remove(adminToken, target).andReturn()).get();
+					assertThat(removal.getResponse().getStatus()).isEqualTo(200);
+
+					stale.replacePasswordHash(passwords.encode("Changed123"));
+					assertThrows(OptimisticLockingFailureException.class, () -> users.saveAndFlush(stale));
+					tx.setRollbackOnly();
+				} catch (Exception ex) {
+					throw new IllegalStateException(ex);
+				}
+			});
+
+			assertThat(jdbc.queryForObject("SELECT status FROM users WHERE id = ?", String.class, target)).isEqualTo("REMOVED");
+			assertThat(generation(target)).isEqualTo(generationBefore + 1);
+			assertThat(passwordHash(target)).isEqualTo(hashBefore);
+			assertThat(auditsFor(target)).isEqualTo(1);
+		} finally {
+			otherRequest.shutdownNow();
+			deleteCommitted(committed);
+		}
+		assertThat(committedRowCounts()).isEqualTo(withoutOneUser(countsBefore));
+	}
+
+	private long generation(Long userId) {
+		return jdbc.queryForObject("SELECT session_generation FROM users WHERE id = ?", Long.class, userId);
+	}
+
+	private long version(Long userId) {
+		return jdbc.queryForObject("SELECT version FROM users WHERE id = ?", Long.class, userId);
+	}
+
+	private String passwordHash(Long userId) {
+		return jdbc.queryForObject("SELECT password_hash FROM users WHERE id = ?", String.class, userId);
+	}
+
+	private int auditsFor(Long userId) {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM account_status_audits WHERE target_user_id = ?", Integer.class, userId);
+	}
+
+	private Map<String, Long> committedRowCounts() {
+		Map<String, Long> counts = new LinkedHashMap<>();
+		for (String table : List.of("users", "companies", "invitations", "user_assignment_audits", "account_status_audits")) {
+			counts.put(table, jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class));
+		}
+		return counts;
+	}
+
+	private static Map<String, Long> withoutOneUser(Map<String, Long> counts) {
+		Map<String, Long> expected = new LinkedHashMap<>(counts);
+		expected.put("users", counts.get("users") - 1);
+		return expected;
+	}
+
+	private void deleteCommitted(List<Long> userIds) {
+		for (Long id : userIds) {
+			jdbc.update("DELETE FROM account_status_audits WHERE operator_user_id = ? OR target_user_id = ?", id, id);
+			jdbc.update("DELETE FROM user_assignment_audits WHERE operator_user_id = ? OR target_user_id = ?", id, id);
+		}
+		for (Long id : userIds) {
+			jdbc.update("DELETE FROM users WHERE id = ?", id);
+		}
 	}
 
 	private void assertUnchanged(Long userId) {

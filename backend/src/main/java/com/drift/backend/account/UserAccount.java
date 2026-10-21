@@ -16,6 +16,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "users")
@@ -58,6 +59,10 @@ public class UserAccount {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "status", nullable = false, length = 16)
 	private AccountStatus status = AccountStatus.ACTIVE;
+
+	@Version
+	@Column(nullable = false)
+	private Long version;
 
 	protected UserAccount() {
 	}

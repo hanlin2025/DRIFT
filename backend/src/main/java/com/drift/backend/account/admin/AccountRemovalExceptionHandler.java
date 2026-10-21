@@ -13,6 +13,7 @@ import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
+import com.drift.backend.account.admin.exception.StaleAccountVersionException;
 import com.drift.backend.account.exception.SessionEndedException;
 
 @RestControllerAdvice(assignableTypes = AccountRemovalController.class)
@@ -40,6 +41,11 @@ public class AccountRemovalExceptionHandler {
 
 	@ExceptionHandler(AccountAlreadyRemovedException.class)
 	public ResponseEntity<Map<String, String>> handleConflict(AccountAlreadyRemovedException ex) {
+		return message(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(StaleAccountVersionException.class)
+	public ResponseEntity<Map<String, String>> handleStale(StaleAccountVersionException ex) {
 		return message(HttpStatus.CONFLICT, ex.getMessage());
 	}
 
