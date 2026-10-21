@@ -95,6 +95,46 @@ class ShipmentFilterServiceIntegrationTests {
 	}
 
 	@Test
+	void riskSortOrdersCriticalToLowThenUnassessedWithEarliestFeederDepartureBreakingTies() {
+		OffsetDateTime arrival = at("2026-10-12T08:00:00+08:00");
+		insert(forwarder, null, "HBL-LOW", "MV A", "MV F", arrival, Instant.parse("2026-10-07T00:00:00Z"), 48);
+		insert(forwarder, null, "HBL-MEDIUM", "MV A", "MV F", arrival, Instant.parse("2026-10-02T00:00:00Z"), 18);
+		insert(forwarder, null, "HBL-HIGH-LATE", "MV A", "MV F", arrival.plusDays(1), Instant.parse("2026-10-03T00:00:00Z"), 8);
+		insert(forwarder, null, "HBL-HIGH-EARLY", "MV A", "MV F", arrival, Instant.parse("2026-10-04T00:00:00Z"), 8);
+		insert(forwarder, null, "HBL-CRITICAL", "MV A", "MV F", arrival.plusDays(5), Instant.parse("2026-10-05T00:00:00Z"), -2);
+		insert(unrelatedCompany, null, "HBL-HIDDEN", "MV A", "MV F", arrival, Instant.parse("2026-10-06T00:00:00Z"), -2);
+
+		assertThat(references(forwarderUser, criteria("risk", null)))
+				.containsExactly("HBL-CRITICAL", "HBL-HIGH-EARLY", "HBL-HIGH-LATE", "HBL-MEDIUM", "HBL-LOW");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.none()))
+				.containsExactly("HBL-LOW", "HBL-CRITICAL", "HBL-HIGH-EARLY", "HBL-HIGH-LATE", "HBL-MEDIUM");
+	}
+
+	@Test
+	void atRiskKeepsOnlyHighAndCriticalAndCombinesWithOtherFilters() {
+		OffsetDateTime arrival = at("2026-10-12T08:00:00+08:00");
+		insert(forwarder, linkedImporter, "HBL-HIGH", "MV A", "MV F", arrival, Instant.parse("2026-10-01T00:00:00Z"), 8);
+		insert(forwarder, linkedImporter, "HBL-CRITICAL", "MV A", "MV F", arrival, Instant.parse("2026-10-02T00:00:00Z"), 0);
+		insert(forwarder, linkedImporter, "HBL-MEDIUM", "MV A", "MV F", arrival, Instant.parse("2026-10-03T00:00:00Z"), 18);
+		insert(forwarder, null, "HBL-OTHER-CUSTOMER", "MV A", "MV F", arrival, Instant.parse("2026-10-04T00:00:00Z"), 8);
+		insert(forwarder, linkedImporter, "HBL-ARCHIVED", "MV A", "MV F", arrival, Instant.parse("2026-10-05T00:00:00Z"), 8);
+		archive("HBL-ARCHIVED");
+
+		assertThat(references(forwarderUser, criteria(null, true)))
+				.containsExactly("HBL-OTHER-CUSTOMER", "HBL-CRITICAL", "HBL-HIGH");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.of(null, null, "Ocean_Trade", null,
+				ShipmentStatus.ACTIVE, "risk", true)))
+				.containsExactly("HBL-CRITICAL", "HBL-HIGH");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.of(null, null, null, null,
+				ShipmentStatus.ARCHIVED, null, true)))
+				.containsExactly("HBL-ARCHIVED");
+	}
+
+	private static ShipmentFilterCriteria criteria(String sort, Boolean atRisk) {
+		return ShipmentFilterCriteria.of(null, null, null, null, null, sort, atRisk);
+	}
+
+	@Test
 	void referenceSearchIsCaseInsensitiveAndTreatsPercentAndUnderscoreLiterally() {
 		insert(forwarder, null, "HBL-Alpha_100%", "MV One", "MV Feeder", at("2026-10-12T08:00:00+08:00"), Instant.now());
 		insert(forwarder, null, "HBL-AlphaX100Z", "MV Two", "MV Feeder", at("2026-10-12T08:00:00+08:00"), Instant.now());
@@ -217,6 +257,11 @@ class ShipmentFilterServiceIntegrationTests {
 
 	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
 			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt) {
+		insert(managingCompany, importerCompany, reference, motherVessel, feederVessel, arrival, createdAt, 8);
+	}
+
+	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
+			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt, int feederGapHours) {
 		Long creatorId = jdbc.queryForObject(
 				"SELECT id FROM users WHERE company_id = ? ORDER BY id LIMIT 1", Long.class, managingCompany.id());
 		jdbc.update("""
@@ -227,7 +272,7 @@ class ShipmentFilterServiceIntegrationTests {
 					created_at, updated_at, version)
 				VALUES (?, ?, ?, ?, ?, 'Singapore', 'Rotterdam', 'Tanjung Pelepas', ?, ?, ?, ?, ?, ?, 0)
 				""", managingCompany.id(), importerCompany == null ? null : importerCompany.id(), creatorId,
-				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(8),
+				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(feederGapHours),
 				Timestamp.from(createdAt), Timestamp.from(createdAt));
 	}
 

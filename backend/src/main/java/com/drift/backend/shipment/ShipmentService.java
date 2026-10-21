@@ -2,9 +2,11 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
@@ -48,6 +50,11 @@ public class ShipmentService {
 
 	private static final String REFERENCE_UNIQUE_CONSTRAINT = "shipments_company_reference_key";
 
+	private static final Comparator<ShipmentResponse> RISK_ORDER = Comparator
+			.comparingInt(ShipmentService::riskRank)
+			.thenComparing(ShipmentResponse::plannedFeederDepartureAt,
+					Comparator.nullsLast(Comparator.naturalOrder()));
+
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
@@ -81,10 +88,28 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
 		Company company = activeCompany(principal);
-		return shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+		// Risk is calculated on read and not stored, so risk filtering and ordering happen after mapping.
+		// The list is not paged, so this is correct; paging would need a database-side risk expression.
+		Stream<ShipmentResponse> responses = shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
 				Sort.by(Sort.Direction.DESC, "createdAt")).stream()
-				.map(this::respond)
-				.toList();
+				.map(this::respond);
+		if (criteria.atRisk()) {
+			responses = responses.filter(ShipmentService::isAtRisk);
+		}
+		if (criteria.sort() == ShipmentFilterCriteria.Sort.RISK) {
+			// Stable sort: equal risk and departure keep the newest-first order.
+			responses = responses.sorted(RISK_ORDER);
+		}
+		return responses.toList();
+	}
+
+	private static boolean isAtRisk(ShipmentResponse response) {
+		return response.risk() != null && (response.risk().level() == ShipmentRisk.Level.HIGH
+				|| response.risk().level() == ShipmentRisk.Level.CRITICAL);
+	}
+
+	private static int riskRank(ShipmentResponse response) {
+		return response.risk() == null ? Integer.MAX_VALUE : -response.risk().level().ordinal();
 	}
 
 	@Transactional(readOnly = true)

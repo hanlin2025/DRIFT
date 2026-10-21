@@ -185,6 +185,16 @@ class ShipmentFilterApiIntegrationTests {
 	}
 
 	@Test
+	void returnsStructuredBadRequestForUnknownSortAndNonBooleanAtRisk() throws Exception {
+		list(forwarderToken, "sort", "newest").andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("Shipment information is missing or invalid"))
+				.andExpect(jsonPath("$.errors.sort").value("Sort must be risk"));
+		list(forwarderToken, "atRisk", "maybe").andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.atRisk").value("atRisk must be true or false"));
+		list(forwarderToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk());
+	}
+
+	@Test
 	void preservesUnauthenticatedListBehaviour() throws Exception {
 		mvc.perform(get("/api/shipments")).andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
