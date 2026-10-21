@@ -159,9 +159,12 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		DeliveryFixture inactiveCompany = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "inactive-company");
 		transactions.executeWithoutResult(status -> jdbc.update("UPDATE companies SET active = false WHERE id = (SELECT company_id FROM users WHERE id = ?)",
 				inactiveCompany.userId()));
-		assertThat(service.sendDelivery(inactiveCompany.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
-		assertThat(deliveries.findById(inactiveCompany.deliveryId()).orElseThrow().getSuppressionReason()).contains("company");
-		transactions.executeWithoutResult(status -> jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'"));
+		try {
+			assertThat(service.sendDelivery(inactiveCompany.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+			assertThat(deliveries.findById(inactiveCompany.deliveryId()).orElseThrow().getSuppressionReason()).contains("company");
+		} finally {
+			transactions.executeWithoutResult(status -> jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'"));
+		}
 
 		DeliveryFixture lostVisibility = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "lost-visibility");
 		transactions.executeWithoutResult(status -> {

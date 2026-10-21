@@ -9,6 +9,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.AccountStatus;
@@ -49,7 +50,7 @@ class ShipmentRiskAlertDeliveryStore {
 	 * Claims and records exactly one initial SMTP attempt. Retryable failures are deliberately not
 	 * claimable here: CDG-197 will supply the later retry timing policy.
 	 */
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	ClaimResult claimInitialDelivery(Long deliveryId, boolean javaMailSenderAvailable) {
 		if (deliveryId == null) {
 			throw new IllegalArgumentException("Delivery identifier is required");
@@ -89,13 +90,13 @@ class ShipmentRiskAlertDeliveryStore {
 		}
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	boolean markSent(Long deliveryId, UUID token) {
 		ShipmentRiskAlertDelivery delivery = lockedDelivery(deliveryId);
 		return delivery != null && delivery.markSent(token, Instant.now(clock));
 	}
 
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	boolean markInitialFailure(Long deliveryId, UUID token, String sanitizedFailure) {
 		ShipmentRiskAlertDelivery delivery = lockedDelivery(deliveryId);
 		if (delivery == null) {
