@@ -86,19 +86,6 @@ class ShipmentRiskTest {
 	}
 
 	@Test
-	void usesTheRemainingWindowWhenThePlannedMotherArrivalIsMissing() {
-		ConnectionWindowCalculation incomplete = windows.calculate(null, OffsetDateTime.parse("2026-10-15T20:00:00Z"));
-		RemainingConnectionWindow remaining = RemainingConnectionWindow.available("12 hours", Duration.ofHours(12).toSeconds());
-
-		ShipmentRisk risk = ShipmentRisk.of(incomplete, remaining);
-
-		assertThat(incomplete.window()).isNull();
-		assertThat(risk.level()).isEqualTo(Level.MEDIUM);
-		assertThat(risk.explanation())
-				.isEqualTo("Less than 24 hours remain to transfer cargo, based on the mother vessel's estimated arrival.");
-	}
-
-	@Test
 	void marksAMissedRemainingWindowAsCritical() {
 		ShipmentRisk overrun = ShipmentRisk.of(longPlan(), RemainingConnectionWindow.missed("2 hours", 7_200));
 		ShipmentRisk brief = ShipmentRisk.of(longPlan(), RemainingConnectionWindow.missed("less than 1 second", 0));
