@@ -53,6 +53,9 @@ public class ShipmentRiskTransition {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
+	@Column(name = "recipient_resolution_completed_at")
+	private Instant recipientResolutionCompletedAt;
+
 	protected ShipmentRiskTransition() {
 	}
 
@@ -84,4 +87,12 @@ public class ShipmentRiskTransition {
 	public String getExplanation() { return explanation; }
 	public Instant getOccurredAt() { return occurredAt; }
 	public Instant getCreatedAt() { return createdAt; }
+	public Instant getRecipientResolutionCompletedAt() { return recipientResolutionCompletedAt; }
+
+	void markRecipientResolutionCompleted(Instant completedAt) {
+		if (completedAt == null || recipientResolutionCompletedAt != null) {
+			throw new IllegalStateException("Recipient resolution can only be completed once");
+		}
+		recipientResolutionCompletedAt = completedAt;
+	}
 }
