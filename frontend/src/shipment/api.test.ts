@@ -50,6 +50,8 @@ describe('shipment importer API', () => {
       customer: 'STRAITS',
       arrivalDate: '',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
@@ -64,6 +66,8 @@ describe('shipment importer API', () => {
       customer: 'A&B Logistics',
       arrivalDate: '2026-10-12',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
@@ -73,10 +77,29 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
+  });
+
+  it('sends the risk or priority sort and the at-risk filter with the other filters', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([shipment])));
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'priority', atRisk: 'true',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=priority&atRisk=true', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?sort=risk', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'false',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments', expect.anything());
   });
 
   it('reads the importer on a shipment detail', async () => {

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   applyShipmentFilters,
   EMPTY_SHIPMENT_FILTERS,
+  isShipmentSortOption,
   isShipmentStatus,
   shipmentFiltersFromSearchParams,
   type ShipmentFilters,
@@ -15,7 +16,7 @@ export function ShipmentFilterControls() {
 
   useEffect(() => {
     setDraft(applied);
-  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate, applied.status]);
+  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate, applied.status, applied.sort, applied.atRisk]);
 
   function update(field: keyof ShipmentFilters, value: string) {
     setDraft(current => ({ ...current, [field]: value }));
@@ -60,6 +61,21 @@ export function ShipmentFilterControls() {
               <option value="ACTIVE">Active</option>
               <option value="ARCHIVED">Archived</option>
             </select>
+          </div>
+          <div className="field">
+            <label htmlFor="shipment-sort">Sort by</label>
+            <select id="shipment-sort" value={draft.sort} onChange={event => update('sort', event.target.value)} aria-describedby="shipment-sort-hint">
+              {!isShipmentSortOption(draft.sort) ? <option value={draft.sort} disabled>Invalid sort</option> : null}
+              <option value="">Newest first</option>
+              <option value="risk">Risk level (Critical first)</option>
+              <option value="priority">Priority (ranked)</option>
+            </select>
+            <p className="field-hint" id="shipment-sort-hint">Priority weighs risk, time to the feeder departure, and how much live evidence backs it. Unassessed shipments come last.</p>
+          </div>
+          <div className="field field-checkbox">
+            <input id="shipment-filter-at-risk" type="checkbox" checked={draft.atRisk === 'true'} onChange={event => update('atRisk', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-at-risk-hint" />
+            <label htmlFor="shipment-filter-at-risk">At-risk only</label>
+            <p className="field-hint" id="shipment-filter-at-risk-hint">Shows High and Critical shipments.</p>
           </div>
         </div>
         <div className="shipment-filter-actions">
