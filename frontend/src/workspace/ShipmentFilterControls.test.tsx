@@ -35,6 +35,8 @@ describe('ShipmentFilterControls', () => {
     expect(screen.getByRole('button', { name: 'Apply filters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('ACTIVE');
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('');
+    expect(screen.getByRole('checkbox', { name: 'At-risk only' })).not.toBeChecked();
   });
 
   it('initializes from the URL and keeps typing as draft state until apply', async () => {
@@ -98,6 +100,73 @@ describe('ShipmentFilterControls', () => {
 
     expect(screen.getByTestId('location')).toHaveTextContent('?reference=A');
     expect(reference).toHaveValue('A');
+  });
+
+  it('offers newest, risk-level and ranked-priority sorts and stores the choice in the URL', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?view=table');
+
+    const sort = screen.getByRole('combobox', { name: 'Sort by' });
+    expect(Array.from((sort as HTMLSelectElement).options).map(option => option.textContent)).toEqual([
+      'Newest first', 'Risk level (Critical first)', 'Priority (ranked)',
+    ]);
+    expect(sort).toHaveAccessibleDescription(/Priority weighs risk, time to the feeder departure/);
+    await user.selectOptions(sort, 'risk');
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?view=table&sort=risk');
+
+    await user.selectOptions(sort, 'priority');
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?view=table&sort=priority');
+  });
+
+  it('applies the at-risk toggle with other filters and clears it with them', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?customer=ACME&sort=priority&atRisk=true');
+
+    const atRisk = screen.getByRole('checkbox', { name: 'At-risk only' });
+    expect(atRisk).toBeChecked();
+    expect(atRisk).toHaveAccessibleDescription('Shows High and Critical shipments.');
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('priority');
+
+    await user.click(atRisk);
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=priority');
+
+    await user.click(atRisk);
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=priority&atRisk=true');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('');
+    expect(atRisk).not.toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('');
+  });
+
+  it('keeps an invalid raw URL at-risk value until the user toggles it', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?atRisk=maybe');
+
+    const atRisk = screen.getByRole('checkbox', { name: 'At-risk only' });
+    expect(atRisk).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?atRisk=maybe');
+
+    await user.click(atRisk);
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?atRisk=true');
+  });
+
+  it('preserves an invalid raw URL sort until the user changes it', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?sort=newest');
+
+    const sort = screen.getByRole('combobox', { name: 'Sort by' });
+    expect(sort).toHaveValue('newest');
+    expect(screen.getByRole('option', { name: 'Invalid sort' })).toBeInTheDocument();
+    await user.selectOptions(sort, 'priority');
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?sort=priority');
   });
 
   it('preserves an invalid raw URL status until the user deliberately changes or clears it', async () => {
