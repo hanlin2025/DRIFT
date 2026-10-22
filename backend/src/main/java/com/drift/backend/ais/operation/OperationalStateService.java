@@ -1,6 +1,7 @@
 package com.drift.backend.ais.operation;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
@@ -23,9 +24,15 @@ public class OperationalStateService {
 
 	public OperationalState derive(Integer navigationalStatus, BigDecimal speedOverGroundKnots,
 			BigDecimal latitude, BigDecimal longitude, String transshipmentPort) {
+		return derive(navigationalStatus, speedOverGroundKnots, latitude, longitude, transshipmentPort, null);
+	}
+
+	public OperationalState derive(Integer navigationalStatus, BigDecimal speedOverGroundKnots,
+			BigDecimal latitude, BigDecimal longitude, String transshipmentPort, Instant ingestedAt) {
 		String label = label(navigationalStatus);
 		String description = describe(label, latitude, longitude, transshipmentPort);
-		return new OperationalState(label, description, conflicts(navigationalStatus, speedOverGroundKnots));
+		return new OperationalState(label, description, conflicts(navigationalStatus, speedOverGroundKnots),
+				ingestedAt);
 	}
 
 	private static String label(Integer navigationalStatus) {
