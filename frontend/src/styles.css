@@ -226,6 +226,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .vessel-empty { margin: 8px 0 14px; color: var(--muted); font-size: 12px; }
 .vessel-stale { margin: 0 0 10px; padding: 8px 10px; color: #8a5a12; background: #f8efd8; border: 1px solid #e2d3a8; border-radius: 5px; font-size: 12px; font-weight: 700; }
 .vessel-stale-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: #8a5a12; color: #f8efd8; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.vessel-seeded { margin: 0 0 10px; padding: 8px 10px; color: var(--ink); background: #e7eee9; border: 1px solid var(--line); border-radius: 5px; font-size: 12px; font-weight: 700; }
+.vessel-seeded-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: var(--green); color: #f8f6ed; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
 .vessel-panel dl { margin: 0; }
 .vessel-panel dl div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #d5e0cc; padding: 10px 0; }
 .vessel-panel dt { color: var(--muted); font-size: 11px; }

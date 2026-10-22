@@ -56,6 +56,7 @@ class ShipmentObservationReportIntegrationTests {
 
 	@Test
 	void attachesTheStoredReportTimeAndSourceAndDoesNotInventAPosition() throws Exception {
+		jdbc.update("DELETE FROM vessel_observations WHERE source = 'AIS_STREAM'");
 		latestPositions.record(position("563177001", "PACIFIC HORIZON", 1, RECEIVED, AisPositionSource.AIS_STREAM));
 		latestPositions.record(position("563177002", "STRAIT RUNNER", 5, RECEIVED.plusSeconds(60),
 				AisPositionSource.SEEDED));
@@ -74,7 +75,11 @@ class ShipmentObservationReportIntegrationTests {
 				.andExpect(jsonPath("$.motherOperationalState.unreliable").value(false))
 				.andExpect(jsonPath("$.motherOperationalState.ingestedAt").value("2026-10-05T03:00:00Z"))
 				.andExpect(jsonPath("$.feederOperationalState.label").value("Moored"))
-				.andExpect(jsonPath("$.feederOperationalState.ingestedAt").value("2026-10-05T03:01:00Z"));
+				.andExpect(jsonPath("$.feederOperationalState.ingestedAt").value("2026-10-05T03:01:00Z"))
+				.andExpect(jsonPath("$.aisFeed.status").value("OFFLINE"))
+				.andExpect(jsonPath("$.aisFeed.lastReceivedAt").value("2026-10-05T03:00:00Z"))
+				.andExpect(jsonPath("$.aisFeed.mmsi").doesNotExist())
+				.andExpect(jsonPath("$.aisFeed.vesselName").doesNotExist());
 
 		mvc.perform(get("/api/shipments/" + id + "/tracking").header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isOk())
@@ -90,11 +95,14 @@ class ShipmentObservationReportIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.motherOperationalState.ingestedAt").value("2026-10-05T03:00:00Z"))
 				.andExpect(jsonPath("$.motherVesselPosition.source").value("AIS_STREAM"))
-				.andExpect(jsonPath("$.arrivalComparison.lastReceivedAt").value("2026-10-05T03:00:00Z"));
+				.andExpect(jsonPath("$.arrivalComparison.lastReceivedAt").value("2026-10-05T03:00:00Z"))
+				.andExpect(jsonPath("$.aisFeed.status").value("OFFLINE"))
+				.andExpect(jsonPath("$.aisFeed.lastReceivedAt").value("2026-10-05T03:00:00Z"));
 	}
 
 	@Test
 	void aMissingObservationHasNoReportTimeAndNoInventedPosition() throws Exception {
+		jdbc.update("DELETE FROM vessel_observations WHERE source = 'AIS_STREAM'");
 		long id = create();
 
 		mvc.perform(get("/api/shipments/" + id).header("Authorization", "Bearer " + forwarderToken))
@@ -107,7 +115,9 @@ class ShipmentObservationReportIntegrationTests {
 				.andExpect(jsonPath("$.motherOperationalState.ingestedAt").value(org.hamcrest.Matchers.nullValue()))
 				.andExpect(jsonPath("$.feederOperationalState.ingestedAt").value(org.hamcrest.Matchers.nullValue()))
 				.andExpect(jsonPath("$.arrivalComparison.unavailableReason.code").value("NO_POSITION"))
-				.andExpect(jsonPath("$.arrivalComparison.lastReceivedAt").value(org.hamcrest.Matchers.nullValue()));
+				.andExpect(jsonPath("$.arrivalComparison.lastReceivedAt").value(org.hamcrest.Matchers.nullValue()))
+				.andExpect(jsonPath("$.aisFeed.status").value("OFFLINE"))
+				.andExpect(jsonPath("$.aisFeed.lastReceivedAt").value(org.hamcrest.Matchers.nullValue()));
 
 		mvc.perform(get("/api/shipments/" + id + "/tracking").header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isOk())

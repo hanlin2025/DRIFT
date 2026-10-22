@@ -459,6 +459,48 @@ describe('vessel track history API', () => {
     await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 
+  it('keeps the AIS feed status and rejects a feed that is not Live, Delayed, or Offline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-05T03:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-05T03:00:00Z' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    const omitted = await getShipment('token', '9');
+    expect(omitted.aisFeed).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: null },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: null },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'LIVE', lastReceivedAt: null },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'STALE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('passes the API message for an unsupported window', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       message: 'Shipment information is missing or invalid',

@@ -71,6 +71,19 @@ describe('mother vessel AIS panel', () => {
     expect(screen.queryByText('Speed')).not.toBeInTheDocument();
   });
 
+  it('labels a seeded position without dropping its age or stale badge', () => {
+    const { rerender } = render(<VesselPanel name="MV Pacific Horizon" position={fix(minutesAgo(12), { source: 'SEEDED' })} />);
+    expect(screen.getByText('Seeded')).toBeInTheDocument();
+    expect(screen.getByText('This is not a live AIS fix.')).toBeInTheDocument();
+    expect(reading('Last report')).toHaveTextContent('Updated 12 min ago');
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+
+    rerender(<VesselPanel name="MV Pacific Horizon" position={fix(new Date(now - STALE_AFTER_MS - 1000).toISOString(), { source: 'SEEDED' })} />);
+    expect(screen.getByText('Seeded')).toBeInTheDocument();
+    expect(screen.getByText('Stale')).toBeInTheDocument();
+    expect(reading('Last report')).toHaveTextContent(/^Updated /);
+  });
+
   it('marks a position older than six hours as stale', () => {
     const { rerender } = render(<VesselPanel name="MV Pacific Horizon" position={fix(new Date(now - STALE_AFTER_MS).toISOString())} />);
     expect(screen.queryByText('Stale')).not.toBeInTheDocument();
