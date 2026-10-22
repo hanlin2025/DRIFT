@@ -255,3 +255,14 @@ That command runs `scripts/run-arrival-comparison.mjs`, which creates and uses i
 `drift_cdg152_browser_*` database. SQL uses Docker Compose when it is available and `psql` on
 `127.0.0.1` otherwise. The spec uses the path the runner selected. It covers desktop and mobile.
 The runner leaves the database in place. `npm run test:e2e` does not run this spec.
+
+`e2e/shipment-paging.spec.ts` signs in through the real portfolio and reads persisted shipments. It checks a page of 25 and the remainder, previous and next, all three sort fields in both directions with a vessel filter still matching more than one page, an out-of-range empty page and the return to page 1, and reload plus back/forward for the page, sort, and filter. A shipment from another company that matches the filter is absent from the rows and the total. Created dates and planned arrivals are stored values, so the order does not depend on when the rows were inserted.
+
+From `frontend/`, with PostgreSQL accepting connections and ports 8080 and 5173 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:paging
+```
+
+That command runs `scripts/run-shipment-paging.mjs`, which creates and uses its own `drift_cdg171_*` database. It selects the Compose project that publishes port 5432, or host `psql` on `127.0.0.1` when Compose is unavailable, and the spec uses that same path. Before Spring starts it checks ownership, the database name, an empty schema, no Flyway history, port 5432, matching datasource and Flyway URLs, and AIS disabled. It covers desktop and mobile. The runner leaves the database in place. `npm run test:e2e` does not run this spec.
