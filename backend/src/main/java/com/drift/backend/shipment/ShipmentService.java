@@ -22,7 +22,6 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
-import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
@@ -52,26 +51,23 @@ public class ShipmentService {
 	private final ShipmentRiskStateRepository riskStates;
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
-	private final LatestAisPositions latestPositions;
+	private final ShipmentConnectionRisk connectionRisk;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
 	private final ObjectMapper objectMapper;
-	private final ArrivalEstimateCalculator arrivalEstimates;
 	private final Clock clock;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
-			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ArrivalEstimateCalculator arrivalEstimates,
-			ObjectProvider<Clock> clocks) {
+			ConnectionWindowService connectionWindows, ShipmentConnectionRisk connectionRisk, Validator validator,
+			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
-		this.latestPositions = latestPositions;
+		this.connectionRisk = connectionRisk;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
 		this.objectMapper = objectMapper;
-		this.arrivalEstimates = arrivalEstimates;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -103,8 +99,8 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public ShipmentTrackingResponse tracking(AuthenticatedUser principal, Long shipmentId) {
 		Shipment shipment = visibleShipment(principal, shipmentId);
-		VesselPosition motherVessel = livePosition(shipment.getMotherVessel());
-		VesselPosition feederVessel = livePosition(shipment.getFeederVessel());
+		VesselPosition motherVessel = connectionRisk.position(shipment.getMotherVessel());
+		VesselPosition feederVessel = connectionRisk.position(shipment.getFeederVessel());
 		return new ShipmentTrackingResponse(shipment.getMotherVessel(), motherVessel,
 				VesselNames.warning(shipment.getMotherVessel(), motherVessel, VesselNames.MOTHER_MISMATCH),
 				shipment.getFeederVessel(), feederVessel,
@@ -294,34 +290,9 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		VesselPosition motherVesselPosition = livePosition(shipment.getMotherVessel());
-		ArrivalEstimate arrivalComparison = arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
-				shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
-		ConnectionWindowCalculation calculation = calculation(shipment);
-		return ShipmentDetailResponse.from(shipment, calculation,
-				connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(), arrivalComparison),
-				motherVesselPosition, livePosition(shipment.getFeederVessel()), arrivalComparison);
-	}
-
-	private VesselPosition livePosition(String vesselName) {
-		return latestPositions.findByVesselName(vesselName)
-				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
-				.map(VesselPosition::from)
-				.orElse(null);
-	}
-
-	private static String withoutVesselPrefix(String vesselName) {
-		if (vesselName == null) {
-			return null;
-		}
-		String stripped = vesselName.strip();
-		if (stripped.length() > 3 && stripped.regionMatches(true, 0, "MV ", 0, 3)) {
-			return stripped.substring(3);
-		}
-		if (stripped.length() > 4 && stripped.regionMatches(true, 0, "M/V ", 0, 4)) {
-			return stripped.substring(4);
-		}
-		return stripped;
+		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
+		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
+				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
 	}
 
 	private ConnectionWindow window(Shipment shipment) {
