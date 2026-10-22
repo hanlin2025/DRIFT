@@ -302,6 +302,12 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .risk-medium { background: var(--accent); color: var(--ink); }
 .risk-high { background: #c46a2b; }
 .risk-critical { background: var(--error); }
+.risk-unassessed { background: transparent; color: var(--muted); border: 1px dashed currentColor; font-weight: 600; }
+.priority-score { display: inline-block; margin-left: 6px; font-size: 12px; }
+.priority-score summary { cursor: pointer; color: var(--muted); }
+.priority-score ul { margin: 4px 0 0; padding-left: 18px; max-width: 32ch; }
+.shipment-risk { white-space: nowrap; }
+.shipment-risk .priority-score ul { white-space: normal; }
 .skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
 .skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
