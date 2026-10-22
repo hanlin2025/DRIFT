@@ -49,6 +49,13 @@ export type OperationalState = {
   ingestedAt: string | null;
 };
 
+export type AisFeedStatusName = 'LIVE' | 'DELAYED' | 'OFFLINE';
+
+export type AisFeedStatus = {
+  status: AisFeedStatusName;
+  lastReceivedAt: string | null;
+};
+
 export type ImporterOrganisation = {
   id: number;
   code: string;
@@ -118,6 +125,7 @@ export type Shipment = {
   feederVesselNameWarning?: string | null;
   motherOperationalState?: OperationalState | null;
   feederOperationalState?: OperationalState | null;
+  aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
 };
 
@@ -383,6 +391,20 @@ function isOptionalFiniteNumber(value: unknown): value is number | null {
   return value == null || isFiniteNumber(value);
 }
 
+const AIS_FEED_STATUS: readonly AisFeedStatusName[] = ['LIVE', 'DELAYED', 'OFFLINE'];
+
+function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undefined {
+  if (!('aisFeed' in value) || value.aisFeed == null) return null;
+  const feed = value.aisFeed;
+  if (!isRecord(feed) || !AIS_FEED_STATUS.some(status => status === feed.status)) return undefined;
+  if (feed.status === 'OFFLINE') {
+    if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
+    return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
+  }
+  if (typeof feed.lastReceivedAt !== 'string' || feed.lastReceivedAt.trim().length === 0) return undefined;
+  return { status: feed.status, lastReceivedAt: feed.lastReceivedAt };
+}
+
 function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
   if (!(key in value) || value[key] == null) return null;
   const state = value[key];
@@ -499,6 +521,8 @@ function asShipment(value: unknown): Shipment | null {
   const motherOperationalState = operationalStateOf(value, 'motherOperationalState');
   const feederOperationalState = operationalStateOf(value, 'feederOperationalState');
   if (motherOperationalState === undefined || feederOperationalState === undefined) return null;
+  const aisFeed = aisFeedOf(value);
+  if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
   return {
@@ -531,6 +555,7 @@ function asShipment(value: unknown): Shipment | null {
     feederVesselNameWarning,
     motherOperationalState,
     feederOperationalState,
+    aisFeed,
     arrivalComparison,
   };
 }

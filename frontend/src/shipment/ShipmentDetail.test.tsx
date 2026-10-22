@@ -64,7 +64,7 @@ function Location() { return <output data-testid="location">{useLocation().pathn
 function factValue(record: HTMLElement, label: string) {
   const fact = within(record).getByText(label, { exact: true, selector: 'dt' }).closest('div');
   expect(fact).not.toBeNull();
-  return within(fact as HTMLElement).getByRole('definition');
+  return within(fact as HTMLElement).getAllByRole('definition')[0];
 }
 
 function open(account: Session, path: string) {
@@ -227,6 +227,113 @@ describe('connection window on the shipment detail', () => {
     expect(factValue(record, 'Risk')).toHaveTextContent("High Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival.");
   });
 
+  it('shows the feed status, report times, and a seeded position', async () => {
+    const seeded = { ...shipment.motherVesselPosition!, source: 'SEEDED' as const, vesselName: 'STRAIT RUNNER', mmsi: '563177002', ingestedAt: '2026-10-05T03:01:00Z' };
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-05T03:00:00Z' },
+      motherOperationalState: { label: 'At anchor', description: 'At anchor near Singapore', unreliable: false, ingestedAt: '2026-10-05T03:00:00Z' },
+      feederOperationalState: { label: 'Moored', description: 'Moored', unreliable: false, ingestedAt: '2026-10-05T03:01:00Z' },
+      feederVesselPosition: seeded,
+      arrivalComparison: availableComparison('ON_SCHEDULE', 'On schedule · estimated 1h 30m later than planned'),
+      remainingConnectionWindow: { status: 'AVAILABLE', duration: '6 hours', totalSeconds: 21600, missedBy: null, missedBySeconds: null },
+    });
+    vi.mocked(getShipmentTracking).mockResolvedValue({
+      ...tracking,
+      feederVesselName: 'STRAIT RUNNER',
+      feederVessel: seeded,
+    });
+    const shown = open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const feed = factValue(record, 'AIS feed');
+    expect(feed).toHaveTextContent('Offline');
+    expect(feed).toHaveTextContent('The analysis is based on the last data received.');
+    expect(within(feed).getByText('Last received')).toBeInTheDocument();
+    expect(within(feed).getByText(formatWhen('2026-10-05T03:00:00Z'))).toBeInTheDocument();
+    const mother = factValue(record, 'Mother vessel operation');
+    expect(mother).toHaveTextContent('At anchor near Singapore');
+    expect(within(mother).getByText(formatWhen('2026-10-05T03:00:00Z'))).toBeInTheDocument();
+    const feeder = factValue(record, 'Feeder vessel operation');
+    expect(feeder).toHaveTextContent('Moored');
+    expect(within(feeder).getByText(formatWhen('2026-10-05T03:01:00Z'))).toBeInTheDocument();
+    const remaining = factValue(record, 'Remaining connection window');
+    expect(remaining).toHaveTextContent('6 hours');
+    expect(within(remaining).getByText(formatWhen('2026-10-01T18:00:00Z'))).toBeInTheDocument();
+    expect(factValue(record, 'Feeder vessel position')).toHaveTextContent('Seeded position');
+    expect(screen.getByText(/FEEDER SEEDED STRAIT RUNNER/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Last updated/).length).toBeGreaterThan(0);
+    shown.unmount();
+
+    for (const status of ['LIVE', 'DELAYED'] as const) {
+      vi.mocked(getShipment).mockResolvedValue({
+        ...shipment,
+        aisFeed: { status, lastReceivedAt: '2026-10-22T09:00:00Z' },
+      });
+      const view = open(forwarder, '/freight-forwarder/shipments/7');
+      const next = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+      const nextFeed = factValue(next, 'AIS feed');
+      expect(nextFeed).toHaveTextContent(status === 'LIVE' ? 'Live' : 'Delayed');
+      expect(nextFeed).not.toHaveTextContent('The analysis is based on the last data received.');
+      expect(within(nextFeed).getByText(formatWhen('2026-10-22T09:00:00Z'))).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('updates the AIS feed while the page stays open', async () => {
+    vi.mocked(getShipment)
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T09:00:00Z' } })
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'DELAYED', lastReceivedAt: '2026-10-22T08:00:00Z' } });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T09:00:00Z'));
+    expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Delayed');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T08:00:00Z'));
+    expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+    expect(getShipment).toHaveBeenCalledTimes(2);
+  });
+
+  it('updates the AIS feed when the open page is polled', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      vi.mocked(getShipment)
+        .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'DELAYED', lastReceivedAt: '2026-10-22T08:00:00Z' } })
+        .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-22T07:00:00Z' } });
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('Delayed');
+      expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+      await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('Offline');
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('The analysis is based on the last data received.');
+      expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T07:00:00Z'));
+      expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+      expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+      expect(getShipment).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the AIS feed already shown when a refresh of the detail fails', async () => {
+    vi.mocked(getShipment)
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T09:00:00Z' } })
+      .mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('The latest shipment detail could not be loaded. The page is still showing the last detail it received.')).toBeInTheDocument();
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T09:00:00Z'));
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+  });
+
   it('says a missed connection is expected and by how much', async () => {
     vi.mocked(getShipment).mockResolvedValue({
       ...shipment,
@@ -347,6 +454,9 @@ describe('connection window on the shipment detail', () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
     open(importer, '/importer/shipments/8');
     expect(await screen.findByRole('alert')).toHaveTextContent('You do not have access to this shipment');
+    expect(screen.queryByText('AIS feed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last received')).not.toBeInTheDocument();
+    expect(screen.queryByText('Seeded')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
@@ -408,7 +518,7 @@ describe('connection window on the shipment detail', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(2);
     expect(getShipmentTracking).toHaveBeenCalledTimes(2);
   });
 
@@ -498,7 +608,7 @@ describe('connection window on the shipment detail', () => {
     expect(await within(panel).findByText('9.1 kn')).toBeInTheDocument();
     expect(within(panel).getByText('268° (W)')).toBeInTheDocument();
     expect(within(panel).getByText('270° (W)')).toBeInTheDocument();
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 
@@ -779,7 +889,7 @@ describe('vessel identity on the shipment detail', () => {
     expect(await findPosition(record, 'mv   pacific   horizon · 1.1, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
     expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(3);
     expect(getShipmentTracking).toHaveBeenCalledTimes(3);
   });
 

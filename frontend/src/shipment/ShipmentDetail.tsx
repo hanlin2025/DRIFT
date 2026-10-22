@@ -13,6 +13,7 @@ import { VesselPanel } from './VesselPanel';
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
 const REFRESH_NOTE = 'The latest position could not be loaded. The map is still showing the last position it received.';
+const DETAIL_REFRESH_NOTE = 'The latest shipment detail could not be loaded. The page is still showing the last detail it received.';
 const NOT_FOUND = 'Shipment not found or has been removed.';
 
 type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
@@ -69,22 +70,32 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const reloadTracking = useCallback(async () => {
     const requestId = ++requestSeq.current;
     setRefreshing(true);
+    const shipmentRequest = getShipment(token, shipmentId).then(
+      found => ({ ok: true as const, found }),
+      (reason: unknown) => ({ ok: false as const, reason }),
+    );
+    const trackingRequest = getShipmentTracking(token, shipmentId).then(
+      found => ({ ok: true as const, found }),
+      (reason: unknown) => ({ ok: false as const, reason }),
+    );
     try {
-      const found = await getShipmentTracking(token, shipmentId);
+      const [shipmentOutcome, trackingOutcome] = await Promise.all([shipmentRequest, trackingRequest]);
       if (requestId !== requestSeq.current) return;
-      setTracking(found);
-      setRefreshNote(null);
-    } catch (reason: unknown) {
-      if (requestId !== requestSeq.current) return;
-      if (reason instanceof ApiError && reason.status === 401) {
+      const reasons = [shipmentOutcome, trackingOutcome].flatMap(outcome => outcome.ok ? [] : [outcome.reason]);
+      if (reasons.some(reason => reason instanceof ApiError && reason.status === 401)) {
         onSessionEnded();
         return;
       }
-      if (reason instanceof ApiError && reason.status === 403) {
-        setProblem({ kind: 'forbidden', message: reason.message });
+      const forbidden = reasons.find(reason => reason instanceof ApiError && reason.status === 403);
+      if (forbidden instanceof ApiError) {
+        setProblem({ kind: 'forbidden', message: forbidden.message });
         return;
       }
-      setRefreshNote(REFRESH_NOTE);
+      if (shipmentOutcome.ok) setShipment(shipmentOutcome.found);
+      if (trackingOutcome.ok) setTracking(trackingOutcome.found);
+      if (!trackingOutcome.ok) setRefreshNote(REFRESH_NOTE);
+      else if (!shipmentOutcome.ok) setRefreshNote(DETAIL_REFRESH_NOTE);
+      else setRefreshNote(null);
     } finally {
       if (requestId === requestSeq.current) setRefreshing(false);
     }
@@ -101,9 +112,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setHistory(null);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
-      if (active) setShipment(found);
+      if (!active || requestId !== requestSeq.current) return;
+      setShipment(found);
     }).catch((reason: unknown) => {
-      if (!active) return;
+      if (!active || requestId !== requestSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
         return;
@@ -135,13 +147,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     };
   }, [token, shipmentId, attempt, onSessionEnded]);
 
+  const shipmentLoaded = shipment !== null;
   useEffect(() => {
-    if (problem || shipment === null) return;
+    if (problem || !shipmentLoaded) return;
     const timer = window.setInterval(() => { void reloadTracking(); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [problem, shipment, reloadTracking]);
+  }, [problem, shipmentLoaded, reloadTracking]);
 
-  const shipmentLoaded = shipment !== null;
   useEffect(() => {
     if (!shipmentLoaded) return;
     setHistory(null);
@@ -212,7 +224,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 19;
+const FACT_ROWS = 22;
 
 function ShipmentSkeleton() {
   return (
@@ -272,12 +284,14 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
       </div>
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
+          {feedFact(shipment.aisFeed)}
           <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
           <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shownWarning(tracking, tracking?.motherVesselNameWarning, shipment.motherVesselNameWarning))}</dd></div>
           <div><dt>Mother vessel IMO</dt><dd className={missing(shipment.motherVesselImo)}>{recorded(shipment.motherVesselImo, 'Not available')}</dd></div>
           <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
           <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
+          {operationFact('Mother vessel operation', shipment.motherOperationalState)}
           <div>
             <dt>Planned arrival</dt>
             <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
@@ -289,6 +303,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
           <div><dt>Feeder vessel operator</dt><dd className={missing(shipment.feederVesselOperator)}>{recorded(shipment.feederVesselOperator, 'Not available')}</dd></div>
           <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
+          {operationFact('Feeder vessel operation', shipment.feederOperationalState)}
           <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
             ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
             : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
@@ -299,7 +314,12 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           </div>
           <div>
             <dt>Remaining connection window</dt>
-            <dd className={remaining.missing ? 'is-missing' : undefined}>{remaining.text}</dd>
+            <dd className={remaining.missing ? 'is-missing' : undefined}>
+              {remaining.text}
+              {shipment.remainingConnectionWindow && shipment.arrivalComparison?.lastReceivedAt
+                ? <dl className="arrival-comparison">{reportTime(shipment.arrivalComparison.lastReceivedAt)}</dl>
+                : null}
+            </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
@@ -327,7 +347,7 @@ function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison 
       <div><dt>Comparison</dt><dd>{comparison.difference}</dd></div>
       <div><dt>Limitation</dt><dd>{comparison.limitation}</dd></div>
       <div><dt>Speed used</dt><dd>{comparison.speedOverGroundKnots} knots</dd></div>
-      <div><dt>Last received</dt><dd><time dateTime={comparison.lastReceivedAt}>{formatWhen(comparison.lastReceivedAt)}</time></dd></div>
+      {reportTime(comparison.lastReceivedAt)}
       {comparison.possiblyOutdated && <div><dt>Position freshness</dt><dd>Possibly outdated</dd></div>}
     </dl>
   );
@@ -337,7 +357,45 @@ function formatLive(position: VesselPosition | null) {
   if (!position) return 'No live AIS position';
   const name = position.vesselName?.trim() || position.mmsi;
   const speed = position.speedOverGroundKnots == null ? '' : ` · ${position.speedOverGroundKnots} kn`;
-  return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
+  const seeded = position.source === 'SEEDED' ? ' · Seeded position' : '';
+  return `${name} · ${position.latitude}, ${position.longitude}${speed}${seeded}`;
+}
+
+function reportTime(at: string | null | undefined) {
+  if (!at) return null;
+  return <div><dt>Last received</dt><dd><time dateTime={at}>{formatWhen(at)}</time></dd></div>;
+}
+
+function feedFact(feed: Shipment['aisFeed']) {
+  if (!feed) return null;
+  const label = feed.status === 'LIVE' ? 'Live' : feed.status === 'DELAYED' ? 'Delayed' : 'Offline';
+  return (
+    <div>
+      <dt>AIS feed</dt>
+      <dd>
+        {label}
+        <dl className="arrival-comparison">
+          {feed.lastReceivedAt
+            ? reportTime(feed.lastReceivedAt)
+            : <div><dt>Last received</dt><dd className="is-missing">No AIS message has been received</dd></div>}
+          {feed.status === 'OFFLINE' ? <div><dt>Analysis</dt><dd>The analysis is based on the last data received.</dd></div> : null}
+        </dl>
+      </dd>
+    </div>
+  );
+}
+
+function operationFact(label: string, state: Shipment['motherOperationalState']) {
+  if (!state) return null;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {state.description}
+        {state.ingestedAt ? <dl className="arrival-comparison">{reportTime(state.ingestedAt)}</dl> : null}
+      </dd>
+    </div>
+  );
 }
 
 function remainingWindowFact(shipment: Shipment): { text: string; missing: boolean } {
