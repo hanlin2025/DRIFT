@@ -1,9 +1,13 @@
 package com.drift.backend.ais.position;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
@@ -48,10 +52,42 @@ public class LatestAisPositions {
 			return Optional.empty();
 		}
 		String normalized = normalize(vesselName);
-		Optional<AisPosition> inMemory = indexedPosition(normalized);
-		Optional<AisPosition> stored = observations.findLatestByNormalizedVesselName(normalized)
-				.map(VesselObservation::toAisPosition)
-				.filter(position -> !memoryHasCurrentFix(position));
+		return newest(indexedPosition(normalized), observations.findLatestByNormalizedVesselName(normalized)
+				.map(VesselObservation::toAisPosition));
+	}
+
+	/**
+	 * The same lookup as {@link #findByVesselName} for many names at once, using two queries in total rather than
+	 * one per name. The result is keyed by each name exactly as given; names without a position are left out.
+	 */
+	public Map<String, AisPosition> findByVesselNames(Collection<String> vesselNames) {
+		Map<String, String> normalizedByName = new HashMap<>();
+		for (String vesselName : vesselNames) {
+			if (vesselName != null && !vesselName.isBlank()) {
+				normalizedByName.put(vesselName, normalize(vesselName));
+			}
+		}
+		if (normalizedByName.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Long> idByNormalized = new HashMap<>();
+		for (var latest : observations.findLatestIdsByNormalizedVesselNames(Set.copyOf(normalizedByName.values()))) {
+			idByNormalized.put(latest.getNormalizedName(), latest.getObservationId());
+		}
+		Map<Long, AisPosition> storedById = new HashMap<>();
+		for (VesselObservation observation : observations.findAllById(idByNormalized.values())) {
+			StoredAisPosition stored = observation.toStoredPosition();
+			storedById.put(stored.id(), stored.position());
+		}
+		Map<String, AisPosition> positions = new HashMap<>();
+		normalizedByName.forEach((vesselName, normalized) -> newest(indexedPosition(normalized),
+				Optional.ofNullable(idByNormalized.get(normalized)).map(storedById::get))
+				.ifPresent(position -> positions.put(vesselName, position)));
+		return positions;
+	}
+
+	private Optional<AisPosition> newest(Optional<AisPosition> inMemory, Optional<AisPosition> stored) {
+		stored = stored.filter(position -> !memoryHasCurrentFix(position));
 		if (inMemory.isEmpty()) {
 			return stored;
 		}
