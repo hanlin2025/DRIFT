@@ -86,6 +86,7 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.createdAt").isNotEmpty())
 				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
 				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
+				.andExpect(jsonPath("$.remainingConnectionWindow").doesNotExist())
 				.andReturn();
 
 		Number responseId = JsonPath.read(result.getResponse().getContentAsString(), "$.id");
@@ -337,7 +338,8 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.connectionWindow.duration").value("1 day 4 hours"))
 				.andExpect(jsonPath("$.connectionWindow.totalSeconds").value(100800))
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
-				.andExpect(jsonPath("$.risk.explanation").value("At least 24 hours to transfer cargo between vessels."))
+				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
+				.andExpect(jsonPath("$.risk.explanation").value("At least 24 hours to transfer cargo between vessels. The planned connection window is being used."))
 				.andExpect(jsonPath("$.motherVesselPosition").value(nullValue()))
 				.andExpect(jsonPath("$.feederVesselPosition").value(nullValue()));
 	}

@@ -50,27 +50,44 @@ class ShipmentRiskEvaluatorConcurrencyIntegrationTests {
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService workers = Executors.newFixedThreadPool(2);
 		try {
-			Future<ShipmentRiskEvaluationOutcome> first = workers.submit(() -> evaluateWhenReleased(ready, start));
-			Future<ShipmentRiskEvaluationOutcome> second = workers.submit(() -> evaluateWhenReleased(ready, start));
-			ready.await();
-			start.countDown();
+			try {
+				Future<ShipmentRiskEvaluationOutcome> first = workers.submit(() -> evaluateWhenReleased(ready, start));
+				Future<ShipmentRiskEvaluationOutcome> second = workers.submit(() -> evaluateWhenReleased(ready, start));
+				ready.await();
+				start.countDown();
 
-			List<ShipmentRiskEvaluationOutcome> outcomes = List.of(first.get(), second.get());
-			assertThat(outcomes).containsExactlyInAnyOrder(ShipmentRiskEvaluationOutcome.RISE_TRANSITION,
-					ShipmentRiskEvaluationOutcome.NO_TRANSITION);
+				List<ShipmentRiskEvaluationOutcome> outcomes = List.of(first.get(), second.get());
+				assertThat(outcomes).containsExactlyInAnyOrder(ShipmentRiskEvaluationOutcome.RISE_TRANSITION,
+						ShipmentRiskEvaluationOutcome.NO_TRANSITION);
+			} finally {
+				workers.shutdownNow();
+			}
+
+			transaction.executeWithoutResult(status -> {
+				ShipmentRiskState state = states.findById(shipmentId).orElseThrow();
+				assertThat(state.getLastRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
+				assertThat(state.getLastTransitionSequence()).isOne();
+				assertThat(transitions.findByShipmentIdOrderBySequenceAsc(shipmentId))
+						.extracting(ShipmentRiskTransition::getSequence, ShipmentRiskTransition::getPreviousRiskLevel,
+								ShipmentRiskTransition::getRiskLevel)
+						.containsExactly(org.assertj.core.groups.Tuple.tuple(1L, ShipmentRisk.Level.LOW, ShipmentRisk.Level.HIGH));
+			});
 		} finally {
-			workers.shutdownNow();
+			if (shipmentId != null) {
+				transaction.executeWithoutResult(status -> removeCommittedShipment(shipmentId));
+			}
 		}
+	}
 
-		transaction.executeWithoutResult(status -> {
-			ShipmentRiskState state = states.findById(shipmentId).orElseThrow();
-			assertThat(state.getLastRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
-			assertThat(state.getLastTransitionSequence()).isOne();
-			assertThat(transitions.findByShipmentIdOrderBySequenceAsc(shipmentId))
-					.extracting(ShipmentRiskTransition::getSequence, ShipmentRiskTransition::getPreviousRiskLevel,
-							ShipmentRiskTransition::getRiskLevel)
-					.containsExactly(org.assertj.core.groups.Tuple.tuple(1L, ShipmentRisk.Level.LOW, ShipmentRisk.Level.HIGH));
-		});
+	private void removeCommittedShipment(Long id) {
+		entityManager.createNativeQuery("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (SELECT id FROM shipment_risk_transitions WHERE shipment_id = :id)
+				""").setParameter("id", id).executeUpdate();
+		entityManager.createNativeQuery("DELETE FROM shipment_risk_transitions WHERE shipment_id = :id")
+				.setParameter("id", id).executeUpdate();
+		entityManager.createNativeQuery("DELETE FROM shipments WHERE id = :id")
+				.setParameter("id", id).executeUpdate();
 	}
 
 	private ShipmentRiskEvaluationOutcome evaluateWhenReleased(CountDownLatch ready, CountDownLatch start) throws Exception {

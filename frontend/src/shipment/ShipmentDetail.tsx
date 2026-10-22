@@ -212,7 +212,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 18;
+const FACT_ROWS = 19;
 
 function ShipmentSkeleton() {
   return (
@@ -249,6 +249,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
   selectedId: number | null;
   onSelectPoint: (id: number) => void;
 }) {
+  const remaining = remainingWindowFact(shipment);
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
@@ -296,6 +297,10 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
             <dt>Connection window</dt>
             <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
           </div>
+          <div>
+            <dt>Remaining connection window</dt>
+            <dd className={remaining.missing ? 'is-missing' : undefined}>{remaining.text}</dd>
+          </div>
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
             : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
@@ -333,6 +338,27 @@ function formatLive(position: VesselPosition | null) {
   const name = position.vesselName?.trim() || position.mmsi;
   const speed = position.speedOverGroundKnots == null ? '' : ` · ${position.speedOverGroundKnots} kn`;
   return `${name} · ${position.latitude}, ${position.longitude}${speed}`;
+}
+
+function remainingWindowFact(shipment: Shipment): { text: string; missing: boolean } {
+  const remaining = shipment.remainingConnectionWindow;
+  if (remaining?.status === 'AVAILABLE') {
+    return { text: remaining.duration, missing: false };
+  }
+  if (remaining?.status === 'MISSED') {
+    return { text: `The connection is expected to be missed by ${remaining.missedBy}.`, missing: false };
+  }
+  if (!shipment.plannedFeederDepartureAt?.trim()) {
+    return { text: 'No remaining connection window', missing: true };
+  }
+  const comparison = shipment.arrivalComparison;
+  if (comparison?.unavailableReason) {
+    return { text: `The planned connection window is being used. ${comparison.unavailableReason.message}`, missing: false };
+  }
+  if (comparison?.possiblyOutdated) {
+    return { text: "The planned connection window is being used because the mother vessel's position is possibly outdated.", missing: false };
+  }
+  return { text: 'No remaining connection window', missing: true };
 }
 
 function recorded(value: string | null | undefined, fallback = 'Not recorded') {

@@ -1,6 +1,6 @@
 package com.drift.backend.shipment;
 
-/** Pure transition policy; persistence and risk calculation remain in {@link ShipmentRiskEvaluator}. */
+/** Pure transition policy. {@link ShipmentRiskEvaluator} persists the result of {@link ShipmentConnectionRisk}. */
 final class ShipmentRiskTransitionDecision {
 
 	enum Type {

@@ -16,17 +16,17 @@ public class ShipmentRiskEvaluator {
 	private final ShipmentRepository shipments;
 	private final ShipmentRiskStateStore states;
 	private final ShipmentRiskTransitionRepository transitions;
-	private final ConnectionWindowService connectionWindows;
+	private final ShipmentConnectionRisk connectionRisk;
 	private final ShipmentRiskAlertRecipientResolver recipients;
 	private final Clock clock;
 
 	public ShipmentRiskEvaluator(ShipmentRepository shipments, ShipmentRiskStateStore states,
-			ShipmentRiskTransitionRepository transitions, ConnectionWindowService connectionWindows,
+			ShipmentRiskTransitionRepository transitions, ShipmentConnectionRisk connectionRisk,
 			ShipmentRiskAlertRecipientResolver recipients, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.states = states;
 		this.transitions = transitions;
-		this.connectionWindows = connectionWindows;
+		this.connectionRisk = connectionRisk;
 		this.recipients = recipients;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
@@ -50,8 +50,7 @@ public class ShipmentRiskEvaluator {
 		}
 
 		ShipmentRiskState state = states.lockOrInitializeSilently(shipmentId);
-		ShipmentRisk risk = ShipmentRisk.of(connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt()));
+		ShipmentRisk risk = connectionRisk.assess(shipment).risk();
 		ShipmentRiskTransitionDecision.Type decision = ShipmentRiskTransitionDecision.decide(
 				state.getBaselineMode(), state.getLastRiskLevel(), risk);
 		if (decision == ShipmentRiskTransitionDecision.Type.INCOMPLETE) {

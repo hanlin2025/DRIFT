@@ -152,8 +152,10 @@ class ShipmentStatusContractTest {
 		assertThat((Object) JsonPath.read(detailJson, "$.importer")).isNull();
 		assertThat(JsonPath.read(detailJson, "$.risk.level").toString()).isEqualTo("LOW");
 		assertThat(JsonPath.read(detailJson, "$.risk.explanation").toString())
-				.isEqualTo("At least 24 hours to transfer cargo between vessels.");
+				.isEqualTo("At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat((Object) JsonPath.read(detailJson, "$.remainingConnectionWindow")).isNull();
 		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.risk")).isInstanceOf(PathNotFoundException.class);
+		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.remainingConnectionWindow")).isInstanceOf(PathNotFoundException.class);
 
 		String listJson = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
@@ -219,7 +221,8 @@ class ShipmentStatusContractTest {
 		assertThat(JsonPath.read(detailJson, "$.status").toString()).isEqualTo("ARCHIVED");
 		assertThat(JsonPath.read(detailJson, "$.risk.level").toString()).isEqualTo("LOW");
 		assertThat(JsonPath.read(detailJson, "$.risk.explanation").toString())
-				.isEqualTo("At least 24 hours to transfer cargo between vessels.");
+				.isEqualTo("At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat((Object) JsonPath.read(detailJson, "$.remainingConnectionWindow")).isNull();
 
 		String listJson = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())

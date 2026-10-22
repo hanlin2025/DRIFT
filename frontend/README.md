@@ -48,7 +48,7 @@ Both the importer overview and the freight-forwarder portfolio load `GET /api/sh
 
 The registration form stays on the freight-forwarder page. It collects the required transshipment port as free text, up to 200 characters, and sends that value with the rest of the itinerary. After a shipment is saved, the list reloads. The company scope comes from the authenticated API; the page does not offer a company picker.
 
-The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The table itself does not show that duration. A Risk badge rates that window: Critical when the feeder departs at or before the mother vessel's arrival, High under 12 hours, Medium under 24 hours and Low otherwise, with a one-line explanation. It shows Pending assignment until the feeder departure is scheduled. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
+The reference in that table opens `/importer/shipments/:id` or `/freight-forwarder/shipments/:id`, loaded from `GET /api/shipments/{id}`. The detail page shows the planned connection window returned with the shipment: the time available between the mother-vessel arrival and the feeder-vessel departure. The next fact is the remaining connection window from that same detail. It shows the duration when time remains, and it says the connection is expected to be missed, including by how much, when the estimated arrival is after the feeder departure. When the estimate is unavailable or possibly outdated, it says the planned connection window is being used and includes the reason. A missing feeder departure keeps No planned connection window and Pending assignment, and the remaining fact says No remaining connection window. An archived shipment opened by its address shows these same facts. The active list does not add this fact, and it does not add archived shipments. The table itself does not show that duration. A Risk badge uses the remaining connection window when the detail includes one, and otherwise the planned connection window. Critical when that window is missed or not positive, High under 12 hours, Medium under 24 hours, and Low at 24 hours or more. The explanation names which window was used, and it says the planned connection window is being used when the arrival estimate is unavailable or possibly outdated. It shows Pending assignment until the feeder departure is scheduled. While the shipment loads, the page shows a skeleton of the map and facts. The facts sit in two columns on wider screens and one column on phones. A shipment the user may not view returns 403 and shows an **Access denied** page with the server's message. An unknown or invalid shipment ID returns 404 and shows **Shipment not found** with "Shipment not found or has been removed." Neither offers a retry.
 
 Next to the map, a Mother vessel panel shows the latest AIS fix returned by `GET /api/shipments/{id}/tracking`. It lists the reported name and MMSI, the position with hemispheres, the speed in knots, and the course and heading in degrees with a compass point. A field the vessel did not report shows "Not reported". "Updated 12 min ago" counts from the time DRIFT received the report; hover it for the exact time. A fix more than six hours old carries a **Stale** badge. A vessel with no retained report shows "No position received yet". The panel follows the page's 60-second tracking poll and the Refresh button, and the age advances every 30 seconds without a reload. On wide screens the panel sits beside the map; on narrower screens it moves below it. It is hidden with the rest of the page when the shipment is forbidden. ETA and alerts are not part of it.
 
@@ -172,7 +172,7 @@ the backend it starts and drops only the database it created; it never drops `dr
 ### Shipment detail
 
 `e2e/shipment-detail.spec.ts` opens a shipment from a disposable freight forwarder's list and
-checks every field and the High risk badge for a nine-hour connection, before and after reload.
+checks every field and the High risk badge for a nine-hour connection with no arrival estimate, before and after reload. The planned window stays 9 hours. The remaining fact says the planned connection window is being used because no AIS position has been received, and the risk explanation says the planned connection window is being used.
 A freight forwarder from another company does not get the shipment in the list and sees
 **Access denied** at its address. An unknown or non-numeric ID returns 404 and shows **Shipment
 not found**. A blank feeder vessel shows Pending assignment, and a vessel with no observation
@@ -241,8 +241,13 @@ mobile. `npm run test:e2e` does not run this spec.
 detail API. The page shows the planned arrival beside the estimate, the limitation, the speed
 in knots, the difference, and the last-received time. It covers an arrival ahead of plan, one
 90 minutes later, one 6 hours later, and a position 7 hours old. Opening that first shipment
-again leaves the estimated time unchanged. The connection window stays 6 hours and the risk
-stays High.
+again leaves the estimated time unchanged. The planned connection window stays 6 hours. The remaining
+fact shows its own duration while time remains, says the connection is expected to be missed by
+0 seconds when the estimated arrival is at the feeder departure, and says the planned window is being
+used because the position is possibly outdated when the report is 7 hours old. A fresh estimate uses
+the remaining window for the risk badge: High while time remains under 12 hours, and Critical when
+the estimated arrival is at the feeder departure. A position 7 hours old keeps High from the planned
+window and says that window is being used.
 
 From `frontend/`, with PostgreSQL accepting connections and port 8080 free:
 

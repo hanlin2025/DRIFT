@@ -254,11 +254,38 @@ describe('arrival comparison parsing', () => {
     };
   }
 
+  it('reads a remaining window and a missed connection, and rejects a contradictory one', async () => {
+    const available = {
+      status: 'AVAILABLE',
+      duration: '4 hours',
+      totalSeconds: 14400,
+      missedBy: null,
+      missedBySeconds: null,
+    };
+    const missed = {
+      status: 'MISSED',
+      duration: null,
+      totalSeconds: null,
+      missedBy: '2 hours',
+      missedBySeconds: 7200,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, remainingConnectionWindow: available })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ remainingConnectionWindow: available });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, remainingConnectionWindow: missed }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ remainingConnectionWindow: missed }]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      remainingConnectionWindow: { status: 'AVAILABLE', duration: '4 hours', totalSeconds: 14400, missedBy: '1 hour', missedBySeconds: 3600 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('reads a detail response that omits the comparison', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
     const detail = await getShipment('token', '9');
     expect(detail.arrivalComparison).toBeNull();
     expect(detail.connectionWindow).toBeNull();
+    expect(detail.remainingConnectionWindow).toBeNull();
   });
 
   it('reads an explicit null comparison on a list item', async () => {
