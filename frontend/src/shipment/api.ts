@@ -28,6 +28,15 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+/** Priority ranking for attention: connection severity, urgency to the feeder departure, and evidence confidence. */
+export type ShipmentPriority = {
+  score: number;
+  severity: number;
+  urgency: number;
+  confidence: number;
+  reasons: string[];
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -111,6 +120,7 @@ export type Shipment = {
   connectionWindow: ConnectionWindow | null;
   remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
+  priority?: ShipmentPriority | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -386,6 +396,15 @@ function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingC
   };
 }
 
+function isPriority(value: unknown): value is ShipmentPriority {
+  return isRecord(value)
+    && typeof value.score === 'number' && Number.isInteger(value.score) && value.score >= 0 && value.score <= 100
+    && [value.severity, value.urgency, value.confidence].every(part => isFiniteNumber(part) && part >= 0 && part <= 1)
+    && Array.isArray(value.reasons)
+    && value.reasons.length > 0
+    && value.reasons.every(reason => typeof reason === 'string' && reason.trim().length > 0);
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
@@ -512,6 +531,10 @@ function asShipment(value: unknown): Shipment | null {
   if (remainingConnectionWindow === undefined) return null;
   const risk = value.risk;
   if (risk != null && !isRisk(risk)) return null;
+  const priority = value.priority;
+  if (priority != null && !isPriority(priority)) return null;
+  // The backend only ranks an assessed shipment, so a priority without a risk is a malformed response.
+  if (priority != null && risk == null) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -554,6 +577,7 @@ function asShipment(value: unknown): Shipment | null {
     connectionWindow: window ?? null,
     remainingConnectionWindow,
     risk: risk ?? null,
+    priority: priority ?? null,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
