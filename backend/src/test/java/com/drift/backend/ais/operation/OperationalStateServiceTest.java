@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 
 import org.junit.jupiter.api.Test;
 
@@ -157,12 +158,30 @@ class OperationalStateServiceTest {
 	}
 
 	@Test
+	void keepsTheReportTimeWithoutChangingTheDerivedState() {
+		Instant received = Instant.parse("2026-10-05T03:00:00Z");
+		OperationalState derived = states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE,
+				"Singapore", received);
+		OperationalState withoutReport = states.derive(1, new BigDecimal("0.2"), SINGAPORE_LATITUDE, SINGAPORE_LONGITUDE,
+				"Singapore");
+
+		assertThat(derived.label()).isEqualTo("At anchor");
+		assertThat(derived.description()).isEqualTo("At anchor near Singapore");
+		assertThat(derived.unreliable()).isFalse();
+		assertThat(derived.ingestedAt()).isEqualTo(received);
+		assertThat(withoutReport.label()).isEqualTo(derived.label());
+		assertThat(withoutReport.description()).isEqualTo(derived.description());
+		assertThat(withoutReport.unreliable()).isEqualTo(derived.unreliable());
+		assertThat(withoutReport.ingestedAt()).isNull();
+	}
+
+	@Test
 	void rejectsAContradictoryState() {
-		assertThatThrownBy(() -> new OperationalState(" ", "Moored", false))
+		assertThatThrownBy(() -> new OperationalState(" ", "Moored", false, null))
 				.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new OperationalState("Moored", " ", false))
+		assertThatThrownBy(() -> new OperationalState("Moored", " ", false, null))
 				.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new OperationalState("Moored", "At anchor near Singapore", false))
+		assertThatThrownBy(() -> new OperationalState("Moored", "At anchor near Singapore", false, null))
 				.isInstanceOf(IllegalArgumentException.class);
 	}
 

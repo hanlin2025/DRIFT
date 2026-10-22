@@ -79,6 +79,10 @@ public class VesselObservation {
 		return new StoredAisPosition(id, toAisPosition());
 	}
 
+	public Instant ingestedAt() {
+		return ingestedAt;
+	}
+
 	AisPosition toAisPosition() {
 		return new AisPosition(mmsi, vesselName, latitude, longitude, speedOverGroundKnots,
 				courseOverGroundDegrees, trueHeadingDegrees, navigationalStatus, positionValid, aisUtcSecond,

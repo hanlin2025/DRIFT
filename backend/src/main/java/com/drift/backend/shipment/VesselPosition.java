@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import com.drift.backend.ais.position.AisPosition;
+import com.drift.backend.ais.position.AisPositionSource;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -23,11 +24,13 @@ public record VesselPosition(
 		BigDecimal courseOverGroundDegrees,
 		@Schema(example = "176")
 		Integer trueHeadingDegrees,
-		Instant ingestedAt) {
+		Instant ingestedAt,
+		@Schema(description = "Stored source of this position. AIS_STREAM is a report DRIFT received. SEEDED is not a live report.", example = "AIS_STREAM")
+		AisPositionSource source) {
 
 	static VesselPosition from(AisPosition position) {
 		return new VesselPosition(position.mmsi(), position.vesselName(), position.latitude(), position.longitude(),
 				position.speedOverGroundKnots(), position.courseOverGroundDegrees(), position.trueHeadingDegrees(),
-				position.ingestedAt());
+				position.ingestedAt(), position.source());
 	}
 }

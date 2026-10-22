@@ -399,6 +399,66 @@ describe('vessel track history API', () => {
     }
   });
 
+  it('keeps a stored AIS source and rejects one that is not AIS_STREAM or SEEDED', async () => {
+    const position = {
+      mmsi: '565000222',
+      vesselName: 'STRAIT RUNNER',
+      latitude: 1.25,
+      longitude: 103.7,
+      speedOverGroundKnots: 8.1,
+      courseOverGroundDegrees: 10,
+      trueHeadingDegrees: 11,
+      ingestedAt: '2026-10-05T03:00:00Z',
+      source: 'SEEDED',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      motherVesselName: 'MV Pacific Horizon',
+      motherVessel: { ...position, source: 'AIS_STREAM' },
+      motherVesselNameWarning: null,
+      feederVesselName: 'MV Strait Runner',
+      feederVessel: position,
+      feederVesselNameWarning: null,
+    })));
+    await expect(getShipmentTracking('token', '9')).resolves.toMatchObject({
+      motherVessel: { source: 'AIS_STREAM' },
+      feederVessel: { source: 'SEEDED' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherVesselPosition: { ...position, source: 'LIVE' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps an operational state and treats an omitted one as absent', async () => {
+    const state = {
+      label: 'At anchor',
+      description: 'At anchor near Singapore',
+      unreliable: false,
+      ingestedAt: '2026-10-05T03:00:00Z',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: state,
+      feederOperationalState: { ...state, label: 'Unknown', description: 'Unknown', ingestedAt: null },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.motherOperationalState).toEqual(state);
+    expect(detail.feederOperationalState?.ingestedAt).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    const omitted = await getShipment('token', '9');
+    expect(omitted.motherOperationalState).toBeNull();
+    expect(omitted.feederOperationalState).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: { ...state, description: 'Moored near Singapore' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('passes the API message for an unsupported window', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       message: 'Shipment information is missing or invalid',

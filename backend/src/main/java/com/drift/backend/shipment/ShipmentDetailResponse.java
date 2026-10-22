@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 
 import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
+import com.drift.backend.ais.operation.OperationalState;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -49,7 +50,11 @@ public record ShipmentDetailResponse(
 		VesselPosition feederVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored feeder vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
 		String feederVesselNameWarning,
-		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null.")
+		@Schema(description = "Operational state derived from the latest retained observation for the mother vessel. ingestedAt is when DRIFT stored that report. Null ingestedAt means no observation was retained.")
+		OperationalState motherOperationalState,
+		@Schema(description = "Operational state derived from the latest retained observation for the feeder vessel. ingestedAt is when DRIFT stored that report. Null ingestedAt means no observation was retained.")
+		OperationalState feederOperationalState,
+		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null. lastReceivedAt is the report time of that estimate.")
 		ArrivalEstimate arrivalComparison,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
@@ -68,6 +73,8 @@ public record ShipmentDetailResponse(
 				ShipmentRisk.of(calculation, remainingConnectionWindow),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
+				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
+				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				arrivalComparison,
 				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
