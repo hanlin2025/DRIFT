@@ -2,6 +2,7 @@ package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -73,6 +74,53 @@ class ShipmentFilterServiceIntegrationTests {
 				.containsExactly("HBL-NEWER", "HBL-OLDER");
 		assertThat(references(forwarderUser, ShipmentFilterCriteria.of("  ", "\t", " ", null)))
 				.containsExactly("HBL-NEWER", "HBL-OLDER");
+	}
+
+	@Test
+	void listedShipmentsCarryTheirRiskAndLinkedImporterLikeTheDetail() {
+		insert(forwarder, linkedImporter, "HBL-LINKED", "MV One", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-02T00:00:00Z"));
+		insert(forwarder, null, "HBL-UNLINKED", "MV Two", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-01T00:00:00Z"));
+
+		List<ShipmentResponse> listed = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		assertThat(listed).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-LINKED", "HBL-UNLINKED");
+		ShipmentResponse linked = listed.get(0);
+		assertThat(linked.importer().id()).isEqualTo(linkedImporter.id());
+		assertThat(linked.importer().code()).isEqualTo(linkedImporter.code());
+		assertThat(linked.importer().name()).isEqualTo(linkedImporter.name());
+		assertThat(linked.risk().level()).isEqualTo(ShipmentRisk.Level.HIGH);
+		ShipmentDetailResponse detail = shipments.get(forwarderUser, linked.id());
+		assertThat(linked.risk()).isEqualTo(detail.risk());
+		assertThat(linked.priority().score()).isEqualTo(detail.priority().score());
+		assertThat(listed.get(1).importer()).isNull();
+	}
+
+	@Test
+	void aFreshAisEstimateRaisesTheListedRiskExactlyAsOnTheDetail() {
+		OffsetDateTime arrival = OffsetDateTime.now(ZoneOffset.UTC).plusHours(24);
+		insert(forwarder, linkedImporter, "HBL-AIS-LATE", "MV Late Mother", "MV Feeder", arrival,
+				Instant.parse("2026-10-02T00:00:00Z"), 16);
+		insert(forwarder, linkedImporter, "HBL-PLANNED", "MV Unseen Mother", "MV Feeder", arrival,
+				Instant.parse("2026-10-01T00:00:00Z"), 16);
+		// About 480 nautical miles from Tanjung Pelepas at 5 knots, so the estimate lands well after the feeder leaves.
+		observe("563000187", "Late Mother", "8.500000001", "100.250000001", "5.0", Instant.now());
+
+		List<ShipmentResponse> listed = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		ShipmentResponse late = listed.get(0);
+		ShipmentResponse planned = listed.get(1);
+		assertThat(late.shipmentReference()).isEqualTo("HBL-AIS-LATE");
+		assertThat(late.risk().level()).isEqualTo(ShipmentRisk.Level.CRITICAL);
+		assertThat(planned.risk().level()).isEqualTo(ShipmentRisk.Level.MEDIUM);
+		ShipmentDetailResponse lateDetail = shipments.get(forwarderUser, late.id());
+		assertThat(lateDetail.remainingConnectionWindow().status()).isEqualTo(RemainingConnectionWindow.Status.MISSED);
+		assertThat(late.risk()).isEqualTo(lateDetail.risk());
+		assertThat(late.priority().score()).isEqualTo(lateDetail.priority().score());
+		assertThat(late.priority().confidence()).isEqualTo(ShipmentPriority.LIVE_CONFIDENCE);
+		assertThat(late.priority().score()).isGreaterThan(planned.priority().score());
+		assertThat(planned.risk()).isEqualTo(shipments.get(forwarderUser, planned.id()).risk());
 	}
 
 	@Test
@@ -198,6 +246,11 @@ class ShipmentFilterServiceIntegrationTests {
 
 	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
 			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt) {
+		insert(managingCompany, importerCompany, reference, motherVessel, feederVessel, arrival, createdAt, 8);
+	}
+
+	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
+			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt, int feederGapHours) {
 		Long creatorId = jdbc.queryForObject(
 				"SELECT id FROM users WHERE company_id = ? ORDER BY id LIMIT 1", Long.class, managingCompany.id());
 		jdbc.update("""
@@ -208,8 +261,17 @@ class ShipmentFilterServiceIntegrationTests {
 					created_at, updated_at, version)
 				VALUES (?, ?, ?, ?, ?, 'Singapore', 'Rotterdam', 'Tanjung Pelepas', ?, ?, ?, ?, ?, ?, 0)
 				""", managingCompany.id(), importerCompany == null ? null : importerCompany.id(), creatorId,
-				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(8),
+				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(feederGapHours),
 				Timestamp.from(createdAt), Timestamp.from(createdAt));
+	}
+
+	private void observe(String mmsi, String vesselName, String latitude, String longitude, String speed, Instant ingestedAt) {
+		jdbc.update("""
+				INSERT INTO vessel_observations (
+					mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, ingested_at, source)
+				VALUES (?, ?, ?, ?, ?, ?::timestamptz, 'SEEDED')
+				""", mmsi, vesselName, new BigDecimal(latitude), new BigDecimal(longitude), new BigDecimal(speed),
+				ingestedAt.toString());
 	}
 
 	private static OffsetDateTime at(String value) {

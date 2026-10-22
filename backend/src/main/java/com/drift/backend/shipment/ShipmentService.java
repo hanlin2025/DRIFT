@@ -2,6 +2,7 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,7 +55,6 @@ public class ShipmentService {
 	private final ShipmentRepository shipments;
 	private final ShipmentRiskStateRepository riskStates;
 	private final UserAccountRepository users;
-	private final ConnectionWindowService connectionWindows;
 	private final ShipmentConnectionRisk connectionRisk;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
@@ -62,12 +62,11 @@ public class ShipmentService {
 	private final Clock clock;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
-			ConnectionWindowService connectionWindows, ShipmentConnectionRisk connectionRisk, Validator validator,
+			ShipmentConnectionRisk connectionRisk, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
-		this.connectionWindows = connectionWindows;
 		this.connectionRisk = connectionRisk;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
@@ -83,10 +82,8 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public List<ShipmentResponse> list(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
 		Company company = activeCompany(principal);
-		return shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
-				Sort.by(Sort.Direction.DESC, "createdAt")).stream()
-				.map(this::respond)
-				.toList();
+		return respondAll(shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+				Sort.by(Sort.Direction.DESC, "createdAt")));
 	}
 
 	@Transactional(readOnly = true)
@@ -101,7 +98,7 @@ public class ShipmentService {
 		Company company = activeCompany(principal);
 		Page<Shipment> result = shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
 				PageRequest.of(page - 1, PAGE_SIZE, sort.toSort()));
-		return new ShipmentPage(result.getContent().stream().map(this::respond).toList(), page, PAGE_SIZE,
+		return new ShipmentPage(respondAll(result.getContent()), page, PAGE_SIZE,
 				result.getTotalElements());
 	}
 
@@ -287,7 +284,17 @@ public class ShipmentService {
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
-		return ShipmentResponse.from(shipment, window(shipment));
+		return ShipmentResponse.from(shipment, connectionRisk.assess(shipment));
+	}
+
+	/** Builds list rows with one batched AIS lookup, so each row's risk matches its detail page without a query per row. */
+	private List<ShipmentResponse> respondAll(List<Shipment> listed) {
+		List<ShipmentConnectionRisk.Snapshot> connections = connectionRisk.assessAll(listed);
+		List<ShipmentResponse> responses = new ArrayList<>(listed.size());
+		for (int i = 0; i < listed.size(); i++) {
+			responses.add(ShipmentResponse.from(listed.get(i), connections.get(i)));
+		}
+		return responses;
 	}
 
 	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {
@@ -310,18 +317,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
-		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
-				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
-	}
-
-	private ConnectionWindow window(Shipment shipment) {
-		return calculation(shipment).window();
-	}
-
-	private ConnectionWindowCalculation calculation(Shipment shipment) {
-		return connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt());
+		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment));
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {
