@@ -25,6 +25,14 @@ export type VesselPosition = {
   courseOverGroundDegrees: number | null;
   trueHeadingDegrees: number | null;
   ingestedAt: string;
+  source?: 'AIS_STREAM' | 'SEEDED';
+};
+
+export type OperationalState = {
+  label: string;
+  description: string;
+  unreliable: boolean;
+  ingestedAt: string | null;
 };
 
 export type ImporterOrganisation = {
@@ -93,6 +101,8 @@ export type Shipment = {
   feederVesselOperator?: string | null;
   motherVesselNameWarning?: string | null;
   feederVesselNameWarning?: string | null;
+  motherOperationalState?: OperationalState | null;
+  feederOperationalState?: OperationalState | null;
   arrivalComparison: ArrivalComparison | null;
 };
 
@@ -330,6 +340,21 @@ function isOptionalFiniteNumber(value: unknown): value is number | null {
   return value == null || isFiniteNumber(value);
 }
 
+function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
+  if (!(key in value) || value[key] == null) return null;
+  const state = value[key];
+  if (!isRecord(state) || typeof state.label !== 'string' || state.label.trim().length === 0) return undefined;
+  if (typeof state.description !== 'string' || !state.description.startsWith(state.label)) return undefined;
+  if (typeof state.unreliable !== 'boolean') return undefined;
+  if (state.ingestedAt != null && typeof state.ingestedAt !== 'string') return undefined;
+  return {
+    label: state.label,
+    description: state.description,
+    unreliable: state.unreliable,
+    ingestedAt: state.ingestedAt ?? null,
+  };
+}
+
 function isVesselPosition(value: unknown): value is VesselPosition {
   return isRecord(value)
     && typeof value.mmsi === 'string'
@@ -340,7 +365,8 @@ function isVesselPosition(value: unknown): value is VesselPosition {
     && isOptionalFiniteNumber(value.speedOverGroundKnots)
     && isOptionalFiniteNumber(value.courseOverGroundDegrees)
     && isOptionalFiniteNumber(value.trueHeadingDegrees)
-    && typeof value.ingestedAt === 'string';
+    && typeof value.ingestedAt === 'string'
+    && (value.source == null || value.source === 'AIS_STREAM' || value.source === 'SEEDED');
 }
 
 function asTracking(value: unknown): ShipmentTracking | null {
@@ -425,6 +451,9 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselNameWarning = optionalIdentity(value, 'feederVesselNameWarning');
   if ([motherVesselImo, motherVesselMmsi, motherVesselOperator, feederVesselImo, feederVesselMmsi,
     feederVesselOperator, motherVesselNameWarning, feederVesselNameWarning].some(item => item === undefined)) return null;
+  const motherOperationalState = operationalStateOf(value, 'motherOperationalState');
+  const feederOperationalState = operationalStateOf(value, 'feederOperationalState');
+  if (motherOperationalState === undefined || feederOperationalState === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
   return {
@@ -454,6 +483,8 @@ function asShipment(value: unknown): Shipment | null {
     feederVesselOperator,
     motherVesselNameWarning,
     feederVesselNameWarning,
+    motherOperationalState,
+    feederOperationalState,
     arrivalComparison,
   };
 }
