@@ -13,6 +13,7 @@ import { VesselPanel } from './VesselPanel';
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
 const REFRESH_NOTE = 'The latest position could not be loaded. The map is still showing the last position it received.';
+const DETAIL_REFRESH_NOTE = 'The latest shipment detail could not be loaded. The page is still showing the last detail it received.';
 const NOT_FOUND = 'Shipment not found or has been removed.';
 
 type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
@@ -69,22 +70,32 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const reloadTracking = useCallback(async () => {
     const requestId = ++requestSeq.current;
     setRefreshing(true);
+    const shipmentRequest = getShipment(token, shipmentId).then(
+      found => ({ ok: true as const, found }),
+      (reason: unknown) => ({ ok: false as const, reason }),
+    );
+    const trackingRequest = getShipmentTracking(token, shipmentId).then(
+      found => ({ ok: true as const, found }),
+      (reason: unknown) => ({ ok: false as const, reason }),
+    );
     try {
-      const found = await getShipmentTracking(token, shipmentId);
+      const [shipmentOutcome, trackingOutcome] = await Promise.all([shipmentRequest, trackingRequest]);
       if (requestId !== requestSeq.current) return;
-      setTracking(found);
-      setRefreshNote(null);
-    } catch (reason: unknown) {
-      if (requestId !== requestSeq.current) return;
-      if (reason instanceof ApiError && reason.status === 401) {
+      const reasons = [shipmentOutcome, trackingOutcome].flatMap(outcome => outcome.ok ? [] : [outcome.reason]);
+      if (reasons.some(reason => reason instanceof ApiError && reason.status === 401)) {
         onSessionEnded();
         return;
       }
-      if (reason instanceof ApiError && reason.status === 403) {
-        setProblem({ kind: 'forbidden', message: reason.message });
+      const forbidden = reasons.find(reason => reason instanceof ApiError && reason.status === 403);
+      if (forbidden instanceof ApiError) {
+        setProblem({ kind: 'forbidden', message: forbidden.message });
         return;
       }
-      setRefreshNote(REFRESH_NOTE);
+      if (shipmentOutcome.ok) setShipment(shipmentOutcome.found);
+      if (trackingOutcome.ok) setTracking(trackingOutcome.found);
+      if (!trackingOutcome.ok) setRefreshNote(REFRESH_NOTE);
+      else if (!shipmentOutcome.ok) setRefreshNote(DETAIL_REFRESH_NOTE);
+      else setRefreshNote(null);
     } finally {
       if (requestId === requestSeq.current) setRefreshing(false);
     }
@@ -101,9 +112,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setHistory(null);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
-      if (active) setShipment(found);
+      if (!active || requestId !== requestSeq.current) return;
+      setShipment(found);
     }).catch((reason: unknown) => {
-      if (!active) return;
+      if (!active || requestId !== requestSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
         return;
@@ -135,13 +147,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     };
   }, [token, shipmentId, attempt, onSessionEnded]);
 
+  const shipmentLoaded = shipment !== null;
   useEffect(() => {
-    if (problem || shipment === null) return;
+    if (problem || !shipmentLoaded) return;
     const timer = window.setInterval(() => { void reloadTracking(); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [problem, shipment, reloadTracking]);
+  }, [problem, shipmentLoaded, reloadTracking]);
 
-  const shipmentLoaded = shipment !== null;
   useEffect(() => {
     if (!shipmentLoaded) return;
     setHistory(null);

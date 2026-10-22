@@ -279,6 +279,61 @@ describe('connection window on the shipment detail', () => {
     }
   });
 
+  it('updates the AIS feed while the page stays open', async () => {
+    vi.mocked(getShipment)
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T09:00:00Z' } })
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'DELAYED', lastReceivedAt: '2026-10-22T08:00:00Z' } });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T09:00:00Z'));
+    expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Delayed');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T08:00:00Z'));
+    expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+    expect(getShipment).toHaveBeenCalledTimes(2);
+  });
+
+  it('updates the AIS feed when the open page is polled', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      vi.mocked(getShipment)
+        .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'DELAYED', lastReceivedAt: '2026-10-22T08:00:00Z' } })
+        .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-22T07:00:00Z' } });
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('Delayed');
+      expect(factValue(record, 'AIS feed')).not.toHaveTextContent('The analysis is based on the last data received.');
+      await vi.advanceTimersByTimeAsync(TRACKING_POLL_MS);
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('Offline');
+      expect(factValue(record, 'AIS feed')).toHaveTextContent('The analysis is based on the last data received.');
+      expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T07:00:00Z'));
+      expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+      expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
+      expect(getShipment).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the AIS feed already shown when a refresh of the detail fails', async () => {
+    vi.mocked(getShipment)
+      .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T09:00:00Z' } })
+      .mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('The latest shipment detail could not be loaded. The page is still showing the last detail it received.')).toBeInTheDocument();
+    expect(factValue(record, 'AIS feed')).toHaveTextContent('Live');
+    expect(factValue(record, 'AIS feed')).toHaveTextContent(formatWhen('2026-10-22T09:00:00Z'));
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+  });
+
   it('says a missed connection is expected and by how much', async () => {
     vi.mocked(getShipment).mockResolvedValue({
       ...shipment,
@@ -463,7 +518,7 @@ describe('connection window on the shipment detail', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByText('PACIFIC HORIZON · 2.5, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(2);
     expect(getShipmentTracking).toHaveBeenCalledTimes(2);
   });
 
@@ -553,7 +608,7 @@ describe('connection window on the shipment detail', () => {
     expect(await within(panel).findByText('9.1 kn')).toBeInTheDocument();
     expect(within(panel).getByText('268° (W)')).toBeInTheDocument();
     expect(within(panel).getByText('270° (W)')).toBeInTheDocument();
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 
@@ -834,7 +889,7 @@ describe('vessel identity on the shipment detail', () => {
     expect(await findPosition(record, 'mv   pacific   horizon · 1.1, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).queryByText(MOTHER_WARNING)).not.toBeInTheDocument();
     expect(within(record).getByText(FEEDER_WARNING)).toHaveClass('vessel-name-warning');
-    expect(getShipment).toHaveBeenCalledTimes(1);
+    expect(getShipment).toHaveBeenCalledTimes(3);
     expect(getShipmentTracking).toHaveBeenCalledTimes(3);
   });
 
