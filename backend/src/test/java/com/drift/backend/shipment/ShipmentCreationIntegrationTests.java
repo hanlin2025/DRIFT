@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -24,8 +25,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.account.UserAccount;
+import com.drift.backend.company.Company;
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.LatestAisPositions;
@@ -35,6 +41,7 @@ import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
@@ -48,6 +55,8 @@ class ShipmentCreationIntegrationTests {
 	@Autowired PasswordEncoder passwords;
 	@Autowired jakarta.persistence.EntityManager entityManager;
 	@Autowired LatestAisPositions latestPositions;
+	@Autowired ShipmentService shipmentService;
+	@Autowired PlatformTransactionManager transactionManager;
 
 	private String email;
 	private Long companyId;
@@ -91,6 +100,35 @@ class ShipmentCreationIntegrationTests {
 				.containsEntry("shipment_reference", "HBL-2026-001")
 				.containsEntry("mother_vessel", "MV Pacific Horizon")
 				.containsEntry("feeder_vessel", "MV Strait Runner");
+		assertThat(jdbc.queryForObject("SELECT baseline_mode FROM shipment_risk_states WHERE shipment_id = ?",
+				String.class, shipmentId)).isEqualTo("ALERTABLE_FIRST_VALID");
+		assertThat(jdbc.queryForObject("SELECT last_risk_level FROM shipment_risk_states WHERE shipment_id = ?",
+				String.class, shipmentId)).isNull();
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void rollingBackShipmentCreationAlsoRollsBackItsRiskState() {
+		String reference = "HBL-ROLLBACK-" + UUID.randomUUID();
+		ShipmentImportRow row = new ShipmentImportRow(1, reference, "Singapore", "Rotterdam", "Singapore",
+				"Mother", OffsetDateTime.parse("2026-10-15T08:00:00Z"), "Feeder",
+				OffsetDateTime.parse("2026-10-16T08:00:00Z"), null);
+		TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> transaction.execute(status -> {
+			UserAccount creator = entityManager.find(UserAccount.class, accountId);
+			Company company = creator.getCompany();
+			shipmentService.createImported(company, creator, row, null);
+			throw new IllegalStateException("force transaction rollback");
+		})).isInstanceOf(IllegalStateException.class).hasMessage("force transaction rollback");
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shipments WHERE shipment_reference = ?", Integer.class, reference))
+				.isZero();
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM shipment_risk_states state
+				JOIN shipments shipment ON shipment.id = state.shipment_id
+				WHERE shipment.shipment_reference = ?
+				""", Integer.class, reference)).isZero();
 	}
 
 

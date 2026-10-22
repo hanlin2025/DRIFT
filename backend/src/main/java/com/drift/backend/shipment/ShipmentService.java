@@ -49,6 +49,7 @@ public class ShipmentService {
 	private static final String REFERENCE_UNIQUE_CONSTRAINT = "shipments_company_reference_key";
 
 	private final ShipmentRepository shipments;
+	private final ShipmentRiskStateRepository riskStates;
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
 	private final LatestAisPositions latestPositions;
@@ -58,11 +59,12 @@ public class ShipmentService {
 	private final ArrivalEstimateCalculator arrivalEstimates;
 	private final Clock clock;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
+	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ArrivalEstimateCalculator arrivalEstimates,
 			ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
+		this.riskStates = riskStates;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
@@ -256,7 +258,10 @@ public class ShipmentService {
 			shipment.linkImporter(importerCompany);
 		}
 		try {
-			return shipments.saveAndFlush(shipment);
+			Shipment saved = shipments.saveAndFlush(shipment);
+			riskStates.saveAndFlush(new ShipmentRiskState(saved,
+					ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID, Instant.now(clock)));
+			return saved;
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();

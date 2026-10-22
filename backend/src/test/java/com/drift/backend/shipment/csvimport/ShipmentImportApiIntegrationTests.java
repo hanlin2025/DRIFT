@@ -90,6 +90,13 @@ class ShipmentImportApiIntegrationTests {
 				Integer.class, forwarderCompanyId)).isEqualTo(2);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shipments WHERE shipment_reference = 'HBL-CDG126-ONE' AND importer_company_id IS NULL",
 				Integer.class)).isOne();
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM shipment_risk_states state
+				JOIN shipments shipment ON shipment.id = state.shipment_id
+				WHERE shipment.shipment_reference LIKE 'HBL-CDG126-%'
+					AND state.baseline_mode = 'ALERTABLE_FIRST_VALID'
+					AND state.last_risk_level IS NULL
+				""", Integer.class)).isEqualTo(2);
 		assertThat(jdbc.queryForObject("SELECT source_csv IS NULL FROM shipment_import_jobs WHERE id = ?", Boolean.class, jobId))
 				.isTrue();
 	}
