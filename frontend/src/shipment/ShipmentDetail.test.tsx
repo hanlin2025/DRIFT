@@ -200,8 +200,10 @@ describe('connection window on the shipment detail', () => {
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     const pending = within(record).getAllByText('Pending assignment');
-    expect(pending).toHaveLength(3);
+    expect(pending).toHaveLength(2);
     pending.forEach(field => expect(field).toHaveClass('is-missing'));
+    expect(factValue(record, 'Risk')).toHaveClass('is-missing');
+    expect(within(factValue(record, 'Risk')).getByText('Not assessed')).toHaveClass('risk-badge', 'risk-unassessed');
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(factValue(record, 'Remaining connection window')).toHaveTextContent('No remaining connection window');
     expect(factValue(record, 'Remaining connection window')).toHaveClass('is-missing');
@@ -209,6 +211,24 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
     expect(screen.getByText('FEEDER Pending assignment')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the same priority score and reasons as the list beside the risk', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'CRITICAL', explanation: 'The connection is expected to be missed by 2 hours.' },
+      priority: {
+        score: 81, severity: 1, urgency: 0.9, confidence: 1,
+        reasons: ['The connection is expected to be missed by 2 hours.', "Based on the mother vessel's live AIS position."],
+      },
+    });
+    vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
+    open(importer, '/importer/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const risk = factValue(record, 'Risk');
+    expect(within(risk).getByText('Critical')).toHaveClass('risk-badge', 'risk-critical');
+    expect(within(risk).getByText('Priority 81')).toHaveAccessibleName('Priority 81 of 100 for HL-1001. Why this rank');
+    expect(within(risk).getByText("Based on the mother vessel's live AIS position.")).toBeInTheDocument();
   });
 
   it('shows the remaining window beside the planned window and keeps the returned risk', async () => {
@@ -954,6 +974,14 @@ describe('shipment detail decoding', () => {
   it('rejects an unknown risk level', async () => {
     await expect(decode({ ...shipment, risk: { level: 'SEVERE', explanation: 'Unknown.' } }))
       .rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps a valid priority and rejects a score outside 0 to 100 or a blank reason', async () => {
+    const priority = { score: 64, severity: 0.75, urgency: 0.5, confidence: 0.8, reasons: ['Planned connection buffer: 12 hours.'] };
+    await expect(decode({ ...shipment, priority })).resolves.toMatchObject({ priority });
+    await expect(decode({ ...shipment, priority: null })).resolves.toMatchObject({ priority: null });
+    await expect(decode({ ...shipment, priority: { ...priority, score: 101 } })).rejects.toMatchObject({ status: 502 });
+    await expect(decode({ ...shipment, priority: { ...priority, reasons: [' '] } })).rejects.toMatchObject({ status: 502 });
   });
 
   it('treats omitted vessel identity as absent and rejects a non-text value', async () => {
