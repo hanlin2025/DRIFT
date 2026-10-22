@@ -160,7 +160,7 @@ class ArrivalComparisonIntegrationTests {
 	}
 
 	@Test
-	void listAndTrackingOmitTheComparison() throws Exception {
+	void listAndTrackingOmitTheComparisonButTheListCarriesTheDetailRisk() throws Exception {
 		JsonNode listed = json.readTree(mvc.perform(get("/api/shipments")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + forwarderToken))
 				.andExpect(status().isOk())
@@ -174,8 +174,13 @@ class ArrivalComparisonIntegrationTests {
 		listed.forEach(item -> {
 			assertThat(item.has("arrivalComparison")).isFalse();
 			assertThat(item.has("remainingConnectionWindow")).isFalse();
-			assertThat(item.has("risk")).isFalse();
 		});
+		JsonNode listedAvailable = java.util.stream.StreamSupport.stream(listed.spliterator(), false)
+				.filter(item -> item.get("id").asLong() == availableShipmentId)
+				.findFirst().orElseThrow();
+		JsonNode detail = read(forwarderToken, availableShipmentId);
+		assertThat(listedAvailable.get("risk")).isEqualTo(detail.get("risk"));
+		assertThat(listedAvailable.get("priority").get("score")).isEqualTo(detail.get("priority").get("score"));
 		assertThat(tracking.has("remainingConnectionWindow")).isFalse();
 		assertThat(tracking.has("arrivalComparison")).isFalse();
 		assertThat(tracking.get("motherVessel").get("ingestedAt").asText())

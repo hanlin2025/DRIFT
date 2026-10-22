@@ -52,13 +52,19 @@ public class ShipmentController {
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
-			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
-			+ "Optional filters are combined with AND.",
+			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
+			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
+			+ "(null when not assessed), a priority ranking that combines that risk's severity with urgency to the feeder "
+			+ "departure and confidence in the evidence (null when not assessed), and the linked importer organisation "
+			+ "(null when not linked). AIS positions for the whole list are read in one batch. "
+			+ "Optional filters are combined with AND, including atRisk. "
+			+ "Use sort=risk for CRITICAL first, or sort=priority for the ranked order that also weighs urgency and evidence; "
+			+ "shipments that are not assessed come last in both.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date or unsupported status", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
 								"""))),
@@ -77,12 +83,16 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the linked importer Company Code or Company Name", example = "IMPORTER-SG") @RequestParam(required = false) String customer,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed, with ties ordered by the soonest planned feeder departure. priority ranks by the priority score (severity, urgency to the feeder departure, and evidence confidence), with not-assessed shipments last. Omit for newest first.", schema = @Schema(allowableValues = { "risk", "priority" }), example = "priority") @RequestParam(required = false) String sort,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status)));
+				.body(shipmentService.list(user,
+						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk),
+						ShipmentSort.fromListParameter(sort)));
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
