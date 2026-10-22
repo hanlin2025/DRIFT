@@ -3,14 +3,15 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, shipmentDetailPath, shipmentListPath, writeSession, type Session } from '../session/session';
 import { type ShipmentArchive } from '../shipment/archiveAccess';
-import { listShipments, type Shipment } from '../shipment/api';
+import { listShipmentPage, type ShipmentPage } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
-import { applyShipmentFilters, EMPTY_SHIPMENT_FILTERS, hasShipmentFilters, shipmentFiltersFromSearchParams, type ShipmentFilters } from '../shipment/shipmentFilters';
+import { applyShipmentFilters, applyShipmentPage, EMPTY_SHIPMENT_FILTERS, hasShipmentFilters, shipmentPageQueryFromSearchParams } from '../shipment/shipmentFilters';
 import { ApiError } from '../signup/api';
 import { ShipmentFilterControls } from './ShipmentFilterControls';
 import { ShipmentList } from './ShipmentList';
+import { ShipmentPageControls, ShipmentSortControls } from './ShipmentPaging';
 
 function workspaceCopy(role: Session['role']) {
   if (role === 'IMPORTER') {
@@ -70,7 +71,6 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   const listPath = shipmentListPath(account.role);
   const linkBase = account.role === 'ADMIN' ? '/admin' : listPath;
   const viewer = { role: account.role, companyId: account.company?.id ?? null };
-  const filters = shipmentFiltersFromSearchParams(searchParams);
   const clearFilters = () => setSearchParams(applyShipmentFilters(searchParams, EMPTY_SHIPMENT_FILTERS));
 
   useEffect(() => {
@@ -128,7 +128,8 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
               <div><dt>Email</dt><dd>{account.email}</dd></div>
             </dl>
             <ShipmentFilterControls />
-            <CompanyShipments token={account.token} basePath={linkBase} refreshKey={registered} filters={filters} onClearFilters={clearFilters} onSessionEnded={onSessionEnded} archive={archive} />
+            <ShipmentSortControls />
+            <CompanyShipments token={account.token} basePath={linkBase} refreshKey={registered} onClearFilters={clearFilters} onSessionEnded={onSessionEnded} archive={archive} />
             {canRegister ? <ShipmentForm token={account.token} companyName={account.company?.name ?? null} onSessionEnded={onSessionEnded} onRegistered={() => setRegistered(value => value + 1)} /> : null}
           </>}
       </main>
@@ -206,33 +207,32 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
   return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
 }
 
-function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters, onSessionEnded, archive }: {
+function CompanyShipments({ token, basePath, refreshKey, onClearFilters, onSessionEnded, archive }: {
   token: string;
   basePath: string;
   refreshKey: number;
-  filters: ShipmentFilters;
   onClearFilters: () => void;
   onSessionEnded: () => void;
   archive: ShipmentArchive;
 }) {
-  const [shipments, setShipments] = useState<Shipment[] | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [result, setResult] = useState<ShipmentPage | null>(null);
   const [problem, setProblem] = useState('');
   const [filterProblem, setFilterProblem] = useState('');
+  const [pageProblem, setPageProblem] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const { reference, vessel, customer, arrivalDate, status } = filters;
-  const filtersActive = hasShipmentFilters(filters);
+  const query = shipmentPageQueryFromSearchParams(searchParams);
+  const { reference, vessel, customer, arrivalDate, status, page, sort, direction } = query;
+  const filtersActive = hasShipmentFilters(query);
 
   useEffect(() => {
     let active = true;
     setProblem('');
     setFilterProblem('');
-    setShipments(null);
-    const appliedFilters = { reference, vessel, customer, arrivalDate, status };
-    const request = hasShipmentFilters(appliedFilters)
-      ? listShipments(token, appliedFilters)
-      : listShipments(token);
-    request.then(found => {
-      if (active) setShipments(found);
+    setPageProblem(false);
+    setResult(null);
+    listShipmentPage(token, { reference, vessel, customer, arrivalDate, status, page, sort, direction }).then(found => {
+      if (active) setResult(found);
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
@@ -241,20 +241,31 @@ function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters
       }
       if (reason instanceof ApiError && reason.status === 400) {
         setFilterProblem(reason.fields.arrivalDate ?? reason.fields.status ?? '');
+        setPageProblem(Boolean(reason.fields.page));
+        const detail = reason.fields.arrivalDate ?? reason.fields.status ?? reason.fields.page ?? reason.fields.sort ?? reason.fields.direction ?? reason.fields.size;
+        if (detail) {
+          setProblem(detail);
+          return;
+        }
       }
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     });
     return () => { active = false; };
-  }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate, status]);
+  }, [token, refreshKey, attempt, onSessionEnded, reference, vessel, customer, arrivalDate, status, page, sort, direction]);
 
   if (problem) {
-    return <div className="error-notice" role="alert">{filterProblem || problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>{filterProblem && <><br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></>}</div>;
+    return <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button>{filterProblem && <><br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></>}{pageProblem && <><br /><button type="button" className="retry-button" onClick={() => setSearchParams(applyShipmentPage(searchParams, 1))}>Back to the first page</button></>}</div>;
   }
-  if (shipments === null) return <div className="notice">Loading shipments...</div>;
-  if (shipments.length === 0) {
-    return filtersActive
-      ? <div className="notice">No shipments match your current filters.<br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></div>
-      : <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
-  }
-  return <ShipmentList shipments={shipments} basePath={basePath} archive={archive} />;
+  if (result === null) return <div className="notice">Loading shipments...</div>;
+  const beyond = result.total > 0 && result.items.length === 0;
+  return <>
+    {result.total === 0
+      ? filtersActive
+        ? <div className="notice">No shipments match your current filters.<br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></div>
+        : <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>
+      : beyond
+        ? <div className="notice">No shipments on this page.<br /><button type="button" className="retry-button" onClick={() => setSearchParams(applyShipmentPage(searchParams, 1))}>Back to the first page</button></div>
+        : <ShipmentList shipments={result.items} basePath={basePath} archive={archive} />}
+    <ShipmentPageControls page={result.page} size={result.size} total={result.total} itemCount={result.items.length} />
+  </>;
 }
