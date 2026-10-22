@@ -60,6 +60,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Autowired CompanyRepository companies;
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskAlertDeliveryService service;
+	@Autowired ShipmentRiskAlertDeliveryPoller poller;
 	@Autowired ShipmentRiskAlertDeliveryStore store;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JavaMailSender mailSender;
@@ -196,6 +197,75 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	}
 
 	@Test
+	void pollsDueRetriesAndRechecksPreferencesBeforeSending() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "retry snapshot");
+		doThrow(new MailSendException("smtp unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.RETRYABLE_FAILURE);
+		jdbc.update("UPDATE shipment_risk_alert_deliveries SET next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?", fixture.deliveryId());
+		reset(mailSender);
+		poller.dispatchDueDeliveries();
+		assertThat(deliveries.findById(fixture.deliveryId()).orElseThrow().getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SENT);
+		assertThat(deliveries.findById(fixture.deliveryId()).orElseThrow().getAttemptCount()).isEqualTo(2);
+		verify(mailSender, times(1)).send(any(SimpleMailMessage.class));
+
+		DeliveryFixture preferenceChanged = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "suppressed retry");
+		doThrow(new MailSendException("smtp unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+		assertThat(service.sendDelivery(preferenceChanged.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.RETRYABLE_FAILURE);
+		transactions.executeWithoutResult(status -> entityManager.find(UserAccount.class, preferenceChanged.userId())
+				.chooseRiskNotifications(false, RiskNotificationLevel.LOW));
+		jdbc.update("UPDATE shipment_risk_alert_deliveries SET next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?", preferenceChanged.deliveryId());
+		reset(mailSender);
+		poller.dispatchDueDeliveries();
+		ShipmentRiskAlertDelivery suppressed = deliveries.findById(preferenceChanged.deliveryId()).orElseThrow();
+		assertThat(suppressed.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
+		assertThat(suppressed.getAttemptCount()).isEqualTo(1);
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void doesNotPollARetryBeforeItsPersistedDueTime() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "future retry");
+		doThrow(new MailSendException("smtp unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.RETRYABLE_FAILURE);
+		reset(mailSender);
+
+		poller.dispatchDueDeliveries();
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE);
+		assertThat(delivery.getAttemptCount()).isEqualTo(1);
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void stopsAfterTheFourthFailedAttemptAndRecoversAnExpiredClaimWithoutResettingAttempts() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "bounded retry");
+		doThrow(new MailSendException("smtp unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+		for (int attempt = 1; attempt <= 4; attempt++) {
+			assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(
+					attempt == 4 ? ShipmentRiskAlertDeliveryResult.EXHAUSTED : ShipmentRiskAlertDeliveryResult.RETRYABLE_FAILURE);
+			if (attempt < 4) {
+				jdbc.update("UPDATE shipment_risk_alert_deliveries SET next_attempt_at = CURRENT_TIMESTAMP WHERE id = ?", fixture.deliveryId());
+			}
+		}
+		ShipmentRiskAlertDelivery exhausted = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(exhausted.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.EXHAUSTED);
+		assertThat(exhausted.getAttemptCount()).isEqualTo(4);
+		assertThat(exhausted.getNextAttemptAt()).isNull();
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.NOT_PENDING);
+		verify(mailSender, times(4)).send(any(SimpleMailMessage.class));
+
+		DeliveryFixture abandoned = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "abandoned claim");
+		ShipmentRiskAlertDeliveryStore.ClaimResult claim = store.claimDueDelivery(abandoned.deliveryId(), true);
+		assertThat(claim.kind()).isEqualTo(ShipmentRiskAlertDeliveryStore.ClaimResult.Kind.CLAIMED);
+		jdbc.update("UPDATE shipment_risk_alert_deliveries SET claim_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = ?", abandoned.deliveryId());
+		reset(mailSender);
+		poller.dispatchDueDeliveries();
+		ShipmentRiskAlertDelivery recovered = deliveries.findById(abandoned.deliveryId()).orElseThrow();
+		assertThat(recovered.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SENT);
+		assertThat(recovered.getAttemptCount()).isEqualTo(2);
+	}
+
+	@Test
 	void aFailedRecipientDoesNotBlockAnotherPendingDelivery() {
 		DeliveryFixture failing = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "first");
 		DeliveryFixture succeeding = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "second");
@@ -219,7 +289,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Test
 	void rejectsAStaleClaimTokenAndAllowsOnlyOneConcurrentSmtpSubmission() throws Exception {
 		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
-		ShipmentRiskAlertDeliveryStore.ClaimResult claim = store.claimInitialDelivery(fixture.deliveryId(), true);
+		ShipmentRiskAlertDeliveryStore.ClaimResult claim = store.claimDueDelivery(fixture.deliveryId(), true);
 		assertThat(claim.kind()).isEqualTo(ShipmentRiskAlertDeliveryStore.ClaimResult.Kind.CLAIMED);
 		assertThat(store.markSent(fixture.deliveryId(), UUID.randomUUID())).isFalse();
 		assertThat(store.markSent(fixture.deliveryId(), claim.token())).isTrue();
