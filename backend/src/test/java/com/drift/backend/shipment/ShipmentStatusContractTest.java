@@ -95,7 +95,7 @@ class ShipmentStatusContractTest {
 		assertThat(new String(migration, StandardCharsets.UTF_8)).contains("VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'")
 				.contains("CHECK (status IN ('ACTIVE', 'ARCHIVED'))");
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21", "22", "23");
 		assertThat(jdbc.queryForMap("""
 				SELECT data_type, character_maximum_length, is_nullable, column_default
 				FROM information_schema.columns
@@ -108,6 +108,8 @@ class ShipmentStatusContractTest {
 				String.class)).contains("ACTIVE");
 		assertThat(jdbc.queryForObject("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'shipments_status_check'",
 				String.class)).contains("ACTIVE").contains("ARCHIVED");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN (?, ?, ?)",
+				Integer.class, "shipment_risk_states", "shipment_risk_transitions", "shipment_risk_alert_deliveries")).isEqualTo(3);
 		assertThat(List.of(Shipment.class.getDeclaredMethods())).noneMatch(method -> method.getName().equals("setStatus"));
 		assertThat(List.of(Shipment.class.getDeclaredMethods())).anyMatch(method -> method.getName().equals("archive"));
 		String activeListQuery = ShipmentRepository.class
@@ -125,6 +127,8 @@ class ShipmentStatusContractTest {
 		assertShipmentFields(createdJson, "HBL-API-ACTIVE", "ACTIVE", companyId);
 		Long createdId = ((Number) JsonPath.read(createdJson, "$.id")).longValue();
 		assertThat(storedStatus(createdId)).isEqualTo("ACTIVE");
+		assertThat(jdbc.queryForObject("SELECT baseline_mode FROM shipment_risk_states WHERE shipment_id = ?",
+				String.class, createdId)).isEqualTo("ALERTABLE_FIRST_VALID");
 		assertThat(shipments.findById(createdId).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.ACTIVE);
 
 		imports.create(companyId, accountId, new ShipmentImportRow(2, "HBL-CSV-ACTIVE", "Shanghai, CN", "Jakarta, ID",
@@ -134,6 +138,8 @@ class ShipmentStatusContractTest {
 				"SELECT id FROM shipments WHERE shipment_reference = ? AND company_id = ?", Long.class, "HBL-CSV-ACTIVE",
 				companyId);
 		assertThat(storedStatus(importedId)).isEqualTo("ACTIVE");
+		assertThat(jdbc.queryForObject("SELECT baseline_mode FROM shipment_risk_states WHERE shipment_id = ?",
+				String.class, importedId)).isEqualTo("ALERTABLE_FIRST_VALID");
 		assertThat(shipments.findById(importedId).orElseThrow().getStatus()).isEqualTo(ShipmentStatus.ACTIVE);
 
 		String detailJson = mvc.perform(get("/api/shipments/" + importedId).header("Authorization", "Bearer " + token))
@@ -146,8 +152,10 @@ class ShipmentStatusContractTest {
 		assertThat((Object) JsonPath.read(detailJson, "$.importer")).isNull();
 		assertThat(JsonPath.read(detailJson, "$.risk.level").toString()).isEqualTo("LOW");
 		assertThat(JsonPath.read(detailJson, "$.risk.explanation").toString())
-				.isEqualTo("At least 24 hours to transfer cargo between vessels.");
+				.isEqualTo("At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat((Object) JsonPath.read(detailJson, "$.remainingConnectionWindow")).isNull();
 		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.risk")).isInstanceOf(PathNotFoundException.class);
+		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.remainingConnectionWindow")).isInstanceOf(PathNotFoundException.class);
 
 		String listJson = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
@@ -213,7 +221,8 @@ class ShipmentStatusContractTest {
 		assertThat(JsonPath.read(detailJson, "$.status").toString()).isEqualTo("ARCHIVED");
 		assertThat(JsonPath.read(detailJson, "$.risk.level").toString()).isEqualTo("LOW");
 		assertThat(JsonPath.read(detailJson, "$.risk.explanation").toString())
-				.isEqualTo("At least 24 hours to transfer cargo between vessels.");
+				.isEqualTo("At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat((Object) JsonPath.read(detailJson, "$.remainingConnectionWindow")).isNull();
 
 		String listJson = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())

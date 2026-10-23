@@ -54,6 +54,7 @@ const shipment: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: null,
+  remainingConnectionWindow: null,
   risk: null,
   status: null,
   motherVesselPosition: null,
@@ -150,8 +151,18 @@ describe('shipment route display', () => {
     ]);
     expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SEEDED/)).not.toBeInTheDocument();
     await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalled());
     expect(mapCalls.jumpTo).not.toHaveBeenCalled();
+  });
+
+  it('labels a seeded fix and keeps its last-updated time', () => {
+    render(<RouteMap shipment={shipment} tracking={{
+      ...loneTracking,
+      motherVessel: { ...loneTracking.motherVessel!, source: 'SEEDED' },
+    }} />);
+    expect(screen.getByText(/MOTHER SEEDED PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
+    expect(screen.queryByText(/MOTHER LIVE/)).not.toBeInTheDocument();
   });
 
   it('centers the globe on a single live position when no port can be placed', async () => {

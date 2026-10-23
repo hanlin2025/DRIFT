@@ -43,6 +43,22 @@ app:
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
     ttl: ${PASSWORD_RESET_TTL:1h}
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
+  risk-alerts:
+    activation:
+      command: ${RISK_ALERTS_ACTIVATION_COMMAND:false}
+    # Explicit activation is a separate operator action; feature flags never create an activation generation.
+    evaluation:
+      enabled: ${RISK_ALERTS_EVALUATION_ENABLED:false}
+      interval: ${RISK_ALERTS_EVALUATION_INTERVAL:15m}
+      batch-size: ${RISK_ALERTS_EVALUATION_BATCH_SIZE:100}
+    mail:
+      enabled: ${RISK_ALERTS_MAIL_ENABLED:false}
+      frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:}
+      from: ${RISK_ALERTS_FROM:}
+      claim-lease: ${RISK_ALERTS_CLAIM_LEASE:1m}
+      dispatch-enabled: ${RISK_ALERTS_DISPATCH_ENABLED:false}
+      poll-interval: ${RISK_ALERTS_POLL_INTERVAL:1m}
+      batch-size: ${RISK_ALERTS_BATCH_SIZE:50}
   ais:
     enabled: ${AIS_ENABLED:false}
     stream-uri: wss://stream.aisstream.io/v0/stream
