@@ -13,6 +13,9 @@ public class ShipmentRiskAlertMailProperties {
 	private String frontendBaseUrl = "";
 	private String from = "";
 	private Duration claimLease = Duration.ofMinutes(1);
+	private boolean dispatchEnabled;
+	private Duration pollInterval = Duration.ofMinutes(1);
+	private int batchSize = 50;
 
 	public boolean isEnabled() {
 		return enabled;
@@ -44,6 +47,30 @@ public class ShipmentRiskAlertMailProperties {
 
 	public void setClaimLease(Duration claimLease) {
 		this.claimLease = claimLease;
+	}
+
+	public boolean isDispatchEnabled() {
+		return dispatchEnabled;
+	}
+
+	public void setDispatchEnabled(boolean dispatchEnabled) {
+		this.dispatchEnabled = dispatchEnabled;
+	}
+
+	public Duration getPollInterval() {
+		return pollInterval;
+	}
+
+	public void setPollInterval(Duration pollInterval) {
+		this.pollInterval = pollInterval;
+	}
+
+	public int getBatchSize() {
+		return batchSize;
+	}
+
+	public void setBatchSize(int batchSize) {
+		this.batchSize = batchSize;
 	}
 
 	/** Returns a user-safe configuration problem instead of allowing an accidental SMTP call. */
