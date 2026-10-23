@@ -1,14 +1,24 @@
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
+/**
+ * '' keeps newest first. 'risk' puts Critical first with ties by the soonest feeder departure. 'priority' is the
+ * ranked order that weighs risk severity, urgency to the feeder departure, and confidence in the evidence.
+ * Shipments that are not assessed come last in both.
+ */
+export type ShipmentSortOption = '' | 'risk' | 'priority';
+
 export type ShipmentFilters = {
   reference: string;
   vessel: string;
   customer: string;
   arrivalDate: string;
 	 status: string;
+  sort: string;
+  /** 'true' keeps only High and Critical shipments; '' shows every risk level. */
+  atRisk: string;
 };
 
-export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate', 'status'] as const;
+export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate', 'status', 'sort', 'atRisk'] as const;
 
 export const EMPTY_SHIPMENT_FILTERS: ShipmentFilters = {
   reference: '',
@@ -16,6 +26,8 @@ export const EMPTY_SHIPMENT_FILTERS: ShipmentFilters = {
   customer: '',
   arrivalDate: '',
 	 status: '',
+  sort: '',
+  atRisk: '',
 };
 
 export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFilters {
@@ -25,6 +37,8 @@ export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): 
     customer: searchParams.get('customer') ?? '',
     arrivalDate: searchParams.get('arrivalDate') ?? '',
 	 status: searchParams.get('status') ?? '',
+    sort: searchParams.get('sort') ?? '',
+    atRisk: searchParams.get('atRisk') ?? '',
   };
 }
 
@@ -37,11 +51,17 @@ export function applyShipmentFilters(searchParams: URLSearchParams, filters: Shi
   setText(next, 'customer', filters.customer);
   setText(next, 'arrivalDate', filters.arrivalDate);
 	 setText(next, 'status', filters.status);
+  setText(next, 'sort', filters.sort);
+  if (filters.atRisk.trim() === 'true') next.set('atRisk', 'true');
   return next;
 }
 
 export function isShipmentStatus(value: string): value is ShipmentStatus {
 	return value === 'ACTIVE' || value === 'ARCHIVED';
+}
+
+export function isShipmentSortOption(value: string): value is ShipmentSortOption {
+  return value === '' || value === 'risk' || value === 'priority';
 }
 
 export function shipmentFilterSearchParams(filters: ShipmentFilters): URLSearchParams {
