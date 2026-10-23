@@ -30,6 +30,7 @@ export function VesselPanel({ name, position }: { name: string | null; position:
         ? <p className="vessel-empty">{NO_POSITION}</p>
         : <>
             {position.mmsi && <p className="vessel-mmsi">MMSI {position.mmsi}</p>}
+            {position.source === 'SEEDED' && <p className="vessel-seeded"><span className="vessel-seeded-badge">Seeded</span> This is not a live AIS fix.</p>}
             {stale && <p className="vessel-stale"><span className="vessel-stale-badge">Stale</span> {STALE_DETAIL}</p>}
             <dl>
               <div><dt>Position</dt><dd>{formatCoordinates(position.latitude, position.longitude)}</dd></div>
