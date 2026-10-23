@@ -54,7 +54,7 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
   if (tracking.motherVessel) {
     fixes.push({
       id: 'mother',
-      kicker: 'MOTHER LIVE',
+      kicker: positionKicker('MOTHER', tracking.motherVessel),
       name: tracking.motherVessel.vesselName?.trim() || tracking.motherVesselName,
       position: tracking.motherVessel,
     });
@@ -62,12 +62,16 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
   if (tracking.feederVessel) {
     fixes.push({
       id: 'feeder',
-      kicker: 'FEEDER LIVE',
+      kicker: positionKicker('FEEDER', tracking.feederVessel),
       name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName?.trim() || 'Feeder vessel',
       position: tracking.feederVessel,
     });
   }
   return fixes;
+}
+
+function positionKicker(role: 'MOTHER' | 'FEEDER', position: VesselPosition) {
+  return position.source === 'SEEDED' ? `${role} SEEDED` : `${role} LIVE`;
 }
 
 function pin(stop: Stop) {

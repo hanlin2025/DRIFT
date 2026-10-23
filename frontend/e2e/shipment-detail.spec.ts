@@ -118,7 +118,9 @@ test('an authorised freight forwarder opens a shipment from the list and sees ev
       await expect(fact(page, 'Feeder vessel')).toHaveText(itinerary.feederVessel);
       await expect(fact(page, 'Planned arrival').locator('time')).toHaveAttribute('datetime', shipment.plannedMotherArrivalAt);
       await expect(fact(page, 'Planned departure').locator('time')).toHaveAttribute('datetime', shipment.plannedFeederDepartureAt);
-      await expect(fact(page, 'Risk')).toHaveText('High Less than 12 hours to transfer cargo between vessels.');
+      await expect(fact(page, 'Connection window')).toHaveText('9 hours');
+      await expect(fact(page, 'Remaining connection window')).toHaveText('The planned connection window is being used. No AIS position has been received for the mother vessel.');
+      await expect(fact(page, 'Risk')).toHaveText('High Less than 12 hours to transfer cargo between vessels. The planned connection window is being used.');
     }
   } finally {
     cleanup([owner.email]);
@@ -140,6 +142,9 @@ test('another company does not see the shipment and gets the access denied page'
     await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
     await expect(page.getByText(NO_ACCESS)).toBeVisible();
     await expect(page.getByText(shipment.shipmentReference)).toHaveCount(0);
+    await expect(page.getByText('Connection window')).toHaveCount(0);
+    await expect(page.getByText('Remaining connection window')).toHaveCount(0);
+    await expect(page.getByText('Risk', { exact: true })).toHaveCount(0);
   } finally {
     cleanup([owner.email, outsider.email]);
   }

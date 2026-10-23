@@ -171,7 +171,12 @@ class ArrivalComparisonIntegrationTests {
 				.andReturn().getResponse().getContentAsString());
 
 		assertThat(listed).isNotEmpty();
-		listed.forEach(item -> assertThat(item.has("arrivalComparison")).isFalse());
+		listed.forEach(item -> {
+			assertThat(item.has("arrivalComparison")).isFalse();
+			assertThat(item.has("remainingConnectionWindow")).isFalse();
+			assertThat(item.has("risk")).isFalse();
+		});
+		assertThat(tracking.has("remainingConnectionWindow")).isFalse();
 		assertThat(tracking.has("arrivalComparison")).isFalse();
 		assertThat(tracking.get("motherVessel").get("ingestedAt").asText())
 				.isEqualTo(read(forwarderToken, availableShipmentId).get("motherVesselPosition").get("ingestedAt").asText());
@@ -253,9 +258,7 @@ class ArrivalComparisonIntegrationTests {
 	private static void assertScheduleUnchanged(JsonNode body) {
 		assertThat(body.get("connectionWindow").get("duration").asText()).isEqualTo("6 hours");
 		assertThat(body.get("connectionWindow").get("totalSeconds").asLong()).isEqualTo(21_600L);
-		assertThat(body.get("risk").get("level").asText()).isEqualTo("HIGH");
-		assertThat(body.get("risk").get("explanation").asText())
-				.isEqualTo("Less than 12 hours to transfer cargo between vessels.");
+		RemainingWindowAssertions.assertMatches(body);
 	}
 
 	private ArrivalFix originalFix(BigDecimal speed) {
