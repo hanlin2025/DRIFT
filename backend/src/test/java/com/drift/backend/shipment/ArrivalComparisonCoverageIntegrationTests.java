@@ -103,6 +103,12 @@ class ArrivalComparisonCoverageIntegrationTests {
 				"On schedule · estimated 2h later than planned", Duration.ofHours(2).toSeconds(), 0, true);
 		assertThat(instant(second.get("arrivalComparison").get("estimatedArrivalAt")))
 				.isEqualTo(instant(first.get("arrivalComparison").get("estimatedArrivalAt")));
+		assertThat(first.get("remainingConnectionWindow").isNull()).isFalse();
+		assertThat(second.get("remainingConnectionWindow").isNull()).isTrue();
+		assertThat(second.get("connectionWindow").get("duration").asText()).isEqualTo("6 hours");
+		assertThat(second.get("risk").get("level").asText()).isEqualTo("HIGH");
+		assertThat(second.get("risk").get("explanation").asText()).isEqualTo(
+				"Less than 12 hours to transfer cargo between vessels. The planned connection window is being used.");
 	}
 
 	@Test
@@ -200,6 +206,8 @@ class ArrivalComparisonCoverageIntegrationTests {
 		assertThat(instant(importerBody.get("arrivalComparison").get("estimatedArrivalAt")))
 				.isEqualTo(instant(linkBody.get("arrivalComparison").get("estimatedArrivalAt")));
 		assertThat(importerBody.get("companyId").asLong()).isEqualTo(ownerCompanyId);
+		assertThat(importerBody.get("remainingConnectionWindow")).isEqualTo(linkBody.get("remainingConnectionWindow"));
+		assertThat(importerBody.get("risk")).isEqualTo(ownerBody.get("risk"));
 		assertScheduleUnchanged(importerBody);
 
 		String other = tokenFor(account("IMPORTER", createCompany()));
@@ -207,6 +215,43 @@ class ArrivalComparisonCoverageIntegrationTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + other))
 				.andExpect(status().isForbidden())
 				.andExpect(content().json(DENIED, true));
+	}
+
+	@Test
+	void aFreshEstimateAfterTheFeederDepartureIsExpectedToMissTheConnection() throws Exception {
+		String token = tokenFor(account("FREIGHT_FORWARDER", companyId("HARBOURLINE_DEMO")));
+		observe("Late Mother", new BigDecimal("0.5"), RECEIVED);
+		Long shipmentId = create(token, "Late Mother", RECEIVED.minus(Duration.ofHours(8)));
+
+		JsonNode body = read(token, shipmentId);
+
+		assertThat(body.get("connectionWindow").get("duration").asText()).isEqualTo("6 hours");
+		assertThat(body.get("connectionWindow").get("totalSeconds").asLong()).isEqualTo(21_600L);
+		assertThat(body.get("remainingConnectionWindow").get("status").asText()).isEqualTo("MISSED");
+		assertThat(body.get("remainingConnectionWindow").get("duration").isNull()).isTrue();
+		assertThat(body.get("remainingConnectionWindow").get("totalSeconds").isNull()).isTrue();
+		assertThat(body.get("remainingConnectionWindow").get("missedBy").asText()).isEqualTo("2 hours");
+		assertThat(body.get("remainingConnectionWindow").get("missedBySeconds").asLong()).isEqualTo(7_200L);
+		assertThat(body.get("risk").get("level").asText()).isEqualTo("CRITICAL");
+		assertThat(body.get("risk").get("explanation").asText())
+				.isEqualTo("The connection is expected to be missed by 2 hours.");
+		RemainingWindowAssertions.assertMatches(body);
+	}
+
+	@Test
+	void anEstimateAtTheFeederDepartureIsMissedByZeroSeconds() throws Exception {
+		String token = tokenFor(account("FREIGHT_FORWARDER", companyId("HARBOURLINE_DEMO")));
+		observe("Level Mother", new BigDecimal("0.5"), RECEIVED);
+		Long shipmentId = create(token, "Level Mother", RECEIVED.minus(Duration.ofHours(6)));
+
+		JsonNode body = read(token, shipmentId);
+
+		assertThat(body.get("remainingConnectionWindow").get("status").asText()).isEqualTo("MISSED");
+		assertThat(body.get("remainingConnectionWindow").get("missedBy").asText()).isEqualTo("0 seconds");
+		assertThat(body.get("remainingConnectionWindow").get("missedBySeconds").asLong()).isZero();
+		assertThat(body.get("risk").get("explanation").asText()).isEqualTo(
+				"The connection is expected to be missed. The mother vessel's estimated arrival is at the planned feeder departure.");
+		RemainingWindowAssertions.assertMatches(body);
 	}
 
 	private void at(Instant instant) {
@@ -245,9 +290,7 @@ class ArrivalComparisonCoverageIntegrationTests {
 	private static void assertScheduleUnchanged(JsonNode body) {
 		assertThat(body.get("connectionWindow").get("duration").asText()).isEqualTo("6 hours");
 		assertThat(body.get("connectionWindow").get("totalSeconds").asLong()).isEqualTo(21_600L);
-		assertThat(body.get("risk").get("level").asText()).isEqualTo("HIGH");
-		assertThat(body.get("risk").get("explanation").asText())
-				.isEqualTo("Less than 12 hours to transfer cargo between vessels.");
+		RemainingWindowAssertions.assertMatches(body);
 	}
 
 	private static Instant instant(JsonNode value) {

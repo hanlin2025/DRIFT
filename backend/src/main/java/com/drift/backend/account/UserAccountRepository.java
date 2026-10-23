@@ -33,4 +33,15 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 			ORDER BY account.fullName ASC, account.id ASC
 			""")
 	List<UserAccount> findAllForAssignment(@Param("companyId") Long companyId);
+
+	@EntityGraph(attributePaths = { "company", "role" })
+	@Query("""
+			SELECT account FROM UserAccount account
+			JOIN account.company company
+			WHERE account.company.id IN :companyIds
+				AND account.status = com.drift.backend.account.AccountStatus.ACTIVE
+				AND company.active = true
+			ORDER BY account.id
+			""")
+	List<UserAccount> findActiveUsersForCompanies(@Param("companyIds") java.util.Set<Long> companyIds);
 }

@@ -45,4 +45,6 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 			""", nativeQuery = true)
 	List<VesselObservation> findNewestValidInWindow(@Param("mmsi") String mmsi, @Param("from") Instant from,
 			@Param("to") Instant to, @Param("limit") int limit);
+
+	Optional<VesselObservation> findFirstBySourceOrderByIngestedAtDescIdDesc(AisPositionSource source);
 }

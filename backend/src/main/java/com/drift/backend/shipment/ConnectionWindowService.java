@@ -19,4 +19,24 @@ public class ConnectionWindowService {
 		}
 		return ConnectionWindowCalculation.available(ConnectionWindow.of(between));
 	}
+
+	public RemainingConnectionWindow remaining(OffsetDateTime plannedFeederDepartureAt, ArrivalEstimate estimate) {
+		if (plannedFeederDepartureAt == null || !usable(estimate)) {
+			return null;
+		}
+		Duration between = Duration.between(estimate.estimatedArrivalAt(), plannedFeederDepartureAt);
+		if (between.isPositive()) {
+			ConnectionWindow window = ConnectionWindow.of(between);
+			return RemainingConnectionWindow.available(window.duration(), window.totalSeconds());
+		}
+		Duration overrun = between.negated();
+		return RemainingConnectionWindow.missed(ConnectionWindow.durationText(overrun), overrun.getSeconds());
+	}
+
+	private static boolean usable(ArrivalEstimate estimate) {
+		return estimate != null
+				&& estimate.estimatedArrivalAt() != null
+				&& estimate.unavailableReason() == null
+				&& Boolean.FALSE.equals(estimate.possiblyOutdated());
+	}
 }
