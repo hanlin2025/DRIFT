@@ -44,6 +44,13 @@ app:
     ttl: ${PASSWORD_RESET_TTL:1h}
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
   risk-alerts:
+    activation:
+      command: ${RISK_ALERTS_ACTIVATION_COMMAND:false}
+    # Explicit activation is a separate operator action; feature flags never create an activation generation.
+    evaluation:
+      enabled: ${RISK_ALERTS_EVALUATION_ENABLED:false}
+      interval: ${RISK_ALERTS_EVALUATION_INTERVAL:15m}
+      batch-size: ${RISK_ALERTS_EVALUATION_BATCH_SIZE:100}
     mail:
       enabled: ${RISK_ALERTS_MAIL_ENABLED:false}
       frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:}
