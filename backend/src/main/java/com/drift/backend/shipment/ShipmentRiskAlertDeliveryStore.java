@@ -29,13 +29,21 @@ class ShipmentRiskAlertDeliveryStore {
 	private final ShipmentRiskAlertMailProperties mail;
 	private final ShipmentRiskAlertEmailComposer composer;
 	private final ShipmentRiskAlertRetryPolicy retryPolicy;
+<<<<<<< HEAD
 	private final ShipmentRiskStateRepository states;
+=======
+	private final ShipmentRiskAlertActivationStore activation;
+>>>>>>> 45ae897 ([CDG-198]: add durable risk-alert activation generation)
 	private final Clock clock;
 	private final long maximumSmtpAttemptMillis;
 
 	ShipmentRiskAlertDeliveryStore(ShipmentRiskAlertDeliveryRepository deliveries, ShipmentAccessPolicy access,
 			ShipmentRiskAlertMailProperties mail, ShipmentRiskAlertEmailComposer composer,
+<<<<<<< HEAD
 			ShipmentRiskAlertRetryPolicy retryPolicy, ShipmentRiskStateRepository states, ObjectProvider<Clock> clocks,
+=======
+			ShipmentRiskAlertRetryPolicy retryPolicy, ShipmentRiskAlertActivationStore activation, ObjectProvider<Clock> clocks,
+>>>>>>> 45ae897 ([CDG-198]: add durable risk-alert activation generation)
 			@Value("${spring.mail.properties.mail.smtp.connectiontimeout:0}") long connectionTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.timeout:0}") long readTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.writetimeout:0}") long writeTimeoutMillis) {
@@ -44,7 +52,11 @@ class ShipmentRiskAlertDeliveryStore {
 		this.mail = mail;
 		this.composer = composer;
 		this.retryPolicy = retryPolicy;
+<<<<<<< HEAD
 		this.states = states;
+=======
+		this.activation = activation;
+>>>>>>> 45ae897 ([CDG-198]: add durable risk-alert activation generation)
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 		this.maximumSmtpAttemptMillis = boundedAttemptDuration(connectionTimeoutMillis, readTimeoutMillis, writeTimeoutMillis);
 	}
@@ -57,6 +69,7 @@ class ShipmentRiskAlertDeliveryStore {
 		if (deliveryId == null) {
 			throw new IllegalArgumentException("Delivery identifier is required");
 		}
+		ShipmentRiskAlertActivation gate = activation.lockForRiskInput();
 		ShipmentRiskAlertDelivery delivery = deliveries.findByIdForDeliveryProcessing(deliveryId).orElse(null);
 		if (delivery == null || (delivery.getStatus() != ShipmentRiskAlertDeliveryStatus.PENDING
 				&& delivery.getStatus() != ShipmentRiskAlertDeliveryStatus.RETRYABLE_FAILURE)) {
@@ -69,6 +82,10 @@ class ShipmentRiskAlertDeliveryStore {
 		if (lease == null || lease.isZero() || lease.isNegative()
 				|| !delivery.claim(token, now.plus(lease), now)) {
 			return ClaimResult.notPending();
+		}
+		if (!gate.isActive() || delivery.getTransition().getActivationGeneration() != gate.getGeneration()) {
+			delivery.suppress(token, "Risk alert delivery predates the active activation generation", now);
+			return ClaimResult.suppressed();
 		}
 		if (delivery.getAttemptCount() >= 4) {
 			delivery.markFailure(token, ShipmentRiskAlertDeliveryStatus.EXHAUSTED,

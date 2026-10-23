@@ -5,12 +5,33 @@ import java.time.Instant;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
 public interface ShipmentRiskAlertDeliveryRepository extends JpaRepository<ShipmentRiskAlertDelivery, Long> {
+
+	@Query(value = """
+			SELECT COUNT(*) FROM shipment_risk_alert_deliveries delivery
+			JOIN shipment_risk_transitions transition ON transition.id = delivery.transition_id
+			WHERE transition.activation_generation < :generation AND delivery.claim_until > :now
+			""", nativeQuery = true)
+	long countLiveClaimsForOlderGenerations(@Param("generation") long generation, @Param("now") Instant now);
+
+	@Modifying
+	@Query(value = """
+			UPDATE shipment_risk_alert_deliveries delivery
+			SET status = 'SUPPRESSED', suppression_reason = :reason, next_attempt_at = NULL,
+				claim_token = NULL, claim_until = NULL, updated_at = :now
+			FROM shipment_risk_transitions transition
+			WHERE delivery.transition_id = transition.id
+				AND transition.activation_generation < :generation
+				AND delivery.status IN ('PENDING', 'RETRYABLE_FAILURE')
+			""", nativeQuery = true)
+	int suppressOlderGenerations(@Param("generation") long generation, @Param("reason") String reason,
+			@Param("now") Instant now);
 
 	/** Call inside a transaction; PostgreSQL skips rows another worker already claimed. */
 	@Query(value = """
