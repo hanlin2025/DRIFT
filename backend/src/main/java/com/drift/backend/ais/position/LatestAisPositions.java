@@ -6,20 +6,37 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.drift.backend.shipment.ShipmentRiskAlertActivationStore;
 
 @Service
 public class LatestAisPositions {
 
 	private final VesselObservationRepository observations;
+	private final ShipmentRiskAlertActivationStore activation;
 	private final ConcurrentHashMap<String, AisPosition> byMmsi = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, String> mmsiByVesselName = new ConcurrentHashMap<>();
 
-	public LatestAisPositions(VesselObservationRepository observations) {
+	@Autowired
+	public LatestAisPositions(VesselObservationRepository observations, ShipmentRiskAlertActivationStore activation) {
 		this.observations = observations;
+		this.activation = activation;
 	}
 
+	/** Unit-test constructor; Spring always supplies the activation gate. */
+	public LatestAisPositions(VesselObservationRepository observations) {
+		this.observations = observations;
+		this.activation = null;
+	}
+
+	@Transactional
 	public void record(AisPosition position) {
+		if (activation != null) {
+			activation.lockForRiskInput();
+		}
 		observations.save(new VesselObservation(position));
 		AisPosition previous = byMmsi.get(position.mmsi());
 		AisPosition stored = byMmsi.merge(position.mmsi(), position, (current, incoming) ->

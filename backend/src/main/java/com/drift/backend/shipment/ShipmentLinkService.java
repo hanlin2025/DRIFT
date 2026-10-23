@@ -1,9 +1,7 @@
 package com.drift.backend.shipment;
 
-import java.time.Clock;
 import java.time.Instant;
 
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,13 +10,13 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
-import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
 import com.drift.backend.shipment.exception.InvalidImporterOrganisationException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
 
 import jakarta.persistence.EntityManager;
 
@@ -28,23 +26,18 @@ public class ShipmentLinkService {
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
 	private final CompanyRepository companies;
-	private final ConnectionWindowService connectionWindows;
-	private final LatestAisPositions latestPositions;
+	private final ShipmentConnectionRisk connectionRisk;
 	private final EntityManager entityManager;
-	private final ArrivalEstimateCalculator arrivalEstimates;
-	private final Clock clock;
+	private final ShipmentHistoryRecorder history;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, EntityManager entityManager,
-			ArrivalEstimateCalculator arrivalEstimates, ObjectProvider<Clock> clocks) {
+			ShipmentConnectionRisk connectionRisk, EntityManager entityManager, ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
-		this.connectionWindows = connectionWindows;
-		this.latestPositions = latestPositions;
+		this.connectionRisk = connectionRisk;
 		this.entityManager = entityManager;
-		this.arrivalEstimates = arrivalEstimates;
-		this.clock = clocks.getIfAvailable(Clock::systemUTC);
+		this.history = history;
 	}
 
 	@Transactional
@@ -55,9 +48,13 @@ public class ShipmentLinkService {
 			throw new ShipmentLinkForbiddenException();
 		}
 		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		Company previousImporter = shipment.getImporterCompany();
+		Instant now = Instant.now();
 		shipment.linkImporter(importer(importerCompanyId, ownerId));
-		shipment.markUpdated(account, Instant.now());
-		return detail(shipments.saveAndFlush(shipment));
+		shipment.markUpdated(account, now);
+		Shipment saved = shipments.saveAndFlush(shipment);
+		history.recordImporterLink(saved, previousImporter, account, now);
+		return detail(saved);
 	}
 
 	private UserAccount forwarder(AuthenticatedUser principal) {
@@ -93,33 +90,8 @@ public class ShipmentLinkService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		ConnectionWindowCalculation calculation = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
-				shipment.getPlannedFeederDepartureAt());
-		VesselPosition motherVesselPosition = livePosition(shipment.getMotherVessel());
-		return ShipmentDetailResponse.from(shipment, calculation, motherVesselPosition,
-				livePosition(shipment.getFeederVessel()),
-				arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition), shipment.getTransshipmentPort(),
-						shipment.getPlannedMotherArrivalAt(), clock));
-	}
-
-	private VesselPosition livePosition(String vesselName) {
-		return latestPositions.findByVesselName(vesselName)
-				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
-				.map(VesselPosition::from)
-				.orElse(null);
-	}
-
-	private static String withoutVesselPrefix(String vesselName) {
-		if (vesselName == null) {
-			return null;
-		}
-		String stripped = vesselName.strip();
-		if (stripped.length() > 3 && stripped.regionMatches(true, 0, "MV ", 0, 3)) {
-			return stripped.substring(3);
-		}
-		if (stripped.length() > 4 && stripped.regionMatches(true, 0, "M/V ", 0, 4)) {
-			return stripped.substring(4);
-		}
-		return stripped;
+		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
+		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
+				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
 	}
 }

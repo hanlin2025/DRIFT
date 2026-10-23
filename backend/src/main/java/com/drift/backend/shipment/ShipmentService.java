@@ -11,8 +11,11 @@ import jakarta.validation.Validator;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +25,6 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
-import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
@@ -36,6 +38,8 @@ import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
+import com.drift.backend.shipment.history.ShipmentSnapshot;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -46,31 +50,40 @@ public class ShipmentService {
 
 	public static final String REMOVED_MESSAGE = "Shipment removed successfully";
 
+	public static final int PAGE_SIZE = 25;
+
 	private static final String REFERENCE_UNIQUE_CONSTRAINT = "shipments_company_reference_key";
 
 	private final ShipmentRepository shipments;
+	private final ShipmentRiskStateRepository riskStates;
 	private final UserAccountRepository users;
 	private final ConnectionWindowService connectionWindows;
-	private final LatestAisPositions latestPositions;
+	private final ShipmentConnectionRisk connectionRisk;
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
 	private final ObjectMapper objectMapper;
-	private final ArrivalEstimateCalculator arrivalEstimates;
+	private final ShipmentHistoryRecorder history;
 	private final Clock clock;
+	private final ApplicationEventPublisher events;
+	private final ShipmentRiskAlertActivationStore activation;
 
-	public ShipmentService(ShipmentRepository shipments, UserAccountRepository users,
-			ConnectionWindowService connectionWindows, LatestAisPositions latestPositions, Validator validator,
-			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ArrivalEstimateCalculator arrivalEstimates,
-			ObjectProvider<Clock> clocks) {
+	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
+			ConnectionWindowService connectionWindows, ShipmentConnectionRisk connectionRisk, Validator validator,
+			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
+			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation,
+			ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
+		this.riskStates = riskStates;
 		this.users = users;
 		this.connectionWindows = connectionWindows;
-		this.latestPositions = latestPositions;
+		this.connectionRisk = connectionRisk;
 		this.validator = validator;
 		this.accessPolicy = accessPolicy;
 		this.objectMapper = objectMapper;
-		this.arrivalEstimates = arrivalEstimates;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
+		this.events = events;
+		this.activation = activation;
+		this.history = history;
 	}
 
 	@Transactional(readOnly = true)
@@ -88,6 +101,22 @@ public class ShipmentService {
 	}
 
 	@Transactional(readOnly = true)
+	public ShipmentPage listPage(AuthenticatedUser principal, ShipmentFilterCriteria criteria, int page,
+			ShipmentSort sort) {
+		if (page < 1) {
+			throw new IllegalArgumentException("Page must be at least 1.");
+		}
+		if (criteria == null || sort == null) {
+			throw new IllegalArgumentException("Filter criteria and sort are required.");
+		}
+		Company company = activeCompany(principal);
+		Page<Shipment> result = shipments.findAll(ShipmentSpecifications.matching(company.getId(), criteria),
+				PageRequest.of(page - 1, PAGE_SIZE, sort.toSort()));
+		return new ShipmentPage(result.getContent().stream().map(this::respond).toList(), page, PAGE_SIZE,
+				result.getTotalElements());
+	}
+
+	@Transactional(readOnly = true)
 	public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
 		return shipments.findByIdVisibleToCompanyId(shipmentId, company.getId())
@@ -101,8 +130,8 @@ public class ShipmentService {
 	@Transactional(readOnly = true)
 	public ShipmentTrackingResponse tracking(AuthenticatedUser principal, Long shipmentId) {
 		Shipment shipment = visibleShipment(principal, shipmentId);
-		VesselPosition motherVessel = livePosition(shipment.getMotherVessel());
-		VesselPosition feederVessel = livePosition(shipment.getFeederVessel());
+		VesselPosition motherVessel = connectionRisk.position(shipment.getMotherVessel());
+		VesselPosition feederVessel = connectionRisk.position(shipment.getFeederVessel());
 		return new ShipmentTrackingResponse(shipment.getMotherVessel(), motherVessel,
 				VesselNames.warning(shipment.getMotherVessel(), motherVessel, VesselNames.MOTHER_MISMATCH),
 				shipment.getFeederVessel(), feederVessel,
@@ -118,7 +147,9 @@ public class ShipmentService {
 			throw new ShipmentCreationForbiddenException();
 		}
 
-		return respond(persistNewShipment(company, creator, details, null));
+		Shipment shipment = persistNewShipment(company, creator, details, null);
+		events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(shipment.getId()));
+		return respond(shipment);
 	}
 
 	/** Reuses normal creation persistence for a row already validated by the CSV import pipeline. */
@@ -127,11 +158,13 @@ public class ShipmentService {
 		ShipmentDetails details = validatedDetails(new CreateShipmentRequest(row.shipmentReference(), row.origin(),
 				row.destination(), row.transshipmentPort(), row.motherVessel(), row.plannedMotherArrivalAt(),
 				row.feederVessel(), row.plannedFeederDepartureAt(), null, null, null, null, null, null));
-		persistNewShipment(managingCompany, creator, details, importerCompany);
+		Shipment shipment = persistNewShipment(managingCompany, creator, details, importerCompany);
+		events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(shipment.getId()));
 	}
 
 	@Transactional
 	public void archive(AuthenticatedUser principal, Long shipmentId) {
+		activation.lockForRiskInput();
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		Company company = account.getCompany();
 		if (company == null || !company.isActive()) {
@@ -145,9 +178,12 @@ public class ShipmentService {
 		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentAlreadyArchivedException();
 		}
+		ShipmentStatus previousStatus = shipment.getStatus();
+		Instant now = Instant.now();
 		shipment.archive();
-		shipment.markUpdated(account, Instant.now());
+		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
 	}
 
 	@Transactional
@@ -172,6 +208,7 @@ public class ShipmentService {
 	private ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request,
 			VesselIdentityPresence identity) {
 		ShipmentDetails details = validatedDetails(request);
+		activation.lockForRiskInput();
 		Shipment shipment = editableShipment(principal, shipmentId);
 		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentNotEditableException();
@@ -187,10 +224,15 @@ public class ShipmentService {
 		}
 
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
-		shipment.replaceDetails(details, editor, Instant.now());
+		boolean scheduleChanged = !shipment.getPlannedMotherArrivalAt().equals(details.plannedMotherArrivalAt())
+				|| !shipment.getPlannedFeederDepartureAt().equals(details.plannedFeederDepartureAt());
+		ShipmentSnapshot before = ShipmentSnapshot.of(shipment);
+		Instant now = Instant.now();
+		shipment.replaceDetails(details, editor, now);
 		shipment.applySpecifiedIdentity(details, identity);
+		Shipment saved;
 		try {
-			return respond(shipments.saveAndFlush(shipment));
+			saved = shipments.saveAndFlush(shipment);
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -199,6 +241,11 @@ public class ShipmentService {
 		} catch (OptimisticLockingFailureException ex) {
 			throw new StaleShipmentVersionException();
 		}
+		history.recordUpdate(before, saved, editor, now);
+		if (scheduleChanged) {
+			events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(saved.getId()));
+		}
+		return respond(saved);
 	}
 
 	private ShipmentDetails validatedDetails(ShipmentDetailsRequest request) {
@@ -244,6 +291,7 @@ public class ShipmentService {
 
 	private Shipment persistNewShipment(Company company, UserAccount creator, ShipmentDetails details,
 			Company importerCompany) {
+		ShipmentRiskAlertActivation activeGeneration = activation.lockForRiskInput();
 		if (shipments.existsByCompanyIdAndShipmentReferenceIgnoreCase(company.getId(), details.shipmentReference())) {
 			throw new DuplicateShipmentReferenceException();
 		}
@@ -255,14 +303,19 @@ public class ShipmentService {
 		if (importerCompany != null) {
 			shipment.linkImporter(importerCompany);
 		}
+		Shipment saved;
 		try {
-			return shipments.saveAndFlush(shipment);
+			saved = shipments.saveAndFlush(shipment);
+			riskStates.saveAndFlush(new ShipmentRiskState(saved,
+					ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID, activeGeneration.getGeneration(), Instant.now(clock)));
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
 			}
 			throw ex;
 		}
+		history.recordCreation(saved, creator);
+		return saved;
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
@@ -289,32 +342,9 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		VesselPosition motherVesselPosition = livePosition(shipment.getMotherVessel());
-		return ShipmentDetailResponse.from(shipment, calculation(shipment), motherVesselPosition,
-				livePosition(shipment.getFeederVessel()),
-				arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition), shipment.getTransshipmentPort(),
-						shipment.getPlannedMotherArrivalAt(), clock));
-	}
-
-	private VesselPosition livePosition(String vesselName) {
-		return latestPositions.findByVesselName(vesselName)
-				.or(() -> latestPositions.findByVesselName(withoutVesselPrefix(vesselName)))
-				.map(VesselPosition::from)
-				.orElse(null);
-	}
-
-	private static String withoutVesselPrefix(String vesselName) {
-		if (vesselName == null) {
-			return null;
-		}
-		String stripped = vesselName.strip();
-		if (stripped.length() > 3 && stripped.regionMatches(true, 0, "MV ", 0, 3)) {
-			return stripped.substring(3);
-		}
-		if (stripped.length() > 4 && stripped.regionMatches(true, 0, "M/V ", 0, 4)) {
-			return stripped.substring(4);
-		}
-		return stripped;
+		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
+		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
+				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
 	}
 
 	private ConnectionWindow window(Shipment shipment) {

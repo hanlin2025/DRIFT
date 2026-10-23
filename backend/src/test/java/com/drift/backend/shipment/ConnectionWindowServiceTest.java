@@ -206,6 +206,17 @@ class ConnectionWindowServiceTest {
 		assertThat(windows.remaining(departure, usable)).isNotNull();
 	}
 
+	@Test
+	void leavesTheEstimateReportTimeAsTheRemainingWindowsReportTime() {
+		ArrivalEstimate estimate = estimate("2026-10-15T08:00:00Z", false);
+		RemainingConnectionWindow remaining = windows.remaining(OffsetDateTime.parse("2026-10-16T08:00:00Z"), estimate);
+
+		assertThat(remaining).isNotNull();
+		assertThat(remaining.duration()).isEqualTo("1 day");
+		assertThat(estimate.estimatedArrivalAt()).isEqualTo(OffsetDateTime.parse("2026-10-15T08:00:00Z"));
+		assertThat(estimate.lastReceivedAt()).isEqualTo(Instant.parse("2026-10-15T02:00:00Z"));
+	}
+
 	private static ArrivalEstimate estimate(String arrival, boolean possiblyOutdated) {
 		return ArrivalEstimate.available(OffsetDateTime.parse(arrival), new BigDecimal("12.5"),
 				Classification.ON_SCHEDULE, "On schedule · estimated at the planned time", 0, 0,

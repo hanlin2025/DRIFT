@@ -154,7 +154,7 @@ class VesselTrackServiceTest {
 
 	private static VesselPosition latest(String mmsi) {
 		return new VesselPosition(mmsi, "PACIFIC HORIZON", new BigDecimal("1.264"), new BigDecimal("103.82"),
-				new BigDecimal("12.4"), new BigDecimal("175.0"), 176, NOW);
+				new BigDecimal("12.4"), new BigDecimal("175.0"), 176, NOW, AisPositionSource.AIS_STREAM);
 	}
 
 	private static StoredAisPosition fix(long id, String at, String speed) {
