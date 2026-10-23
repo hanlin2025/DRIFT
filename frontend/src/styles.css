@@ -155,7 +155,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
 .shipment-actions { position: relative; z-index: 1; }
-.remove-button, .quiet-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font-size: 12px; font-weight: 650; }
+.remove-button, .restore-button, .quiet-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font-size: 12px; font-weight: 650; }
 .remove-dialog:not([open]) { display: none; }
 .remove-dialog[open] { display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; width: min(28rem, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 8px; padding: 24px; color: var(--ink); background: #fffefa; }
 .remove-dialog::backdrop { background: rgb(23 62 53 / 50%); }
@@ -204,6 +204,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
 .detail-actions .secondary-button,
 .detail-actions .remove-button,
+.detail-actions .restore-button,
 .refresh-button { white-space: nowrap; }
 .refresh-button { border: 1px solid var(--line); background: #f8f6ed; color: var(--ink); border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 750; }
 .refresh-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
