@@ -22,7 +22,8 @@
     "test:e2e:profile": "node ../scripts/run-profile.mjs",
     "test:e2e:vessel-details": "node ../scripts/run-vessel-details.mjs",
     "test:e2e:arrival-comparison": "node ../scripts/run-arrival-comparison.mjs",
-    "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs"
+    "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
+    "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
