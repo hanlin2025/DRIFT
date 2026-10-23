@@ -1,8 +1,11 @@
 package com.drift.backend.account.admin;
 
+import java.util.List;
+
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,6 +15,7 @@ import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -21,13 +25,37 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
-@Tag(name = "Account removal", description = "Administrator removal of user accounts.")
+@Tag(name = "Account removal", description = "Administrator removal of user accounts and the account status audit.")
 public class AccountRemovalController {
 
 	private final AccountRemovalService removals;
 
 	public AccountRemovalController(AccountRemovalService removals) {
 		this.removals = removals;
+	}
+
+	@GetMapping("/api/admin/account-status-audits")
+	@Operation(summary = "List account status changes", description = "Lists saved account removals for the administrator's own organisation, newest first. "
+			+ "Each entry records the administrator, the user, the organisation, the previous and new status, and the time. "
+			+ "A rejected removal does not add an entry.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Account status changes, possibly empty", content = @Content(
+					mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = AccountStatusAuditResponse.class)))),
+			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Your session has ended. Log in again."}
+							"""))),
+			@ApiResponse(responseCode = "403", description = "Authenticated account is not an administrator", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Only an administrator can assign users"}
+							"""))) })
+	public ResponseEntity<List<AccountStatusAuditResponse>> audits(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(removals.audits(user));
 	}
 
 	@PatchMapping("/api/admin/users/{userId}/remove")
@@ -38,6 +66,7 @@ public class AccountRemovalController {
 			+ "An administrator cannot remove their own account. "
 			+ "The user's existing session stops working. "
 			+ "An account that is already removed cannot be removed again. "
+			+ "A removal that overlaps another change to the same account is rejected. "
 			+ "A rejected removal leaves the account unchanged.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -63,10 +92,14 @@ public class AccountRemovalController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
-			@ApiResponse(responseCode = "409", description = "The account has already been removed", content = @Content(
-					mediaType = "application/json", examples = @ExampleObject(value = """
-							{"message":"This account has already been removed."}
-							"""))) })
+			@ApiResponse(responseCode = "409", description = "The account has already been removed, or it was changed by someone else during the removal", content = @Content(
+					mediaType = "application/json", examples = {
+							@ExampleObject(name = "Already removed", value = """
+									{"message":"This account has already been removed."}
+									"""),
+							@ExampleObject(name = "Changed concurrently", value = """
+									{"message":"This account was changed by someone else. Reload and try again."}
+									""") })) })
 	public ResponseEntity<AdminUserResponse> remove(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long userId) {

@@ -1,5 +1,9 @@
 package com.drift.backend.account.admin;
 
+import java.time.Instant;
+import java.util.List;
+
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +15,7 @@ import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
+import com.drift.backend.account.admin.exception.StaleAccountVersionException;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.company.Company;
@@ -19,9 +24,20 @@ import com.drift.backend.company.Company;
 public class AccountRemovalService {
 
 	private final UserAccountRepository users;
+	private final AccountStatusAuditRepository audits;
 
-	public AccountRemovalService(UserAccountRepository users) {
+	public AccountRemovalService(UserAccountRepository users, AccountStatusAuditRepository audits) {
 		this.users = users;
+		this.audits = audits;
+	}
+
+	@Transactional(readOnly = true)
+	public List<AccountStatusAuditResponse> audits(AuthenticatedUser principal) {
+		Company company = requireAdmin(principal).getCompany();
+		if (company == null) {
+			return List.of();
+		}
+		return audits.findForCompany(company.getId()).stream().map(AccountStatusAuditResponse::from).toList();
 	}
 
 	@Transactional
@@ -42,7 +58,13 @@ public class AccountRemovalService {
 			throw new AccountAlreadyRemovedException();
 		}
 		target.remove();
-		users.saveAndFlush(target);
+		try {
+			users.saveAndFlush(target);
+		} catch (OptimisticLockingFailureException ex) {
+			throw new StaleAccountVersionException();
+		}
+		audits.saveAndFlush(new AccountStatusAudit(operator, target, operatorCompany, AccountStatus.ACTIVE,
+				AccountStatus.REMOVED, Instant.now()));
 		return AdminUserResponse.from(target);
 	}
 
