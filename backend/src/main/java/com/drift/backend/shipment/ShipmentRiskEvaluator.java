@@ -5,6 +5,7 @@ import java.time.Instant;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -18,16 +19,19 @@ public class ShipmentRiskEvaluator {
 	private final ShipmentRiskTransitionRepository transitions;
 	private final ShipmentConnectionRisk connectionRisk;
 	private final ShipmentRiskAlertRecipientResolver recipients;
+	private final ShipmentRiskAlertActivationStore activation;
 	private final Clock clock;
 
 	public ShipmentRiskEvaluator(ShipmentRepository shipments, ShipmentRiskStateStore states,
 			ShipmentRiskTransitionRepository transitions, ShipmentConnectionRisk connectionRisk,
-			ShipmentRiskAlertRecipientResolver recipients, ObjectProvider<Clock> clocks) {
+			ShipmentRiskAlertRecipientResolver recipients, ShipmentRiskAlertActivationStore activation,
+			ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.states = states;
 		this.transitions = transitions;
 		this.connectionRisk = connectionRisk;
 		this.recipients = recipients;
+		this.activation = activation;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -35,11 +39,12 @@ public class ShipmentRiskEvaluator {
 	 * Atomically evaluates one shipment. The shipment and its risk-state row are locked before the
 	 * previous valid baseline is compared and a transition sequence is allocated.
 	 */
-	@Transactional
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public ShipmentRiskEvaluationOutcome evaluate(Long shipmentId) {
 		if (shipmentId == null) {
 			throw new IllegalArgumentException("Shipment id is required");
 		}
+		ShipmentRiskAlertActivation activeGeneration = activation.lockForRiskInput();
 
 		Shipment shipment = shipments.findByIdForRiskEvaluation(shipmentId).orElse(null);
 		if (shipment == null) {
@@ -63,11 +68,11 @@ public class ShipmentRiskEvaluator {
 		return switch (decision) {
 			case BASELINE -> ShipmentRiskEvaluationOutcome.BASELINED;
 			case INITIAL -> {
-				persistTransition(shipment, state, ShipmentRiskTransitionType.INITIAL, null, risk, evaluatedAt);
+				persistTransition(shipment, state, activeGeneration.getGeneration(), ShipmentRiskTransitionType.INITIAL, null, risk, evaluatedAt);
 				yield ShipmentRiskEvaluationOutcome.INITIAL_TRANSITION;
 			}
 			case RISE -> {
-				persistTransition(shipment, state, ShipmentRiskTransitionType.RISE, previousRiskLevel, risk, evaluatedAt);
+				persistTransition(shipment, state, activeGeneration.getGeneration(), ShipmentRiskTransitionType.RISE, previousRiskLevel, risk, evaluatedAt);
 				yield ShipmentRiskEvaluationOutcome.RISE_TRANSITION;
 			}
 			case NONE -> ShipmentRiskEvaluationOutcome.NO_TRANSITION;
@@ -75,10 +80,10 @@ public class ShipmentRiskEvaluator {
 		};
 	}
 
-	private void persistTransition(Shipment shipment, ShipmentRiskState state, ShipmentRiskTransitionType type,
+	private void persistTransition(Shipment shipment, ShipmentRiskState state, long activationGeneration, ShipmentRiskTransitionType type,
 			ShipmentRisk.Level previousRiskLevel, ShipmentRisk risk, Instant occurredAt) {
 		ShipmentRiskTransition transition = transitions.saveAndFlush(new ShipmentRiskTransition(shipment,
-				state.allocateTransitionSequence(), type, previousRiskLevel, risk, occurredAt));
+				state.allocateTransitionSequence(), activationGeneration, type, previousRiskLevel, risk, occurredAt));
 		recipients.resolveNewTransition(transition);
 	}
 }

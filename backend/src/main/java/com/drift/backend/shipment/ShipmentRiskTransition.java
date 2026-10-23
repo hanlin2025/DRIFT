@@ -32,6 +32,9 @@ public class ShipmentRiskTransition {
 	@Column(name = "sequence", nullable = false)
 	private long sequence;
 
+	@Column(name = "activation_generation", nullable = false)
+	private long activationGeneration;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "transition_type", nullable = false, length = 16)
 	private ShipmentRiskTransitionType transitionType;
@@ -61,6 +64,12 @@ public class ShipmentRiskTransition {
 
 	public ShipmentRiskTransition(Shipment shipment, long sequence, ShipmentRiskTransitionType transitionType,
 			ShipmentRisk.Level previousRiskLevel, ShipmentRisk risk, Instant occurredAt) {
+		this(shipment, sequence, 0, transitionType, previousRiskLevel, risk, occurredAt);
+	}
+
+	public ShipmentRiskTransition(Shipment shipment, long sequence, long activationGeneration,
+			ShipmentRiskTransitionType transitionType,
+			ShipmentRisk.Level previousRiskLevel, ShipmentRisk risk, Instant occurredAt) {
 		if (shipment == null || sequence <= 0 || transitionType == null || risk == null || risk.level() == null
 				|| risk.explanation() == null || occurredAt == null) {
 			throw new IllegalArgumentException("Transition identity, risk snapshot, and timestamp are required");
@@ -68,8 +77,12 @@ public class ShipmentRiskTransition {
 		if ((transitionType == ShipmentRiskTransitionType.INITIAL) != (previousRiskLevel == null)) {
 			throw new IllegalArgumentException("INITIAL transitions require a null previous level; RISE transitions require one");
 		}
+		if (activationGeneration < 0) {
+			throw new IllegalArgumentException("Activation generation cannot be negative");
+		}
 		this.shipment = shipment;
 		this.sequence = sequence;
+		this.activationGeneration = activationGeneration;
 		this.transitionType = transitionType;
 		this.previousRiskLevel = previousRiskLevel;
 		this.riskLevel = risk.level();
@@ -81,6 +94,7 @@ public class ShipmentRiskTransition {
 	public Long getId() { return id; }
 	public Shipment getShipment() { return shipment; }
 	public long getSequence() { return sequence; }
+	public long getActivationGeneration() { return activationGeneration; }
 	public ShipmentRiskTransitionType getTransitionType() { return transitionType; }
 	public ShipmentRisk.Level getPreviousRiskLevel() { return previousRiskLevel; }
 	public ShipmentRisk.Level getRiskLevel() { return riskLevel; }

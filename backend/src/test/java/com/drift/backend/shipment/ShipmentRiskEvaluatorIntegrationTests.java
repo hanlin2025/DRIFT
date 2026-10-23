@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.transaction.TestTransaction;
 
 import com.drift.backend.account.AccountRole;
 import com.drift.backend.account.Role;
@@ -44,23 +45,30 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	@Autowired ShipmentRiskEvaluator evaluator;
 	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskTransitionRepository transitions;
+	@Autowired ShipmentRiskAlertActivationService activation;
 
 	private Company company;
 	private UserAccount user;
 
 	@BeforeEach
 	void setUp() {
+		jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'");
 		company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 		AccountRole role = entityManager.createQuery("SELECT role FROM AccountRole role WHERE role.code = :code", AccountRole.class)
 				.setParameter("code", Role.FREIGHT_FORWARDER).getSingleResult();
 		user = new UserAccount("Risk Evaluator", "risk-evaluator-" + UUID.randomUUID() + "@example.com", "hash", role, company);
 		entityManager.persist(user);
 		entityManager.flush();
+		TestTransaction.flagForCommit();
+		TestTransaction.end();
+		activation.activate();
+		TestTransaction.start();
 	}
 
 	@Test
 	void silentlyBaselinesHistoricalFirstValidRisk() {
 		Shipment shipment = shipment(8, ShipmentRiskBaselineMode.SILENT_FIRST_VALID);
+		commitCurrentTransaction();
 
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.BASELINED);
 
@@ -77,6 +85,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 		OffsetDateTime feeder = ingested.atOffset(ZoneOffset.UTC).plusHours(2);
 		String mother = "Risk Mother " + UUID.randomUUID();
 		Shipment shipment = scheduled(mother, feeder.minusHours(48), feeder, ShipmentRiskBaselineMode.SILENT_FIRST_VALID);
+		commitCurrentTransaction();
 
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.BASELINED);
 		ShipmentDetailResponse fallback = detail(shipment);
@@ -86,12 +95,12 @@ class ShipmentRiskEvaluatorIntegrationTests {
 		assertThat(state(shipment).getLastRiskLevel()).isEqualTo(fallback.risk().level());
 		assertThat(state(shipment).getLastExplanation()).isEqualTo(fallback.risk().explanation());
 
-		jdbc.update("""
+		inCommittedTransaction(() -> jdbc.update("""
 				INSERT INTO vessel_observations (
 					mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, ingested_at, source)
 				VALUES (?, ?, ?, ?, ?, ?::timestamptz, 'SEEDED')
 				""", mmsi(), mother, new BigDecimal("1.26"), new BigDecimal("103.82"), new BigDecimal("12.375"),
-				ingested.toString());
+				ingested.toString()));
 
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
 		ShipmentDetailResponse estimated = detail(shipment);
@@ -109,6 +118,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	@Test
 	void createsOneInitialTransitionForAnAlertableFirstValidRiskIncludingLow() {
 		Shipment shipment = shipment(24, ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID);
+		commitCurrentTransaction();
 
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.INITIAL_TRANSITION);
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.NO_TRANSITION);
@@ -124,16 +134,17 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	@Test
 	void createsRisesForValidScheduleRiskIncreasesAndRecordsDecreases() {
 		Shipment shipment = shipment(24, ShipmentRiskBaselineMode.SILENT_FIRST_VALID);
+		commitCurrentTransaction();
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.BASELINED);
 
-		setWindow(shipment, 20);
+		inCommittedTransaction(() -> setWindow(shipment, 20));
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
-		setWindow(shipment, 8);
+		inCommittedTransaction(() -> setWindow(shipment, 8));
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.NO_TRANSITION);
-		setWindow(shipment, 24);
+		inCommittedTransaction(() -> setWindow(shipment, 24));
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.NO_TRANSITION);
-		setWindow(shipment, 8);
+		inCommittedTransaction(() -> setWindow(shipment, 8));
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
 
 		assertThat(transitions.findByShipmentIdOrderBySequenceAsc(shipment.getId()))
@@ -148,13 +159,15 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	@Test
 	void silentlyRecoversMissingStateAndSkipsArchivedShipments() {
 		Shipment missing = shipmentWithoutState(hours(24));
+		commitCurrentTransaction();
 		assertThat(evaluator.evaluate(missing.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.BASELINED);
 		assertThat(state(missing).getBaselineMode()).isEqualTo(ShipmentRiskBaselineMode.SILENT_FIRST_VALID);
 		assertThat(transitions.findByShipmentIdOrderBySequenceAsc(missing.getId())).isEmpty();
 
+		TestTransaction.start();
 		Shipment archived = shipment(8, ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID);
 		archived.archive();
-		entityManager.flush();
+		commitCurrentTransaction();
 		assertThat(evaluator.evaluate(archived.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.ARCHIVED);
 		assertThat(states.findById(archived.getId())).isPresent();
 		assertThat(transitions.findByShipmentIdOrderBySequenceAsc(archived.getId())).isEmpty();
@@ -195,22 +208,36 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	}
 
 	private ShipmentRiskState state(Shipment shipment) {
-		entityManager.flush();
 		entityManager.clear();
 		return states.findById(shipment.getId()).orElseThrow();
 	}
 
 	private ShipmentRiskTransition onlyTransition(Shipment shipment) {
-		entityManager.flush();
 		entityManager.clear();
 		return transitions.findByShipmentIdOrderBySequenceAsc(shipment.getId()).getFirst();
 	}
 
 	private void setWindow(Shipment shipment, int durationHours) {
-		shipment.replaceDetails(new ShipmentDetails(shipment.getShipmentReference(), shipment.getOrigin(), shipment.getDestination(),
-				shipment.getTransshipmentPort(), shipment.getMotherVessel(), ARRIVAL, shipment.getFeederVessel(), hours(durationHours),
-				null, null, null, null, null, null), user, java.time.Instant.now());
+		Shipment managed = entityManager.find(Shipment.class, shipment.getId());
+		UserAccount updatedBy = entityManager.getReference(UserAccount.class, user.getId());
+		managed.replaceDetails(new ShipmentDetails(managed.getShipmentReference(), managed.getOrigin(), managed.getDestination(),
+				managed.getTransshipmentPort(), managed.getMotherVessel(), ARRIVAL, managed.getFeederVessel(), hours(durationHours),
+				null, null, null, null, null, null), updatedBy, java.time.Instant.now());
 		entityManager.flush();
+	}
+
+	private void commitCurrentTransaction() {
+		entityManager.flush();
+		TestTransaction.flagForCommit();
+		TestTransaction.end();
+	}
+
+	private void inCommittedTransaction(Runnable operation) {
+		TestTransaction.start();
+		operation.run();
+		entityManager.flush();
+		TestTransaction.flagForCommit();
+		TestTransaction.end();
 	}
 
 	private static OffsetDateTime hours(int durationHours) {

@@ -44,6 +44,9 @@ public class ShipmentRiskState {
 	@Column(name = "last_transition_sequence", nullable = false)
 	private long lastTransitionSequence;
 
+	@Column(name = "activation_generation", nullable = false)
+	private long activationGeneration;
+
 	@Version
 	@Column(nullable = false)
 	private Long version;
@@ -58,11 +61,19 @@ public class ShipmentRiskState {
 	}
 
 	public ShipmentRiskState(Shipment shipment, ShipmentRiskBaselineMode baselineMode, Instant now) {
+		this(shipment, baselineMode, 0, now);
+	}
+
+	public ShipmentRiskState(Shipment shipment, ShipmentRiskBaselineMode baselineMode, long activationGeneration, Instant now) {
 		if (shipment == null || baselineMode == null || now == null) {
 			throw new IllegalArgumentException("Shipment, baseline mode, and timestamp are required");
 		}
+		if (activationGeneration < 0) {
+			throw new IllegalArgumentException("Activation generation cannot be negative");
+		}
 		this.shipment = shipment;
 		this.baselineMode = baselineMode;
+		this.activationGeneration = activationGeneration;
 		this.lastTransitionSequence = 0;
 		this.createdAt = now;
 		this.updatedAt = now;
@@ -88,6 +99,20 @@ public class ShipmentRiskState {
 		return ++lastTransitionSequence;
 	}
 
+	/** Controlled activation replaces any stale preactivation snapshot without creating a transition. */
+	void recordActivationBaseline(ShipmentRisk risk, long generation, Instant now) {
+		if (generation <= 0 || now == null) {
+			throw new IllegalArgumentException("An active generation and timestamp are required");
+		}
+		activationGeneration = generation;
+		if (risk == null) {
+			baselineMode = ShipmentRiskBaselineMode.SILENT_FIRST_VALID;
+			updatedAt = now;
+			return;
+		}
+		recordValidEvaluation(risk, now);
+	}
+
 	public Long getShipmentId() { return shipmentId; }
 	public Shipment getShipment() { return shipment; }
 	public ShipmentRisk.Level getLastRiskLevel() { return lastRiskLevel; }
@@ -95,6 +120,7 @@ public class ShipmentRiskState {
 	public Instant getEvaluatedAt() { return evaluatedAt; }
 	public ShipmentRiskBaselineMode getBaselineMode() { return baselineMode; }
 	public long getLastTransitionSequence() { return lastTransitionSequence; }
+	public long getActivationGeneration() { return activationGeneration; }
 	public Long getVersion() { return version; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }

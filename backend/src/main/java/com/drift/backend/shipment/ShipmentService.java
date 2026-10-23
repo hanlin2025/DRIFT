@@ -11,6 +11,7 @@ import jakarta.validation.Validator;
 
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
@@ -60,10 +61,13 @@ public class ShipmentService {
 	private final ShipmentAccessPolicy accessPolicy;
 	private final ObjectMapper objectMapper;
 	private final Clock clock;
+	private final ApplicationEventPublisher events;
+	private final ShipmentRiskAlertActivationStore activation;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, ShipmentConnectionRisk connectionRisk, Validator validator,
-			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks) {
+			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
+			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
@@ -73,6 +77,8 @@ public class ShipmentService {
 		this.accessPolicy = accessPolicy;
 		this.objectMapper = objectMapper;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
+		this.events = events;
+		this.activation = activation;
 	}
 
 	@Transactional(readOnly = true)
@@ -136,7 +142,9 @@ public class ShipmentService {
 			throw new ShipmentCreationForbiddenException();
 		}
 
-		return respond(persistNewShipment(company, creator, details, null));
+		Shipment shipment = persistNewShipment(company, creator, details, null);
+		events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(shipment.getId()));
+		return respond(shipment);
 	}
 
 	/** Reuses normal creation persistence for a row already validated by the CSV import pipeline. */
@@ -145,11 +153,13 @@ public class ShipmentService {
 		ShipmentDetails details = validatedDetails(new CreateShipmentRequest(row.shipmentReference(), row.origin(),
 				row.destination(), row.transshipmentPort(), row.motherVessel(), row.plannedMotherArrivalAt(),
 				row.feederVessel(), row.plannedFeederDepartureAt(), null, null, null, null, null, null));
-		persistNewShipment(managingCompany, creator, details, importerCompany);
+		Shipment shipment = persistNewShipment(managingCompany, creator, details, importerCompany);
+		events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(shipment.getId()));
 	}
 
 	@Transactional
 	public void archive(AuthenticatedUser principal, Long shipmentId) {
+		activation.lockForRiskInput();
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		Company company = account.getCompany();
 		if (company == null || !company.isActive()) {
@@ -190,6 +200,7 @@ public class ShipmentService {
 	private ShipmentResponse update(AuthenticatedUser principal, Long shipmentId, UpdateShipmentRequest request,
 			VesselIdentityPresence identity) {
 		ShipmentDetails details = validatedDetails(request);
+		activation.lockForRiskInput();
 		Shipment shipment = editableShipment(principal, shipmentId);
 		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentNotEditableException();
@@ -205,10 +216,16 @@ public class ShipmentService {
 		}
 
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		boolean scheduleChanged = !shipment.getPlannedMotherArrivalAt().equals(details.plannedMotherArrivalAt())
+				|| !shipment.getPlannedFeederDepartureAt().equals(details.plannedFeederDepartureAt());
 		shipment.replaceDetails(details, editor, Instant.now());
 		shipment.applySpecifiedIdentity(details, identity);
 		try {
-			return respond(shipments.saveAndFlush(shipment));
+			Shipment saved = shipments.saveAndFlush(shipment);
+			if (scheduleChanged) {
+				events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(saved.getId()));
+			}
+			return respond(saved);
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -262,6 +279,7 @@ public class ShipmentService {
 
 	private Shipment persistNewShipment(Company company, UserAccount creator, ShipmentDetails details,
 			Company importerCompany) {
+		ShipmentRiskAlertActivation activeGeneration = activation.lockForRiskInput();
 		if (shipments.existsByCompanyIdAndShipmentReferenceIgnoreCase(company.getId(), details.shipmentReference())) {
 			throw new DuplicateShipmentReferenceException();
 		}
@@ -276,7 +294,7 @@ public class ShipmentService {
 		try {
 			Shipment saved = shipments.saveAndFlush(shipment);
 			riskStates.saveAndFlush(new ShipmentRiskState(saved,
-					ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID, Instant.now(clock)));
+					ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID, activeGeneration.getGeneration(), Instant.now(clock)));
 			return saved;
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
