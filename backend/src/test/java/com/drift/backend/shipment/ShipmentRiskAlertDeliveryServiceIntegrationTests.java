@@ -64,6 +64,8 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Autowired ShipmentRiskAlertDeliveryPoller poller;
 	@Autowired ShipmentRiskAlertDeliveryStore store;
 	@Autowired ShipmentRiskStateRepository states;
+	@Autowired ShipmentRiskAlertActivationService activationService;
+	@Autowired ShipmentRiskAlertActivationStore activationStore;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JavaMailSender mailSender;
 	@Autowired JdbcTemplate jdbc;
@@ -73,6 +75,8 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		reset(mailSender);
 		mailProperties.setEnabled(true);
 		mailProperties.setDispatchEnabled(true);
+		transactions.executeWithoutResult(status -> jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'"));
+		activationService.activate();
 	}
 
 	@AfterEach
@@ -354,6 +358,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 
 	private DeliveryFixture createDelivery(Role role, RiskNotificationLevel minimum, String explanation) {
 		return transactions.execute(status -> {
+			long generation = activationStore.lockForRiskInput().getGeneration();
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole accountRole = entityManager.createQuery("SELECT role FROM AccountRole role WHERE role.code = :code", AccountRole.class)
 					.setParameter("code", role).getSingleResult();
@@ -365,12 +370,14 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 			Shipment shipment = new Shipment(company, user, PREFIX + suffix, "Singapore", "Rotterdam", "Singapore", "Mother",
 					OffsetDateTime.parse("2026-10-15T08:00:00Z"), "Feeder", OffsetDateTime.parse("2026-10-16T08:00:00Z"));
 			entityManager.persist(shipment);
-			ShipmentRiskTransition transition = new ShipmentRiskTransition(shipment, 1, ShipmentRiskTransitionType.INITIAL,
+			ShipmentRiskTransition transition = new ShipmentRiskTransition(shipment, 1, generation, ShipmentRiskTransitionType.INITIAL,
 					null, new ShipmentRisk(ShipmentRisk.Level.HIGH, explanation), Instant.now());
 			entityManager.persist(transition);
 			ShipmentRiskAlertDelivery delivery = new ShipmentRiskAlertDelivery(transition, user, Instant.now());
 			entityManager.persist(delivery);
 			entityManager.flush();
+			assertThat(jdbc.queryForObject("SELECT activation_generation FROM shipment_risk_transitions WHERE id = ?", Long.class,
+					transition.getId())).isEqualTo(generation);
 			return new DeliveryFixture(delivery.getId(), transition.getId(), shipment.getId(), user.getId(), shipment.getShipmentReference(), email);
 		});
 	}
