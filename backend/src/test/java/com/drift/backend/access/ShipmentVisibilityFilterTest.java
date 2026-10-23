@@ -175,6 +175,43 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void refusesTheChangeHistoryOfAnUnrelatedShipment() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(request("GET", "/api/shipments/8/history"), response, chain);
+
+		verify(chain, never()).doFilter(any(), any());
+		assertThat(response.getStatus()).isEqualTo(403);
+		assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+		assertThat(response.getContentAsString()).isEqualTo(
+				"{\"message\":\"" + ShipmentDetailForbiddenException.MESSAGE + "\"}");
+	}
+
+	@Test
+	void letsTheManagingCompanyAndTheLinkedImporterReadTheChangeHistory() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, COMPANY_ID, null)));
+		filter.doFilter(request("GET", "/api/shipments/8/history"), new MockHttpServletResponse(), chain);
+
+		when(shipments.find(9L)).thenReturn(Optional.of(new ShipmentVisibility(9L, 10L, COMPANY_ID)));
+		filter.doFilter(request("GET", "/api/shipments/9/history/"), new MockHttpServletResponse(), chain);
+
+		verify(chain, org.mockito.Mockito.times(2)).doFilter(any(), any());
+	}
+
+	@Test
+	void passesTheChangeHistoryOfAMissingShipmentThroughToTheNotFoundHandler() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.empty());
+
+		filter.doFilter(request("GET", "/api/shipments/8/history"), new MockHttpServletResponse(), chain);
+
+		verify(chain).doFilter(any(), any());
+	}
+
+	@Test
 	void stripsHiddenRowsFromTheListAndKeepsExtraFieldsOnVisibleRows() throws Exception {
 		signIn();
 		byte[] original = """

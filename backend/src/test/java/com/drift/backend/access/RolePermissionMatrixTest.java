@@ -75,6 +75,8 @@ class RolePermissionMatrixTest {
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "GET", "/api/shipments/3/track-history"))
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "GET", "/api/shipments/3/history"))
+				.contains(ShipmentAccessForbiddenException.MESSAGE);
 		assertThat(RolePermissionMatrix.denial(Role.LOGISTICS_MANAGER, false, "PUT", "/api/shipments/3"))
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
 	}
@@ -86,6 +88,7 @@ class RolePermissionMatrixTest {
 			assertThat(RolePermissionMatrix.denial(role, true, "PUT", "/api/shipments/8")).isEmpty();
 			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/tracking")).isEmpty();
 			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/track-history")).isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/history")).isEmpty();
 		}
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "POST", "/api/shipments"))
 				.contains(ShipmentCreationForbiddenException.MESSAGE);
@@ -97,6 +100,8 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/tracking")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/track-history?hours=6")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history?page=1")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/import/4")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/risk")).isFalse();
