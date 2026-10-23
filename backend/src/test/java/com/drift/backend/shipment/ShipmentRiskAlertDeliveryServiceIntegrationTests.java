@@ -66,7 +66,6 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskAlertActivationService activationService;
 	@Autowired ShipmentRiskAlertActivationStore activationStore;
-	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JavaMailSender mailSender;
 	@Autowired JdbcTemplate jdbc;
