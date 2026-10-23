@@ -157,10 +157,18 @@ export type ShipmentTracking = {
 };
 
 export async function archiveShipment(token: string, shipmentId: number): Promise<string> {
+  return changeShipmentStatus(token, shipmentId, 'ARCHIVED');
+}
+
+export async function restoreShipment(token: string, shipmentId: number): Promise<string> {
+  return changeShipmentStatus(token, shipmentId, 'ACTIVE');
+}
+
+async function changeShipmentStatus(token: string, shipmentId: number, status: ShipmentStatus): Promise<string> {
   const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/status`, token, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'ARCHIVED' }),
+    body: JSON.stringify({ status }),
   });
   if (!isRecord(data) || typeof data.message !== 'string' || data.message.trim() === '') {
     throw new ApiError(UNEXPECTED, 502);

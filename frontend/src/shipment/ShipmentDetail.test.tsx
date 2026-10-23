@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, listShipments, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -784,6 +784,36 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByText('Shipment removed successfully')).toHaveAttribute('role', 'status');
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments');
     expect(screen.getByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+  });
+
+  it.each([admin, manager])('shows Restore on an archived shipment owned by a $role', async account => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, status: 'ARCHIVED' });
+    open(account, account.role === 'ADMIN' ? '/admin/shipments/7' : '/logistics-manager/shipments/7');
+    expect(await screen.findByRole('button', { name: 'Restore HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HL-1001' })).not.toBeInTheDocument();
+  });
+
+  it('hides Restore when an admin opens an archived shipment owned by another company', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, status: 'ARCHIVED', companyId: 11 });
+    open(admin, '/admin/shipments/7');
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore HL-1001' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the shipment list with the server message after restore', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, status: 'ARCHIVED' });
+    vi.mocked(restoreShipment).mockResolvedValue('Shipment restored successfully');
+    vi.mocked(listShipments).mockResolvedValue([{ ...shipment, status: 'ACTIVE' }]);
+    open(admin, '/admin/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Restore HL-1001' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Restore shipment' })).getByRole('button', { name: 'Restore' }));
+    expect(restoreShipment).toHaveBeenCalledWith('admin-token', 7);
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(await screen.findByText('Shipment restored successfully')).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments');
+    expect(screen.getByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'HL-1001' })).toBeInTheDocument();
   });
 });
 
