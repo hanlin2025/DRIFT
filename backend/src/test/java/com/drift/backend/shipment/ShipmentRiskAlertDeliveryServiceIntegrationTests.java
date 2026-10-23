@@ -66,6 +66,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskAlertActivationService activationService;
 	@Autowired ShipmentRiskAlertActivationStore activationStore;
+	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JavaMailSender mailSender;
 	@Autowired JdbcTemplate jdbc;
@@ -147,7 +148,8 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
 		transactions.executeWithoutResult(status -> {
 			Shipment shipment = entityManager.find(Shipment.class, fixture.shipmentId());
-			ShipmentRiskState state = new ShipmentRiskState(shipment, ShipmentRiskBaselineMode.SILENT_FIRST_VALID, Instant.now());
+			long generation = activationStore.lockForRiskInput().getGeneration();
+			ShipmentRiskState state = new ShipmentRiskState(shipment, ShipmentRiskBaselineMode.SILENT_FIRST_VALID, generation, Instant.now());
 			state.recordValidEvaluation(new ShipmentRisk(ShipmentRisk.Level.LOW, "Current risk is low"), Instant.now());
 			states.save(state);
 		});
