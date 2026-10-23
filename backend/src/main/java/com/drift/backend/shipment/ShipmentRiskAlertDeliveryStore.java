@@ -29,12 +29,13 @@ class ShipmentRiskAlertDeliveryStore {
 	private final ShipmentRiskAlertMailProperties mail;
 	private final ShipmentRiskAlertEmailComposer composer;
 	private final ShipmentRiskAlertRetryPolicy retryPolicy;
+	private final ShipmentRiskStateRepository states;
 	private final Clock clock;
 	private final long maximumSmtpAttemptMillis;
 
 	ShipmentRiskAlertDeliveryStore(ShipmentRiskAlertDeliveryRepository deliveries, ShipmentAccessPolicy access,
 			ShipmentRiskAlertMailProperties mail, ShipmentRiskAlertEmailComposer composer,
-			ShipmentRiskAlertRetryPolicy retryPolicy, ObjectProvider<Clock> clocks,
+			ShipmentRiskAlertRetryPolicy retryPolicy, ShipmentRiskStateRepository states, ObjectProvider<Clock> clocks,
 			@Value("${spring.mail.properties.mail.smtp.connectiontimeout:0}") long connectionTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.timeout:0}") long readTimeoutMillis,
 			@Value("${spring.mail.properties.mail.smtp.writetimeout:0}") long writeTimeoutMillis) {
@@ -43,6 +44,7 @@ class ShipmentRiskAlertDeliveryStore {
 		this.mail = mail;
 		this.composer = composer;
 		this.retryPolicy = retryPolicy;
+		this.states = states;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 		this.maximumSmtpAttemptMillis = boundedAttemptDuration(connectionTimeoutMillis, readTimeoutMillis, writeTimeoutMillis);
 	}
@@ -136,6 +138,11 @@ class ShipmentRiskAlertDeliveryStore {
 		UserAccount recipient = delivery.getUser();
 		if (shipment.getStatus() != ShipmentStatus.ACTIVE) {
 			return "Shipment is archived";
+		}
+		ShipmentRisk.Level currentRisk = states.findById(shipment.getId())
+				.map(ShipmentRiskState::getLastRiskLevel).orElse(null);
+		if (currentRisk != null && currentRisk.ordinal() < transition.getRiskLevel().ordinal()) {
+			return "Shipment risk has fallen below the queued alert level";
 		}
 		if (recipient.getStatus() != AccountStatus.ACTIVE) {
 			return "Recipient account is not active";

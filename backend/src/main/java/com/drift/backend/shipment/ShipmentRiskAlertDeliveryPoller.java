@@ -31,6 +31,9 @@ public class ShipmentRiskAlertDeliveryPoller {
 
 	/** Exposed for deterministic integration tests; production scheduling remains configuration-gated. */
 	public void dispatchDueDeliveries() {
+		if (!mail.isDispatchEnabled()) {
+			return;
+		}
 		List<Long> deliveryIds = dueDeliveries.lockDueDeliveryIds(mail.getBatchSize());
 		for (Long deliveryId : deliveryIds) {
 			try {

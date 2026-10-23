@@ -45,6 +45,7 @@ import jakarta.persistence.EntityManager;
 
 @SpringBootTest(properties = {
 		"app.risk-alerts.mail.enabled=true",
+		"app.risk-alerts.mail.dispatch-enabled=true",
 		"app.risk-alerts.mail.frontend-base-url=https://app.example.test",
 		"app.risk-alerts.mail.from=alerts@example.test",
 		"app.risk-alerts.mail.claim-lease=1m"
@@ -62,6 +63,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	@Autowired ShipmentRiskAlertDeliveryService service;
 	@Autowired ShipmentRiskAlertDeliveryPoller poller;
 	@Autowired ShipmentRiskAlertDeliveryStore store;
+	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JavaMailSender mailSender;
 	@Autowired JdbcTemplate jdbc;
@@ -70,11 +72,13 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	void resetMail() {
 		reset(mailSender);
 		mailProperties.setEnabled(true);
+		mailProperties.setDispatchEnabled(true);
 	}
 
 	@AfterEach
 	void cleanUp() {
 		mailProperties.setEnabled(true);
+		mailProperties.setDispatchEnabled(true);
 		transactions.executeWithoutResult(status -> {
 			jdbc.update("""
 					DELETE FROM shipment_risk_alert_deliveries d USING users u
@@ -131,6 +135,37 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
 		assertThat(delivery.getAttemptCount()).isZero();
 		assertThat(delivery.getSuppressionReason()).contains("disabled");
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void suppressesWhenTheShipmentRiskHasFallenBelowTheQueuedTransition() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
+		transactions.executeWithoutResult(status -> {
+			Shipment shipment = entityManager.find(Shipment.class, fixture.shipmentId());
+			ShipmentRiskState state = new ShipmentRiskState(shipment, ShipmentRiskBaselineMode.SILENT_FIRST_VALID, Instant.now());
+			state.recordValidEvaluation(new ShipmentRisk(ShipmentRisk.Level.LOW, "Current risk is low"), Instant.now());
+			states.save(state);
+		});
+
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
+		assertThat(delivery.getAttemptCount()).isZero();
+		assertThat(delivery.getSuppressionReason()).contains("risk has fallen");
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void doesNotClaimPendingDeliveriesWhenDispatchIsDisabled() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
+		mailProperties.setDispatchEnabled(false);
+
+		poller.dispatchDueDeliveries();
+
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.PENDING);
+		assertThat(delivery.getAttemptCount()).isZero();
 		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
 	}
 
