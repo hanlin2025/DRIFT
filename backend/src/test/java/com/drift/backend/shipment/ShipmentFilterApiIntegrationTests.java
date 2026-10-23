@@ -80,6 +80,8 @@ class ShipmentFilterApiIntegrationTests {
 
 		list(forwarderToken).andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-NEWER"))
+				.andExpect(jsonPath("$[0].updatedByName").value("CDG-132 User"))
+				.andExpect(jsonPath("$[0].updatedAt").value("2026-10-02T00:00:00Z"))
 				.andExpect(jsonPath("$[1].shipmentReference").value("HBL-OLDER"))
 				.andExpect(jsonPath("$.length()").value(2));
 		list(forwarderToken, "reference", "   ").andExpect(status().isOk())
@@ -156,8 +158,11 @@ class ShipmentFilterApiIntegrationTests {
 				"2026-10-02T00:00:00Z");
 		insert(unrelated, null, "HBL-HIDDEN-ARCHIVED", "MV Pacific Horizon", "MV Feeder", "2026-10-12T09:00:00+08:00",
 				"2026-10-03T00:00:00Z");
+		insert(forwarder, otherImporter, "HBL-OTHER-ARCHIVED", "MV Pacific Horizon", "MV Feeder", "2026-10-12T09:00:00+08:00",
+				"2026-10-04T00:00:00Z");
 		archive("HBL-ARCHIVED-STATUS");
 		archive("HBL-HIDDEN-ARCHIVED");
+		archive("HBL-OTHER-ARCHIVED");
 
 		list(forwarderToken).andExpect(status().isOk())
 				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ACTIVE-STATUS')]").isNotEmpty())
@@ -170,9 +175,16 @@ class ShipmentFilterApiIntegrationTests {
 				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-ARCHIVED-STATUS"))
 				.andExpect(jsonPath("$.length()").value(1));
 		list(linkedImporterToken, "status", "ARCHIVED").andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-ARCHIVED-STATUS"));
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-ARCHIVED-STATUS"))
+				.andExpect(jsonPath("$[0].updatedByName").value("CDG-132 User"))
+				.andExpect(jsonPath("$[0].updatedAt").value("2026-10-02T00:00:00Z"))
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-OTHER-ARCHIVED')]").isEmpty())
+				.andExpect(jsonPath("$.length()").value(1));
 		list(unrelatedToken, "status", "ARCHIVED").andExpect(status().isOk())
-				.andExpect(jsonPath("$").isEmpty());
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-ARCHIVED-STATUS')]").isEmpty())
+				.andExpect(jsonPath("$[?(@.shipmentReference == 'HBL-OTHER-ARCHIVED')]").isEmpty())
+				.andExpect(jsonPath("$[0].shipmentReference").value("HBL-HIDDEN-ARCHIVED"))
+				.andExpect(jsonPath("$.length()").value(1));
 	}
 
 	@Test

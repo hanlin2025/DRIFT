@@ -76,6 +76,7 @@ class ShipmentArchiveIntegrationTests {
 		String importerToken = tokenFor(importerEmail);
 		String adminEmail = email("admin");
 		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+		jdbc.update("UPDATE users SET full_name = 'Ada Admin' WHERE email = ?", adminEmail);
 		String adminToken = tokenFor(adminEmail);
 		Long activeId = createShipment(forwarderToken, "CDG81-STILL-ACTIVE");
 		link(forwarderToken, activeId, importerCompanyId).andExpect(status().isOk());
@@ -122,9 +123,22 @@ class ShipmentArchiveIntegrationTests {
 		filteredList(importerToken, "CDG81-STILL")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1));
+		mvc.perform(get("/api/shipments").param("status", "ARCHIVED").param("reference", "CDG81-ADMIN")
+				.header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].status").value("ARCHIVED"))
+				.andExpect(jsonPath("$[0].updatedByName").value("Ada Admin"));
+		mvc.perform(get("/api/shipments").param("status", "ARCHIVED").param("reference", "CDG81-ADMIN")
+				.header("Authorization", "Bearer " + importerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].updatedByName").value("Ada Admin"));
 		detail(adminToken, shipmentId).andExpect(status().isOk())
 				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"))
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
+				.andExpect(jsonPath("$.updatedByName").doesNotExist())
+				.andExpect(jsonPath("$.updatedAt").doesNotExist())
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
 				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
 				.andExpect(jsonPath("$.risk.explanation")
