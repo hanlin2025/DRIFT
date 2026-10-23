@@ -183,6 +183,7 @@ public class ShipmentService {
 
 	@Transactional
 	public void restore(AuthenticatedUser principal, Long shipmentId) {
+		activation.lockForRiskInput();
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		Company company = account.getCompany();
 		if (company == null || !company.isActive()) {
