@@ -40,6 +40,7 @@ import tools.jackson.databind.node.ArrayNode;
  * A company can view a shipment it manages or a shipment whose linked importer is that company.
  * Detail is refused before the handler runs, so the detail document — including the risk field
  * the open shipment-detail work adds — is not written for a company that cannot view it.
+ * Change history is refused the same way as detail, so a hidden shipment's history is forbidden.
  * Tracking keeps the current not-found response for both a missing shipment and a hidden one.
  * List responses that already contain only visible shipments are passed through unchanged.
  */
@@ -88,6 +89,14 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 				return;
 			}
 			enforceTracking(request, response, chain, companyId, shipmentId);
+			return;
+		}
+		if (path.matches("/api/shipments/\\d+/history")) {
+			if (shipmentId == null) {
+				chain.doFilter(request, response);
+				return;
+			}
+			enforceDetail(request, response, chain, companyId, shipmentId);
 			return;
 		}
 		if (path.matches("/api/shipments/\\d+")) {
