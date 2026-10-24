@@ -18,6 +18,16 @@ public record ConnectionWindow(
 		return new ConnectionWindow(describe(window), window.getSeconds());
 	}
 
+	static String durationText(Duration duration) {
+		if (duration == null || duration.isNegative()) {
+			throw new IllegalArgumentException("Duration text needs a zero or positive duration");
+		}
+		if (duration.isZero()) {
+			return "0 seconds";
+		}
+		return describe(duration);
+	}
+
 	private static String describe(Duration window) {
 		long days = window.toDays();
 		int hours = window.toHoursPart();

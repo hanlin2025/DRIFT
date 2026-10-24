@@ -55,6 +55,7 @@ const shipment: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: { duration: '1 day 4 hours', totalSeconds: 100800 },
+  remainingConnectionWindow: null,
   risk: null,
   status: null,
   motherVesselPosition: null,

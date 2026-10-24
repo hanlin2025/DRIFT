@@ -66,6 +66,7 @@ public class AccountRemovalController {
 			+ "An administrator cannot remove their own account. "
 			+ "The user's existing session stops working. "
 			+ "An account that is already removed cannot be removed again. "
+			+ "A removal that overlaps another change to the same account is rejected. "
 			+ "A rejected removal leaves the account unchanged.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -91,10 +92,14 @@ public class AccountRemovalController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
-			@ApiResponse(responseCode = "409", description = "The account has already been removed", content = @Content(
-					mediaType = "application/json", examples = @ExampleObject(value = """
-							{"message":"This account has already been removed."}
-							"""))) })
+			@ApiResponse(responseCode = "409", description = "The account has already been removed, or it was changed by someone else during the removal", content = @Content(
+					mediaType = "application/json", examples = {
+							@ExampleObject(name = "Already removed", value = """
+									{"message":"This account has already been removed."}
+									"""),
+							@ExampleObject(name = "Changed concurrently", value = """
+									{"message":"This account was changed by someone else. Reload and try again."}
+									""") })) })
 	public ResponseEntity<AdminUserResponse> remove(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long userId) {

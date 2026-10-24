@@ -7,6 +7,20 @@ export type ConnectionWindow = {
   totalSeconds: number;
 };
 
+export type RemainingConnectionWindow = {
+  status: 'AVAILABLE';
+  duration: string;
+  totalSeconds: number;
+  missedBy: null;
+  missedBySeconds: null;
+} | {
+  status: 'MISSED';
+  duration: null;
+  totalSeconds: null;
+  missedBy: string;
+  missedBySeconds: number;
+};
+
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export type ShipmentRisk = {
@@ -25,6 +39,21 @@ export type VesselPosition = {
   courseOverGroundDegrees: number | null;
   trueHeadingDegrees: number | null;
   ingestedAt: string;
+  source?: 'AIS_STREAM' | 'SEEDED';
+};
+
+export type OperationalState = {
+  label: string;
+  description: string;
+  unreliable: boolean;
+  ingestedAt: string | null;
+};
+
+export type AisFeedStatusName = 'LIVE' | 'DELAYED' | 'OFFLINE';
+
+export type AisFeedStatus = {
+  status: AisFeedStatusName;
+  lastReceivedAt: string | null;
 };
 
 export type ImporterOrganisation = {
@@ -80,6 +109,7 @@ export type Shipment = {
   version: number;
   companyId?: number | null;
   connectionWindow: ConnectionWindow | null;
+  remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
@@ -93,7 +123,12 @@ export type Shipment = {
   feederVesselOperator?: string | null;
   motherVesselNameWarning?: string | null;
   feederVesselNameWarning?: string | null;
+  motherOperationalState?: OperationalState | null;
+  feederOperationalState?: OperationalState | null;
+  aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
+  updatedAt?: string | null;
+  updatedByName?: string | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -124,10 +159,18 @@ export type ShipmentTracking = {
 };
 
 export async function archiveShipment(token: string, shipmentId: number): Promise<string> {
+  return changeShipmentStatus(token, shipmentId, 'ARCHIVED');
+}
+
+export async function restoreShipment(token: string, shipmentId: number): Promise<string> {
+  return changeShipmentStatus(token, shipmentId, 'ACTIVE');
+}
+
+async function changeShipmentStatus(token: string, shipmentId: number, status: ShipmentStatus): Promise<string> {
   const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/status`, token, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'ARCHIVED' }),
+    body: JSON.stringify({ status }),
   });
   if (!isRecord(data) || typeof data.message !== 'string' || data.message.trim() === '') {
     throw new ApiError(UNEXPECTED, 502);
@@ -315,6 +358,34 @@ function isConnectionWindow(value: unknown): value is ConnectionWindow {
 
 const RISK_LEVELS: readonly unknown[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
+function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingConnectionWindow | null | undefined {
+  if (!('remainingConnectionWindow' in value) || value.remainingConnectionWindow == null) return null;
+  const window = value.remainingConnectionWindow;
+  if (!isRecord(window) || (window.status !== 'AVAILABLE' && window.status !== 'MISSED')) return undefined;
+  if (window.status === 'AVAILABLE') {
+    if (typeof window.duration !== 'string' || window.duration.trim().length === 0) return undefined;
+    if (typeof window.totalSeconds !== 'number' || !Number.isFinite(window.totalSeconds) || window.totalSeconds < 0) return undefined;
+    if (window.missedBy != null || window.missedBySeconds != null) return undefined;
+    return {
+      status: 'AVAILABLE',
+      duration: window.duration,
+      totalSeconds: window.totalSeconds,
+      missedBy: null,
+      missedBySeconds: null,
+    };
+  }
+  if (window.duration != null || window.totalSeconds != null) return undefined;
+  if (typeof window.missedBy !== 'string' || window.missedBy.trim().length === 0) return undefined;
+  if (typeof window.missedBySeconds !== 'number' || !Number.isFinite(window.missedBySeconds) || window.missedBySeconds < 0) return undefined;
+  return {
+    status: 'MISSED',
+    duration: null,
+    totalSeconds: null,
+    missedBy: window.missedBy,
+    missedBySeconds: window.missedBySeconds,
+  };
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
@@ -330,6 +401,35 @@ function isOptionalFiniteNumber(value: unknown): value is number | null {
   return value == null || isFiniteNumber(value);
 }
 
+const AIS_FEED_STATUS: readonly AisFeedStatusName[] = ['LIVE', 'DELAYED', 'OFFLINE'];
+
+function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undefined {
+  if (!('aisFeed' in value) || value.aisFeed == null) return null;
+  const feed = value.aisFeed;
+  if (!isRecord(feed) || !AIS_FEED_STATUS.some(status => status === feed.status)) return undefined;
+  if (feed.status === 'OFFLINE') {
+    if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
+    return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
+  }
+  if (typeof feed.lastReceivedAt !== 'string' || feed.lastReceivedAt.trim().length === 0) return undefined;
+  return { status: feed.status, lastReceivedAt: feed.lastReceivedAt };
+}
+
+function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
+  if (!(key in value) || value[key] == null) return null;
+  const state = value[key];
+  if (!isRecord(state) || typeof state.label !== 'string' || state.label.trim().length === 0) return undefined;
+  if (typeof state.description !== 'string' || !state.description.startsWith(state.label)) return undefined;
+  if (typeof state.unreliable !== 'boolean') return undefined;
+  if (state.ingestedAt != null && typeof state.ingestedAt !== 'string') return undefined;
+  return {
+    label: state.label,
+    description: state.description,
+    unreliable: state.unreliable,
+    ingestedAt: state.ingestedAt ?? null,
+  };
+}
+
 function isVesselPosition(value: unknown): value is VesselPosition {
   return isRecord(value)
     && typeof value.mmsi === 'string'
@@ -340,7 +440,8 @@ function isVesselPosition(value: unknown): value is VesselPosition {
     && isOptionalFiniteNumber(value.speedOverGroundKnots)
     && isOptionalFiniteNumber(value.courseOverGroundDegrees)
     && isOptionalFiniteNumber(value.trueHeadingDegrees)
-    && typeof value.ingestedAt === 'string';
+    && typeof value.ingestedAt === 'string'
+    && (value.source == null || value.source === 'AIS_STREAM' || value.source === 'SEEDED');
 }
 
 function asTracking(value: unknown): ShipmentTracking | null {
@@ -407,6 +508,8 @@ function asShipment(value: unknown): Shipment | null {
   if (!isNullableText(value.feederVessel) || !isNullableText(value.plannedFeederDepartureAt)) return null;
   const window = value.connectionWindow;
   if (window != null && !isConnectionWindow(window)) return null;
+  const remainingConnectionWindow = remainingConnectionWindowOf(value);
+  if (remainingConnectionWindow === undefined) return null;
   const risk = value.risk;
   if (risk != null && !isRisk(risk)) return null;
   const motherVesselPosition = value.motherVesselPosition;
@@ -425,8 +528,16 @@ function asShipment(value: unknown): Shipment | null {
   const feederVesselNameWarning = optionalIdentity(value, 'feederVesselNameWarning');
   if ([motherVesselImo, motherVesselMmsi, motherVesselOperator, feederVesselImo, feederVesselMmsi,
     feederVesselOperator, motherVesselNameWarning, feederVesselNameWarning].some(item => item === undefined)) return null;
+  const motherOperationalState = operationalStateOf(value, 'motherOperationalState');
+  const feederOperationalState = operationalStateOf(value, 'feederOperationalState');
+  if (motherOperationalState === undefined || feederOperationalState === undefined) return null;
+  const aisFeed = aisFeedOf(value);
+  if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const updatedAt = optionalIdentity(value, 'updatedAt');
+  const updatedByName = optionalIdentity(value, 'updatedByName');
+  if (updatedAt === undefined || updatedByName === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -441,6 +552,7 @@ function asShipment(value: unknown): Shipment | null {
     version: value.version,
     companyId: companyIdOf(value.companyId),
     connectionWindow: window ?? null,
+    remainingConnectionWindow,
     risk: risk ?? null,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
@@ -454,7 +566,12 @@ function asShipment(value: unknown): Shipment | null {
     feederVesselOperator,
     motherVesselNameWarning,
     feederVesselNameWarning,
+    motherOperationalState,
+    feederOperationalState,
+    aisFeed,
     arrivalComparison,
+    updatedAt,
+    updatedByName,
   };
 }
 

@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { archiveShipment, getShipment, getShipmentTracking, listShipments, type Shipment } from '../shipment/api';
+import { archiveShipment, getShipment, getShipmentTracking, listShipments, restoreShipment, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -26,6 +26,7 @@ const newer: Shipment = {
   createdAt: '2026-09-29T04:00:00Z',
   version: 0,
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
+  remainingConnectionWindow: null,
   companyId: 1,
   risk: null,
   status: null,
@@ -46,6 +47,7 @@ const older: Shipment = {
   createdAt: '2026-09-28T04:00:00Z',
   version: 0,
   connectionWindow: null,
+  remainingConnectionWindow: null,
   companyId: 1,
   risk: null,
   status: null,
@@ -133,12 +135,36 @@ describe('shipment list', () => {
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/freight-forwarder/shipments/2');
     expect(screen.queryByText('1 day')).not.toBeInTheDocument();
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
+    expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
   });
 
   it('renders no shipment rows for an empty list', () => {
     render(<MemoryRouter><ShipmentList shipments={[]} basePath="/importer" /></MemoryRouter>);
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
+  });
+
+  it('shows who archived a shipment only on the archived list', () => {
+    const archivedShipment: Shipment = {
+      ...newer,
+      status: 'ARCHIVED',
+      updatedByName: 'Ada Admin',
+      updatedAt: '2026-10-18T02:15:00Z',
+    };
+    const { unmount } = render(<MemoryRouter><ShipmentList shipments={[archivedShipment]} basePath="/freight-forwarder" archived /></MemoryRouter>);
+    expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
+    const cell = screen.getByRole('cell', { name: `Ada Admin on ${formatWhen('2026-10-18T02:15:00Z')}` });
+    expect(cell.querySelector('time')).toHaveAttribute('datetime', '2026-10-18T02:15:00Z');
+    unmount();
+
+    render(<MemoryRouter><ShipmentList shipments={[archivedShipment]} basePath="/freight-forwarder" /></MemoryRouter>);
+    expect(screen.queryByRole('columnheader', { name: 'Archived by' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Ada Admin')).not.toBeInTheDocument();
+  });
+
+  it('shows unknown when an archived shipment has no last update', () => {
+    render(<MemoryRouter><ShipmentList shipments={[newer]} basePath="/freight-forwarder" archived /></MemoryRouter>);
+    expect(screen.getByRole('cell', { name: 'Unknown' })).toHaveClass('is-missing');
   });
 
   it('shows an unassigned feeder vessel as pending', () => {
@@ -195,6 +221,7 @@ describe('workspace shipment retrieval', () => {
   it('forwards explicit status but leaves the implicit Active default out of the API request', async () => {
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?status=ARCHIVED&tab=overview');
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
+    expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
       reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
     });
@@ -202,7 +229,19 @@ describe('workspace shipment retrieval', () => {
     cleanup();
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?tab=overview');
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
+    expect(screen.queryByRole('columnheader', { name: 'Archived by' })).not.toBeInTheDocument();
     expect(listShipments).toHaveBeenLastCalledWith('session-token');
+  });
+
+  it('shows the archiving user returned by the archived list', async () => {
+    vi.mocked(listShipments).mockResolvedValue([{
+      ...newer,
+      status: 'ARCHIVED',
+      updatedByName: 'Ada Admin',
+      updatedAt: '2026-10-18T02:15:00Z',
+    }]);
+    openWorkspace('IMPORTER', '/importer?status=ARCHIVED');
+    expect(await screen.findByRole('cell', { name: `Ada Admin on ${formatWhen('2026-10-18T02:15:00Z')}` })).toBeInTheDocument();
   });
 
   it('fetches only after filters are applied or cleared', async () => {
@@ -287,7 +326,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Risk', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();
@@ -737,5 +776,105 @@ describe('shipment removal', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(sessionStorage.getItem('drift.session')).toBeNull();
     expect(screen.queryByText('Shipment removed successfully')).not.toBeInTheDocument();
+  });
+});
+
+describe('shipment restore', () => {
+  const archived: Shipment = { ...newer, status: 'ARCHIVED' };
+  const stillArchived: Shipment = { ...older, status: 'ARCHIVED' };
+
+  it.each(['ADMIN', 'LOGISTICS_MANAGER'] as const)('shows Restore only on an archived shipment owned by the %s company', async role => {
+    const linked = { ...archived, id: 8, shipmentReference: 'HBL-LINKED', companyId: 99 };
+    vi.mocked(listShipments).mockResolvedValue([archived, { ...older, status: 'ACTIVE' }, linked]);
+    openWorkspace(role);
+    expect(await screen.findByRole('button', { name: 'Restore HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-NEWER' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove HBL-OLDER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore HBL-OLDER' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restore HBL-LINKED' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-LINKED' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it.each(['FREIGHT_FORWARDER', 'IMPORTER'] as const)('hides Restore from a %s', async role => {
+    vi.mocked(listShipments).mockResolvedValue([archived]);
+    openWorkspace(role);
+    expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Restore/ })).not.toBeInTheDocument();
+  });
+
+  it('leaves the archived shipment in place when restore is cancelled', async () => {
+    vi.mocked(listShipments).mockResolvedValue([archived]);
+    openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
+    const user = userEvent.setup();
+    const opener = await screen.findByRole('button', { name: 'Restore HBL-NEWER' });
+    await user.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: 'Restore shipment' });
+    expect(within(dialog).getByText("Restoring HBL-NEWER returns it to your company's active shipments. Its other details stay unchanged.")).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(restoreShipment).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the shipment from the archived list after a confirmed restore', async () => {
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    vi.mocked(listShipments).mockResolvedValueOnce([archived, stillArchived]).mockResolvedValueOnce([stillArchived]);
+    vi.mocked(restoreShipment).mockResolvedValue('Shipment restored successfully');
+    openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Restore HBL-NEWER' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Restore shipment' })).getByRole('button', { name: 'Restore' }));
+    expect(restoreShipment).toHaveBeenCalledWith('session-token', 2);
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(await screen.findByText('Shipment restored successfully')).toHaveAttribute('role', 'status');
+    expect(await screen.findByRole('link', { name: 'HBL-OLDER' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'HBL-NEWER' })).not.toBeInTheDocument();
+    expect(listShipments).toHaveBeenNthCalledWith(1, 'session-token', filters);
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', filters);
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments?status=ARCHIVED');
+  });
+
+  it('keeps the archived shipment and shows a permission failure', async () => {
+    vi.mocked(listShipments).mockResolvedValue([archived]);
+    vi.mocked(restoreShipment).mockRejectedValue(new ApiError('You do not have permission to restore this shipment.', 403));
+    openWorkspace('LOGISTICS_MANAGER', '/logistics-manager?status=ARCHIVED');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Restore HBL-NEWER' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('You do not have permission to restore this shipment.');
+    expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(listShipments).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('refreshes the archived list when the shipment is already active', async () => {
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    vi.mocked(listShipments).mockResolvedValueOnce([archived]).mockResolvedValueOnce([]);
+    vi.mocked(restoreShipment).mockRejectedValue(new ApiError('This shipment is already active.', 409));
+    openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Restore HBL-NEWER' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This shipment is already active.');
+    expect(screen.queryByRole('link', { name: 'HBL-NEWER' })).not.toBeInTheDocument();
+    expect(listShipments).toHaveBeenNthCalledWith(1, 'session-token', filters);
+    expect(listShipments).toHaveBeenLastCalledWith('session-token', filters);
+    expect(listShipments).toHaveBeenCalledTimes(2);
+  });
+
+  it('ends the session when restore is rejected because the session ended', async () => {
+    vi.mocked(listShipments).mockResolvedValue([archived]);
+    vi.mocked(restoreShipment).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Restore HBL-NEWER' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Restore' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
   });
 });

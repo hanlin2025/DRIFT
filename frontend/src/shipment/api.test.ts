@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -36,6 +36,8 @@ describe('shipment importer API', () => {
     expect(listed[0].motherVesselImo).toBeNull();
     expect(listed[0].motherVesselNameWarning).toBeNull();
     expect(listed[0].arrivalComparison).toBeNull();
+    expect(listed[0].updatedAt).toBeNull();
+    expect(listed[0].updatedByName).toBeNull();
     expect(fetch).toHaveBeenCalledWith('/api/shipments', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
@@ -77,6 +79,22 @@ describe('shipment importer API', () => {
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
+  });
+
+  it('reads who last updated a shipment on the list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{
+      ...shipment,
+      updatedAt: '2026-10-18T02:15:00Z',
+      updatedByName: 'Ada Admin',
+    }])));
+    const listed = await listShipments('token');
+    expect(listed[0].updatedAt).toBe('2026-10-18T02:15:00Z');
+    expect(listed[0].updatedByName).toBe('Ada Admin');
+  });
+
+  it('rejects a list shipment whose last update is not text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, updatedAt: 1, updatedByName: 'Ada Admin' }])));
+    await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
 
   it('reads the importer on a shipment detail', async () => {
@@ -221,6 +239,37 @@ describe('archiveShipment', () => {
   });
 });
 
+describe('restoreShipment', () => {
+  it('patches the shipment back to active with the bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ message: 'Shipment restored successfully' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(restoreShipment('token-1', 7)).resolves.toBe('Shipment restored successfully');
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/7/status', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'ACTIVE' }),
+      cache: 'no-store',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer token-1',
+        'Content-Type': 'application/json',
+      }),
+    }));
+  });
+
+  it('rejects a successful response that does not include a message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ status: 'ACTIVE' })));
+    await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it.each([
+    [403, 'You do not have permission to restore this shipment.'],
+    [404, 'Shipment not found'],
+    [409, 'This shipment is already active.'],
+  ] as const)('returns the server message for status %s', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
+    await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status, message });
+  });
+});
+
 describe('arrival comparison parsing', () => {
   const limitation = 'Approximate arrival — based on straight-line distance and current speed.';
 
@@ -254,11 +303,38 @@ describe('arrival comparison parsing', () => {
     };
   }
 
+  it('reads a remaining window and a missed connection, and rejects a contradictory one', async () => {
+    const available = {
+      status: 'AVAILABLE',
+      duration: '4 hours',
+      totalSeconds: 14400,
+      missedBy: null,
+      missedBySeconds: null,
+    };
+    const missed = {
+      status: 'MISSED',
+      duration: null,
+      totalSeconds: null,
+      missedBy: '2 hours',
+      missedBySeconds: 7200,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, remainingConnectionWindow: available })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ remainingConnectionWindow: available });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, remainingConnectionWindow: missed }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ remainingConnectionWindow: missed }]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      remainingConnectionWindow: { status: 'AVAILABLE', duration: '4 hours', totalSeconds: 14400, missedBy: '1 hour', missedBySeconds: 3600 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('reads a detail response that omits the comparison', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
     const detail = await getShipment('token', '9');
     expect(detail.arrivalComparison).toBeNull();
     expect(detail.connectionWindow).toBeNull();
+    expect(detail.remainingConnectionWindow).toBeNull();
   });
 
   it('reads an explicit null comparison on a list item', async () => {
@@ -370,6 +446,108 @@ describe('vessel track history API', () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, points })));
       await expect(getVesselTrack('token', '7', 'FEEDER', 6)).rejects.toMatchObject({ status: 502 });
     }
+  });
+
+  it('keeps a stored AIS source and rejects one that is not AIS_STREAM or SEEDED', async () => {
+    const position = {
+      mmsi: '565000222',
+      vesselName: 'STRAIT RUNNER',
+      latitude: 1.25,
+      longitude: 103.7,
+      speedOverGroundKnots: 8.1,
+      courseOverGroundDegrees: 10,
+      trueHeadingDegrees: 11,
+      ingestedAt: '2026-10-05T03:00:00Z',
+      source: 'SEEDED',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      motherVesselName: 'MV Pacific Horizon',
+      motherVessel: { ...position, source: 'AIS_STREAM' },
+      motherVesselNameWarning: null,
+      feederVesselName: 'MV Strait Runner',
+      feederVessel: position,
+      feederVesselNameWarning: null,
+    })));
+    await expect(getShipmentTracking('token', '9')).resolves.toMatchObject({
+      motherVessel: { source: 'AIS_STREAM' },
+      feederVessel: { source: 'SEEDED' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherVesselPosition: { ...position, source: 'LIVE' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps an operational state and treats an omitted one as absent', async () => {
+    const state = {
+      label: 'At anchor',
+      description: 'At anchor near Singapore',
+      unreliable: false,
+      ingestedAt: '2026-10-05T03:00:00Z',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: state,
+      feederOperationalState: { ...state, label: 'Unknown', description: 'Unknown', ingestedAt: null },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.motherOperationalState).toEqual(state);
+    expect(detail.feederOperationalState?.ingestedAt).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    const omitted = await getShipment('token', '9');
+    expect(omitted.motherOperationalState).toBeNull();
+    expect(omitted.feederOperationalState).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      motherOperationalState: { ...state, description: 'Moored near Singapore' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps the AIS feed status and rejects a feed that is not Live, Delayed, or Offline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-05T03:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: '2026-10-05T03:00:00Z' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'LIVE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    const omitted = await getShipment('token', '9');
+    expect(omitted.aisFeed).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: null },
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      aisFeed: { status: 'OFFLINE', lastReceivedAt: null },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'LIVE', lastReceivedAt: null },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      aisFeed: { status: 'STALE', lastReceivedAt: '2026-10-22T06:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 
   it('passes the API message for an unsupported window', async () => {
