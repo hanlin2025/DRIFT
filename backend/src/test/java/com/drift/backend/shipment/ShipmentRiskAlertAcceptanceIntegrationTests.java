@@ -9,6 +9,8 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +33,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.drift.backend.account.AccountRole;
+import com.drift.backend.ais.position.AisPosition;
+import com.drift.backend.ais.position.AisPositionSource;
+import com.drift.backend.ais.position.LatestAisPositions;
 import com.drift.backend.account.AccountRoleRepository;
 import com.drift.backend.account.RiskNotificationLevel;
 import com.drift.backend.account.Role;
@@ -65,6 +70,8 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskAlertDeliveryService deliveryService;
 	@Autowired ShipmentRiskAlertDeliveryPoller poller;
+	@Autowired ShipmentRiskEvaluator evaluator;
+	@Autowired LatestAisPositions aisPositions;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired JavaMailSender mailSender;
@@ -110,15 +117,32 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		UserAccount importerUser = inTransaction(() -> createUser(importer, Role.IMPORTER, true, RiskNotificationLevel.HIGH));
 		Company unrelated = unrelatedCompany();
 		UserAccount unrelatedUser = inTransaction(() -> createUser(unrelated, Role.IMPORTER, true, RiskNotificationLevel.LOW));
+		String motherVessel = "CDG199 Mother " + UUID.randomUUID();
 
-		ShipmentResponse created = createImported(importer, 25);
-		ShipmentResponse updated = updateWindow(created, 11);
-		ShipmentRiskTransition rise = transitions.findByShipmentIdOrderBySequenceAsc(updated.id()).getLast();
-		assertThat(rise.getTransitionType()).isEqualTo(ShipmentRiskTransitionType.RISE);
-		assertThat(rise.getRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
+		ShipmentResponse created = createImported(importer, 25, "Singapore", motherVessel);
+		ShipmentRiskTransition initial = transitions.findByShipmentIdOrderBySequenceAsc(created.id()).getFirst();
+		assertThat(initial.getTransitionType()).isEqualTo(ShipmentRiskTransitionType.INITIAL);
+		assertThat(initial.getRiskLevel()).isEqualTo(ShipmentRisk.Level.LOW);
+		assertThat(deliveries.findByTransitionIdOrderByIdAsc(initial.getId()))
+				.extracting(delivery -> delivery.getUser().getId())
+				.containsExactly(managingUser.getId())
+				.doesNotContain(importerUser.getId(), unrelatedUser.getId());
 
-		List<ShipmentRiskAlertDelivery> riseDeliveries = deliveries.findByTransitionIdOrderByIdAsc(rise.getId());
-		assertThat(riseDeliveries).extracting(delivery -> delivery.getUser().getId())
+		ShipmentResponse medium = updateWindow(created, 20);
+		ShipmentRiskTransition mediumRise = transitions.findByShipmentIdOrderBySequenceAsc(medium.id()).getLast();
+		assertThat(mediumRise.getRiskLevel()).isEqualTo(ShipmentRisk.Level.MEDIUM);
+		assertThat(deliveries.findByTransitionIdOrderByIdAsc(mediumRise.getId()))
+				.extracting(delivery -> delivery.getUser().getId())
+				.containsExactly(managingUser.getId())
+				.doesNotContain(importerUser.getId(), unrelatedUser.getId());
+
+		ShipmentResponse updated = updateWindow(medium, 11);
+		ShipmentRiskTransition highRise = transitions.findByShipmentIdOrderBySequenceAsc(updated.id()).getLast();
+		assertThat(highRise.getTransitionType()).isEqualTo(ShipmentRiskTransitionType.RISE);
+		assertThat(highRise.getRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
+
+		List<ShipmentRiskAlertDelivery> highDeliveries = deliveries.findByTransitionIdOrderByIdAsc(highRise.getId());
+		assertThat(highDeliveries).extracting(delivery -> delivery.getUser().getId())
 				.containsExactlyInAnyOrder(managingUser.getId(), importerUser.getId())
 				.doesNotContain(unrelatedUser.getId());
 
@@ -127,7 +151,7 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 			sent.add(invocation.getArgument(0));
 			return null;
 		}).when(mailSender).send(any(SimpleMailMessage.class));
-		for (ShipmentRiskAlertDelivery delivery : riseDeliveries) {
+		for (ShipmentRiskAlertDelivery delivery : highDeliveries) {
 			assertThat(deliveryService.sendDelivery(delivery.getId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SENT);
 		}
 
@@ -135,17 +159,36 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		assertThat(sent).allSatisfy(message -> {
 			assertThat(message.getTo()).hasSize(1);
 			assertThat(message.getSubject()).contains(updated.shipmentReference()).contains("HIGH");
-			assertThat(message.getText()).contains(rise.getExplanation()).contains("HIGH");
+			assertThat(message.getText()).contains(highRise.getExplanation()).contains("HIGH");
 		});
 		assertThat(sent).extracting(SimpleMailMessage::getText)
 				.anySatisfy(body -> assertThat(body).contains("/logistics-manager/shipments/" + updated.id()))
 				.anySatisfy(body -> assertThat(body).contains("/importer/shipments/" + updated.id()));
-		assertThat(deliveries.findByTransitionIdOrderByIdAsc(rise.getId())).allSatisfy(delivery -> {
+
+		aisPositions.record(new AisPosition(mmsi(), motherVessel,
+				new BigDecimal("-80"), new BigDecimal("-170"), new BigDecimal("0.5"), null, null, null, true,
+				null, Instant.now(), AisPositionSource.SEEDED));
+		assertThat(evaluator.evaluate(updated.id())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
+		ShipmentRiskTransition criticalRise = transitions.findByShipmentIdOrderBySequenceAsc(updated.id()).getLast();
+		assertThat(criticalRise.getPreviousRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
+		assertThat(criticalRise.getRiskLevel()).isEqualTo(ShipmentRisk.Level.CRITICAL);
+
+		List<ShipmentRiskAlertDelivery> criticalDeliveries = deliveries.findByTransitionIdOrderByIdAsc(criticalRise.getId());
+		assertThat(criticalDeliveries).extracting(delivery -> delivery.getUser().getId())
+				.containsExactlyInAnyOrder(managingUser.getId(), importerUser.getId())
+				.doesNotContain(unrelatedUser.getId());
+		for (ShipmentRiskAlertDelivery delivery : criticalDeliveries) {
+			assertThat(deliveryService.sendDelivery(delivery.getId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SENT);
+		}
+		assertThat(sent).hasSize(4);
+		assertThat(sent.subList(2, 4)).allSatisfy(message -> {
+			assertThat(message.getSubject()).contains(updated.shipmentReference()).contains("CRITICAL");
+			assertThat(message.getText()).contains(criticalRise.getExplanation()).contains("CRITICAL");
+		});
+		assertThat(deliveries.findByTransitionIdOrderByIdAsc(criticalRise.getId())).allSatisfy(delivery -> {
 			assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SENT);
 			assertThat(delivery.getSentAt()).isNotNull();
 		});
-		assertThat(rise.getRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
-		assertThat(rise.getExplanation()).isNotBlank();
 	}
 
 	@Test
@@ -214,11 +257,12 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 				"Feeder", arrival.plusHours(connectionHours), null, null, null, null, null, null));
 	}
 
-	private ShipmentResponse createImported(Company importer, int connectionHours) {
+	private ShipmentResponse createImported(Company importer, int connectionHours, String transshipmentPort, String motherVessel) {
 		String reference = PREFIX + "IMPORT-" + UUID.randomUUID();
 		OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
-		shipments.createImported(managingCompany, managingUser, new ShipmentImportRow(1, reference, "A", "B", "C", "Mother", arrival,
-				"Feeder", arrival.plusHours(connectionHours), null), importer);
+		shipments.createImported(managingCompany, managingUser,
+				new ShipmentImportRow(1, reference, "A", "B", transshipmentPort, motherVessel, arrival,
+						"Feeder", arrival.plusHours(connectionHours), null), importer);
 		Shipment shipment = shipmentRepository.findAll().stream()
 				.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
 		return ShipmentResponse.from(shipment, null);
@@ -250,6 +294,11 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		UserAccount user = new UserAccount("CDG-199 " + role, "cdg199-" + UUID.randomUUID() + "@example.test", "hash", accountRole, company);
 		user.chooseRiskNotifications(enabled, minimum);
 		return users.saveAndFlush(user);
+	}
+
+	private static String mmsi() {
+		long suffix = Math.floorMod(UUID.randomUUID().getMostSignificantBits(), 800_000_000L);
+		return Long.toString(100_000_000L + suffix);
 	}
 
 	private static AuthenticatedUser principal(UserAccount user) {
