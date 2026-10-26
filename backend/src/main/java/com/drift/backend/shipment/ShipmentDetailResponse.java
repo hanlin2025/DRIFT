@@ -43,6 +43,8 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow,
 		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the feeder departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Evidence, assumptions, and confidence for the risk on this same read. Calculated when the shipment is read and not stored. An unavailable assessment names the missing planned time and does not return a limited confidence.")
+		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -74,6 +76,8 @@ public record ShipmentDetailResponse(
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
 				ShipmentRisk.of(calculation, remainingConnectionWindow),
+				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
+						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),

@@ -142,8 +142,17 @@ class ShipmentArchiveIntegrationTests {
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
 				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
 				.andExpect(jsonPath("$.risk.explanation")
-						.value("At least 24 hours to transfer cargo between vessels. The planned connection window is being used."));
-		detail(importerToken, shipmentId).andExpect(status().isOk());
+						.value("At least 24 hours to transfer cargo between vessels. The planned connection window is being used."))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[0]").value("Planned connection window"))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[1]").value("1 day 4 hours"))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[2]").value("No AIS position has been received for the mother vessel."))
+				.andExpect(jsonPath("$.assessmentExplanation.confidence")
+						.value("Confidence is limited because the planned connection window is being used."))
+				.andExpect(jsonPath("$.assessmentExplanation.unavailable").value(nullValue()));
+		detail(importerToken, shipmentId).andExpect(status().isOk())
+				.andExpect(jsonPath("$.assessmentExplanation.confidence")
+						.value("Confidence is limited because the planned connection window is being used."))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[1]").value("1 day 4 hours"));
 		mvc.perform(get("/api/shipments/" + shipmentId + "/tracking").header("Authorization", "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.motherVesselName").value("MV Pacific Horizon"));
