@@ -75,6 +75,8 @@ class RolePermissionMatrixTest {
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "GET", "/api/shipments/3/track-history"))
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
+		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "GET", "/api/shipments/3/cdg201-arrival-evidence"))
+				.contains(ShipmentAccessForbiddenException.MESSAGE);
 		assertThat(RolePermissionMatrix.denial(Role.LOGISTICS_MANAGER, false, "PUT", "/api/shipments/3"))
 				.contains(ShipmentAccessForbiddenException.MESSAGE);
 	}
@@ -97,6 +99,7 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/tracking")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/track-history?hours=6")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/cdg201-arrival-evidence")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/import/4")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/risk")).isFalse();
