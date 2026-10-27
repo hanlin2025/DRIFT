@@ -138,6 +138,10 @@ export type Cdg201ArrivalEvidence = {
   vesselImo: string;
   previousExpectedArrival: string;
   revisedExpectedArrival: string;
+  previousExpectedArrivalSgt: string;
+  previousExpectedArrivalUtc: string;
+  revisedExpectedArrivalSgt: string;
+  revisedExpectedArrivalUtc: string;
   revisionMinutes: number;
   previousCollectionUtc: string;
   latestCollectionUtc: string;
@@ -395,7 +399,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
   if (!isRecord(value)) return null;
-  const text = ['contractVersion', 'evidenceState', 'vesselName', 'vesselImo', 'previousExpectedArrival', 'revisedExpectedArrival',
+  const text = ['contractVersion', 'evidenceState', 'vesselName', 'vesselImo', 'previousExpectedArrival', 'revisedExpectedArrival', 'previousExpectedArrivalSgt', 'previousExpectedArrivalUtc', 'revisedExpectedArrivalSgt', 'revisedExpectedArrivalUtc',
     'previousCollectionUtc', 'latestCollectionUtc', 'previousCollectionRunId', 'latestCollectionRunId', 'previousSourceManifest', 'previousSourceRawFile', 'sourceManifest', 'sourceRawFile',
     'confidence', 'ambiguity', 'sourceTimestampSemantics', 'locationFrom', 'locationTo', 'locationMappingStatus', 'shipmentAssociation', 'limitations'] as const;
   if (!text.every(key => typeof value[key] === 'string') || value.evidenceState !== 'RECORDED_EVIDENCE_REPLAY'
@@ -408,7 +412,9 @@ function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
   return {
     contractVersion: value.contractVersion as string, evidenceState: 'RECORDED_EVIDENCE_REPLAY', vesselName: value.vesselName as string,
     vesselImo: value.vesselImo as string, previousExpectedArrival: value.previousExpectedArrival as string,
-    revisedExpectedArrival: value.revisedExpectedArrival as string, revisionMinutes: value.revisionMinutes as number,
+    revisedExpectedArrival: value.revisedExpectedArrival as string, previousExpectedArrivalSgt: value.previousExpectedArrivalSgt as string,
+    previousExpectedArrivalUtc: value.previousExpectedArrivalUtc as string, revisedExpectedArrivalSgt: value.revisedExpectedArrivalSgt as string,
+    revisedExpectedArrivalUtc: value.revisedExpectedArrivalUtc as string, revisionMinutes: value.revisionMinutes as number,
     previousCollectionUtc: value.previousCollectionUtc as string, latestCollectionUtc: value.latestCollectionUtc as string,
     previousCollectionRunId: value.previousCollectionRunId as string, latestCollectionRunId: value.latestCollectionRunId as string,
     previousSourceManifest: value.previousSourceManifest as string, previousSourceRawFile: value.previousSourceRawFile as string,

@@ -12,7 +12,6 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 public class Cdg201ArrivalEvidenceService {
 
 	private static final String KOTA_LARIS_IMO = "9351048";
-
 	public Cdg201ArrivalEvidence forShipment(ShipmentDetailResponse shipment) {
 		if (shipment == null || !KOTA_LARIS_IMO.equals(shipment.motherVesselImo())) {
 			return null;
@@ -20,7 +19,9 @@ public class Cdg201ArrivalEvidenceService {
 		return new Cdg201ArrivalEvidence(
 				"cdg201.drift-arrival-evidence.v1", "RECORDED_EVIDENCE_REPLAY",
 				"KOTA LARIS", KOTA_LARIS_IMO,
-				"2026-10-28 23:00:00", "2026-10-29 02:00:00", 180,
+				"2026-10-28 23:00:00", "2026-10-29 02:00:00",
+				"2026-10-28T23:00:00+08:00", "2026-10-28T15:00:00+00:00",
+				"2026-10-29T02:00:00+08:00", "2026-10-28T18:00:00+00:00", 180,
 				"2026-10-26T15:10:22.248554+00:00", "2026-10-26T15:46:03.213897+00:00",
 				"mpa-20261026T151021387321Z", "mpa-20261026T154602315050Z",
 				"due_to_arrive_2026-10-28_20261026T151022Z.manifest.json",
@@ -28,7 +29,7 @@ public class Cdg201ArrivalEvidenceService {
 				"due_to_arrive_2026-10-29_20261026T154603Z.manifest.json",
 				"due_to_arrive_2026-10-29_20261026T154603Z.json",
 				"conservative_context_time_continuity", "NONE_FOR_REPLAY_EVENT",
-				"MPA expected-arrival source timestamp is retained verbatim; its timezone offset is undocumented.",
+				"MPA source event strings are Singapore Standard Time (Asia/Singapore, UTC+08:00); raw strings and derived SGT/UTC instants are shown separately.",
 				"SEA", "PEBGA", "UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT",
 				"UNVERIFIED_IMO_ONLY", "Recorded MPA revision replay. It does not verify a booked shipment, port call, feeder connection, or actual arrival.",
 				new Cdg201SimulatedConnectionScenario("SIMULATED_CONNECTION_ASSUMPTIONS", 780, 600, 180,

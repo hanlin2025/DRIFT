@@ -173,7 +173,7 @@ describe('CDG-201 arrival-evidence replay API', () => {
   const evidence = {
     contractVersion: 'cdg201.drift-arrival-evidence.v1', evidenceState: 'RECORDED_EVIDENCE_REPLAY',
     vesselName: 'KOTA LARIS', vesselImo: '9351048', previousExpectedArrival: '2026-10-28 23:00:00',
-    revisedExpectedArrival: '2026-10-29 02:00:00', revisionMinutes: 180,
+    revisedExpectedArrival: '2026-10-29 02:00:00', previousExpectedArrivalSgt: '2026-10-28T23:00:00+08:00', previousExpectedArrivalUtc: '2026-10-28T15:00:00+00:00', revisedExpectedArrivalSgt: '2026-10-29T02:00:00+08:00', revisedExpectedArrivalUtc: '2026-10-28T18:00:00+00:00', revisionMinutes: 180,
     previousCollectionUtc: '2026-10-26T15:10:22Z', latestCollectionUtc: '2026-10-26T15:46:03Z',
     previousCollectionRunId: 'run-one', latestCollectionRunId: 'run-two', previousSourceManifest: 'prior-replay.manifest.json', previousSourceRawFile: 'prior-replay.json', sourceManifest: 'replay.manifest.json', sourceRawFile: 'replay.json',
     confidence: 'conservative_context_time_continuity', ambiguity: 'NONE_FOR_REPLAY_EVENT', sourceTimestampSemantics: 'Unknown offset.',
@@ -195,6 +195,7 @@ describe('CDG-201 arrival-evidence replay API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ readOnlyReplay: true, evidence: { ...evidence, sourceTimestampSemantics: null } })));
     await expect(getCdg201ArrivalEvidence('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
+
 });
 
 describe('shipment tracking', () => {

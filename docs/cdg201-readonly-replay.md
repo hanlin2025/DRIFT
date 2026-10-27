@@ -16,7 +16,8 @@ Run the normal backend/frontend locally, then open any authorized shipment with 
 
 - recorded source-string ETA change `2026-10-28 23:00:00` → `2026-10-29 02:00:00` (+180 minutes);
 - collection-run IDs, UTC collection times, manifest and raw-file identifiers;
-- explicit unknown timestamp-offset and MPA-location mapping limitations; and
+- raw MPA source strings plus derived Asia/Singapore and UTC event instants,
+  while keeping the MPA-location mapping limitation explicit; and
 - a separate synthetic scenario: 780 → 600 minutes, illustrative MEDIUM → HIGH.
 
 The scenario is not the shipment risk, does not update planned arrival/departure fields, and does not trigger alerts.
@@ -32,4 +33,4 @@ cd ../frontend && npm run test:e2e:cdg201-replay
 
 ## Required approval before extending it
 
-CDG-42/team owners must approve timestamp normalization, MPA location-to-port mapping, visit identity, source precedence relative to AIS, feeder/cargo-cutoff data, risk recalculation, alert behavior, and evidence retention. Until then, the read-only replay must remain separate from `ArrivalEstimate`, `ConnectionWindowService`, `ShipmentRisk`, and alert activation.
+MPA source event strings are confirmed Asia/Singapore (UTC+08:00); collector retrieval timestamps remain UTC. CDG-42/team owners must still approve source precedence relative to AIS, MPA location-to-port mapping, visit identity, feeder/cargo-cutoff data, risk recalculation, alert behavior, and evidence retention before normalized instants affect operational logic. Until then, the read-only replay remains separate from `ArrivalEstimate`, `ConnectionWindowService`, `ShipmentRisk`, and alert activation.

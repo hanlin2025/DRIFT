@@ -12,6 +12,7 @@ export function Cdg201EvidencePanel({ evidence }: { evidence: Cdg201ArrivalEvide
       <dl>
         <div><dt>Vessel</dt><dd>{evidence.vesselName} · IMO {evidence.vesselImo}</dd></div>
         <div><dt>Expected arrival</dt><dd><code>{evidence.previousExpectedArrival}</code> → <code>{evidence.revisedExpectedArrival}</code></dd></div>
+        <div><dt>Derived event instants</dt><dd>SGT: <code>{evidence.previousExpectedArrivalSgt}</code> → <code>{evidence.revisedExpectedArrivalSgt}</code><br />UTC: <code>{evidence.previousExpectedArrivalUtc}</code> → <code>{evidence.revisedExpectedArrivalUtc}</code></dd></div>
         <div><dt>Observed ETA revision</dt><dd>+{evidence.revisionMinutes} minutes</dd></div>
         <div><dt>Prior source snapshot</dt><dd><time dateTime={evidence.previousCollectionUtc}>{formatWhen(evidence.previousCollectionUtc)}</time> · {evidence.previousCollectionRunId}</dd></div>
         <div><dt>Revised source snapshot</dt><dd><time dateTime={evidence.latestCollectionUtc}>{formatWhen(evidence.latestCollectionUtc)}</time> · {evidence.latestCollectionRunId}</dd></div>

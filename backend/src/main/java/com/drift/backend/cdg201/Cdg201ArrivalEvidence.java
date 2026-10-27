@@ -2,8 +2,8 @@ package com.drift.backend.cdg201;
 
 /**
  * Read-only replay of an externally collected MPA expected-arrival revision.
- * Source timestamps deliberately remain strings because their source offset is
- * undocumented. This is not an ArrivalEstimate and does not carry a risk.
+ * Raw source strings and derived Singapore/UTC instants are both preserved.
+ * This is not an ArrivalEstimate and does not carry a risk.
  */
 public record Cdg201ArrivalEvidence(
 		String contractVersion,
@@ -12,6 +12,10 @@ public record Cdg201ArrivalEvidence(
 		String vesselImo,
 		String previousExpectedArrival,
 		String revisedExpectedArrival,
+		String previousExpectedArrivalSgt,
+		String previousExpectedArrivalUtc,
+		String revisedExpectedArrivalSgt,
+		String revisedExpectedArrivalUtc,
 		int revisionMinutes,
 		String previousCollectionUtc,
 		String latestCollectionUtc,
