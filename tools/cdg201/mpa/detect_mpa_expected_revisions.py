@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DATASETS = ("due_to_arrive", "due_to_depart")
-# Adjacent snapshots are expected roughly hourly. A six-hour bound is
+# Adjacent snapshots are expected roughly hourly. A three-hour bound is
 # deliberately conservative: larger timestamp differences lack enough context
 # to distinguish a genuine reschedule from another visit by the same vessel.
 MAX_CONTINUITY_HOURS = 3
@@ -31,6 +31,16 @@ def parse_time(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def comparable_source_times(previous, latest):
+    """Return whether two source times have compatible timezone awareness.
+
+    Offset-less and offset-aware timestamps cannot be subtracted safely.  A
+    caller must preserve that case as insufficient evidence rather than
+    guessing an offset or allowing a TypeError to stop the detector.
+    """
+    return previous is not None and latest is not None and ((previous.tzinfo is None) == (latest.tzinfo is None))
 
 
 def is_prospective(collection_utc, expected_time):
@@ -163,15 +173,21 @@ def match_runs(previous, latest, coverage):
         if not old_time:
             insufficient.append({"reason": "unparseable_source_time", **old}); continue
         candidates = []
+        timezone_incompatible = False
         for index, new in enumerate(dedupe_run(latest)):
             if index in used or (new["dataset"], new["imo"], new["from"], new["to"]) != (old["dataset"], old["imo"], old["from"], old["to"]):
                 continue
             new_time = parse_time(new["expected"])
             if new_time is None:
                 continue
+            if not comparable_source_times(old_time, new_time):
+                timezone_incompatible = True
+                continue
             distance = abs((new_time - old_time).total_seconds()) / 3600
             if distance <= MAX_CONTINUITY_HOURS:
                 candidates.append((distance, index, new))
+        if timezone_incompatible:
+            insufficient.append({"reason": "timezone_incompatible_source_time", **old}); continue
         if not candidates:
             insufficient.append({"reason": "no_defensible_successor_or_out_of_coverage", **old}); continue
         candidates.sort(key=lambda value: value[0])
@@ -191,6 +207,9 @@ def match_runs(previous, latest, coverage):
                 continue
         if old["expected"] != new["expected"]:
             old_time, new_time = parse_time(old["expected"]), parse_time(new["expected"])
+            if not comparable_source_times(old_time, new_time):
+                insufficient.append({"reason": "timezone_incompatible_source_time", **old})
+                continue
             has_location_context = bool(old["from"] or old["to"]) and bool(new["from"] or new["to"])
             prospectiveness_class, early_bound, late_bound, prospective = prospectiveness(
                 new["expected"], (old["retrieval_utc"], new["retrieval_utc"]))

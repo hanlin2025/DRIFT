@@ -62,6 +62,29 @@ class TestRevision(unittest.TestCase):
         revisions, ambiguous, _, _=match_runs([obs("r1","2026-10-26 12:00")],[obs("r2","2026-10-26 11:00"),obs("r2","2026-10-26 13:00")],coverage)
         self.assertFalse(revisions); self.assertEqual(len(ambiguous),1)
 
+    def test_continuity_bound_includes_three_hours(self):
+        coverage = {(run,"due_to_arrive","2026-10-26"): True for run in ("r1", "r2")}
+        revisions, _, _, _ = match_runs(
+            [obs("r1", "2026-10-26 12:00")],
+            [obs("r2", "2026-10-26 15:00")], coverage)
+        self.assertEqual(len(revisions), 1)
+
+    def test_continuity_bound_excludes_more_than_three_hours(self):
+        coverage = {(run,"due_to_arrive","2026-10-26"): True for run in ("r1", "r2")}
+        revisions, _, _, insufficient = match_runs(
+            [obs("r1", "2026-10-26 12:00")],
+            [obs("r2", "2026-10-26 15:01")], coverage)
+        self.assertFalse(revisions)
+        self.assertEqual(insufficient[0]["reason"], "no_defensible_successor_or_out_of_coverage")
+
+    def test_timezone_incompatible_pair_is_insufficient_evidence(self):
+        coverage = {(run,"due_to_arrive","2026-10-26"): True for run in ("r1", "r2")}
+        revisions, _, _, insufficient = match_runs(
+            [obs("r1", "2026-10-26 12:00")],
+            [obs("r2", "2026-10-26T13:00:00+00:00")], coverage)
+        self.assertFalse(revisions)
+        self.assertEqual(insufficient[0]["reason"], "timezone_incompatible_source_time")
+
 
 if __name__ == "__main__":
     unittest.main()
