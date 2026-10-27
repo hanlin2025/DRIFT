@@ -11,7 +11,12 @@ const evidence: Cdg201ArrivalEvidence = {
   previousCollectionRunId: 'run-one', latestCollectionRunId: 'run-two', sourceManifest: 'evidence.manifest.json',
   previousSourceManifest: 'prior-evidence.manifest.json', previousSourceRawFile: 'prior-evidence.json', sourceRawFile: 'evidence.json', confidence: 'conservative_context_time_continuity', ambiguity: 'NONE_FOR_REPLAY_EVENT',
   sourceTimestampSemantics: 'Source timezone is Asia/Singapore.', locationFrom: 'SEA', locationTo: 'PEBGA',
-  locationMappingStatus: 'UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT', shipmentAssociation: 'UNVERIFIED_IMO_ONLY',
+  locationMappingStatus: 'UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT',
+  locationReferences: [
+    { rawLocationCode: 'SEA', sourceApi: 'MPA OCEANS-X Vessels Due to Arrive', sourceField: 'locationFrom', officialDescription: '', derivedCategory: 'UNKNOWN', mappingStatus: 'UNKNOWN', referenceProvenance: 'No official Location Codes match in the reviewed reference export', limitation: 'No description is inferred.' },
+    { rawLocationCode: 'PEBGA', sourceApi: 'MPA OCEANS-X Vessels Due to Arrive', sourceField: 'locationTo', officialDescription: 'PILOT EAST BOARD GRD A', derivedCategory: 'PILOT_GROUND', mappingStatus: 'PARTIAL', referenceProvenance: 'MPA OCEANS-X Location Codes v1.0.0; exact code-string match only', limitation: 'Display-only.' },
+  ],
+  shipmentAssociation: 'UNVERIFIED_IMO_ONLY',
   limitations: 'Not a verified shipment.',
   simulatedScenario: { state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: 780,
     revisedConnectionMarginMinutes: 600, reductionMinutes: 180, simulatedRiskBefore: 'MEDIUM', simulatedRiskAfter: 'HIGH',
@@ -26,6 +31,9 @@ describe('Cdg201EvidencePanel', () => {
     expect(screen.getByText('2026-10-29T02:00:00+08:00')).toBeInTheDocument();
     expect(screen.getByText('2026-10-28T18:00:00+00:00')).toBeInTheDocument();
     expect(screen.getByText(/unverified imo only/i)).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.tagName === 'DD' && node.textContent?.includes('PILOT EAST BOARD GRD A') === true)).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.tagName === 'DD' && node.textContent?.includes('Derived category (display-only): PILOT_GROUND') === true)).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.tagName === 'DD' && node.textContent?.includes('No official description matched') === true)).toBeInTheDocument();
     expect(screen.getByText(/Margin: 780 → 600 minutes/)).toBeInTheDocument();
     expect(screen.getByText(/Not the production shipment risk/)).toBeInTheDocument();
   });

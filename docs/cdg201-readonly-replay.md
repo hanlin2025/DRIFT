@@ -17,10 +17,22 @@ Run the normal backend/frontend locally, then open any authorized shipment with 
 - recorded source-string ETA change `2026-10-28 23:00:00` → `2026-10-29 02:00:00` (+180 minutes);
 - collection-run IDs, UTC collection times, manifest and raw-file identifiers;
 - raw MPA source strings plus derived Asia/Singapore and UTC event instants,
-  while keeping the MPA-location mapping limitation explicit; and
+  plus display-only location-reference metadata for the raw source fields;
+  and
 - a separate synthetic scenario: 780 → 600 minutes, illustrative MEDIUM → HIGH.
 
 The scenario is not the shipment risk, does not update planned arrival/departure fields, and does not trigger alerts.
+
+## Location-reference metadata
+
+The replay retains `locationFrom` and `locationTo` exactly as the MPA expected-arrival source supplied them. For each actual source field it returns a separate display-only reference item containing the raw code, source API/field, official description when an exact code-string lookup is available, a derived category, mapping status, provenance, and limitation.
+
+The current replay embeds only the reviewed event-specific entry for `PEBGA`
+(`PILOT EAST BOARD GRD A`, derived category `PILOT_GROUND`) and leaves `SEA`
+explicitly unknown. The full official reference export is deliberately not
+bundled because redistribution conditions have not been approved. This does
+not establish API-namespace compatibility, a Singapore port, a berth, a vessel
+visit, cargo handling, or a shipment association.
 
 ## Local checks
 
