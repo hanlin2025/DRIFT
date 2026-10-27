@@ -461,6 +461,10 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Evidence')).not.toBeInTheDocument();
+    expect(screen.queryByText('Assumptions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Confidence')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Mother vessel AIS' })).not.toBeInTheDocument();
@@ -957,6 +961,80 @@ describe('vessel identity on the shipment detail', () => {
   });
 });
 
+const LIMITED = 'Confidence is limited because the planned connection window is being used.';
+const ESTIMATED = 'The estimated arrival was used.';
+const MISSING_MOTHER = 'The assessment is unavailable because the planned mother-vessel arrival is missing.';
+const MISSING_FEEDER = 'The assessment is unavailable because the planned feeder-vessel departure is missing.';
+
+describe('assessment explanation on the shipment detail', () => {
+  it('shows the evidence, assumptions, and confidence beside the existing risk', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      assessmentExplanation: {
+        evidence: ['Planned connection window', '1 day', 'No AIS position has been received for the mother vessel.'],
+        assumptions: ['The planned connection window is used because the estimated arrival could not be used.'],
+        confidence: LIMITED,
+        unavailable: null,
+      },
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+
+    expect(factValue(record, 'Evidence')).toHaveTextContent('Planned connection window');
+    expect(factValue(record, 'Evidence')).toHaveTextContent('1 day');
+    expect(factValue(record, 'Evidence')).toHaveTextContent('No AIS position has been received for the mother vessel.');
+    expect(factValue(record, 'Assumptions')).toHaveTextContent('The planned connection window is used because the estimated arrival could not be used.');
+    expect(factValue(record, 'Confidence')).toHaveTextContent(LIMITED);
+    expect(factValue(record, 'Risk')).toHaveTextContent('At least 24 hours to transfer cargo between vessels.');
+    expect(within(record).queryByText('Contributions')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows an estimated-arrival confidence with the evidence that was used', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: "Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival." },
+      assessmentExplanation: {
+        evidence: ['Remaining connection window', '6 hours', 'Position received 2026-10-15T02:00:00Z. Speed used 12.4 knots.'],
+        assumptions: ['The estimated arrival uses a straight-line distance.'],
+        confidence: ESTIMATED,
+        unavailable: null,
+      },
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+
+    expect(factValue(record, 'Confidence')).toHaveTextContent(ESTIMATED);
+    expect(factValue(record, 'Evidence')).toHaveTextContent('Position received 2026-10-15T02:00:00Z. Speed used 12.4 knots.');
+    expect(factValue(record, 'Assumptions')).toHaveTextContent('The estimated arrival uses a straight-line distance.');
+    expect(within(record).queryByText(LIMITED)).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Less than 12 hours remain');
+  });
+
+  it('names an unavailable assessment without showing limited confidence', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: null,
+      assessmentExplanation: {
+        evidence: null,
+        assumptions: null,
+        confidence: null,
+        unavailable: [MISSING_MOTHER, MISSING_FEEDER],
+      },
+    });
+    open(importer, '/importer/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+
+    expect(factValue(record, 'Unavailable')).toHaveTextContent(MISSING_MOTHER);
+    expect(factValue(record, 'Unavailable')).toHaveTextContent(MISSING_FEEDER);
+    expect(within(record).queryByText('Evidence')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Assumptions')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Confidence')).not.toBeInTheDocument();
+    expect(within(record).queryByText(LIMITED)).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Pending assignment');
+  });
+});
+
 describe('shipment detail decoding', () => {
   async function decode(body: unknown) {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
@@ -979,6 +1057,43 @@ describe('shipment detail decoding', () => {
   it('accepts an explicitly unassigned feeder vessel', async () => {
     await expect(decode({ ...shipment, feederVessel: null, plannedFeederDepartureAt: null }))
       .resolves.toMatchObject({ feederVessel: null, plannedFeederDepartureAt: null });
+  });
+
+  it('reads a completed explanation and rejects one that is both completed and unavailable', async () => {
+    await expect(decode({
+      ...shipment,
+      assessmentExplanation: {
+        evidence: ['Planned connection window'],
+        assumptions: ['The planned connection window is used because the estimated arrival could not be used.'],
+        confidence: LIMITED,
+        unavailable: null,
+      },
+    })).resolves.toMatchObject({
+      assessmentExplanation: { confidence: LIMITED, unavailable: null },
+    });
+    await expect(decode({
+      ...shipment,
+      assessmentExplanation: {
+        evidence: ['Planned connection window'],
+        assumptions: ['The planned connection window is used because the estimated arrival could not be used.'],
+        confidence: LIMITED,
+        unavailable: [MISSING_MOTHER],
+      },
+    })).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('reads an unavailable explanation without a confidence', async () => {
+    await expect(decode({
+      ...shipment,
+      assessmentExplanation: {
+        evidence: null,
+        assumptions: null,
+        confidence: null,
+        unavailable: [MISSING_MOTHER, MISSING_FEEDER],
+      },
+    })).resolves.toMatchObject({
+      assessmentExplanation: { confidence: null, unavailable: [MISSING_MOTHER, MISSING_FEEDER] },
+    });
   });
 
   it('rejects an unknown risk level', async () => {

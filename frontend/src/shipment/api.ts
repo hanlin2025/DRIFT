@@ -127,8 +127,16 @@ export type Shipment = {
   feederOperationalState?: OperationalState | null;
   aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
+  assessmentExplanation?: AssessmentExplanation | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
+};
+
+export type AssessmentExplanation = {
+  evidence: string[] | null;
+  assumptions: string[] | null;
+  confidence: string | null;
+  unavailable: string[] | null;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -535,6 +543,8 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const assessmentExplanation = assessmentExplanationOf(value);
+  if (assessmentExplanation === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -570,9 +580,39 @@ function asShipment(value: unknown): Shipment | null {
     feederOperationalState,
     aisFeed,
     arrivalComparison,
+    assessmentExplanation,
     updatedAt,
     updatedByName,
   };
+}
+
+function assessmentExplanationOf(value: Record<string, unknown>): AssessmentExplanation | null | undefined {
+  if (!('assessmentExplanation' in value) || value.assessmentExplanation == null) return null;
+  const explanation = value.assessmentExplanation;
+  if (!isRecord(explanation)) return undefined;
+  const evidence = sentences(explanation.evidence);
+  const assumptions = sentences(explanation.assumptions);
+  const unavailable = sentences(explanation.unavailable);
+  const confidence = explanation.confidence == null
+    ? null
+    : typeof explanation.confidence === 'string' && explanation.confidence.trim().length > 0
+      ? explanation.confidence
+      : undefined;
+  if (evidence === undefined || assumptions === undefined || unavailable === undefined || confidence === undefined) return undefined;
+  if (unavailable == null) {
+    if (evidence == null || assumptions == null || confidence == null) return undefined;
+    return { evidence, assumptions, confidence, unavailable: null };
+  }
+  if (evidence != null || assumptions != null || confidence != null) return undefined;
+  return { evidence: null, assumptions: null, confidence: null, unavailable };
+}
+
+function sentences(value: unknown): string[] | null | undefined {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.some(item => typeof item !== 'string' || item.trim().length === 0)) {
+    return undefined;
+  }
+  return value;
 }
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
