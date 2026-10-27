@@ -101,13 +101,13 @@ describe('shipment importer API', () => {
     await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
 
-  it('sends the risk or priority sort and the at-risk filter, keeping an invalid at-risk value for the API to reject', async () => {
+  it('sends the risk sort and the at-risk filter, keeping an invalid at-risk value for the API to reject', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'priority', atRisk: 'true',
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'risk', atRisk: 'true',
     });
-    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=priority&atRisk=true', expect.anything());
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=risk&atRisk=true', expect.anything());
 
     await listShipments('token', {
       reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '',

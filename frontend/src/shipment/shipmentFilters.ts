@@ -1,11 +1,10 @@
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 /**
- * '' keeps newest first. 'risk' puts Critical first with ties by the soonest feeder departure. 'priority' is the
- * ranked order that weighs risk severity, urgency to the feeder departure, and confidence in the evidence.
- * Shipments that are not assessed come last in both.
+ * '' keeps newest first. 'risk' puts Critical first with ties by the soonest feeder departure, and shipments that
+ * are not assessed come last.
  */
-export type ShipmentSortOption = '' | 'risk' | 'priority';
+export type ShipmentSortOption = '' | 'risk';
 
 export type ShipmentFilters = {
   reference: string;
@@ -63,7 +62,7 @@ export function isShipmentStatus(value: string): value is ShipmentStatus {
 }
 
 export function isShipmentSortOption(value: string): value is ShipmentSortOption {
-  return value === '' || value === 'risk' || value === 'priority';
+  return value === '' || value === 'risk';
 }
 
 export function shipmentFilterSearchParams(filters: ShipmentFilters): URLSearchParams {

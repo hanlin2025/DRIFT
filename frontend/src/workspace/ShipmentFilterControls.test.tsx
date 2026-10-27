@@ -102,40 +102,36 @@ describe('ShipmentFilterControls', () => {
     expect(reference).toHaveValue('A');
   });
 
-  it('offers newest, risk-level and ranked-priority sorts and stores the choice in the URL', async () => {
+  it('offers newest and risk-level sorts and stores the choice in the URL', async () => {
     const user = userEvent.setup();
     renderControls('/freight-forwarder?view=table');
 
     const sort = screen.getByRole('combobox', { name: 'Sort by' });
     expect(Array.from((sort as HTMLSelectElement).options).map(option => option.textContent)).toEqual([
-      'Newest first', 'Risk level (Critical first)', 'Priority (ranked)',
+      'Newest first', 'Risk level (Critical first)',
     ]);
-    expect(sort).toHaveAccessibleDescription(/Priority weighs risk, time to the feeder departure/);
+    expect(sort).toHaveAccessibleDescription(/Risk level puts Critical first, then the soonest feeder departure/);
     await user.selectOptions(sort, 'risk');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
     expect(screen.getByTestId('location')).toHaveTextContent('?view=table&sort=risk');
-
-    await user.selectOptions(sort, 'priority');
-    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('?view=table&sort=priority');
   });
 
   it('applies the at-risk toggle with other filters and clears it with them', async () => {
     const user = userEvent.setup();
-    renderControls('/freight-forwarder?customer=ACME&sort=priority&atRisk=true');
+    renderControls('/freight-forwarder?customer=ACME&sort=risk&atRisk=true');
 
     const atRisk = screen.getByRole('checkbox', { name: 'At-risk only' });
     expect(atRisk).toBeChecked();
     expect(atRisk).toHaveAccessibleDescription('Shows High and Critical shipments.');
-    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('priority');
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('risk');
 
     await user.click(atRisk);
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=priority');
+    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=risk');
 
     await user.click(atRisk);
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=priority&atRisk=true');
+    expect(screen.getByTestId('location')).toHaveTextContent('?customer=ACME&sort=risk&atRisk=true');
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(screen.getByTestId('location')).toHaveTextContent('');
@@ -164,9 +160,16 @@ describe('ShipmentFilterControls', () => {
     const sort = screen.getByRole('combobox', { name: 'Sort by' });
     expect(sort).toHaveValue('newest');
     expect(screen.getByRole('option', { name: 'Invalid sort' })).toBeInTheDocument();
-    await user.selectOptions(sort, 'priority');
+    await user.selectOptions(sort, 'risk');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('?sort=priority');
+    expect(screen.getByTestId('location')).toHaveTextContent('?sort=risk');
+  });
+
+  it('treats a raw URL priority sort as invalid, since the API only ranks by risk', () => {
+    renderControls('/freight-forwarder?sort=priority');
+
+    expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('priority');
+    expect(screen.getByRole('option', { name: 'Invalid sort' })).toBeDisabled();
   });
 
   it('preserves an invalid raw URL status until the user deliberately changes or clears it', async () => {

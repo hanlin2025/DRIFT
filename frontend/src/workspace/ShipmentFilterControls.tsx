@@ -68,9 +68,8 @@ export function ShipmentFilterControls() {
               {!isShipmentSortOption(draft.sort) ? <option value={draft.sort} disabled>Invalid sort</option> : null}
               <option value="">Newest first</option>
               <option value="risk">Risk level (Critical first)</option>
-              <option value="priority">Priority (ranked)</option>
             </select>
-            <p className="field-hint" id="shipment-sort-hint">Priority weighs risk, time to the feeder departure, and how much live evidence backs it. Unassessed shipments come last.</p>
+            <p className="field-hint" id="shipment-sort-hint">Risk level puts Critical first, then the soonest feeder departure. Unassessed shipments come last.</p>
           </div>
           <div className="field field-checkbox">
             <input id="shipment-filter-at-risk" type="checkbox" checked={draft.atRisk === 'true'} onChange={event => update('atRisk', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-at-risk-hint" />
