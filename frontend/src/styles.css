@@ -295,6 +295,13 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-detail .route-facts dd { overflow-wrap: anywhere; }
 .vessel-name-warning { display: block; margin-top: 6px; color: #8a5a12; font-size: 11px; font-weight: 700; line-height: 1.45; text-align: left; }
 .arrival-comparison { margin-top: 8px; }
+.deadline-note { display: block; margin-top: 6px; color: #7a8376; font-size: 11px; font-weight: 400; line-height: 1.5; }
+.deadline-editor { display: block; margin-top: 10px; text-align: left; font-weight: 400; }
+.shipment-record .deadline-editor,
+.shipment-record .deadline-editor div { display: block; border-top: 0; padding: 0; text-align: left; }
+.deadline-editor label { display: block; margin-bottom: 4px; }
+.deadline-editor input { width: 100%; }
+.deadline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 @media (min-width: 761px) {
   .shipment-detail .route-facts dl.arrival-comparison { display: block; }
 }

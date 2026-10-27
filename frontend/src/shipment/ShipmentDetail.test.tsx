@@ -12,7 +12,7 @@ import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), updateTransshipmentArrivalDeadline: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -151,6 +151,8 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('Destination')).toBeInTheDocument();
     expect(within(record).getByText('Registered')).toBeInTheDocument();
     expect(within(record).getByText('Connection window')).toBeInTheDocument();
+    expect(factValue(record, 'Mother-vessel arrival deadline')).toHaveTextContent('Not recorded');
+    expect(screen.queryByRole('button', { name: 'Save deadline' })).not.toBeInTheDocument();
     expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
     expect(factValue(record, 'Remaining connection window')).toHaveTextContent('No remaining connection window');
     expect(factValue(record, 'Remaining connection window')).toHaveClass('is-missing');

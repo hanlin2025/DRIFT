@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -557,5 +557,47 @@ describe('vessel track history API', () => {
     }, 400)));
 
     await expect(getVesselTrack('token', '7', 'MOTHER', 24)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('transshipment arrival deadline API client', () => {
+  it('reads a deadline from the detail and ignores its absence on the list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      transshipmentArrivalDeadline: {
+        deadline: '2026-10-28T16:00:00.123456789Z',
+        transshipmentPort: 'Singapore',
+        applicable: true,
+      },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.transshipmentArrivalDeadline).toEqual({
+      deadline: '2026-10-28T16:00:00.123456789Z',
+      transshipmentPort: 'Singapore',
+      applicable: true,
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    const listed = await listShipments('token');
+    expect(listed[0].transshipmentArrivalDeadline).toBeNull();
+  });
+
+  it('rejects a malformed deadline and sends an object when clearing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      transshipmentArrivalDeadline: { deadline: '2026-10-28T16:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toThrow('unexpected response');
+
+    const fetchMock = vi.fn().mockResolvedValue(json({ ...shipment, transshipmentArrivalDeadline: null }));
+    vi.stubGlobal('fetch', fetchMock);
+    const cleared = await updateTransshipmentArrivalDeadline('token', 9, {
+      transshipmentArrivalDeadline: null,
+      expectedTransshipmentPort: 'Singapore',
+    });
+    expect(cleared.transshipmentArrivalDeadline).toBeNull();
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body).toEqual({ transshipmentArrivalDeadline: null, expectedTransshipmentPort: 'Singapore' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/transshipment-arrival-deadline', expect.objectContaining({ method: 'PATCH' }));
   });
 });

@@ -95,6 +95,12 @@ export type ArrivalComparison = {
   unavailableReason: { code: string; message: string };
 };
 
+export type TransshipmentArrivalDeadline = {
+  deadline: string;
+  transshipmentPort: string;
+  applicable: boolean;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -127,6 +133,7 @@ export type Shipment = {
   feederOperationalState?: OperationalState | null;
   aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
+  transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
 };
@@ -144,6 +151,20 @@ export async function listShipments(token: string, filters?: ShipmentFilters): P
 
 export async function getShipment(token: string, shipmentId: string): Promise<Shipment> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}`, token);
+  const shipment = asShipment(data);
+  if (!shipment) throw new ApiError(UNEXPECTED, 502);
+  return shipment;
+}
+
+export async function updateTransshipmentArrivalDeadline(token: string, shipmentId: number, body: {
+  transshipmentArrivalDeadline: string | null;
+  expectedTransshipmentPort: string;
+}): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/transshipment-arrival-deadline`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
@@ -535,6 +556,8 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const transshipmentArrivalDeadline = deadlineOf(value);
+  if (transshipmentArrivalDeadline === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -570,6 +593,7 @@ function asShipment(value: unknown): Shipment | null {
     feederOperationalState,
     aisFeed,
     arrivalComparison,
+    transshipmentArrivalDeadline,
     updatedAt,
     updatedByName,
   };
@@ -577,6 +601,18 @@ function asShipment(value: unknown): Shipment | null {
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
 const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+function deadlineOf(value: Record<string, unknown>): TransshipmentArrivalDeadline | null | undefined {
+  if (!('transshipmentArrivalDeadline' in value) || value.transshipmentArrivalDeadline == null) return null;
+  const deadline = value.transshipmentArrivalDeadline;
+  if (!isRecord(deadline) || !isPresentText(deadline.deadline) || typeof deadline.transshipmentPort !== 'string'
+    || typeof deadline.applicable !== 'boolean') return undefined;
+  return {
+    deadline: deadline.deadline,
+    transshipmentPort: deadline.transshipmentPort,
+    applicable: deadline.applicable,
+  };
+}
 
 function arrivalComparisonOf(value: Record<string, unknown>): ArrivalComparison | null | undefined {
   if (!('arrivalComparison' in value) || value.arrivalComparison == null) return null;
