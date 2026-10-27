@@ -96,17 +96,11 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   expect((await noReplay.json()).evidence).toBeNull();
 
   const forbidden = await request.get(`/api/shipments/${kota.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${outsider.token}` } });
-  // Existing authentication/access middleware may reject an inaccessible
-  // account before shipment visibility as 401, or visibility may return 403.
-  // Either response is safe only when it exposes no replay evidence.
-  expect([401, 403]).toContain(forbidden.status());
-  expect(await forbidden.text()).not.toContain('KOTA LARIS');
+  expect(forbidden.status()).toBe(403);
+  expect(await forbidden.json()).toEqual({ message: 'You do not have access to this shipment' });
   const unknown = await request.get('/api/shipments/999999999/cdg201-arrival-evidence', { headers: { Authorization: `Bearer ${owner.token}` } });
-  // The existing shipment visibility layer intentionally returns 401 for a
-  // non-visible ID, including an unknown one.  Either this or a 404 is a
-  // non-disclosing result; the endpoint must never return replay evidence.
-  expect([401, 404]).toContain(unknown.status());
-  expect(await unknown.text()).not.toContain('KOTA LARIS');
+  expect(unknown.status()).toBe(404);
+  expect(await unknown.json()).toEqual({ message: 'Shipment not found' });
 
   await signIn(page, owner);
   await page.getByRole('link', { name: `CDG201-KOTA-${suffix}` }).click();
