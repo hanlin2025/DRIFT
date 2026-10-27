@@ -24,6 +24,11 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 	@Query("SELECT shipment FROM Shipment shipment WHERE shipment.id = :shipmentId")
 	Optional<Shipment> findByIdForRiskEvaluation(@Param("shipmentId") Long shipmentId);
 
+	/** Locks the shipment row so a port check and constraint change cannot overlap a route edit. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT shipment FROM Shipment shipment WHERE shipment.id = :shipmentId")
+	Optional<Shipment> findByIdForUpdate(@Param("shipmentId") Long shipmentId);
+
 	@Query("""
 			SELECT shipment FROM Shipment shipment
 			WHERE (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)

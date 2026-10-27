@@ -59,6 +59,8 @@ public record ShipmentDetailResponse(
 		AisFeedStatus aisFeed,
 		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null. lastReceivedAt is the report time of that estimate.")
 		ArrivalEstimate arrivalComparison,
+		@Schema(description = "The current linked importer's transshipment-arrival deadline and the port it was confirmed for. Null when that importer has no deadline. applicable is false when the recorded port differs from the shipment's current port.", nullable = true)
+		TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
@@ -66,7 +68,8 @@ public record ShipmentDetailResponse(
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
 			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
-			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
+			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -80,6 +83,7 @@ public record ShipmentDetailResponse(
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
+				transshipmentArrivalDeadline,
 				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

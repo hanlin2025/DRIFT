@@ -73,6 +73,7 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
@@ -82,7 +83,7 @@ class ShipmentResponseOwnershipTest {
 		ArrivalEstimate estimate = ArrivalEstimate.unavailable("NO_POSITION",
 				"No AIS position has been received for the mother vessel.");
 		return ShipmentDetailResponse.from(shipment, planned,
-				windows.remaining(shipment.getPlannedFeederDepartureAt(), estimate), null, null, estimate);
+				windows.remaining(shipment.getPlannedFeederDepartureAt(), estimate), null, null, estimate, null);
 	}
 
 	private static Shipment shipment(Company owner) {
