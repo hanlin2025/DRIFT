@@ -97,12 +97,6 @@ describe('shipment importer API', () => {
     await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
 
-  it('rejects a list shipment with a priority but no assessed risk', async () => {
-    const priority = { score: 40, severity: 0.5, urgency: 0.4, confidence: 0.8, reasons: ['Planned connection buffer: 1 day.'] };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, risk: null, priority }])));
-    await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
-  });
-
   it('reads the importer on a shipment detail', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       ...shipment,

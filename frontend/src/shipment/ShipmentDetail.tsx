@@ -5,7 +5,7 @@ import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
 import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
-import { PriorityScore, RiskBadge } from './RiskBadge';
+import { RiskBadge } from './RiskBadge';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
@@ -323,7 +323,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
             </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
-            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}<PriorityScore priority={shipment.priority} reference={shipment.shipmentReference} /></dd>
+            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>

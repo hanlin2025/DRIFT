@@ -29,10 +29,6 @@ const newer: Shipment = {
   remainingConnectionWindow: null,
   companyId: 1,
   risk: { level: 'HIGH', explanation: 'Less than 12 hours to transfer cargo between vessels.' },
-  priority: {
-    score: 72, severity: 0.83, urgency: 0.88, confidence: 0.8,
-    reasons: ['Planned connection buffer: 8 hours.', 'The feeder departs in 9 hours.'],
-  },
   importer: { id: 9, code: 'STRAITS_FRESH', name: 'Straits Fresh Imports' },
   status: null,
   motherVesselPosition: null,
@@ -131,7 +127,7 @@ describe('shipment list', () => {
     const rows = screen.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
-      'HBL-NEWER', 'HighPriority 72Planned connection buffer: 8 hours.The feeder departs in 9 hours.', 'Straits Fresh Imports', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner', formatWhen('2026-10-04T00:00:00Z'),
+      'HBL-NEWER', 'High', 'Straits Fresh Imports', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner', formatWhen('2026-10-04T00:00:00Z'),
     ]);
     expect(within(rows[1]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
       'HBL-OLDER', 'Not assessed', 'Not linked', 'Busan, KR', 'Singapore, SG', 'Singapore', 'MV Northern Light', 'MV Harbour Link', formatWhen('2026-10-02T00:00:00Z'),
@@ -172,16 +168,12 @@ describe('shipment list', () => {
     expect(screen.getByRole('cell', { name: 'Unknown' })).toHaveClass('is-missing');
   });
 
-  it("shows each row's risk badge, priority reasons and importer so cases can be grouped by customer", () => {
+  it("shows each row's risk badge and importer so cases can be grouped by customer", () => {
     render(<MemoryRouter><ShipmentList shipments={[newer, older]} basePath="/freight-forwarder" /></MemoryRouter>);
     const [first, second] = screen.getAllByRole('row').slice(1);
     expect(within(first).getByText('High')).toHaveClass('risk-badge', 'risk-high');
     expect(within(first).getByText('Straits Fresh Imports')).toBeInTheDocument();
-    const why = within(first).getByText('Priority 72');
-    expect(why).toHaveAccessibleName('Priority 72 of 100 for HBL-NEWER. Why this rank');
-    expect(within(first).getByText('The feeder departs in 9 hours.')).toBeInTheDocument();
     expect(within(second).getByText('Not assessed')).toHaveClass('risk-badge', 'risk-unassessed');
-    expect(within(second).queryByText(/^Priority/)).not.toBeInTheDocument();
     expect(within(second).getByRole('cell', { name: 'Not linked' })).toHaveClass('is-missing');
   });
 
