@@ -58,8 +58,9 @@ class ShipmentConnectionRisk {
 
 	private Snapshot assess(Shipment shipment, Function<String, VesselPosition> positions) {
 		VesselPosition motherVesselPosition = positions.apply(shipment.getMotherVessel());
-		ArrivalEstimate arrivalComparison = arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
-				shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
+		ArrivalEstimate arrivalComparison = shipment.getPlannedMotherArrivalAt() == null ? null
+				: arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
+						shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
 		ConnectionWindowCalculation planned = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
 				shipment.getPlannedFeederDepartureAt());
 		RemainingConnectionWindow remaining = connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(),

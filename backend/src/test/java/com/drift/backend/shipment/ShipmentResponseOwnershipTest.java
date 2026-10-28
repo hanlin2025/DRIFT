@@ -49,7 +49,14 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(listedJson.get("risk").get("level").asString()).isEqualTo("LOW");
+		assertThat(listedJson.has("riskContributions")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
+		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
+		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
+				.isEqualTo("Planned connection window");
+		assertThat(detailJson.get("riskContributions").get("contributions").get(2).get("value").asText())
+				.isEqualTo("No AIS position has been received for the mother vessel.");
+		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
 		assertThat(listedJson.get("updatedByName").asString()).isEqualTo("Ada");
 		assertThat(detailJson.has("updatedByName")).isFalse();

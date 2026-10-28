@@ -10,7 +10,7 @@ import { STALE_NOTICE } from './positionNotice';
 import { RouteMap } from './RouteMap';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getVesselTrack: vi.fn() }));
 vi.mock('maplibre-gl', () => ({
   Map: class Map {
     on(_event: string, callback: () => void) { callback(); }
