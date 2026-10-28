@@ -205,10 +205,12 @@ public class ShipmentService {
 		if (shipment.getStatus() == ShipmentStatus.ACTIVE) {
 			throw new ShipmentAlreadyActiveException();
 		}
+		ShipmentStatus previousStatus = shipment.getStatus();
 		Instant now = Instant.now();
 		shipment.restore();
 		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
 	}
 
 	@Transactional
