@@ -69,7 +69,7 @@ class AccountStatusSchemaIntegrationTests {
 		UserAccount target = accounts.save(account(harbourline));
 		Instant recordedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
 		AccountStatusAudit audit = audits.saveAndFlush(
-				new AccountStatusAudit(operator, target, AccountStatus.ACTIVE, harbourline, recordedAt));
+				new AccountStatusAudit(operator, target, harbourline, AccountStatus.ACTIVE, AccountStatus.REMOVED, recordedAt));
 		entityManager.clear();
 
 		AccountStatusAudit stored = audits.findById(audit.getId()).orElseThrow();
@@ -77,7 +77,7 @@ class AccountStatusSchemaIntegrationTests {
 		assertThat(stored.getTarget().getId()).isEqualTo(target.getId());
 		assertThat(stored.getOrganisationId()).isEqualTo(harbourline.getId());
 		assertThat(stored.getPreviousStatus()).isEqualTo(AccountStatus.ACTIVE);
-		assertThat(stored.getNewStatus()).isEqualTo(AccountStatus.ACTIVE);
+		assertThat(stored.getNewStatus()).isEqualTo(AccountStatus.REMOVED);
 		assertThat(stored.getRecordedAt()).isEqualTo(recordedAt);
 	}
 

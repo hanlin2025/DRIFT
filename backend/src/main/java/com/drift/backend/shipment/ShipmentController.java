@@ -52,7 +52,8 @@ public class ShipmentController {
 	@Operation(summary = "List shipments", description = "Lists shipments visible to the authenticated user's active company, newest first. "
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
-			+ "Each shipment includes the planned connection window calculated from its stored schedule. "
+			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
+			+ "and who last updated it and when. "
 			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -91,6 +92,7 @@ public class ShipmentController {
 			+ "the remaining connection window from the mother vessel's estimated arrival when that estimate can be used, "
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
+			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -289,51 +291,67 @@ public class ShipmentController {
 	}
 
 	@PatchMapping("/api/shipments/{shipmentId}/status")
-	@Operation(summary = "Archive a shipment", description = "Sets an active shipment of the authenticated user's company to ARCHIVED and keeps the stored record. "
-			+ "Only an Admin or Logistics Manager of that company may archive it. "
-			+ "The shipment no longer appears in the active list. "
+	@Operation(summary = "Archive or restore a shipment", description = "Sets a shipment of the authenticated user's company to ARCHIVED or back to ACTIVE and keeps the stored record. "
+			+ "Only an Admin or Logistics Manager of that company may change the status. "
+			+ "An archived shipment no longer appears in the active list. Restoring it returns the shipment to that list without changing its other details. "
 			+ "A shipment of another company is reported as not found. "
 			+ "An account with no active company is forbidden.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
-				@ApiResponse(responseCode = "200", description = "Shipment archived", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Shipment removed successfully"}
-								"""))),
-				@ApiResponse(responseCode = "400", description = "Shipment id is not a number, or the status is missing or not ARCHIVED", content = @Content(
+				@ApiResponse(responseCode = "200", description = "Shipment archived or restored", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Archived", value = """
+										{"message":"Shipment removed successfully"}
+										"""),
+								@ExampleObject(name = "Restored", value = """
+										{"message":"Shipment restored successfully"}
+										""") })),
+				@ApiResponse(responseCode = "400", description = "Shipment id is not a number, or the status is missing or neither ACTIVE nor ARCHIVED", content = @Content(
 						mediaType = "application/json", examples = {
 								@ExampleObject(name = "Invalid id", value = """
 										{"message":"Invalid Shipment ID."}
 										"""),
 								@ExampleObject(name = "Invalid status", value = """
-										{"message":"Shipment information is missing or invalid","errors":{"status":"Status must be ARCHIVED"}}
+										{"message":"Shipment information is missing or invalid","errors":{"status":"Status must be ACTIVE or ARCHIVED"}}
 										""") })),
 				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
 								"""))),
-				@ApiResponse(responseCode = "403", description = "Account has no active company, or the role cannot archive shipments", content = @Content(
+				@ApiResponse(responseCode = "403", description = "Account has no active company, or the role cannot change the shipment status", content = @Content(
 						mediaType = "application/json", examples = {
 								@ExampleObject(name = "No active company", value = """
 										{"message":"Your account must belong to an active company to view shipments"}
 										"""),
-								@ExampleObject(name = "Role", value = """
+								@ExampleObject(name = "Archive", value = """
 										{"message":"You do not have permission to archive this shipment."}
+										"""),
+								@ExampleObject(name = "Restore", value = """
+										{"message":"You do not have permission to restore this shipment."}
 										""") })),
 				@ApiResponse(responseCode = "404", description = "No shipment with this id belongs to the authenticated user's company", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment not found"}
 								"""))),
-				@ApiResponse(responseCode = "409", description = "Shipment is already archived", content = @Content(
-						mediaType = "application/json", examples = @ExampleObject(value = """
-								{"message":"Shipment is already removed or does not exist."}
-								"""))) })
-	public ResponseEntity<Map<String, String>> archive(
+				@ApiResponse(responseCode = "409", description = "Shipment is already in the requested status", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Already archived", value = """
+										{"message":"Shipment is already removed or does not exist."}
+										"""),
+								@ExampleObject(name = "Already active", value = """
+										{"message":"This shipment is already active."}
+										""") })) })
+	public ResponseEntity<Map<String, String>> updateStatus(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long shipmentId,
 			@Valid @RequestBody ArchiveShipmentRequest request) {
 		if (user == null) {
 			throw new SessionEndedException();
+		}
+		if ("ACTIVE".equals(request.status())) {
+			shipmentService.restore(user, shipmentId);
+			return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+					.body(Map.of("message", ShipmentService.RESTORED_MESSAGE));
 		}
 		shipmentService.archive(user, shipmentId);
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())

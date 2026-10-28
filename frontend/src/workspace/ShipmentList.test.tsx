@@ -11,7 +11,7 @@ import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -145,6 +145,29 @@ describe('shipment list', () => {
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
   });
 
+  it('shows who archived a shipment only on the archived list', () => {
+    const archivedShipment: Shipment = {
+      ...newer,
+      status: 'ARCHIVED',
+      updatedByName: 'Ada Admin',
+      updatedAt: '2026-10-18T02:15:00Z',
+    };
+    const { unmount } = render(<MemoryRouter><ShipmentList shipments={[archivedShipment]} basePath="/freight-forwarder" archived /></MemoryRouter>);
+    expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
+    const cell = screen.getByRole('cell', { name: `Ada Admin on ${formatWhen('2026-10-18T02:15:00Z')}` });
+    expect(cell.querySelector('time')).toHaveAttribute('datetime', '2026-10-18T02:15:00Z');
+    unmount();
+
+    render(<MemoryRouter><ShipmentList shipments={[archivedShipment]} basePath="/freight-forwarder" /></MemoryRouter>);
+    expect(screen.queryByRole('columnheader', { name: 'Archived by' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Ada Admin')).not.toBeInTheDocument();
+  });
+
+  it('shows unknown when an archived shipment has no last update', () => {
+    render(<MemoryRouter><ShipmentList shipments={[newer]} basePath="/freight-forwarder" archived /></MemoryRouter>);
+    expect(screen.getByRole('cell', { name: 'Unknown' })).toHaveClass('is-missing');
+  });
+
   it('shows an unassigned feeder vessel as pending', () => {
     render(<MemoryRouter><ShipmentList shipments={[{ ...newer, feederVessel: null, plannedFeederDepartureAt: null }]} basePath="/importer" /></MemoryRouter>);
     expect(screen.getByRole('cell', { name: 'Pending assignment' })).toHaveClass('is-missing');
@@ -199,6 +222,7 @@ describe('workspace shipment retrieval', () => {
   it('forwards explicit status but leaves the implicit Active default out of the API request', async () => {
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?status=ARCHIVED&tab=overview');
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
+    expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
       reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
     });
@@ -206,7 +230,19 @@ describe('workspace shipment retrieval', () => {
     cleanup();
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?tab=overview');
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
+    expect(screen.queryByRole('columnheader', { name: 'Archived by' })).not.toBeInTheDocument();
     expect(listShipments).toHaveBeenLastCalledWith('session-token');
+  });
+
+  it('shows the archiving user returned by the archived list', async () => {
+    vi.mocked(listShipments).mockResolvedValue([{
+      ...newer,
+      status: 'ARCHIVED',
+      updatedByName: 'Ada Admin',
+      updatedAt: '2026-10-18T02:15:00Z',
+    }]);
+    openWorkspace('IMPORTER', '/importer?status=ARCHIVED');
+    expect(await screen.findByRole('cell', { name: `Ada Admin on ${formatWhen('2026-10-18T02:15:00Z')}` })).toBeInTheDocument();
   });
 
   it('fetches only after filters are applied or cleared', async () => {

@@ -33,8 +33,10 @@ import jakarta.persistence.EntityManager;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyActiveException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentRestoreForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
@@ -74,6 +76,7 @@ class ShipmentArchiveIntegrationTests {
 		String importerToken = tokenFor(importerEmail);
 		String adminEmail = email("admin");
 		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+		jdbc.update("UPDATE users SET full_name = 'Ada Admin' WHERE email = ?", adminEmail);
 		String adminToken = tokenFor(adminEmail);
 		Long activeId = createShipment(forwarderToken, "CDG81-STILL-ACTIVE");
 		link(forwarderToken, activeId, importerCompanyId).andExpect(status().isOk());
@@ -120,9 +123,22 @@ class ShipmentArchiveIntegrationTests {
 		filteredList(importerToken, "CDG81-STILL")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1));
+		mvc.perform(get("/api/shipments").param("status", "ARCHIVED").param("reference", "CDG81-ADMIN")
+				.header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].status").value("ARCHIVED"))
+				.andExpect(jsonPath("$[0].updatedByName").value("Ada Admin"));
+		mvc.perform(get("/api/shipments").param("status", "ARCHIVED").param("reference", "CDG81-ADMIN")
+				.header("Authorization", "Bearer " + importerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].updatedByName").value("Ada Admin"));
 		detail(adminToken, shipmentId).andExpect(status().isOk())
 				.andExpect(jsonPath("$.shipmentReference").value("CDG81-ADMIN"))
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
+				.andExpect(jsonPath("$.updatedByName").doesNotExist())
+				.andExpect(jsonPath("$.updatedAt").doesNotExist())
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
 				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
 				.andExpect(jsonPath("$.risk.explanation")
@@ -253,9 +269,9 @@ class ShipmentArchiveIntegrationTests {
 		archive(token, "999999999", "{\"status\":\"ARCHIVED\"}")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
-		archive(token, shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+		archive(token, shipmentId.toString(), "{\"status\":\"REMOVED\"}")
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.errors.status").value("Status must be ARCHIVED"));
+				.andExpect(jsonPath("$.errors.status").value("Status must be ACTIVE or ARCHIVED"));
 		archive(token, shipmentId.toString(), "{\"status\":\"\"}")
 				.andExpect(status().isBadRequest());
 
@@ -345,17 +361,162 @@ class ShipmentArchiveIntegrationTests {
 	}
 
 	@Test
+	void restoresAnArchivedShipmentWithoutChangingItsOtherDetails() throws Exception {
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, "HARBOURLINE_DEMO", "FREIGHT_FORWARDER");
+		String forwarderToken = tokenFor(forwarderEmail);
+		Long shipmentId = createShipmentWithIdentity(forwarderToken, "CDG81-RESTORE");
+		Long importerCompanyId = companyId("STRAITS_FRESH_DEMO");
+		link(forwarderToken, shipmentId, importerCompanyId).andExpect(status().isOk());
+		String importerEmail = email("importer");
+		createAccount(importerEmail, "STRAITS_FRESH_DEMO", "IMPORTER");
+		String importerToken = tokenFor(importerEmail);
+		String adminEmail = email("admin");
+		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+		jdbc.update("UPDATE users SET full_name = 'Ada Admin' WHERE email = ?", adminEmail);
+		String adminToken = tokenFor(adminEmail);
+		archive(adminToken, shipmentId.toString(), "{\"status\":\"ARCHIVED\"}").andExpect(status().isOk());
+		Map<String, Object> storedIdentity = identity(shipmentId);
+		Row archived = row(shipmentId);
+
+		archive(adminToken, shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isOk())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentService.RESTORED_MESSAGE));
+
+		Row restored = row(shipmentId);
+		assertThat(restored.status()).isEqualTo("ACTIVE");
+		assertThat(restored.reference()).isEqualTo(archived.reference());
+		assertThat(restored.origin()).isEqualTo(archived.origin());
+		assertThat(restored.destination()).isEqualTo(archived.destination());
+		assertThat(restored.importerCompanyId()).isEqualTo(importerCompanyId);
+		assertThat(restored.updatedBy()).isEqualTo(accountId(adminEmail));
+		assertThat(restored.updatedAt()).isNotEqualTo(archived.updatedAt());
+		assertThat(restored.version()).isEqualTo(archived.version() + 1);
+		assertThat(identity(shipmentId)).isEqualTo(storedIdentity);
+		list(adminToken)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isNotEmpty());
+		list(importerToken)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")]").isNotEmpty());
+		mvc.perform(get("/api/shipments").param("status", "ARCHIVED").param("reference", "CDG81-RESTORE")
+				.header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(0));
+
+		archive(adminToken, shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isConflict())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentAlreadyActiveException.MESSAGE));
+		assertThat(row(shipmentId)).isEqualTo(restored);
+	}
+
+	@Test
+	void restoresForAnOwningLogisticsManager() throws Exception {
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, "HARBOURLINE_DEMO", "FREIGHT_FORWARDER");
+		Long shipmentId = createShipment(tokenFor(forwarderEmail), "CDG81-MANAGER-RESTORE");
+		String managerEmail = email("manager");
+		createAccount(managerEmail, "HARBOURLINE_DEMO", "LOGISTICS_MANAGER");
+		String managerToken = tokenFor(managerEmail);
+		archive(managerToken, shipmentId.toString(), "{\"status\":\"ARCHIVED\"}").andExpect(status().isOk());
+		Row archived = row(shipmentId);
+
+		archive(managerToken, shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.message").value(ShipmentService.RESTORED_MESSAGE));
+
+		Row restored = row(shipmentId);
+		assertThat(restored.status()).isEqualTo("ACTIVE");
+		assertThat(restored.updatedBy()).isEqualTo(accountId(managerEmail));
+		assertThat(restored.version()).isEqualTo(archived.version() + 1);
+		assertThat(restored.reference()).isEqualTo(archived.reference());
+		assertThat(restored.destination()).isEqualTo(archived.destination());
+	}
+
+	@Test
+	void rejectsRestoreFromARoleThatCannotChangeStatusWithoutChangingTheRow() throws Exception {
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, "HARBOURLINE_DEMO", "FREIGHT_FORWARDER");
+		String forwarderToken = tokenFor(forwarderEmail);
+		Long shipmentId = createShipment(forwarderToken, "CDG81-NO-RESTORE");
+		String adminEmail = email("admin");
+		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+		archive(tokenFor(adminEmail), shipmentId.toString(), "{\"status\":\"ARCHIVED\"}").andExpect(status().isOk());
+		String importerEmail = email("importer");
+		createAccount(importerEmail, "HARBOURLINE_DEMO", "IMPORTER");
+		Row archived = row(shipmentId);
+
+		archive(forwarderToken, shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isForbidden())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentRestoreForbiddenException.MESSAGE));
+		archive(tokenFor(importerEmail), shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentRestoreForbiddenException.MESSAGE));
+
+		assertThat(row(shipmentId)).isEqualTo(archived);
+	}
+
+	@Test
+	void reportsRestoreOfAnotherCompanyAndALinkedImporterAsNotFound() throws Exception {
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, "HARBOURLINE_DEMO", "FREIGHT_FORWARDER");
+		String forwarderToken = tokenFor(forwarderEmail);
+		Long shipmentId = createShipment(forwarderToken, "CDG81-OTHER-RESTORE");
+		link(forwarderToken, shipmentId, companyId("STRAITS_FRESH_DEMO")).andExpect(status().isOk());
+		String adminEmail = email("admin");
+		createAccount(adminEmail, "HARBOURLINE_DEMO", "ADMIN");
+		archive(tokenFor(adminEmail), shipmentId.toString(), "{\"status\":\"ARCHIVED\"}").andExpect(status().isOk());
+		String otherAdmin = email("other-admin");
+		createAccount(otherAdmin, "STRAITS_FRESH_DEMO", "ADMIN");
+		String linkedImporter = email("linked-importer");
+		createAccount(linkedImporter, "STRAITS_FRESH_DEMO", "IMPORTER");
+		Row archived = row(shipmentId);
+
+		archive(tokenFor(otherAdmin), shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+		archive(tokenFor(linkedImporter), shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+
+		assertThat(row(shipmentId)).isEqualTo(archived);
+	}
+
+	@Test
+	void rejectsRestoreFromAnInactiveCompanyWithoutChangingTheRow() throws Exception {
+		Long company = insertCompany("CDG81_INACTIVE_RESTORE", true);
+		String forwarderEmail = email("forwarder");
+		createAccount(forwarderEmail, company, "FREIGHT_FORWARDER");
+		Long shipmentId = createShipment(tokenFor(forwarderEmail), "CDG81-INACTIVE-RESTORE");
+		String adminEmail = email("admin");
+		createAccount(adminEmail, company, "ADMIN");
+		archive(tokenFor(adminEmail), shipmentId.toString(), "{\"status\":\"ARCHIVED\"}").andExpect(status().isOk());
+		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", company);
+		entityManager.clear();
+		Row archived = row(shipmentId);
+
+		archive(tokenFor(adminEmail), shipmentId.toString(), "{\"status\":\"ACTIVE\"}")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+
+		assertThat(row(shipmentId)).isEqualTo(archived);
+	}
+
+	@Test
 	void documentsArchiveAndAppliesOnlyTheMainMigrationSequence() throws Exception {
 		mvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/status'].patch.summary")
-						.value("Archive a shipment"))
+						.value("Archive or restore a shipment"))
 				.andExpect(jsonPath("$.paths['/api/shipments'].get.description")
 						.value(org.hamcrest.Matchers.containsString("Archived shipments are excluded")));
 
 		assertThat(jdbc.queryForList(
 				"SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21", "22", "23");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21", "22", "23", "24", "25");
 		assertThat(jdbc.queryForObject(
 				"SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role'",
 				Integer.class)).isZero();

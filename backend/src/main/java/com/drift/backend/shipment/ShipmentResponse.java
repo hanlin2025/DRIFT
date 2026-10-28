@@ -23,7 +23,11 @@ public record ShipmentResponse(
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
-		ShipmentStatus status) {
+		ShipmentStatus status,
+		@Schema(description = "When this shipment was last updated. Archiving records the archive time here.", example = "2026-10-18T02:15:00Z")
+		Instant updatedAt,
+		@Schema(description = "Full name of the user who last updated this shipment. On an archived shipment this is who archived it.", example = "Ada Lee")
+		String updatedByName) {
 
 	static ShipmentResponse from(Shipment shipment) {
 		return from(shipment, null);
@@ -34,6 +38,7 @@ public record ShipmentResponse(
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
-				shipment.getVersion(), connectionWindow, shipment.getStatus());
+				shipment.getVersion(), connectionWindow, shipment.getStatus(), shipment.getUpdatedAt(),
+				shipment.getUpdatedBy().getFullName());
 	}
 }

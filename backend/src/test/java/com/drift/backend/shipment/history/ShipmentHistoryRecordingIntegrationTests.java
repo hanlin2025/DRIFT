@@ -29,6 +29,7 @@ import com.drift.backend.shipment.ShipmentLinkService;
 import com.drift.backend.shipment.ShipmentService;
 import com.drift.backend.shipment.UpdateShipmentRequest;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
+import com.drift.backend.shipment.exception.ShipmentAlreadyActiveException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
@@ -192,6 +193,23 @@ class ShipmentHistoryRecordingIntegrationTests {
 		assertThat(events(shipmentId)).extracting(event -> event.get("change_type"), event -> event.get("actor_user_id"))
 				.containsExactly(tuple("CREATED", forwarder.id()), tuple("ARCHIVED", manager.id()));
 		assertThat(fieldChanges(shipmentId)).containsExactly(List.of("status", "ACTIVE", "ARCHIVED"));
+	}
+
+	@Test
+	void restoringRecordsTheStatusChange() {
+		Long shipmentId = create("HBL-CDG181-RESTORE");
+		AuthenticatedUser manager = account("manager", Role.LOGISTICS_MANAGER, companyId);
+
+		shipments.archive(manager, shipmentId);
+		shipments.restore(manager, shipmentId);
+		assertThatThrownBy(() -> shipments.restore(manager, shipmentId))
+				.isInstanceOf(ShipmentAlreadyActiveException.class);
+
+		assertThat(events(shipmentId)).extracting(event -> event.get("change_type"), event -> event.get("actor_user_id"))
+				.containsExactly(tuple("CREATED", forwarder.id()), tuple("ARCHIVED", manager.id()),
+						tuple("RESTORED", manager.id()));
+		assertThat(fieldChanges(shipmentId)).containsExactly(List.of("status", "ACTIVE", "ARCHIVED"),
+				List.of("status", "ARCHIVED", "ACTIVE"));
 	}
 
 	private Long create(String reference) {

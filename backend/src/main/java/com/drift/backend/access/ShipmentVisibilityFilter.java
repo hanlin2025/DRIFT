@@ -99,7 +99,8 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			enforceDetail(request, response, chain, companyId, shipmentId);
 			return;
 		}
-		if (path.matches("/api/shipments/\\d+")) {
+		if (path.matches("/api/shipments/\\d+")
+				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence")) {
 			if (shipmentId == null) {
 				chain.doFilter(request, response);
 				return;
