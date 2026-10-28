@@ -92,6 +92,7 @@ public class ShipmentController {
 			+ "the remaining connection window from the mother vessel's estimated arrival when that estimate can be used, "
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
+			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({

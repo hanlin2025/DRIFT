@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getMaritimeContext: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -131,8 +131,8 @@ beforeEach(() => {
   vi.mocked(listShipments).mockResolvedValue([shipment]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getVesselTrack).mockResolvedValue(track);
-  vi.mocked(getMaritimeContext).mockResolvedValue({ enabled: false, sourceMode: 'DISABLED', shipmentAssociationConfidence: 'UNAVAILABLE', limitation: 'Maritime context is disabled.', notices: [], aiExplanation: null, suggestedActions: null });
 });
 
 describe('connection window on the shipment detail', () => {

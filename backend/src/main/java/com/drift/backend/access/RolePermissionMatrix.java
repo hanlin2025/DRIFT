@@ -97,7 +97,8 @@ public final class RolePermissionMatrix {
 				|| path.matches("/api/shipments/\\d+")
 				|| path.matches("/api/shipments/\\d+/maritime-context")
 				|| path.matches("/api/shipments/\\d+/tracking")
-				|| path.matches("/api/shipments/\\d+/track-history"));
+				|| path.matches("/api/shipments/\\d+/track-history")
+				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence"));
 	}
 
 	private static boolean profile(String method, String path) {
