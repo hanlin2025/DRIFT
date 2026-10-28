@@ -335,6 +335,37 @@ describe('arrival comparison parsing', () => {
     expect(detail.arrivalComparison).toBeNull();
     expect(detail.connectionWindow).toBeNull();
     expect(detail.remainingConnectionWindow).toBeNull();
+    expect(detail.riskContributions).toBeNull();
+  });
+
+  it('keeps the risk contributions from the same detail and rejects a list that looks complete when risk is not assessed', async () => {
+    const assessed = {
+      assessed: true,
+      notAssessed: null,
+      contributions: [
+        { code: 'WINDOW_IN_USE', label: 'Window in use', value: 'Remaining connection window' },
+        { code: 'MISSED_BY', label: 'Missed by', value: '0 seconds' },
+      ],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, riskContributions: assessed })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ riskContributions: assessed });
+
+    const notAssessed = {
+      assessed: false,
+      notAssessed: 'Connection risk is not assessed because the planned feeder-vessel departure is missing.',
+      contributions: [],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, riskContributions: notAssessed })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ riskContributions: notAssessed });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ riskContributions: null }]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      riskContributions: { ...notAssessed, contributions: assessed.contributions },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 
   it('reads an explicit null comparison on a list item', async () => {
