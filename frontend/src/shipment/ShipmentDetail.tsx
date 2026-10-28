@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
@@ -41,6 +42,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [history, setHistory] = useState<VesselTrack | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
+  const [cdg201Evidence, setCdg201Evidence] = useState<Cdg201ArrivalEvidence | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const historySeq = useRef(0);
 
@@ -112,6 +114,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshNote(null);
     setRefreshing(false);
     setHistory(null);
+    setCdg201Evidence(null);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -142,6 +145,12 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (reason instanceof ApiError && reason.status === 403) {
         setProblem({ kind: 'forbidden', message: reason.message });
       }
+    });
+    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
+      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
+    }).catch(() => {
+      // Evidence replay is additive: a replay outage must not block shipment detail.
+      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
     });
     return () => {
       active = false;
@@ -189,7 +198,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
@@ -251,9 +260,10 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
+  cdg201Evidence: Cdg201ArrivalEvidence | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
@@ -287,6 +297,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
         </div>
         <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />
       </div>
+      <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}

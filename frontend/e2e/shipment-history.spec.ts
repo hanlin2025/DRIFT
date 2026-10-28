@@ -19,7 +19,7 @@ const password = 'Example123';
 const noChanges = 'No changes yet';
 const earlierChanges = 'Changes made before history was recorded are not shown.';
 const noAccess = 'You do not have access to this shipment';
-const installedVersions = '1,2,3,4,5,6,7,8,13,14,15,16,17,19,20,21,22,23,24,25,27';
+const installedVersions = '1,2,3,4,5,6,7,8,13,14,15,16,17,19,20,21,22,23,24,25,26,27';
 
 function assertRunContext() {
   if (host !== '127.0.0.1' || port !== '5432' || dbUser !== 'drift' || dbPassword !== 'drift') {
