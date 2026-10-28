@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
+import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
@@ -34,12 +36,14 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [refreshCount, setRefreshCount] = useState(0);
   const requestSeq = useRef(0);
   const [trackVessel, setTrackVessel] = useState<TrackVessel>('MOTHER');
   const [trackHours, setTrackHours] = useState<TrackWindow>(DEFAULT_TRACK_WINDOW);
   const [history, setHistory] = useState<VesselTrack | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
+  const [cdg201Evidence, setCdg201Evidence] = useState<Cdg201ArrivalEvidence | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const historySeq = useRef(0);
 
@@ -111,6 +115,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshNote(null);
     setRefreshing(false);
     setHistory(null);
+    setCdg201Evidence(null);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -141,6 +146,12 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (reason instanceof ApiError && reason.status === 403) {
         setProblem({ kind: 'forbidden', message: reason.message });
       }
+    });
+    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
+      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
+    }).catch(() => {
+      // Evidence replay is additive: a replay outage must not block shipment detail.
+      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
     });
     return () => {
       active = false;
@@ -188,10 +199,11 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
+                  setRefreshCount(value => value + 1);
                 }}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
@@ -209,7 +221,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                     }}
                     onSelectPoint={setSelectedId} />
                 )}
-                history={history} selectedId={selectedId} onSelectPoint={setSelectedId} />}
+                history={history} selectedId={selectedId} onSelectPoint={setSelectedId}
+                changeHistory={<ShipmentChangeHistory token={token} shipmentId={shipmentId} reloadKey={attempt + refreshCount} onSessionEnded={onSessionEnded} />} />}
     </section>
   );
 }
@@ -248,9 +261,10 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
+  cdg201Evidence: Cdg201ArrivalEvidence | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
@@ -261,6 +275,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
   history: VesselTrack | null;
   selectedId: number | null;
   onSelectPoint: (id: number) => void;
+  changeHistory: ReactNode;
 }) {
   const remaining = remainingWindowFact(shipment);
   return (
@@ -283,6 +298,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
         </div>
         <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />
       </div>
+      <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}
@@ -328,6 +344,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+      {changeHistory}
     </>
   );
 }

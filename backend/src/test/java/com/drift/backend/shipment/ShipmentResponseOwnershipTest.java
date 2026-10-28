@@ -47,7 +47,24 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(listedJson.has("risk")).isFalse();
+		assertThat(listedJson.has("riskContributions")).isFalse();
+		assertThat(listedJson.has("recommendation")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
+		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
+		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
+				.isEqualTo("Planned connection window");
+		assertThat(detailJson.get("riskContributions").get("contributions").get(2).get("value").asText())
+				.isEqualTo("No AIS position has been received for the mother vessel.");
+		assertThat(detailJson.get("recommendation").get("available").asBoolean()).isFalse();
+		assertThat(detailJson.get("recommendation").get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+		assertThat(detailJson.get("recommendation").get("response").isNull()).isTrue();
+		assertThat(detailJson.get("recommendation").get("riskLevel").asText()).isEqualTo("LOW");
+		assertThat(detailJson.get("recommendation").get("riskExplanation").asText())
+				.isEqualTo(detailJson.get("risk").get("explanation").asText());
+		assertThat(detailJson.get("recommendation").get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
+		assertThat(detailJson.get("recommendation").get("impact").get("detail").asText())
+				.isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
 		assertThat(listedJson.has("importer")).isFalse();
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
@@ -59,6 +76,18 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").get("id").asLong()).isEqualTo(22L);
 		assertThat(detailJson.get("companyId").asLong()).isNotEqualTo(detailJson.get("importer").get("id").asLong());
+		assertThat(listedJson.has("assessmentExplanation")).isFalse();
+		assertThat(detail.assessmentExplanation().confidence())
+				.isEqualTo("Confidence is limited because the planned connection window is being used.");
+		assertThat(detail.assessmentExplanation().evidence()).containsExactly(
+				"Planned connection window",
+				"1 day",
+				"No AIS position has been received for the mother vessel.");
+		assertThat(detail.assessmentExplanation().unavailable()).isNull();
+		assertThat(detail.risk().explanation()).isEqualTo(
+				"At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat(detailJson.get("assessmentExplanation").get("confidence").asString())
+				.isEqualTo(detail.assessmentExplanation().confidence());
 	}
 
 	@Test
@@ -73,6 +102,23 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+		assertThat(detailJson.has("assessmentExplanation")).isTrue();
+	}
+
+	@Test
+	void anArchivedShipmentKeepsTheSameAssessmentExplanation() throws Exception {
+		Shipment shipment = shipment(company(11L, "HARBOURLINE_DEMO", "Harbourline Logistics (Demo)"));
+		shipment.archive();
+
+		ShipmentDetailResponse detail = detail(shipment);
+
+		assertThat(detail.status()).isEqualTo(ShipmentStatus.ARCHIVED);
+		assertThat(detail.assessmentExplanation().evidence()).containsExactly(
+				"Planned connection window",
+				"1 day",
+				"No AIS position has been received for the mother vessel.");
+		assertThat(detail.assessmentExplanation().confidence())
+				.isEqualTo("Confidence is limited because the planned connection window is being used.");
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
