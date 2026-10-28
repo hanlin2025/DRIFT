@@ -224,7 +224,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 25;
 
 function ShipmentSkeleton() {
   return (
@@ -324,6 +324,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
             : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+          {assessmentFacts(shipment.assessmentExplanation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
@@ -332,6 +333,34 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
 }
 
 const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+
+function assessmentFacts(explanation: Shipment['assessmentExplanation']) {
+  if (!explanation) return null;
+  if (explanation.unavailable) {
+    return (
+      <div>
+        <dt>Unavailable</dt>
+        <dd>{pointList(explanation.unavailable)}</dd>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div><dt>Evidence</dt><dd>{pointList(explanation.evidence)}</dd></div>
+      <div><dt>Assumptions</dt><dd>{pointList(explanation.assumptions)}</dd></div>
+      <div><dt>Confidence</dt><dd>{explanation.confidence}</dd></div>
+    </>
+  );
+}
+
+function pointList(items: string[] | null) {
+  if (!items) return null;
+  return (
+    <ul className="assessment-points">
+      {items.map(item => <li key={item}>{item}</li>)}
+    </ul>
+  );
+}
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
   if (comparison.unavailableReason) {

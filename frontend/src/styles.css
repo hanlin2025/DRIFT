@@ -295,6 +295,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-detail .route-facts dd { overflow-wrap: anywhere; }
 .vessel-name-warning { display: block; margin-top: 6px; color: #8a5a12; font-size: 11px; font-weight: 700; line-height: 1.45; text-align: left; }
 .arrival-comparison { margin-top: 8px; }
+.assessment-points { margin: 0; padding-left: 1.1em; }
+.assessment-points li + li { margin-top: 4px; }
 @media (min-width: 761px) {
   .shipment-detail .route-facts dl.arrival-comparison { display: block; }
 }
@@ -312,7 +314,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (min-width: 761px) {
-  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(11, auto); grid-auto-flow: column; column-gap: 32px; }
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(13, auto); grid-auto-flow: column; column-gap: 32px; }
 }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
