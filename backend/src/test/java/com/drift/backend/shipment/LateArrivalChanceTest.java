@@ -181,10 +181,10 @@ class LateArrivalChanceTest {
 	}
 
 	@Test
-	void anUnknownEstimateReasonIsRejected() {
-		ArrivalEstimate other = ArrivalEstimate.unavailable("SOMETHING_ELSE", "Something else.");
-		assertThatThrownBy(() -> LateArrivalChance.of(other, PLANNED, DEPARTURE, windows.calculate(PLANNED, DEPARTURE),
-				NOW)).isInstanceOf(IllegalArgumentException.class);
+	void anUnknownEstimateReasonKeepsItsCodeAndUsesTheGeneralWording() {
+		// The list and risk evaluation build the same snapshot, so a new estimate code must not fail the read.
+		assertReason(ArrivalEstimate.unavailable("SOMETHING_ELSE", "Something else."), PLANNED, DEPARTURE, NOW,
+				"SOMETHING_ELSE", LateArrivalChance.UNAVAILABLE_PREFIX + "the arrival estimate cannot be used.");
 	}
 
 	@Test

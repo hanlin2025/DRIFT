@@ -27,7 +27,7 @@ public record LateArrivalChance(
 		OffsetDateTime plannedFeederDepartureUsed,
 		@Schema(description = "True when the planned feeder departure is at or before the planned mother-vessel arrival. The probability is still calculated as normal. Null when the chance is unavailable.", nullable = true)
 		Boolean plannedWindowInvalid,
-		@Schema(description = "Why the chance was not calculated. Only one reason is returned, checked in this order: MISSING_PLANNED_MOTHER_ARRIVAL, MISSING_FEEDER_DEPARTURE, FEEDER_DEPARTURE_PASSED, the arrival estimate's own reason (NO_POSITION, INVALID_COORDINATES, MISSING_PORT, UNKNOWN_PORT, UNUSABLE_SPEED), then POSITION_OUTDATED. Null when the chance is available.", nullable = true)
+		@Schema(description = "Why the chance was not calculated. Only one reason is returned, checked in this order: MISSING_PLANNED_MOTHER_ARRIVAL, MISSING_FEEDER_DEPARTURE, FEEDER_DEPARTURE_PASSED, the arrival estimate's own reason (NO_POSITION, INVALID_COORDINATES, MISSING_PORT, UNKNOWN_PORT, UNUSABLE_SPEED, or any other estimate code unchanged), then POSITION_OUTDATED. Null when the chance is available.", nullable = true)
 		ArrivalEstimate.UnavailableReason unavailableReason) {
 
 	/** Handling time needed before feeder departure. Suggested, uncalibrated, see docs/cdg42-miss-probability-decision.md. */
@@ -118,7 +118,7 @@ public record LateArrivalChance(
 			case ArrivalEstimateCalculator.UNKNOWN_PORT -> "the transshipment port is not on the route map.";
 			case ArrivalEstimateCalculator.UNUSABLE_SPEED ->
 				"the vessel's speed is missing or below 0.5 knots, so arrival cannot be estimated.";
-			default -> throw new IllegalArgumentException("The estimate reason is outside the recorded set");
+			default -> "the arrival estimate cannot be used.";
 		};
 	}
 

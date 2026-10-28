@@ -41,16 +41,15 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * CDG-209. Shipment detail returns the late-arrival chance from the same read as the arrival comparison.
- * Uses the recommendation tests' fixed clock so both share one application context.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
-@Import(ShipmentRecommendationClock.class)
+@Import(LateArrivalChanceClock.class)
 class LateArrivalChanceIntegrationTests {
 
-	static final Instant NOW = ShipmentRecommendationClock.NOW;
+	static final Instant NOW = LateArrivalChanceClock.NOW;
 	private static final String UNAVAILABLE = "Chance of arriving after feeder departure unavailable: ";
 	private static final BigDecimal HALF_KNOT = new BigDecimal("0.5");
 
