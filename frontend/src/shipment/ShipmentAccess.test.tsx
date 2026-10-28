@@ -5,7 +5,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments, type Shipment } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, listShipments, type Shipment } from './api';
 import { STALE_NOTICE } from './positionNotice';
 import { RouteMap } from './RouteMap';
 
@@ -84,6 +84,7 @@ beforeEach(() => {
     feederVessel: null,
     feederVesselNameWarning: null,
   });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
 });
 
 describe('map permission and missing position', () => {
