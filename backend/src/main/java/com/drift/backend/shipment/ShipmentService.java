@@ -69,12 +69,13 @@ public class ShipmentService {
 	private final Clock clock;
 	private final ApplicationEventPublisher events;
 	private final ShipmentRiskAlertActivationStore activation;
+	private final RecommendationDecisionService decisions;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ConnectionWindowService connectionWindows, ShipmentConnectionRisk connectionRisk, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
 			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation,
-			ShipmentHistoryRecorder history) {
+			ShipmentHistoryRecorder history, RecommendationDecisionService decisions) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
@@ -87,6 +88,7 @@ public class ShipmentService {
 		this.events = events;
 		this.activation = activation;
 		this.history = history;
+		this.decisions = decisions;
 	}
 
 	@Transactional(readOnly = true)
@@ -371,7 +373,8 @@ public class ShipmentService {
 	private ShipmentDetailResponse detail(Shipment shipment) {
 		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
 		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
-				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
+				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison(),
+				decisions.current(shipment.getId()));
 	}
 
 	private ConnectionWindow window(Shipment shipment) {

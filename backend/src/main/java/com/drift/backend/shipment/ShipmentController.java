@@ -42,10 +42,13 @@ public class ShipmentController {
 
 	private final ShipmentService shipmentService;
 	private final VesselTrackService vesselTracks;
+	private final RecommendationDecisionService decisions;
 
-	public ShipmentController(ShipmentService shipmentService, VesselTrackService vesselTracks) {
+	public ShipmentController(ShipmentService shipmentService, VesselTrackService vesselTracks,
+			RecommendationDecisionService decisions) {
 		this.shipmentService = shipmentService;
 		this.vesselTracks = vesselTracks;
+		this.decisions = decisions;
 	}
 
 	@GetMapping("/api/shipments")
@@ -93,6 +96,7 @@ public class ShipmentController {
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
 			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
+			+ "The current recommendation decision is included when one has been recorded. "
 			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
 			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
@@ -290,6 +294,51 @@ public class ShipmentController {
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(shipmentService.update(user, shipmentId, body));
+	}
+
+	@PatchMapping("/api/shipments/{shipmentId}/recommendation-decision")
+	@Operation(summary = "Record the current recommendation decision", description = "Accepts approval, modification, or dismissal of the recommendation on this read. "
+			+ "The stored decision replaces any current decision for the shipment and keeps the outcome, the recommendation it was made against, the actor, and the time. "
+			+ "A modification also stores the chosen response, which is another response from the recommendation set. "
+			+ "An unknown shipment is not found. An unavailable recommendation is rejected and stores nothing. "
+			+ "This endpoint does not perform the recommended action and does not send mail.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Current decision recorded", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = RecommendationDecisionResponse.class), examples = @ExampleObject(value = """
+								{"outcome":"APPROVED","recommendationName":"No action","recommendationWording":"No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.","selectedResponseName":null,"selectedResponseWording":null,"decidedByUserId":4,"decidedByName":"Ada Lee","decidedAt":"2026-10-28T06:00:00Z"}
+								"""))),
+				@ApiResponse(responseCode = "400", description = "Outcome is missing or unknown, a modification has no selected response, or an approval or dismissal includes one", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment information is missing or invalid","errors":{"selectedResponse":"A modification needs the selected response"}}
+								"""))),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Log in again."}
+								"""))),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))),
+				@ApiResponse(responseCode = "409", description = "The recommendation is unavailable, or the shipment is archived", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Unavailable", value = """
+										{"message":"An unavailable recommendation is not stored."}
+										"""),
+								@ExampleObject(name = "Archived", value = """
+										{"message":"An archived shipment does not accept a new decision."}
+										""") })) })
+	public ResponseEntity<RecommendationDecisionResponse> decide(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Identifier of the shipment", example = "42") @PathVariable Long shipmentId,
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = RecommendationDecisionRequest.class)))
+			@Valid @RequestBody RecommendationDecisionRequest request) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(decisions.decide(user, shipmentId, request));
 	}
 
 	@PatchMapping("/api/shipments/{shipmentId}/status")

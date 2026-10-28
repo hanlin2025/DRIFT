@@ -66,11 +66,22 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
-		ShipmentStatus status) {
+		ShipmentStatus status,
+		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
+				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
+		RecommendationDecisionResponse recommendationDecision) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
 			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
 			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
+		return from(shipment, calculation, remainingConnectionWindow, motherVesselPosition, feederVesselPosition,
+				arrivalComparison, null);
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
+			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
+			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison,
+			RecommendationDecisionResponse recommendationDecision) {
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -88,7 +99,7 @@ public record ShipmentDetailResponse(
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus());
+				organisation(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision);
 	}
 
 	private static OrganisationResponse organisation(Company company) {

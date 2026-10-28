@@ -15,6 +15,6 @@ final class TestShipments {
 				OffsetDateTime.parse("2026-10-28T23:00:00+08:00"), imo, null, null, "SIMULATED FEEDER",
 				OffsetDateTime.parse("2026-10-29T12:00:00+08:00"), null, null, null, Instant.EPOCH, 0L,
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				ShipmentStatus.ACTIVE);
+				ShipmentStatus.ACTIVE, null);
 	}
 }

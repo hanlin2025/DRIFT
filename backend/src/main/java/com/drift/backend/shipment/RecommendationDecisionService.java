@@ -1,11 +1,18 @@
 package com.drift.backend.shipment;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.UserAccount;
+import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.authentication.AuthenticatedUser;
+import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
@@ -20,28 +27,67 @@ class RecommendationDecisionService {
 	private final ShipmentRepository shipments;
 	private final RecommendationDecisionRepository decisions;
 	private final ShipmentConnectionRisk connectionRisk;
+	private final ShipmentRecommendationImpactSource impacts;
+	private final UserAccountRepository users;
+	private final Clock clock;
 
 	RecommendationDecisionService(ShipmentRepository shipments, RecommendationDecisionRepository decisions,
-			ShipmentConnectionRisk connectionRisk) {
+			ShipmentConnectionRisk connectionRisk, ShipmentRecommendationImpactSource impacts,
+			UserAccountRepository users, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.decisions = decisions;
 		this.connectionRisk = connectionRisk;
+		this.impacts = impacts;
+		this.users = users;
+		this.clock = clocks.getIfAvailable(Clock::systemUTC);
+	}
+
+	@Transactional
+	public RecommendationDecisionResponse decide(AuthenticatedUser principal, Long shipmentId,
+			RecommendationDecisionRequest request) {
+		if (principal == null) {
+			throw new SessionEndedException();
+		}
+		if (request == null || request.outcome() == null) {
+			throw new InvalidShipmentRequestException(Map.of("outcome",
+					"Outcome must be APPROVED, MODIFIED, or DISMISSED"));
+		}
+		UserAccount actor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		Instant decidedAt = clock.instant();
+		RecommendationDecision decision = switch (request.outcome()) {
+			case APPROVED -> {
+				rejectSelection(request);
+				yield approve(shipment, actor, decidedAt);
+			}
+			case DISMISSED -> {
+				rejectSelection(request);
+				yield dismiss(shipment, actor, decidedAt);
+			}
+			case MODIFIED -> modifySelection(shipment, actor, decidedAt, request);
+		};
+		return RecommendationDecisionResponse.from(decision);
+	}
+
+	@Transactional(readOnly = true)
+	public RecommendationDecisionResponse current(Long shipmentId) {
+		return decisions.findById(shipmentId).map(RecommendationDecisionResponse::from).orElse(null);
 	}
 
 	@Transactional
 	public RecommendationDecision approve(Shipment shipment, UserAccount actor, Instant decidedAt) {
-		return approve(shipment, actor, decidedAt, ShipmentRecommendationImpact.notReturned());
+		return approve(shipment, actor, decidedAt, impacts.current());
 	}
 
 	@Transactional
 	public RecommendationDecision modify(Shipment shipment, UserAccount actor, Instant decidedAt,
 			ShipmentRecommendedResponse.Code selectedResponse) {
-		return modify(shipment, actor, decidedAt, selectedResponse, ShipmentRecommendationImpact.notReturned());
+		return modify(shipment, actor, decidedAt, selectedResponse, impacts.current());
 	}
 
 	@Transactional
 	public RecommendationDecision dismiss(Shipment shipment, UserAccount actor, Instant decidedAt) {
-		return dismiss(shipment, actor, decidedAt, ShipmentRecommendationImpact.notReturned());
+		return dismiss(shipment, actor, decidedAt, impacts.current());
 	}
 
 	@Transactional
@@ -99,6 +145,26 @@ class RecommendationDecisionService {
 		}
 		existing.replace(outcome, name, wording, selectedName, selectedWording, actor, decidedAt);
 		return decisions.saveAndFlush(existing);
+	}
+
+	private RecommendationDecision modifySelection(Shipment shipment, UserAccount actor, Instant decidedAt,
+			RecommendationDecisionRequest request) {
+		if (request.selectedResponse() == null) {
+			throw new InvalidShipmentRequestException(Map.of("selectedResponse",
+					"A modification needs the selected response"));
+		}
+		try {
+			return modify(shipment, actor, decidedAt, request.selectedResponse());
+		} catch (IllegalArgumentException ex) {
+			throw new InvalidShipmentRequestException(Map.of("selectedResponse", ex.getMessage()));
+		}
+	}
+
+	private static void rejectSelection(RecommendationDecisionRequest request) {
+		if (request.selectedResponse() != null) {
+			throw new InvalidShipmentRequestException(Map.of("selectedResponse",
+					"A selected response is stored only for a modification"));
+		}
 	}
 
 	private static boolean selectionRequired(RecommendationDecisionOutcome outcome) {
