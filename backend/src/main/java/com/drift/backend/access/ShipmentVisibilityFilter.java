@@ -63,7 +63,7 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
 		String path = path(request);
-		if (!RolePermissionMatrix.isShipmentRead(request.getMethod(), path)) {
+		if (!RolePermissionMatrix.isShipmentScoped(request.getMethod(), path)) {
 			chain.doFilter(request, response);
 			return;
 		}

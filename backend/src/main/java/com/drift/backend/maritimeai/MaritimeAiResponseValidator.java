@@ -18,9 +18,19 @@ final class MaritimeAiResponseValidator {
 			if (normalized.contains(" caused ") || normalized.contains("caused by")) return "UNSUPPORTED_CAUSAL_CLAIM";
 			for (String id : claim.evidenceIds()) {
 				MaritimeEvidence source = input.evidence().stream().filter(item -> id.equals(item.evidenceId())).findFirst().orElseThrow();
-				if ("INCOMPATIBLE".equals(source.compatibilityState()) || "UNAVAILABLE".equals(source.sourceMode())) return "INELIGIBLE_CITED_EVIDENCE";
+				if ("INCOMPATIBLE".equals(source.compatibilityState()) || "UNAVAILABLE".equals(source.sourceMode())
+						|| "STALE".equals(source.freshness()) || !source.evidenceSufficient()) return "INELIGIBLE_CITED_EVIDENCE";
+			}
+			if (!"VERIFIED".equals(input.shipmentAssociationConfidence()) && referencesShipmentAsFact(claim)) {
+				return "UNVERIFIED_SHIPMENT_ASSOCIATION";
 			}
 		}
 		return null;
+	}
+
+	private static boolean referencesShipmentAsFact(MaritimeAiClaim claim) {
+		String statement = claim.statement().toLowerCase();
+		String applicability = claim.applicability() == null ? "" : claim.applicability().toLowerCase();
+		return (statement.contains("shipment") && !statement.contains("unverified")) || applicability.contains("shipment_specific");
 	}
 }
