@@ -30,8 +30,10 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyActiveException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentRestoreForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotEditableException;
@@ -49,6 +51,7 @@ import tools.jackson.databind.ObjectMapper;
 public class ShipmentService {
 
 	public static final String REMOVED_MESSAGE = "Shipment removed successfully";
+	public static final String RESTORED_MESSAGE = "Shipment restored successfully";
 
 	public static final int PAGE_SIZE = 25;
 
@@ -181,6 +184,30 @@ public class ShipmentService {
 		ShipmentStatus previousStatus = shipment.getStatus();
 		Instant now = Instant.now();
 		shipment.archive();
+		shipment.markUpdated(account, now);
+		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
+	}
+
+	@Transactional
+	public void restore(AuthenticatedUser principal, Long shipmentId) {
+		activation.lockForRiskInput();
+		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		Company company = account.getCompany();
+		if (company == null || !company.isActive()) {
+			throw new ShipmentAccessForbiddenException();
+		}
+		Shipment shipment = shipments.findByIdAndCompanyId(shipmentId, company.getId())
+				.orElseThrow(ShipmentNotFoundException::new);
+		if (account.getRole() != Role.ADMIN && account.getRole() != Role.LOGISTICS_MANAGER) {
+			throw new ShipmentRestoreForbiddenException();
+		}
+		if (shipment.getStatus() == ShipmentStatus.ACTIVE) {
+			throw new ShipmentAlreadyActiveException();
+		}
+		ShipmentStatus previousStatus = shipment.getStatus();
+		Instant now = Instant.now();
+		shipment.restore();
 		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
 		history.recordStatusChange(shipment, account, previousStatus, now);

@@ -51,13 +51,13 @@ public class AccountStatusAudit {
 	protected AccountStatusAudit() {
 	}
 
-	public AccountStatusAudit(UserAccount operator, UserAccount target, AccountStatus previousStatus,
-			Company organisation, Instant recordedAt) {
+	public AccountStatusAudit(UserAccount operator, UserAccount target, Company organisation,
+			AccountStatus previousStatus, AccountStatus newStatus, Instant recordedAt) {
 		this.operator = operator;
 		this.target = target;
 		this.organisationId = organisation.getId();
 		this.previousStatus = previousStatus;
-		this.newStatus = target.getStatus();
+		this.newStatus = newStatus;
 		this.recordedAt = recordedAt;
 	}
 

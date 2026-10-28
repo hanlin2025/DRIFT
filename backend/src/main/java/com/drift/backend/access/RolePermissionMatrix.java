@@ -97,6 +97,7 @@ public final class RolePermissionMatrix {
 				|| path.matches("/api/shipments/\\d+")
 				|| path.matches("/api/shipments/\\d+/tracking")
 				|| path.matches("/api/shipments/\\d+/track-history")
+				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence")
 				|| path.matches("/api/shipments/\\d+/history"));
 	}
 

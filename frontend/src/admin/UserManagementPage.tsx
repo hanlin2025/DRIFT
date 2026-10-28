@@ -3,7 +3,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { assignUser, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { RemoveUser } from './RemoveUser';
+
+type StatusFilter = 'ALL' | AccountStatus;
+
+const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED: 'Removed' };
+
+function shows(filter: StatusFilter, user: AdminUser) {
+  return filter === 'ALL' || user.status === filter;
+}
 
 function Wordmark() {
   return (
@@ -23,6 +32,8 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [organisations, setOrganisations] = useState<AdminOrganisation[]>([]);
   const [audits, setAudits] = useState<AssignmentAudit[]>([]);
+  const [removals, setRemovals] = useState<AccountStatusAudit[]>([]);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [organisationId, setOrganisationId] = useState('');
   const [role, setRole] = useState<Role | ''>('');
@@ -31,6 +42,8 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   const [pending, setPending] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const selected = users?.find(user => user.id === selectedId) ?? null;
+  const selectedRemoved = selected?.status === 'REMOVED';
+  const visibleUsers = users?.filter(user => shows(statusFilter, user)) ?? [];
 
   useEffect(() => {
     let active = true;
@@ -41,12 +54,14 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       listAssignableRoles(account.token),
       listAssignableOrganisations(account.token),
       listAssignmentAudits(account.token),
-    ]).then(([foundUsers, foundRoles, foundOrganisations, foundAudits]) => {
+      listAccountStatusAudits(account.token),
+    ]).then(([foundUsers, foundRoles, foundOrganisations, foundAudits, foundRemovals]) => {
       if (!active) return;
       setUsers(foundUsers);
       setRoles(foundRoles);
       setOrganisations(foundOrganisations);
       setAudits(foundAudits);
+      setRemovals(foundRemovals);
     }).catch((reason: unknown) => {
       if (!active) return;
       if (reason instanceof ApiError && reason.status === 401) {
@@ -67,8 +82,34 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
     setOrganisationId(organisationStillActive ? String(user.organisation?.id) : '');
   }
 
+  function filterBy(next: StatusFilter) {
+    setStatusFilter(next);
+    if (selected && !shows(next, selected)) setSelectedId(null);
+  }
+
+  async function removed(updated: AdminUser) {
+    setUsers(current => current?.map(user => user.id === updated.id ? updated : user) ?? null);
+    setProblem('');
+    setSaved(`${updated.fullName}'s account was removed.`);
+    if (!shows(statusFilter, updated)) setSelectedId(null);
+    try {
+      setRemovals(await listAccountStatusAudits(account.token));
+    } catch (reason: unknown) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionEnded();
+        return;
+      }
+      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
+    }
+  }
+
+  function removalFailed(error: ApiError) {
+    setSaved('');
+    setProblem(error.message);
+  }
+
   async function save() {
-    if (!selected || !role || organisationId === '') return;
+    if (!selected || selectedRemoved || !role || organisationId === '') return;
     setPending(true);
     setProblem('');
     setSaved('');
@@ -105,26 +146,34 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       <main className="workspace-main">
         <p className="eyebrow">ADMINISTRATOR</p>
         <h2>User management</h2>
-        <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session.</p>
+        <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session. Removing a user keeps their account record and ends their current session.</p>
         {problem && users === null ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div> : null}
         {users === null && !problem ? <div className="notice" role="status">Loading users...</div> : null}
         {users !== null ? (
           <form className="admin-form admin-layout" onSubmit={event => { event.preventDefault(); void save(); }}>
             {saved ? <div className="success-notice" role="status">{saved}</div> : null}
             {problem ? <div className="error-notice" role="alert">{problem}</div> : null}
+            <div className="field">
+              <label htmlFor="user-status-filter">Show</label>
+              <select id="user-status-filter" value={statusFilter} onChange={event => filterBy(event.target.value as StatusFilter)}>
+                <option value="ALL">All users</option>
+                <option value="ACTIVE">Active</option>
+                <option value="REMOVED">Removed</option>
+              </select>
+            </div>
             <fieldset className="user-choices">
               <legend>User</legend>
-              {users.length === 0 ? <p className="notice">No users to assign.</p> : users.map(user => (
+              {users.length === 0 ? <p className="notice">No users to assign.</p> : visibleUsers.length === 0 ? <p className="notice">No users match this status.</p> : visibleUsers.map(user => (
                 <label className="user-choice" key={user.id}>
                   <input type="radio" name="assignee" checked={selectedId === user.id} onChange={() => choose(user)} />
                   <strong>{user.fullName}</strong>
-                  <span>{user.email} · {roles.find(item => item.code === user.role)?.label ?? user.role} · {user.organisation?.name ?? 'No organisation'}</span>
+                  <span>{user.email} · {roles.find(item => item.code === user.role)?.label ?? user.role} · {user.organisation?.name ?? 'No organisation'} · {STATUS_LABELS[user.status]}</span>
                 </label>
               ))}
             </fieldset>
             <div className="field">
               <label htmlFor="assignment-organisation">Organisation</label>
-              <select id="assignment-organisation" value={organisationId} onChange={event => setOrganisationId(event.target.value)} disabled={selected == null || pending}>
+              <select id="assignment-organisation" value={organisationId} onChange={event => setOrganisationId(event.target.value)} disabled={selected == null || selectedRemoved || pending}>
                 <option value="">Select an organisation</option>
                 {organisations.map(organisation => <option key={organisation.id} value={organisation.id}>{organisation.name}</option>)}
               </select>
@@ -132,17 +181,23 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </div>
             <div className="field">
               <label htmlFor="assignment-role">Role</label>
-              <select id="assignment-role" value={role} onChange={event => setRole(event.target.value as Role)} disabled={selected == null || pending}>
+              <select id="assignment-role" value={role} onChange={event => setRole(event.target.value as Role)} disabled={selected == null || selectedRemoved || pending}>
                 <option value="">Select a role</option>
                 {roles.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
               </select>
             </div>
-            <button className="primary-button" type="submit" disabled={pending || selected == null || role === '' || organisationId === ''}>
-              {pending ? 'Saving assignment' : 'Save assignment'} <span aria-hidden="true">→</span>
-            </button>
+            <div className="form-actions">
+              <button className="primary-button" type="submit" disabled={pending || selected == null || selectedRemoved || role === '' || organisationId === ''}>
+                {pending ? 'Saving assignment' : 'Save assignment'} <span aria-hidden="true">→</span>
+              </button>
+              {selected && selected.id !== account.id && selected.status === 'ACTIVE' ? (
+                <RemoveUser key={selected.id} token={account.token} user={selected} onSessionEnded={onSessionEnded} onRemoved={user => { void removed(user); }} onFailed={removalFailed} />
+              ) : null}
+            </div>
           </form>
         ) : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
+        {users !== null ? <RemovalHistory removals={removals} /> : null}
       </main>
     </div>
   );
@@ -161,6 +216,25 @@ function AssignmentHistory({ audits, roles }: { audits: AssignmentAudit[]; roles
               <strong>{audit.operator.fullName}</strong> assigned <strong>{audit.target.fullName}</strong>
               <span>{label(audit.previousRole)} at {place(audit.previousOrganisation)} → {label(audit.assignedRole)} at {place(audit.organisation)}</span>
               <time dateTime={audit.recordedAt}>{formatRecordedAt(audit.recordedAt)}</time>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function RemovalHistory({ removals }: { removals: AccountStatusAudit[] }) {
+  return (
+    <section className="audit-panel" aria-labelledby="removal-history">
+      <h3 id="removal-history">Removal history</h3>
+      {removals.length === 0 ? <p className="notice">No account removals yet.</p> : (
+        <ol className="audit-list">
+          {removals.map(removal => (
+            <li key={removal.id}>
+              <strong>{removal.operator.fullName}</strong> removed <strong>{removal.target.fullName}</strong>
+              <span>{STATUS_LABELS[removal.previousStatus]} → {STATUS_LABELS[removal.newStatus]}</span>
+              <time dateTime={removal.recordedAt}>{formatRecordedAt(removal.recordedAt)}</time>
             </li>
           ))}
         </ol>
