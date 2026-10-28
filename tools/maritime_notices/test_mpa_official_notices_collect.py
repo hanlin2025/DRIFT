@@ -42,5 +42,11 @@ class CollectorTests(unittest.TestCase):
         self.assertIsNone(collector.listing_items(b'not-json'))
         self.assertIsNone(collector.listing_items(b'{"data": {}}'))
 
+    def test_full_page_is_not_complete_without_source_count_or_later_pages(self):
+        page = [{}] * 100
+        self.assertFalse(collector.coverage_complete(page, None, []))
+        self.assertFalse(collector.coverage_complete(page, 101, []))
+        self.assertTrue(collector.coverage_complete(page, 100, []))
+
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import hashlib
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location('rag', Path(__file__).with_name('offline_notice_rag.py'))
@@ -53,6 +54,16 @@ class OfflineNoticeRagTests(unittest.TestCase):
             for name in ('first', 'second'):
                 (index / f'{name}.json').write_text(json.dumps({**record, 'document_id': name}))
             self.assertEqual(len(rag.query(index, 'dredging', private_root=root)['results']), 1)
+
+    def test_extracted_digest_deduplicates_without_copying_pdf_to_private_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / 'index'; index.mkdir()
+            digest = hashlib.sha256(b'same source bytes').hexdigest()
+            record = {'source_url': 'https://example.invalid/notice', 'local_pdf': 'not-copied.pdf', 'pdf_sha256': digest,
+                      'pages': [{'page': 1, 'text': 'synthetic dredging'}], 'facts': {}}
+            for name in ('first', 'second'):
+                (index / f'{name}.json').write_text(json.dumps({**record, 'document_id': name}))
+            self.assertEqual(len(rag.query(index, 'dredging')['results']), 1)
 
     def test_real_multpage_pdf_extraction_keeps_page_two_citation(self):
         with tempfile.TemporaryDirectory() as directory:

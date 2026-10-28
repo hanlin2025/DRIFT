@@ -56,7 +56,10 @@ def extract(pdf, source_url, document_id, output):
     pages, error = pages_from_pdf(pdf)
     if pages is None:
         return {'ok': False, 'error': error}
-    data = {'document_id': document_id, 'source_url': source_url, 'local_pdf': Path(pdf).name, 'pages': [{'page': index + 1, 'text': page} for index, page in enumerate(pages) if page.strip()]}
+    source = Path(pdf)
+    data = {'document_id': document_id, 'source_url': source_url, 'local_pdf': source.name,
+            'pdf_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+            'pages': [{'page': index + 1, 'text': page} for index, page in enumerate(pages) if page.strip()]}
     data['facts'] = facts([page['text'] for page in data['pages']])
     output.mkdir(parents=True, exist_ok=True)
     (output / (document_id + '.json')).write_text(json.dumps(data, indent=2) + '\n')
@@ -78,7 +81,7 @@ def discover(index, question, limit=5, private_root=PRIVATE):
     hits, seen_hashes = [], set()
     for path in sorted(Path(index).glob('*.json')):
         data = json.loads(path.read_text())
-        content_hash = local_pdf_hash(data, private_root)
+        content_hash = data.get('pdf_sha256') or local_pdf_hash(data, private_root)
         if content_hash and content_hash in seen_hashes:
             continue
         if content_hash:
