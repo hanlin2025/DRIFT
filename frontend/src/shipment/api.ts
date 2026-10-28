@@ -28,6 +28,30 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type RiskContributionCode =
+  | 'WINDOW_IN_USE'
+  | 'REMAINING_DURATION'
+  | 'MISSED_BY'
+  | 'PLANNED_DURATION'
+  | 'PLANNED_WINDOW'
+  | 'ESTIMATE_NOT_USED';
+
+export type RiskContribution = {
+  code: RiskContributionCode;
+  label: string;
+  value: string;
+};
+
+export type RiskContributions = {
+  assessed: true;
+  notAssessed: null;
+  contributions: RiskContribution[];
+} | {
+  assessed: false;
+  notAssessed: string;
+  contributions: [];
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -111,6 +135,7 @@ export type Shipment = {
   connectionWindow: ConnectionWindow | null;
   remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
+  riskContributions?: RiskContributions | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -401,6 +426,62 @@ function isRisk(value: unknown): value is ShipmentRisk {
     && value.explanation.trim().length > 0;
 }
 
+const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
+  WINDOW_IN_USE: 'Window in use',
+  REMAINING_DURATION: 'Remaining duration',
+  MISSED_BY: 'Missed by',
+  PLANNED_DURATION: 'Planned duration',
+  PLANNED_WINDOW: 'Planned window',
+  ESTIMATE_NOT_USED: 'Estimate not used',
+};
+
+const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
+  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
+];
+
+function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
+  if (!('riskContributions' in value) || value.riskContributions == null) return null;
+  return parseRiskContributions(value.riskContributions);
+}
+
+function parseRiskContributions(value: unknown): RiskContributions | undefined {
+  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
+  if (value.assessed) {
+    if (value.notAssessed != null) return undefined;
+    const contributions = value.contributions.map(parseContribution);
+    if (contributions.some(contribution => contribution === undefined)) return undefined;
+    const parsed = contributions as RiskContribution[];
+    if (!contributionSet(parsed)) return undefined;
+    return { assessed: true, notAssessed: null, contributions: parsed };
+  }
+  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
+    return undefined;
+  }
+  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
+}
+
+function parseContribution(value: unknown): RiskContribution | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
+  const code = value.code as RiskContributionCode;
+  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
+    return undefined;
+  }
+  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
+    return undefined;
+  }
+  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
+  return { code, label: value.label, value: value.value };
+}
+
+function contributionSet(contributions: RiskContribution[]): boolean {
+  const codes = contributions.map(contribution => contribution.code);
+  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
+  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
+  if (measured.length !== 1) return false;
+  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
+  return codes.includes('ESTIMATE_NOT_USED') === planned;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -520,6 +601,8 @@ function asShipment(value: unknown): Shipment | null {
   if (remainingConnectionWindow === undefined) return null;
   const risk = value.risk;
   if (risk != null && !isRisk(risk)) return null;
+  const riskContributions = riskContributionsOf(value);
+  if (riskContributions === undefined) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -564,6 +647,7 @@ function asShipment(value: unknown): Shipment | null {
     connectionWindow: window ?? null,
     remainingConnectionWindow,
     risk: risk ?? null,
+    riskContributions,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
