@@ -53,7 +53,9 @@ public class ShipmentController {
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
-			+ "and who last updated it and when. "
+			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
+			+ "(null when not assessed), the linked importer organisation (null when not linked), "
+			+ "and who last updated it and when. AIS positions for the whole list are read in one batch. "
 			+ "Optional filters are combined with AND.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
