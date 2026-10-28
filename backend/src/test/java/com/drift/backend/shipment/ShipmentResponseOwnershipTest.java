@@ -157,7 +157,7 @@ class ShipmentResponseOwnershipTest {
 				"No AIS position has been received for the mother vessel.");
 		RemainingConnectionWindow remaining = windows.remaining(shipment.getPlannedFeederDepartureAt(), estimate);
 		return new ShipmentConnectionRisk.Snapshot(planned, remaining, null, null, estimate,
-				ShipmentRisk.of(planned, remaining));
+				ShipmentRisk.of(planned, remaining), null);
 	}
 
 	private static Shipment shipment(Company owner) {
