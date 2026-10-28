@@ -3,7 +3,6 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
-import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
 import com.drift.backend.ais.feed.AisFeedStatus;
 import com.drift.backend.ais.operation.OperationalState;
@@ -70,10 +69,13 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
 		ShipmentStatus status) {
 
-	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
-			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
-			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
-		ShipmentRisk risk = ShipmentRisk.of(calculation, remainingConnectionWindow);
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+		ConnectionWindowCalculation calculation = connection.planned();
+		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
+		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
+		ShipmentRisk risk = connection.risk();
+		VesselPosition motherVesselPosition = connection.motherVesselPosition();
+		VesselPosition feederVesselPosition = connection.feederVesselPosition();
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -92,13 +94,7 @@ public record ShipmentDetailResponse(
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus());
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 
-	private static OrganisationResponse organisation(Company company) {
-		if (company == null) {
-			return null;
-		}
-		return new OrganisationResponse(company.getId(), company.getCode(), company.getName());
-	}
 }

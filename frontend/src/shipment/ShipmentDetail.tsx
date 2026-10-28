@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationImpact, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
+import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
@@ -338,8 +339,8 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
             </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
-            ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
-            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
+            : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
           {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
@@ -349,8 +350,6 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
   );
 }
 
-const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
-
 const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
   AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
   NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
@@ -358,6 +357,9 @@ const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', str
 
 function recommendationFact(recommendation: Shipment['recommendation']) {
   if (!recommendation) return null;
+  const risk = recommendation.riskLevel && recommendation.riskExplanation
+    ? { level: recommendation.riskLevel, explanation: recommendation.riskExplanation }
+    : null;
   return (
     <div>
       <dt>Recommendation</dt>
@@ -365,10 +367,10 @@ function recommendationFact(recommendation: Shipment['recommendation']) {
         {recommendation.available ? recommendation.response.label : recommendation.unavailable}
         <dl className="arrival-comparison">
           {recommendation.available && <div><dt>Response</dt><dd>{recommendation.response.wording}</dd></div>}
-          {recommendation.riskLevel && recommendation.riskExplanation && (
+          {risk && (
             <div>
               <dt>Connection risk</dt>
-              <dd><span className={`risk-badge risk-${recommendation.riskLevel.toLowerCase()}`}>{RISK_LABELS[recommendation.riskLevel]}</span> {recommendation.riskExplanation}</dd>
+              <dd><RiskBadge risk={risk} /> {risk.explanation}</dd>
             </div>
           )}
           <div><dt>Impact</dt><dd>{impactOutcome(recommendation.impact)}</dd></div>
