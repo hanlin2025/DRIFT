@@ -13,6 +13,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from notice_compatibility import assess, document_activities, locations, unsupported_conclusion
+
 PRIVATE = Path('var/maritime-notices/private')
 STOP = {'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'was', 'what', 'where', 'when', 'does', 'which', 'who', 'notice', 'port', 'marine', 'no', 'pmn', 'vessel', 'eta', 'delay', 'at', 'to', 'of', 'in', 'on'}
 
@@ -94,13 +97,19 @@ def discover(index, question, limit=5, private_root=PRIVATE):
             score += 3
             citations.append({'page': data.get('facts', {}).get('fact_pages', {}).get('notice_identifier', [1])[0], 'matched_terms': ['notice_identifier'], 'score': 3})
         if score:
-            hits.append({'document_id': data['document_id'], 'source_url': data['source_url'], 'score': score, 'facts': data.get('facts', {}), 'citations': citations})
+            first_page = (data.get('pages') or [{}])[0].get('text', '')[:1200]
+            hits.append({'document_id': data['document_id'], 'source_url': data['source_url'], 'score': score, 'facts': data.get('facts', {}), 'document_activities': sorted(document_activities(first_page)), 'document_locations': sorted(locations(first_page)), 'citations': citations})
     hits.sort(key=lambda item: item['score'], reverse=True)
     return hits[:limit]
 
 def query(index, question, limit=5, private_root=PRIVATE):
-    results = discover(index, question, limit, private_root)
-    return {'query': question, 'results': results, 'abstain': not bool(results), 'limitation': 'Discovery surfaces source facts only; it does not determine applicability, vessel impact, ETA impact, or causation.'}
+    if unsupported_conclusion(question):
+        return {'query': question, 'discovered_candidates': [], 'results': [], 'abstain': True, 'unsupported_reason': 'Official notices cannot establish vessel- or ETA-specific causation.', 'limitation': 'Results are source facts only; no vessel/ETA causation or impact is inferred.'}
+    discovered = discover(index, question, limit, private_root)
+    assessed = [{**hit, 'compatibility': assess(question, hit)} for hit in discovered]
+    results = [hit for hit in assessed if hit['compatibility']['decision'] != 'REJECT']
+    results.sort(key=lambda hit: (sum(value == 'COMPATIBLE' for value in hit['compatibility']['criteria'].values()), hit['score']), reverse=True)
+    return {'query': question, 'discovered_candidates': assessed, 'results': results, 'abstain': not bool(results), 'limitation': 'Results are source facts only; no vessel/ETA causation or impact is inferred.'}
 
 def main():
     parser = argparse.ArgumentParser()
