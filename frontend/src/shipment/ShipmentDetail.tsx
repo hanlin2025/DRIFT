@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeContext, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
+import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
@@ -47,6 +48,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [cdg201Evidence, setCdg201Evidence] = useState<Cdg201ArrivalEvidence | null>(null);
   const [maritimeContext, setMaritimeContext] = useState<MaritimeContext | null>(null);
   const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
+  const [maritimeAiAssessments, setMaritimeAiAssessments] = useState<MaritimeAiAssessment[]>([]);
+  const [maritimeAiUnavailable, setMaritimeAiUnavailable] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const historySeq = useRef(0);
 
@@ -120,6 +123,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setHistory(null);
     setCdg201Evidence(null);
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
+    setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -161,6 +165,11 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (active && requestId === requestSeq.current) setMaritimeContext(found);
     }).catch(() => {
       if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
+    });
+    listMaritimeAiAssessments(token, shipmentId).then(found => {
+      if (active && requestId === requestSeq.current) setMaritimeAiAssessments(found);
+    }).catch(() => {
+      if (active && requestId === requestSeq.current) setMaritimeAiUnavailable(true);
     });
     return () => {
       active = false;
@@ -208,7 +217,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
@@ -270,12 +279,14 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
   maritimeContext: MaritimeContext | null;
   maritimeContextUnavailable: boolean;
+  maritimeAiAssessments: MaritimeAiAssessment[];
+  maritimeAiUnavailable: boolean;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
@@ -311,6 +322,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       </div>
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}

@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), listMaritimeAiAssessments: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -75,11 +75,6 @@ function open(account: Session, path: string) {
 
 const MOTHER_WARNING = 'The AIS vessel name does not match the stored mother vessel.';
 const FEEDER_WARNING = 'The AIS vessel name does not match the stored feeder vessel.';
-const disabledMaritimeContext: MaritimeContext = {
-  enabled: false, sourceMode: 'DISABLED', shipmentAssociationConfidence: 'UNAVAILABLE',
-  limitation: 'Maritime context is disabled.', notices: [], aiExplanation: null, suggestedActions: null,
-};
-
 function namedFix(vesselName: string, latitude: number) {
   return { ...shipment.motherVesselPosition!, vesselName, latitude };
 }
@@ -143,6 +138,7 @@ beforeEach(() => {
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
+  vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 

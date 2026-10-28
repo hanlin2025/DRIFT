@@ -39,6 +39,7 @@ export type MaritimeEvidence = {
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
 };
 export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeAiAssessment = { assessmentId: string | null; state: 'GENERATED' | 'ABSTAINED' | 'FAILED'; validationStatus: string; bundleVersion: string; bundleHash: string; assessmentCutoffUtc: string; provider: string; model: string; promptVersion: string; generatedAtUtc: string | null; interpretation: { summary: string; claims: { statement: string; evidenceIds: string[]; applicability: string }[]; uncertainties: string[]; followUpConsiderations: string[]; evidenceSufficient: boolean; formalRecommendationCode: string | null } | null; limitation: string | null; };
 
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
@@ -296,6 +297,15 @@ export async function getMaritimeContext(token: string, shipmentId: string): Pro
   const notices = data.notices as MaritimeNoticeEvidence[];
   const sourceMode = data.sourceMode as MaritimeContext['sourceMode'];
   return { contractVersion: data.contractVersion, enabled: data.enabled, sourceMode, assessmentCutoffUtc: data.assessmentCutoffUtc, shipmentAssociationConfidence: data.shipmentAssociationConfidence, limitation: data.limitation, evidence, notices, aiExplanation: null, suggestedActions: null };
+}
+
+export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(value => {
+    if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
+    return value as MaritimeAiAssessment;
+  });
 }
 
 export type ShipmentTracking = {

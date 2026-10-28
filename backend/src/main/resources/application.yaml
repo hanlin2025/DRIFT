@@ -72,3 +72,9 @@ app:
   maritime-context:
     # CDG-246 is a read-only recorded/synthetic bundle until persistent snapshot adapters are approved.
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}
+  maritime-ai:
+    enabled: ${MARITIME_AI_ENABLED:false}
+    provider: ${MARITIME_AI_PROVIDER:}
+    model: ${MARITIME_AI_MODEL:}
+    endpoint: ${MARITIME_AI_ENDPOINT:}
+    api-key: ${MARITIME_AI_API_KEY:}
