@@ -83,6 +83,10 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   expect(body.evidence.sourceTimestampSemantics).toContain('Asia/Singapore');
   expect(body.evidence.revisedExpectedArrivalUtc).toBe('2026-10-28T18:00:00+00:00');
   expect(body.evidence.locationMappingStatus).toBe('UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT');
+  expect(body.evidence.locationReferences).toEqual(expect.arrayContaining([
+    expect.objectContaining({ rawLocationCode: 'SEA', sourceField: 'locationFrom', mappingStatus: 'UNKNOWN', officialDescription: '' }),
+    expect.objectContaining({ rawLocationCode: 'PEBGA', sourceField: 'locationTo', mappingStatus: 'PARTIAL', officialDescription: 'PILOT EAST BOARD GRD A', derivedCategory: 'PILOT_GROUND' }),
+  ]));
   expect(body.evidence.simulatedScenario).toMatchObject({ originalConnectionMarginMinutes: 780, revisedConnectionMarginMinutes: 600, reductionMinutes: 180 });
 
   const after = await request.get(`/api/shipments/${kota.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
@@ -111,6 +115,8 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   await expect(panel).toContainText('+180 minutes');
   await expect(panel).toContainText('UNVERIFIED IMO ONLY');
   await expect(panel).toContainText('UNKNOWN MPA CODE NOT MAPPED TO DRIFT PORT');
+  await expect(panel).toContainText('PILOT EAST BOARD GRD A');
+  await expect(panel).toContainText('Derived category (display-only): PILOT_GROUND');
   await expect(panel).toContainText('780 → 600 minutes');
   await expect(panel).toContainText('Not the production shipment risk.');
 });

@@ -182,6 +182,7 @@ export type Cdg201ArrivalEvidence = {
   locationFrom: string;
   locationTo: string;
   locationMappingStatus: string;
+  locationReferences: Cdg201MpaLocationReference[];
   shipmentAssociation: string;
   limitations: string;
   simulatedScenario: {
@@ -193,6 +194,17 @@ export type Cdg201ArrivalEvidence = {
     simulatedRiskAfter: string;
     disclaimer: string;
   };
+};
+
+export type Cdg201MpaLocationReference = {
+  rawLocationCode: string;
+  sourceApi: string;
+  sourceField: string;
+  officialDescription: string;
+  derivedCategory: string;
+  mappingStatus: string;
+  referenceProvenance: string;
+  limitation: string;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -429,6 +441,9 @@ function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
     'confidence', 'ambiguity', 'sourceTimestampSemantics', 'locationFrom', 'locationTo', 'locationMappingStatus', 'shipmentAssociation', 'limitations'] as const;
   if (!text.every(key => typeof value[key] === 'string') || value.evidenceState !== 'RECORDED_EVIDENCE_REPLAY'
     || !isFiniteNumber(value.revisionMinutes) || !isRecord(value.simulatedScenario)) return null;
+  if (!Array.isArray(value.locationReferences)) return null;
+  const locationReferences = value.locationReferences.map(asCdg201MpaLocationReference);
+  if (locationReferences.some(reference => reference === null)) return null;
   const scenario = value.simulatedScenario;
   const scenarioText = ['state', 'simulatedRiskBefore', 'simulatedRiskAfter', 'disclaimer'] as const;
   const scenarioNumbers = ['originalConnectionMarginMinutes', 'revisedConnectionMarginMinutes', 'reductionMinutes'] as const;
@@ -447,6 +462,7 @@ function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
     confidence: value.confidence as string, ambiguity: value.ambiguity as string,
     sourceTimestampSemantics: value.sourceTimestampSemantics as string, locationFrom: value.locationFrom as string,
     locationTo: value.locationTo as string, locationMappingStatus: value.locationMappingStatus as string,
+    locationReferences: locationReferences as Cdg201MpaLocationReference[],
     shipmentAssociation: value.shipmentAssociation as string, limitations: value.limitations as string,
     simulatedScenario: {
       state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: scenario.originalConnectionMarginMinutes as number,
@@ -454,6 +470,23 @@ function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
       simulatedRiskBefore: scenario.simulatedRiskBefore as string, simulatedRiskAfter: scenario.simulatedRiskAfter as string,
       disclaimer: scenario.disclaimer as string,
     },
+  };
+}
+
+function asCdg201MpaLocationReference(value: unknown): Cdg201MpaLocationReference | null {
+  if (!isRecord(value)) return null;
+  const text = ['rawLocationCode', 'sourceApi', 'sourceField', 'officialDescription', 'derivedCategory',
+    'mappingStatus', 'referenceProvenance', 'limitation'] as const;
+  if (!text.every(key => typeof value[key] === 'string')) return null;
+  return {
+    rawLocationCode: value.rawLocationCode as string,
+    sourceApi: value.sourceApi as string,
+    sourceField: value.sourceField as string,
+    officialDescription: value.officialDescription as string,
+    derivedCategory: value.derivedCategory as string,
+    mappingStatus: value.mappingStatus as string,
+    referenceProvenance: value.referenceProvenance as string,
+    limitation: value.limitation as string,
   };
 }
 

@@ -15,7 +15,8 @@ verified that the endpoint and shipment-detail panel show:
   `2026-10-29 02:00:00` (`+180` minutes);
 - collection timestamps, run IDs, manifests and raw-file references;
 - `UNVERIFIED_IMO_ONLY` shipment association;
-- confirmed SGT source-time semantics, derived UTC representations, and unmapped MPA location status;
+- confirmed SGT source-time semantics, derived UTC representations, and
+  display-only MPA location-reference metadata;
 - an explicitly simulated connection scenario of `780` to `600` minutes.
 
 The UI labels the scenario as simulated and the evidence as a read-only replay;
@@ -74,6 +75,10 @@ passed (1).
 - MPA source strings are retained verbatim and interpreted as
   Asia/Singapore (`UTC+08:00`) in separate derived fields; collection times
   remain UTC.
-- MPA location code `PEBGA` has not been mapped to a DRIFT terminal.
+- `PEBGA` is shown only as an exact code-string reference match to `PILOT EAST
+  BOARD GRD A` with a derived `PILOT_GROUND` category. It is not mapped to a
+  DRIFT terminal; `SEA` remains explicitly unknown.
+- The full official MPA location reference is not redistributed in this
+  repository pending reuse approval.
 - No shipment, ArrivalEstimate, CDG-42 risk result, alert or audit/business
   event is mutated by this feature.

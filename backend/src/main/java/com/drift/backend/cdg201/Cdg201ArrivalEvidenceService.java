@@ -1,5 +1,7 @@
 package com.drift.backend.cdg201;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.drift.backend.shipment.ShipmentDetailResponse;
@@ -12,6 +14,11 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 public class Cdg201ArrivalEvidenceService {
 
 	private static final String KOTA_LARIS_IMO = "9351048";
+	private final Cdg201MpaLocationReferenceLookup locations;
+
+	public Cdg201ArrivalEvidenceService(Cdg201MpaLocationReferenceLookup locations) {
+		this.locations = locations;
+	}
 	public Cdg201ArrivalEvidence forShipment(ShipmentDetailResponse shipment) {
 		if (shipment == null || !KOTA_LARIS_IMO.equals(shipment.motherVesselImo())) {
 			return null;
@@ -31,6 +38,9 @@ public class Cdg201ArrivalEvidenceService {
 				"conservative_context_time_continuity", "NONE_FOR_REPLAY_EVENT",
 				"MPA source event strings are Singapore Standard Time (Asia/Singapore, UTC+08:00); raw strings and derived SGT/UTC instants are shown separately.",
 				"SEA", "PEBGA", "UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT",
+				List.of(
+						locations.lookup("SEA", "MPA OCEANS-X Vessels Due to Arrive", "locationFrom"),
+						locations.lookup("PEBGA", "MPA OCEANS-X Vessels Due to Arrive", "locationTo")),
 				"UNVERIFIED_IMO_ONLY", "Recorded MPA revision replay. It does not verify a booked shipment, port call, feeder connection, or actual arrival.",
 				new Cdg201SimulatedConnectionScenario("SIMULATED_CONNECTION_ASSUMPTIONS", 780, 600, 180,
 						"MEDIUM", "HIGH", "Synthetic feeder timing and transfer buffer only; not a production risk result or missed-connection finding."));

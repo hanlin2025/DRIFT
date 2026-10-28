@@ -18,6 +18,18 @@ export function Cdg201EvidencePanel({ evidence }: { evidence: Cdg201ArrivalEvide
         <div><dt>Revised source snapshot</dt><dd><time dateTime={evidence.latestCollectionUtc}>{formatWhen(evidence.latestCollectionUtc)}</time> · {evidence.latestCollectionRunId}</dd></div>
         <div><dt>Shipment association</dt><dd>{evidence.shipmentAssociation.replaceAll('_', ' ')}</dd></div>
         <div><dt>MPA location mapping</dt><dd>{evidence.locationMappingStatus.replaceAll('_', ' ')}</dd></div>
+        {evidence.locationReferences.map(reference => (
+          <div key={`${reference.sourceApi}:${reference.sourceField}:${reference.rawLocationCode}`}>
+            <dt>MPA {reference.sourceField}</dt>
+            <dd>
+              <code>{reference.rawLocationCode}</code> · {reference.mappingStatus}<br />
+              Source field: {reference.sourceApi} / {reference.sourceField}<br />
+              Official description: {reference.officialDescription || 'No official description matched'}<br />
+              Derived category (display-only): {reference.derivedCategory}<br />
+              <small>{reference.referenceProvenance}. {reference.limitation}</small>
+            </dd>
+          </div>
+        ))}
         <div><dt>Prior evidence</dt><dd><code>{evidence.previousSourceManifest}</code><br /><code>{evidence.previousSourceRawFile}</code></dd></div>
         <div><dt>Revised evidence</dt><dd><code>{evidence.sourceManifest}</code><br /><code>{evidence.sourceRawFile}</code></dd></div>
       </dl>

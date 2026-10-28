@@ -1,5 +1,7 @@
 package com.drift.backend.cdg201;
 
+import java.util.List;
+
 /**
  * Read-only replay of an externally collected MPA expected-arrival revision.
  * Raw source strings and derived Singapore/UTC instants are both preserved.
@@ -31,6 +33,7 @@ public record Cdg201ArrivalEvidence(
 		String locationFrom,
 		String locationTo,
 		String locationMappingStatus,
+		List<Cdg201MpaLocationReference> locationReferences,
 		String shipmentAssociation,
 		String limitations,
 		Cdg201SimulatedConnectionScenario simulatedScenario) {
