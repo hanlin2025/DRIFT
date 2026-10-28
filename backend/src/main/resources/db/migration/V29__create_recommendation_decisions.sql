@@ -1,4 +1,3 @@
--- Version 27 is a placeholder until the team agrees on the final number before merge.
 -- One current recommendation decision per shipment. Earlier decisions are not kept.
 
 CREATE TABLE recommendation_decisions (
