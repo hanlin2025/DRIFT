@@ -8,6 +8,7 @@ const frontendDir = path.join(root, 'frontend');
 const backendDir = path.join(root, 'backend');
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const ownedName = /^drift_cdg226_browser_[0-9]{14}_[a-f0-9]{12}$/;
+const createdByThisProcess = new Set();
 let activeBackend = null;
 let activePlaywright = null;
 let signals = 0;
@@ -57,17 +58,79 @@ function generateName() {
   return `drift_cdg226_browser_${stamp}_${randomBytes(6).toString('hex')}`;
 }
 
-function createOwnedDatabase() {
+function quoteLiteral(value) {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function databaseExists(name) {
+  return psql('postgres', `SELECT COUNT(*) FROM pg_database WHERE datname = ${quoteLiteral(name)}`).trim() !== '0';
+}
+
+function databaseComment(name) {
+  return psql('postgres', `SELECT COALESCE(pg_catalog.shobj_description(d.oid, 'pg_database'), '') FROM pg_catalog.pg_database d WHERE d.datname = ${quoteLiteral(name)}`).trim();
+}
+
+export function createOwnedDatabase() {
   const name = generateName();
   if (blocked.has(name) || !ownedName.test(name)) {
     throw new Error(`Refusing database name ${name}.`);
   }
-  const existing = psql('postgres', `SELECT COUNT(*) FROM pg_database WHERE datname = '${name}'`).trim();
-  if (existing !== '0') throw new Error(`${name} already exists. No database was dropped.`);
+  if (databaseExists(name)) throw new Error(`${name} already exists. No database was dropped.`);
   psql('postgres', `CREATE DATABASE ${name}`);
+  createdByThisProcess.add(name);
   const token = randomBytes(32).toString('hex');
-  psql('postgres', `COMMENT ON DATABASE ${name} IS '${token}'`);
+  try {
+    psql('postgres', `COMMENT ON DATABASE ${name} IS '${token}'`);
+  } catch (error) {
+    if (databaseComment(name) !== '') {
+      throw new Error(`Ownership was not recorded for ${name}. It was left in place because its comment was not empty. ${error instanceof Error ? error.message : error}`);
+    }
+    try {
+      psql('postgres', `DROP DATABASE ${name} WITH (FORCE)`);
+      createdByThisProcess.delete(name);
+    } catch (dropError) {
+      throw new Error(`Ownership was not recorded for ${name}, and dropping that new database failed. ${dropError instanceof Error ? dropError.message : dropError}`);
+    }
+    throw new Error(`Ownership was not recorded for ${name}. The new database was dropped. ${error instanceof Error ? error.message : error}`);
+  }
   return { name, token };
+}
+
+function ownershipMatches(owned) {
+  if (!owned || !createdByThisProcess.has(owned.name) || blocked.has(owned.name) || !ownedName.test(owned.name)) return false;
+  if (!/^[a-f0-9]{64}$/.test(owned.token)) return false;
+  return databaseComment(owned.name) === owned.token;
+}
+
+export function dropOwnedDatabase(owned) {
+  if (!ownershipMatches(owned)) {
+    throw new Error(`Refusing to drop ${owned.name}; ownership could not be confirmed. It was left in place. A retained database can be removed by its exact drift_cdg226_browser_* name. Never drop drift or drift_test.`);
+  }
+  let lastError = null;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      if (!databaseExists(owned.name)) {
+        createdByThisProcess.delete(owned.name);
+        console.log(`Dropped disposable database ${owned.name}.`);
+        return;
+      }
+      if (!ownershipMatches(owned)) {
+        throw new Error(`Refusing to drop ${owned.name}; ownership could not be confirmed. It was left in place. A retained database can be removed by its exact drift_cdg226_browser_* name. Never drop drift or drift_test.`);
+      }
+      psql('postgres', `DROP DATABASE ${owned.name} WITH (FORCE)`);
+      if (databaseExists(owned.name)) {
+        throw new Error(`DROP DATABASE did not remove ${owned.name}.`);
+      }
+      createdByThisProcess.delete(owned.name);
+      console.log(`Dropped disposable database ${owned.name}.`);
+      return;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Refusing to drop')) throw error;
+      lastError = error;
+      execFileSync('sleep', ['1']);
+    }
+  }
+  throw new Error(`Database ${owned.name} was left in place. ${lastError instanceof Error ? lastError.message : lastError} Remove it by that exact name. Never drop drift or drift_test.`);
 }
 
 function assertDisposableTarget(owned) {
@@ -232,14 +295,15 @@ async function stopProcessGroup(child) {
 export async function runAssessmentExplanation() {
   console.log(`Database access: ${access === 'compose' ? 'docker compose exec' : 'psql -h 127.0.0.1'}.`);
   assertPortsAvailable();
-  const owned = createOwnedDatabase();
-  console.log(`Assessment explanation browser database: ${owned.name}`);
-  assertDisposableTarget(owned);
-  const env = backendEnv(owned);
-  console.log(`Validated empty ${owned.name} on 127.0.0.1:5432 before startup. AIS_ENABLED=${env.AIS_ENABLED}.`);
+  let owned = null;
   let failure = null;
   let executed = 0;
   try {
+    owned = createOwnedDatabase();
+    console.log(`Assessment explanation browser database: ${owned.name}`);
+    assertDisposableTarget(owned);
+    const env = backendEnv(owned);
+    console.log(`Validated empty ${owned.name} on 127.0.0.1:5432 before startup. AIS_ENABLED=${env.AIS_ENABLED}.`);
     activeBackend = spawn('bash', ['./mvnw', 'spring-boot:run'], {
       cwd: backendDir, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -255,11 +319,34 @@ export async function runAssessmentExplanation() {
   } finally {
     const backend = activeBackend;
     activeBackend = null;
+    const cleanupFailures = [];
     if (activePlaywright) {
       try { activePlaywright.kill('SIGTERM'); } catch { /* the runner reports a leftover process */ }
     }
-    if (backend) await stopProcessGroup(backend);
-    console.log(`Left disposable database ${owned.name} in place.`);
+    if (backend) {
+      try {
+        await stopProcessGroup(backend);
+      } catch (error) {
+        cleanupFailures.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (owned && createdByThisProcess.has(owned.name)) {
+      if (cleanupFailures.length) {
+        cleanupFailures.push(`Database ${owned.name} was left in place because a process this runner started could not be confirmed stopped.`);
+      } else {
+        try {
+          dropOwnedDatabase(owned);
+        } catch (error) {
+          cleanupFailures.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    if (cleanupFailures.length) {
+      const cleanup = cleanupFailures.join(' ');
+      failure = failure
+        ? new Error(`${failure instanceof Error ? failure.message : failure}\n${cleanup}`)
+        : new Error(cleanup);
+    }
   }
   if (failure) throw failure;
   return executed;
