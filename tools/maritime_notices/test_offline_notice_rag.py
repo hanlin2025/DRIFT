@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import hashlib
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location('rag', Path(__file__).with_name('offline_notice_rag.py'))
@@ -54,6 +55,16 @@ class OfflineNoticeRagTests(unittest.TestCase):
                 (index / f'{name}.json').write_text(json.dumps({**record, 'document_id': name}))
             self.assertEqual(len(rag.query(index, 'dredging', private_root=root)['results']), 1)
 
+    def test_extracted_digest_deduplicates_without_copying_pdf_to_private_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / 'index'; index.mkdir()
+            digest = hashlib.sha256(b'same source bytes').hexdigest()
+            record = {'source_url': 'https://example.invalid/notice', 'local_pdf': 'not-copied.pdf', 'pdf_sha256': digest,
+                      'pages': [{'page': 1, 'text': 'synthetic dredging'}], 'facts': {}}
+            for name in ('first', 'second'):
+                (index / f'{name}.json').write_text(json.dumps({**record, 'document_id': name}))
+            self.assertEqual(len(rag.query(index, 'dredging')['results']), 1)
+
     def test_real_multpage_pdf_extraction_keeps_page_two_citation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -85,6 +96,15 @@ class OfflineNoticeRagTests(unittest.TestCase):
             supported = rag.query(index, 'Gul Basin dredging on 2099-06-01')
             self.assertEqual(supported['results'][0]['citations'][0]['page'], 1)
             self.assertEqual(supported['results'][0]['compatibility']['criteria']['location'], 'COMPATIBLE')
+
+    def test_rejects_are_filtered_before_result_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory)
+            for number in range(5):
+                (index / f'reject-{number}.json').write_text(json.dumps({'document_id': f'reject-{number}', 'source_url': 'https://example.invalid', 'pages': [{'page': 1, 'text': 'bulk carrier anchoring at Gul Basin'}], 'facts': {'scope': 'Gul Basin'}}))
+            (index / 'candidate.json').write_text(json.dumps({'document_id': 'candidate', 'source_url': 'https://example.invalid', 'pages': [{'page': 1, 'text': 'dredging at Gul Basin'}], 'facts': {'scope': 'Gul Basin'}}))
+            result = rag.query(index, 'Gul Basin dredging', limit=1)
+            self.assertEqual([hit['document_id'] for hit in result['results']], ['candidate'])
 
 if __name__ == '__main__':
     unittest.main()

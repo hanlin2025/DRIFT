@@ -56,7 +56,7 @@ def _query_date(question):
     return datetime.strptime(match.group(1), '%Y-%m-%d').date() if match else None
 
 def _notice_number(question):
-    match = re.search(r'\b(?:pmn\s*)?(\d{1,3})\b', question.lower())
+    match = re.search(r'\b(?:pmn|port\s+marine\s+notice|notice)\s*(?:no\.?\s*)?(\d{1,3})\b', question.lower())
     return match.group(1) if match else None
 
 def assess(question, hit):
@@ -69,7 +69,9 @@ def assess(question, hit):
     requested_date, period = _query_date(question), _period(hit.get('facts', {}).get('effective_period'))
     temporal_status = UNKNOWN if not requested_date or not period else (COMPATIBLE if period[0] <= requested_date <= period[1] else INCOMPATIBLE)
     number = _notice_number(question)
-    if not re.search(r'\b(amend(?:ed|ment)?|supersed(?:e|es|ed|ing))\b', question.lower()) or not number:
+    asks_relationship = bool(re.search(r'\b(?:which|what)\s+(?:pmn|port\s+marine\s+notice|notice)\b.*\b(?:amend|supersed)', question.lower())
+                            or re.search(r'\bdoes\s+(?:pmn|port\s+marine\s+notice|notice)\s*(?:no\.?\s*)?\d{1,3}\s+(?:amend|supersede)', question.lower()))
+    if not asks_relationship or not number:
         supersession_status = UNKNOWN
     elif re.search(r'does\s+(?:pmn\s*)?' + re.escape(number) + r'\s+supersede', question.lower()):
         identifier = hit.get('facts', {}).get('notice_identifier') or ''

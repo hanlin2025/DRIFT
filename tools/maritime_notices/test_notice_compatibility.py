@@ -33,5 +33,9 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(compatibility.assess('What does PMN 9 supersede?', {**hit, 'facts': {**hit['facts'], 'notice_identifier': '9 OF 2099'}})['criteria']['supersession'], compatibility.COMPATIBLE)
         self.assertEqual(compatibility.assess('Which notice amended PMN 9?', hit)['criteria']['supersession'], compatibility.INCOMPATIBLE)
 
+    def test_date_token_is_not_treated_as_notice_number_for_supersession(self):
+        result = compatibility.assess('Gul Basin dredging on 2099-06-01; mention supersession', self.hit())
+        self.assertEqual(result['criteria']['supersession'], compatibility.UNKNOWN)
+
 if __name__ == '__main__':
     unittest.main()
