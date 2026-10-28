@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -207,6 +207,33 @@ describe('CDG-201 arrival-evidence replay API', () => {
     await expect(getCdg201ArrivalEvidence('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
   });
 
+});
+
+describe('CDG-246 maritime-context API', () => {
+  const evidence = {
+    sourceType: 'MPA_ETA_REVISION', sourceMode: 'RECORDED_REPLAY', evidenceId: 'replay-1', title: 'Recorded MPA expected-arrival revision',
+    sourceIdentifier: 'MPA OCEANS-X Vessels Due to Arrive', sourceUrl: '', citation: 'manifest.json',
+    sourceEventAt: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-26T15:46:03Z', retrievedAtUtc: '2026-10-26T15:46:03Z', freshness: 'RECORDED_REPLAY',
+    previousValue: '2026-10-28 23:00:00', currentValue: '2026-10-29 02:00:00', changeMagnitude: '+180 minutes',
+    activityCompatibility: 'UNKNOWN', locationCompatibility: 'UNKNOWN', timeCompatibility: 'COMPATIBLE', compatibilityState: 'UNKNOWN',
+    evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Replay only.',
+  };
+
+  it('preserves a multi-source bundle without treating unavailable weather as a live observation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RECORDED_REPLAY', assessmentCutoffUtc: '2026-10-28T00:00:00Z',
+      shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Human review required.', evidence: [evidence, { ...evidence, sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceId: 'weather-none', title: 'NEA weather context unavailable', evidenceSufficient: false }], notices: [], aiExplanation: null, suggestedActions: null,
+    })));
+    const context = await getMaritimeContext('token', '9');
+    expect(context.evidence).toHaveLength(2);
+    expect(context.evidence[1]).toMatchObject({ sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceSufficient: false });
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/maritime-context', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }));
+  });
+
+  it('rejects a context bundle that omits its assessment cutoff', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ enabled: true, sourceMode: 'RECORDED_REPLAY', evidence: [], notices: [], aiExplanation: null, suggestedActions: null })));
+    await expect(getMaritimeContext('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
 });
 
 describe('shipment tracking', () => {

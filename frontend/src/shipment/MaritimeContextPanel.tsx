@@ -7,19 +7,21 @@ export function MaritimeContextPanel({ context, unavailable }: {
 }) {
   if (unavailable) return <section className="notice" aria-label="Maritime Context">Maritime context is unavailable. Shipment details are still up to date.</section>;
   if (!context || !context.enabled) return <section className="notice" aria-label="Maritime Context">Maritime context is not enabled for this environment.</section>;
-  if (context.notices.length === 0) return <section className="notice" aria-label="Maritime Context">No potentially relevant maritime notices are available. {context.limitation}</section>;
+  if (context.evidence.length === 0) return <section className="notice" aria-label="Maritime Context">No point-in-time maritime evidence is available at this assessment cutoff. {context.limitation}</section>;
   return <section className="shipment-record maritime-context" aria-label="Maritime Context">
     <p className="eyebrow">MARITIME CONTEXT</p>
-    {context.sourceMode === 'SYNTHETIC_DEMONSTRATION' && <p className="refresh-note" role="status">Demonstration data only — not live maritime intelligence.</p>}
+    <p className="refresh-note">Assessment cutoff: {formatWhen(context.assessmentCutoffUtc)}. Retrieval times, not future source events, determine whether replay evidence is included.</p>
     <p>{context.limitation}</p>
-    {context.notices.filter(notice => notice.compatibilityState !== 'INCOMPATIBLE').map(notice => <article key={notice.noticeId}>
-      <h3>{notice.title}</h3>
-      <p><strong>Compatibility:</strong> {notice.compatibilityState} · <strong>Association confidence:</strong> {notice.shipmentAssociationConfidence}</p>
-      <p>{notice.limitation}</p>
-      <p><a href={notice.officialSourceUrl} target="_blank" rel="noreferrer">Official source</a> · {notice.citation}</p>
-      {(notice.publishedAt || notice.observedAt) && <p>Published {notice.publishedAt ? formatWhen(notice.publishedAt) : 'not recorded'}; observed {notice.observedAt ? formatWhen(notice.observedAt) : 'not recorded'}.</p>}
-      <p>Effective {notice.effectiveFrom ?? 'not recorded'} to {notice.effectiveUntil ?? 'not recorded'} · {notice.supersessionStatus}</p>
-      {notice.humanReviewRequired && <p className="refresh-note">Human review required before acting on this candidate notice.</p>}
+    {context.evidence.map(item => <article key={item.evidenceId}>
+      <h3>{item.title}</h3>
+      <p><strong>Source:</strong> {item.sourceType} · {item.sourceMode} · <strong>Association confidence:</strong> {item.shipmentAssociationConfidence}</p>
+      <p><strong>Compatibility:</strong> activity {item.activityCompatibility}; location {item.locationCompatibility}; time {item.timeCompatibility}; overall {item.compatibilityState}.</p>
+      {item.changeMagnitude && <p><strong>Observed change:</strong> {item.previousValue || 'not recorded'} → {item.currentValue || 'not recorded'} ({item.changeMagnitude})</p>}
+      <p><strong>Provenance:</strong> {item.sourceIdentifier}. {item.citation || 'No citation is available.'}</p>
+      {(item.sourceEventAt || item.observedAt || item.retrievedAtUtc) && <p>Source event {item.sourceEventAt ? formatWhen(item.sourceEventAt) : 'not recorded'}; observed {item.observedAt ? formatWhen(item.observedAt) : 'not recorded'}; retrieved {item.retrievedAtUtc ? formatWhen(item.retrievedAtUtc) : 'not recorded'}.</p>}
+      {item.sourceUrl && <p><a href={item.sourceUrl} target="_blank" rel="noreferrer">Source link</a></p>}
+      <p>{item.limitation}</p>
+      {item.humanReviewRequired && <p className="refresh-note">Human review required. This evidence does not change the shipment, ETA, risk, or alerts.</p>}
     </article>)}
   </section>;
 }

@@ -70,5 +70,5 @@ app:
   shipment-import:
     max-upload-bytes: 5242880
   maritime-context:
-    # CDG-245 is intentionally a fixture-backed, read-only replay until CDG-246 supplies live evidence.
+    # CDG-246 is a read-only recorded/synthetic bundle until persistent snapshot adapters are approved.
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}

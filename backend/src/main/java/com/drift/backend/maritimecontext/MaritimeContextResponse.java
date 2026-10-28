@@ -7,10 +7,13 @@ import java.util.List;
  * disrupted this shipment, changed an ETA, or warrants a risk decision.
  */
 public record MaritimeContextResponse(
+		String contractVersion,
 		boolean enabled,
 		String sourceMode,
+		String assessmentCutoffUtc,
 		String shipmentAssociationConfidence,
 		String limitation,
+		List<MaritimeEvidence> evidence,
 		List<MaritimeNoticeEvidence> notices,
 		Object aiExplanation,
 		Object suggestedActions) {
