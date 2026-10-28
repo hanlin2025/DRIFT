@@ -1395,6 +1395,31 @@ describe('recommendation on the shipment detail', () => {
     expect(factValue(record, 'Risk')).toHaveTextContent(`Low ${noActionRecommendation.riskExplanation}`);
   });
 
+  it('keeps the shipment and recommendation when arrival evidence cannot be loaded', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockRejectedValue(new ApiError('The arrival evidence replay is unavailable', 502));
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: prepareRecommendation.riskExplanation },
+      recommendation: prepareRecommendation,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(factValue(record, 'Recommendation')).toHaveTextContent('Prepare an intervention');
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the shipment when arrival evidence does not return a response', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockImplementation(() => {
+      throw new Error('replay client failed');
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+  });
+
   it('hides the recommendation when the shipment response does not include one', async () => {
     vi.mocked(getShipment).mockResolvedValue({ ...shipment, recommendation: null });
     open(forwarder, '/freight-forwarder/shipments/7');

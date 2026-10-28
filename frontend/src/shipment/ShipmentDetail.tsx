@@ -147,12 +147,16 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
-    }).catch(() => {
-      // Evidence replay is additive: a replay outage must not block shipment detail.
-      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
-    });
+    // Evidence replay is additive. A rejected call, or a call that does not return a
+    // response, must not unmount the shipment the viewer already opened.
+    void Promise.resolve()
+      .then(() => getCdg201ArrivalEvidence(token, shipmentId))
+      .then(found => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(found ?? null);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(null);
+      });
     return () => {
       active = false;
       requestSeq.current += 1;
