@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 
 import com.drift.backend.shipment.ShipmentDetailResponse;
+import com.drift.backend.shipment.ShipmentStatus;
 
 final class TestShipments {
 	private TestShipments() { }
@@ -13,6 +14,7 @@ final class TestShipments {
 		return new ShipmentDetailResponse(1L, 1L, "CONTRACT-DEMO", "A", "B", "Singapore", "KOTA LARIS",
 				OffsetDateTime.parse("2026-10-28T23:00:00+08:00"), imo, null, null, "SIMULATED FEEDER",
 				OffsetDateTime.parse("2026-10-29T12:00:00+08:00"), null, null, null, Instant.EPOCH, 0L,
-				null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				ShipmentStatus.ACTIVE);
 	}
 }

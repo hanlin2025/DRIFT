@@ -43,6 +43,8 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow,
 		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the planned mother-vessel arrival or the planned feeder-vessel departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Evidence, assumptions, and confidence for the risk on this same read. Calculated when the shipment is read and not stored. Distinct from the contribution list. An unavailable assessment names the missing planned time and does not return a limited confidence.")
+		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
@@ -76,6 +78,8 @@ public record ShipmentDetailResponse(
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
 				ShipmentRisk.of(calculation, remainingConnectionWindow),
+				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
+						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
