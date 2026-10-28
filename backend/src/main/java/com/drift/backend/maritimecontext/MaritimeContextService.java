@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.drift.backend.shipment.ShipmentDetailResponse;
@@ -15,6 +16,7 @@ public class MaritimeContextService {
 	private final List<MaritimeEvidenceSourceAdapter> adapters;
 	private final Clock clock;
 
+	@Autowired
 	public MaritimeContextService(@Value("${app.maritime-context.demo-enabled:false}") boolean demoEnabled,
 			List<MaritimeEvidenceSourceAdapter> adapters) {
 		this(demoEnabled, adapters, Clock.systemUTC());

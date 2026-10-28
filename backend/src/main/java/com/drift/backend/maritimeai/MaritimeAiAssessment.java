@@ -20,8 +20,9 @@ public class MaritimeAiAssessment {
 	@Column(name = "prompt_version", nullable = false, length = 100) private String promptVersion;
 	@Enumerated(EnumType.STRING) @Column(name = "generation_state", nullable = false, length = 16) private MaritimeAiGenerationState generationState;
 	@Column(name = "validation_status", nullable = false, length = 32) private String validationStatus;
-	@Lob @Column(name = "output_json") private String outputJson;
-	@Lob @Column(name = "failure_metadata") private String failureMetadata;
+	// V28 deliberately uses PostgreSQL TEXT, not an OID large object.
+	@Column(name = "output_json", columnDefinition = "text") private String outputJson;
+	@Column(name = "failure_metadata", columnDefinition = "text") private String failureMetadata;
 	@Column(name = "created_at", nullable = false) private Instant createdAt;
 	protected MaritimeAiAssessment() { }
 	MaritimeAiAssessment(Shipment shipment, String assessmentId, String bundleVersion, String bundleHash, Instant cutoff,

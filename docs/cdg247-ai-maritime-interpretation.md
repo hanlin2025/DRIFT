@@ -2,7 +2,7 @@
 
 CDG-247 accepts only the authorized CDG-246 evidence bundle. It does not access the database, standalone collector directories, raw maritime documents, or credentials through its model-client contract.
 
-Generation is disabled by default (`MARITIME_AI_ENABLED=false`). When enabled, the built-in client calls only an explicitly configured, approved structured-inference gateway (`MARITIME_AI_PROVIDER`, `MARITIME_AI_MODEL`, `MARITIME_AI_ENDPOINT`, and protected `MARITIME_AI_API_KEY`). It sends the bounded evidence package and requires an interpretation JSON response. Tests use deterministic fake client results; those are never labelled as live model output.
+Generation is disabled by default (`MARITIME_AI_ENABLED=false`). When enabled, the built-in client calls only an explicitly configured provider (`MARITIME_AI_PROVIDER`, `MARITIME_AI_MODEL`, `MARITIME_AI_ENDPOINT`, and protected `MARITIME_AI_API_KEY`). `openai-responses` uses the OpenAI Responses API and strict JSON-schema output; other values retain the approved generic-gateway protocol, which accepts the bounded evidence package and returns an interpretation JSON response. Tests use deterministic fake client results; those are never labelled as live model output.
 
 Each persisted `maritime_ai_assessments` row records the shipment, owning company, evidence-bundle version/hash, cutoff, provider/model/prompt metadata, state, validation result, and structured output or failure metadata. It is not a CDG-48 recommendation or a CDG-52 reviewer decision.
 
