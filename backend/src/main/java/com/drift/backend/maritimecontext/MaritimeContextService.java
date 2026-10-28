@@ -45,8 +45,14 @@ public class MaritimeContextService {
 				.toList();
 		String association = evidence.stream().anyMatch(item -> "UNVERIFIED_IMO_ONLY".equals(item.shipmentAssociationConfidence()))
 				? "UNVERIFIED_IMO_ONLY" : "UNAVAILABLE";
-		return new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true, "RECORDED_REPLAY", assessmentCutoffUtc.toString(), association,
+		return new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true, bundleMode(evidence), assessmentCutoffUtc.toString(), association,
 				"Human review is required. This bundle is a read-only replay/demo and does not change ETA, shipment, risk, alerts, or operational decisions.",
 				evidence, notices, null, null);
+	}
+
+	private static String bundleMode(List<MaritimeEvidence> evidence) {
+		if (evidence.stream().anyMatch(item -> "RECORDED_REPLAY".equals(item.sourceMode()))) return "RECORDED_REPLAY";
+		if (evidence.stream().anyMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) return "SYNTHETIC_DEMONSTRATION";
+		return "UNAVAILABLE";
 	}
 }

@@ -38,7 +38,7 @@ export type MaritimeEvidence = {
   activityCompatibility: string; locationCompatibility: string; timeCompatibility: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
 };
-export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
 
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
@@ -249,7 +249,7 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
 
 export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
-  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || (data.sourceMode !== 'DISABLED' && data.sourceMode !== 'RECORDED_REPLAY') || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
+  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
   const evidence = data.evidence as MaritimeEvidence[];
   if (evidence.some(item => !isRecord(item) || !isPresentText(item.sourceType) || !isPresentText(item.sourceMode) || !isPresentText(item.evidenceId) || !isPresentText(item.title) || !isPresentText(item.shipmentAssociationConfidence) || !isPresentText(item.limitation))) throw new ApiError(UNEXPECTED, 502);
   const notices = data.notices as MaritimeNoticeEvidence[];

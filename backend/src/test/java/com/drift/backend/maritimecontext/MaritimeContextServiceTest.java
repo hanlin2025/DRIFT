@@ -38,6 +38,7 @@ class MaritimeContextServiceTest {
 		var response = service(true).forShipment(TestShipments.withImo("9351048"), Instant.parse("2026-10-26T15:30:00Z"));
 		assertThat(response.evidence()).extracting(MaritimeEvidence::sourceType).containsExactly("NEA_WEATHER");
 		assertThat(response.evidence().getFirst().sourceMode()).isEqualTo("UNAVAILABLE");
+		assertThat(response.sourceMode()).isEqualTo("UNAVAILABLE");
 	}
 
 	@Test
@@ -45,6 +46,7 @@ class MaritimeContextServiceTest {
 		var response = service(true).forShipment(TestShipments.withImo("9387421"));
 		assertThat(response.shipmentAssociationConfidence()).isEqualTo("UNAVAILABLE");
 		assertThat(response.evidence()).extracting(MaritimeEvidence::sourceType).containsExactly("NEA_WEATHER");
+		assertThat(response.sourceMode()).isEqualTo("UNAVAILABLE");
 	}
 
 	private static MaritimeContextService service(boolean enabled) {
