@@ -34,7 +34,7 @@ class MaritimeContextServiceTest {
 					imo, null, null, null, null, null, null, null,
 					Instant.EPOCH, 0L,
 					null, null, null, null, null, null, null,
-					null, null, null, null, null, null, ShipmentStatus.ACTIVE);
+					null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
 		}
 	}
 }

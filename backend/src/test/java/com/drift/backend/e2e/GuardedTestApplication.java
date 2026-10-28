@@ -24,7 +24,7 @@ import com.drift.backend.BackendApplication;
 public final class GuardedTestApplication {
 
 	private static final Pattern JDBC_URL = Pattern.compile(
-			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg83_[0-9]{14}_[a-f0-9]{12})$");
+			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg[0-9]+_[0-9]{14}_[a-f0-9]{12})$");
 
 	private GuardedTestApplication() {
 	}
@@ -55,7 +55,7 @@ public final class GuardedTestApplication {
 		if (!ownershipToken.matches("[a-f0-9]{64}")) {
 			throw new IllegalStateException("Ownership token is missing or unexpected");
 		}
-		Path reportPath = reportPath(report, ownershipToken);
+		Path reportPath = reportPath(report, ownershipToken, database);
 		if (!expectedUrl.equals(datasourceUrl) || !expectedUrl.equals(flywayUrl)) {
 			throw new IllegalStateException("Datasource URL and Flyway URL must both equal the expected disposable target");
 		}
@@ -181,10 +181,15 @@ public final class GuardedTestApplication {
 		return matcher.group(1);
 	}
 
-	private static Path reportPath(String report, String ownershipToken) {
+	private static Path reportPath(String report, String ownershipToken, String database) {
+		int split = database.indexOf('_', "drift_cdg".length());
+		if (split < 0) {
+			throw new IllegalStateException("Refusing unexpected JDBC target");
+		}
+		String marker = database.substring(0, split).replace('_', '-') + "-guard-";
 		Path path = Path.of(report);
 		if (!path.isAbsolute() || !path.getParent().equals(Path.of("/tmp"))
-				|| !path.getFileName().toString().equals("drift-cdg83-guard-" + ownershipToken + ".json")) {
+				|| !path.getFileName().toString().equals(marker + ownershipToken + ".json")) {
 			throw new IllegalStateException("Refusing unexpected validation report path");
 		}
 		return path;

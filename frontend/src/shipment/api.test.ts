@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -52,6 +52,8 @@ describe('shipment importer API', () => {
       customer: 'STRAITS',
       arrivalDate: '',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
@@ -66,6 +68,8 @@ describe('shipment importer API', () => {
       customer: 'A&B Logistics',
       arrivalDate: '2026-10-12',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
@@ -75,7 +79,7 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
@@ -95,6 +99,30 @@ describe('shipment importer API', () => {
   it('rejects a list shipment whose last update is not text', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, updatedAt: 1, updatedByName: 'Ada Admin' }])));
     await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+
+  it('sends the risk sort and the at-risk filter, keeping an invalid at-risk value for the API to reject', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([shipment])));
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'risk', atRisk: 'true',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=risk&atRisk=true', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?sort=risk', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'false',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?atRisk=maybe', expect.anything());
   });
 
   it('reads the importer on a shipment detail', async () => {
@@ -408,6 +436,53 @@ describe('arrival comparison parsing', () => {
     await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 
+  it('keeps a recommendation that agrees with the risk and rejects one that does not', async () => {
+    const explanation = 'At least 24 hours remain to transfer cargo, based on the mother vessel\'s estimated arrival.';
+    const risk = { level: 'LOW' as const, explanation };
+    const unavailable = {
+      available: false,
+      unavailable: 'A recommendation is not available because the impact assessment has not been returned.',
+      response: null,
+      riskLevel: 'LOW',
+      riskExplanation: explanation,
+      impact: { outcome: 'UNAVAILABLE', detail: 'The impact assessment has not been returned.' },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk, recommendation: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: unavailable, risk });
+
+    const noAction = {
+      available: true,
+      unavailable: null,
+      response: {
+        code: 'NO_ACTION',
+        label: 'No action',
+        wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
+      },
+      riskLevel: 'LOW',
+      riskExplanation: explanation,
+      impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk, recommendation: noAction })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: noAction });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ recommendation: null }]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk,
+      recommendation: { ...noAction, impact: { outcome: 'AFFECTS_CONSTRAINTS', detail: null } },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'HIGH', explanation },
+      recommendation: unavailable,
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('reads an explicit null comparison on a list item', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, arrivalComparison: null }])));
     const listed = await listShipments('token');
@@ -628,5 +703,77 @@ describe('vessel track history API', () => {
     }, 400)));
 
     await expect(getVesselTrack('token', '7', 'MOTHER', 24)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('shipment change history API', () => {
+  const history = {
+    shipmentId: 7,
+    earlierChangesUnrecorded: false,
+    entries: [
+      {
+        id: 12,
+        changeType: 'UPDATED',
+        changedBy: { id: 3, fullName: 'Alice Tan' },
+        recordedAt: '2026-10-21T04:52:22.192648Z',
+        changes: [{ field: 'plannedFeederDepartureAt', previousValue: '2026-10-16T04:00:00Z', newValue: '2026-10-17T01:30:00Z' }],
+      },
+      {
+        id: 11,
+        changeType: 'CREATED',
+        changedBy: { id: 3, fullName: 'Alice Tan' },
+        recordedAt: '2026-10-20T01:00:00Z',
+        changes: [],
+      },
+    ],
+  };
+
+  it('requests the shipment history with the bearer token and keeps the entries in order', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(history)));
+
+    const found = await getShipmentHistory('token', 'HL 7');
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/HL%207/history', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+    expect(found).toEqual(history);
+  });
+
+  it('reads null values and the unrecorded earlier changes flag', async () => {
+    const unlinked = {
+      id: 13,
+      changeType: 'IMPORTER_LINKED',
+      changedBy: { id: 4, fullName: 'Ben Ong' },
+      recordedAt: '2026-10-22T00:00:00Z',
+      changes: [{ field: 'importer', previousValue: 'Straits Fresh', newValue: null }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...history, earlierChangesUnrecorded: true, entries: [unlinked, ...history.entries] })));
+
+    const found = await getShipmentHistory('token', '7');
+
+    expect(found.earlierChangesUnrecorded).toBe(true);
+    expect(found.entries[0].changes[0].newValue).toBeNull();
+  });
+
+  it('rejects a malformed history', async () => {
+    const [updated, created] = history.entries;
+    for (const body of [
+      { ...history, entries: null },
+      { ...history, earlierChangesUnrecorded: 'no' },
+      { ...history, entries: [{ ...updated, changeType: 'RENAMED' }, created] },
+      { ...history, entries: [{ ...updated, changedBy: { id: 3 } }, created] },
+      { ...history, entries: [{ ...updated, changes: [{ field: 'origin', previousValue: 5, newValue: null }] }, created] },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(body)));
+      await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  it('passes on the API message for a refused or ended session', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Shipment not found or has been removed.' }, 404)));
+    await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 404, message: 'Shipment not found or has been removed.' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Unauthorized' }, 401)));
+    await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 401 });
   });
 });
