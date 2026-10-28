@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -167,6 +167,46 @@ describe('shipment importer API', () => {
     const detail = await getShipment('token', '9');
     expect(detail.companyId).toBeNull();
   });
+});
+
+describe('CDG-201 arrival-evidence replay API', () => {
+  const evidence = {
+    contractVersion: 'cdg201.drift-arrival-evidence.v1', evidenceState: 'RECORDED_EVIDENCE_REPLAY',
+    vesselName: 'KOTA LARIS', vesselImo: '9351048', previousExpectedArrival: '2026-10-28 23:00:00',
+    revisedExpectedArrival: '2026-10-29 02:00:00', previousExpectedArrivalSgt: '2026-10-28T23:00:00+08:00', previousExpectedArrivalUtc: '2026-10-28T15:00:00+00:00', revisedExpectedArrivalSgt: '2026-10-29T02:00:00+08:00', revisedExpectedArrivalUtc: '2026-10-28T18:00:00+00:00', revisionMinutes: 180,
+    previousCollectionUtc: '2026-10-26T15:10:22Z', latestCollectionUtc: '2026-10-26T15:46:03Z',
+    previousCollectionRunId: 'run-one', latestCollectionRunId: 'run-two', previousSourceManifest: 'prior-replay.manifest.json', previousSourceRawFile: 'prior-replay.json', sourceManifest: 'replay.manifest.json', sourceRawFile: 'replay.json',
+    confidence: 'conservative_context_time_continuity', ambiguity: 'NONE_FOR_REPLAY_EVENT', sourceTimestampSemantics: 'Unknown offset.',
+    locationFrom: 'SEA', locationTo: 'PEBGA', locationMappingStatus: 'UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT',
+    locationReferences: [
+      { rawLocationCode: 'SEA', sourceApi: 'MPA OCEANS-X Vessels Due to Arrive', sourceField: 'locationFrom', officialDescription: '', derivedCategory: 'UNKNOWN', mappingStatus: 'UNKNOWN', referenceProvenance: 'No official Location Codes match in the reviewed reference export', limitation: 'No description is inferred.' },
+      { rawLocationCode: 'PEBGA', sourceApi: 'MPA OCEANS-X Vessels Due to Arrive', sourceField: 'locationTo', officialDescription: 'PILOT EAST BOARD GRD A', derivedCategory: 'PILOT_GROUND', mappingStatus: 'PARTIAL', referenceProvenance: 'MPA OCEANS-X Location Codes v1.0.0; exact code-string match only', limitation: 'Display-only.' },
+    ],
+    shipmentAssociation: 'UNVERIFIED_IMO_ONLY', limitations: 'Replay only.',
+    simulatedScenario: { state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: 780,
+      revisedConnectionMarginMinutes: 600, reductionMinutes: 180, simulatedRiskBefore: 'MEDIUM', simulatedRiskAfter: 'HIGH', disclaimer: 'Simulated.' },
+  };
+
+  it('preserves the read-only replay contract and accepts no-evidence null', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ readOnlyReplay: true, evidence })));
+    await expect(getCdg201ArrivalEvidence('token', '9')).resolves.toMatchObject({ vesselImo: '9351048', revisionMinutes: 180 });
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/cdg201-arrival-evidence', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ readOnlyReplay: true, evidence: null })));
+    await expect(getCdg201ArrivalEvidence('token', '9')).resolves.toBeNull();
+  });
+
+  it('rejects malformed replay evidence rather than inventing a timezone or location mapping', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ readOnlyReplay: true, evidence: { ...evidence, sourceTimestampSemantics: null } })));
+    await expect(getCdg201ArrivalEvidence('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+
+  it('rejects malformed location-reference metadata rather than inventing a description', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ readOnlyReplay: true, evidence: {
+      ...evidence, locationReferences: [{ ...evidence.locationReferences[0], mappingStatus: null }],
+    } })));
+    await expect(getCdg201ArrivalEvidence('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+
 });
 
 describe('shipment tracking', () => {

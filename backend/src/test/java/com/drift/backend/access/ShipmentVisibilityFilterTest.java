@@ -106,6 +106,30 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void refusesAHiddenCdg201EvidenceReadUsingTheDetailRule() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(request("GET", "/api/shipments/8/cdg201-arrival-evidence"), response, chain);
+
+		verify(chain, never()).doFilter(any(), any());
+		assertThat(response.getStatus()).isEqualTo(403);
+		assertThat(response.getContentAsString()).isEqualTo(
+				"{\"message\":\"" + ShipmentDetailForbiddenException.MESSAGE + "\"}");
+	}
+
+	@Test
+	void passesAMissingCdg201EvidenceShipmentToTheNotFoundHandler() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.empty());
+
+		filter.doFilter(request("GET", "/api/shipments/8/cdg201-arrival-evidence"), new MockHttpServletResponse(), chain);
+
+		verify(chain).doFilter(any(), any());
+	}
+
+	@Test
 	void letsTheManagingCompanyAndTheLinkedImporterReadTheDetail() throws Exception {
 		signIn();
 		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, COMPANY_ID, null)));

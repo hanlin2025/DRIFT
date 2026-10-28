@@ -43,6 +43,8 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow,
 		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the planned mother-vessel arrival or the planned feeder-vessel departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Evidence, assumptions, and confidence for the risk on this same read. Calculated when the shipment is read and not stored. Distinct from the contribution list. An unavailable assessment names the missing planned time and does not return a limited confidence.")
+		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
 		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
@@ -79,6 +81,8 @@ public record ShipmentDetailResponse(
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
 				risk,
+				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
+						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),

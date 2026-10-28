@@ -76,6 +76,18 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").get("id").asLong()).isEqualTo(22L);
 		assertThat(detailJson.get("companyId").asLong()).isNotEqualTo(detailJson.get("importer").get("id").asLong());
+		assertThat(listedJson.has("assessmentExplanation")).isFalse();
+		assertThat(detail.assessmentExplanation().confidence())
+				.isEqualTo("Confidence is limited because the planned connection window is being used.");
+		assertThat(detail.assessmentExplanation().evidence()).containsExactly(
+				"Planned connection window",
+				"1 day",
+				"No AIS position has been received for the mother vessel.");
+		assertThat(detail.assessmentExplanation().unavailable()).isNull();
+		assertThat(detail.risk().explanation()).isEqualTo(
+				"At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
+		assertThat(detailJson.get("assessmentExplanation").get("confidence").asString())
+				.isEqualTo(detail.assessmentExplanation().confidence());
 	}
 
 	@Test
@@ -90,6 +102,23 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+		assertThat(detailJson.has("assessmentExplanation")).isTrue();
+	}
+
+	@Test
+	void anArchivedShipmentKeepsTheSameAssessmentExplanation() throws Exception {
+		Shipment shipment = shipment(company(11L, "HARBOURLINE_DEMO", "Harbourline Logistics (Demo)"));
+		shipment.archive();
+
+		ShipmentDetailResponse detail = detail(shipment);
+
+		assertThat(detail.status()).isEqualTo(ShipmentStatus.ARCHIVED);
+		assertThat(detail.assessmentExplanation().evidence()).containsExactly(
+				"Planned connection window",
+				"1 day",
+				"No AIS position has been received for the mother vessel.");
+		assertThat(detail.assessmentExplanation().confidence())
+				.isEqualTo("Confidence is limited because the planned connection window is being used.");
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {

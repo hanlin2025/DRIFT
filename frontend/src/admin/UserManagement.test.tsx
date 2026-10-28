@@ -11,7 +11,7 @@ import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
 vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),

@@ -197,6 +197,57 @@ export type Shipment = {
   updatedByName?: string | null;
 };
 
+export type Cdg201ArrivalEvidence = {
+  contractVersion: string;
+  evidenceState: 'RECORDED_EVIDENCE_REPLAY';
+  vesselName: string;
+  vesselImo: string;
+  previousExpectedArrival: string;
+  revisedExpectedArrival: string;
+  previousExpectedArrivalSgt: string;
+  previousExpectedArrivalUtc: string;
+  revisedExpectedArrivalSgt: string;
+  revisedExpectedArrivalUtc: string;
+  revisionMinutes: number;
+  previousCollectionUtc: string;
+  latestCollectionUtc: string;
+  previousCollectionRunId: string;
+  latestCollectionRunId: string;
+  previousSourceManifest: string;
+  previousSourceRawFile: string;
+  sourceManifest: string;
+  sourceRawFile: string;
+  confidence: string;
+  ambiguity: string;
+  sourceTimestampSemantics: string;
+  locationFrom: string;
+  locationTo: string;
+  locationMappingStatus: string;
+  locationReferences: Cdg201MpaLocationReference[];
+  shipmentAssociation: string;
+  limitations: string;
+  simulatedScenario: {
+    state: 'SIMULATED_CONNECTION_ASSUMPTIONS';
+    originalConnectionMarginMinutes: number;
+    revisedConnectionMarginMinutes: number;
+    reductionMinutes: number;
+    simulatedRiskBefore: string;
+    simulatedRiskAfter: string;
+    disclaimer: string;
+  };
+};
+
+export type Cdg201MpaLocationReference = {
+  rawLocationCode: string;
+  sourceApi: string;
+  sourceField: string;
+  officialDescription: string;
+  derivedCategory: string;
+  mappingStatus: string;
+  referenceProvenance: string;
+  limitation: string;
+};
+
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
 
 export async function listShipments(token: string, filters?: ShipmentFilters): Promise<Shipment[]> {
@@ -213,6 +264,16 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
+}
+
+/** Read-only CDG-201 fixture/replay evidence. Null means no replay matches this shipment. */
+export async function getCdg201ArrivalEvidence(token: string, shipmentId: string): Promise<Cdg201ArrivalEvidence | null> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/cdg201-arrival-evidence`, token);
+  if (!isRecord(data) || data.readOnlyReplay !== true) throw new ApiError(UNEXPECTED, 502);
+  if (data.evidence === null) return null;
+  const evidence = asCdg201ArrivalEvidence(data.evidence);
+  if (!evidence) throw new ApiError(UNEXPECTED, 502);
+  return evidence;
 }
 
 export type ShipmentTracking = {
@@ -412,6 +473,62 @@ function isNullableText(value: unknown): value is string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
+  if (!isRecord(value)) return null;
+  const text = ['contractVersion', 'evidenceState', 'vesselName', 'vesselImo', 'previousExpectedArrival', 'revisedExpectedArrival', 'previousExpectedArrivalSgt', 'previousExpectedArrivalUtc', 'revisedExpectedArrivalSgt', 'revisedExpectedArrivalUtc',
+    'previousCollectionUtc', 'latestCollectionUtc', 'previousCollectionRunId', 'latestCollectionRunId', 'previousSourceManifest', 'previousSourceRawFile', 'sourceManifest', 'sourceRawFile',
+    'confidence', 'ambiguity', 'sourceTimestampSemantics', 'locationFrom', 'locationTo', 'locationMappingStatus', 'shipmentAssociation', 'limitations'] as const;
+  if (!text.every(key => typeof value[key] === 'string') || value.evidenceState !== 'RECORDED_EVIDENCE_REPLAY'
+    || !isFiniteNumber(value.revisionMinutes) || !isRecord(value.simulatedScenario)) return null;
+  if (!Array.isArray(value.locationReferences)) return null;
+  const locationReferences = value.locationReferences.map(asCdg201MpaLocationReference);
+  if (locationReferences.some(reference => reference === null)) return null;
+  const scenario = value.simulatedScenario;
+  const scenarioText = ['state', 'simulatedRiskBefore', 'simulatedRiskAfter', 'disclaimer'] as const;
+  const scenarioNumbers = ['originalConnectionMarginMinutes', 'revisedConnectionMarginMinutes', 'reductionMinutes'] as const;
+  if (!scenarioText.every(key => typeof scenario[key] === 'string') || !scenarioNumbers.every(key => isFiniteNumber(scenario[key]))
+    || scenario.state !== 'SIMULATED_CONNECTION_ASSUMPTIONS') return null;
+  return {
+    contractVersion: value.contractVersion as string, evidenceState: 'RECORDED_EVIDENCE_REPLAY', vesselName: value.vesselName as string,
+    vesselImo: value.vesselImo as string, previousExpectedArrival: value.previousExpectedArrival as string,
+    revisedExpectedArrival: value.revisedExpectedArrival as string, previousExpectedArrivalSgt: value.previousExpectedArrivalSgt as string,
+    previousExpectedArrivalUtc: value.previousExpectedArrivalUtc as string, revisedExpectedArrivalSgt: value.revisedExpectedArrivalSgt as string,
+    revisedExpectedArrivalUtc: value.revisedExpectedArrivalUtc as string, revisionMinutes: value.revisionMinutes as number,
+    previousCollectionUtc: value.previousCollectionUtc as string, latestCollectionUtc: value.latestCollectionUtc as string,
+    previousCollectionRunId: value.previousCollectionRunId as string, latestCollectionRunId: value.latestCollectionRunId as string,
+    previousSourceManifest: value.previousSourceManifest as string, previousSourceRawFile: value.previousSourceRawFile as string,
+    sourceManifest: value.sourceManifest as string, sourceRawFile: value.sourceRawFile as string,
+    confidence: value.confidence as string, ambiguity: value.ambiguity as string,
+    sourceTimestampSemantics: value.sourceTimestampSemantics as string, locationFrom: value.locationFrom as string,
+    locationTo: value.locationTo as string, locationMappingStatus: value.locationMappingStatus as string,
+    locationReferences: locationReferences as Cdg201MpaLocationReference[],
+    shipmentAssociation: value.shipmentAssociation as string, limitations: value.limitations as string,
+    simulatedScenario: {
+      state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: scenario.originalConnectionMarginMinutes as number,
+      revisedConnectionMarginMinutes: scenario.revisedConnectionMarginMinutes as number, reductionMinutes: scenario.reductionMinutes as number,
+      simulatedRiskBefore: scenario.simulatedRiskBefore as string, simulatedRiskAfter: scenario.simulatedRiskAfter as string,
+      disclaimer: scenario.disclaimer as string,
+    },
+  };
+}
+
+function asCdg201MpaLocationReference(value: unknown): Cdg201MpaLocationReference | null {
+  if (!isRecord(value)) return null;
+  const text = ['rawLocationCode', 'sourceApi', 'sourceField', 'officialDescription', 'derivedCategory',
+    'mappingStatus', 'referenceProvenance', 'limitation'] as const;
+  if (!text.every(key => typeof value[key] === 'string')) return null;
+  return {
+    rawLocationCode: value.rawLocationCode as string,
+    sourceApi: value.sourceApi as string,
+    sourceField: value.sourceField as string,
+    officialDescription: value.officialDescription as string,
+    derivedCategory: value.derivedCategory as string,
+    mappingStatus: value.mappingStatus as string,
+    referenceProvenance: value.referenceProvenance as string,
+    limitation: value.limitation as string,
+  };
 }
 
 function isConnectionWindow(value: unknown): value is ConnectionWindow {
@@ -629,12 +746,13 @@ function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undef
   if (!('aisFeed' in value) || value.aisFeed == null) return null;
   const feed = value.aisFeed;
   if (!isRecord(feed) || !AIS_FEED_STATUS.some(status => status === feed.status)) return undefined;
-  if (feed.status === 'OFFLINE') {
+  const status = feed.status as AisFeedStatusName;
+  if (status === 'OFFLINE') {
     if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
     return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
   }
   if (typeof feed.lastReceivedAt !== 'string' || feed.lastReceivedAt.trim().length === 0) return undefined;
-  return { status: feed.status, lastReceivedAt: feed.lastReceivedAt };
+  return { status, lastReceivedAt: feed.lastReceivedAt };
 }
 
 function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
