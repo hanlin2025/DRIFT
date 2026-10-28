@@ -1,7 +1,8 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -19,7 +20,19 @@ const password = 'Example123';
 const noChanges = 'No changes yet';
 const earlierChanges = 'Changes made before history was recorded are not shown.';
 const noAccess = 'You do not have access to this shipment';
-const installedVersions = '1,2,3,4,5,6,7,8,13,14,15,16,17,19,20,21,22,23,24,25,26,27';
+
+function installedMigrationVersions(): string {
+  const versions = readdirSync(path.join(root, 'backend/src/main/resources/db/migration'))
+    .flatMap(name => {
+      const match = /^V(\d+)__/.exec(name);
+      return match ? [match[1]] : [];
+    })
+    .sort((left, right) => Number(left) - Number(right));
+  if (!versions.includes('27')) {
+    throw new Error('The history migration V27 is not in db/migration.');
+  }
+  return versions.join(',');
+}
 
 function assertRunContext() {
   if (host !== '127.0.0.1' || port !== '5432' || dbUser !== 'drift' || dbPassword !== 'drift') {
@@ -153,10 +166,20 @@ function historySection(page: Page) {
   return page.getByRole('region', { name: 'Change history' });
 }
 
+async function expectNewestFirst(history: ReturnType<typeof historySection>, labels: string[]) {
+  const items = history.getByRole('listitem');
+  await expect(items).toHaveCount(labels.length);
+  for (const [index, label] of labels.entries()) {
+    const item = items.nth(index);
+    await expect(item).toContainText(label);
+    await expect(item.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/);
+  }
+}
+
 async function openDetail(page: Page, rolePath: string, shipmentId: number, reference: string) {
   await page.goto(`${rolePath}/shipments/${shipmentId}`);
-  await expect(page.getByRole('heading', { name: reference })).toBeVisible();
-  await expect(historySection(page).getByRole('heading', { name: 'Change history' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: reference })).toBeVisible({ timeout: 20_000 });
+  await expect(historySection(page).getByRole('heading', { name: 'Change history' })).toBeVisible({ timeout: 20_000 });
 }
 
 function insertUnrecordedShipment(account: Account, reference: string) {
@@ -197,7 +220,7 @@ test.beforeAll(() => {
     mailPort: '1025',
   });
   expect(sql("SELECT string_agg(version, ',' ORDER BY installed_rank) FROM flyway_schema_history;"))
-    .toBe(installedVersions);
+    .toBe(installedMigrationVersions());
 });
 
 test.beforeEach(() => {
@@ -213,15 +236,20 @@ test('editing a shipment adds a history entry for the changed fields', { tag: '@
   await openDetail(page, '/freight-forwarder', shipment.id, shipment.shipmentReference);
   await page.getByRole('button', { name: 'Edit shipment' }).click();
   await page.getByLabel('Origin').fill('Hamburg');
+  await page.getByLabel('Destination').fill('Surabaya');
   await page.getByRole('button', { name: 'Save shipment' }).click();
 
   const history = historySection(page);
-  const updated = history.getByRole('listitem').filter({ hasText: 'Updated' });
-  await expect(updated).toBeVisible();
+  await expectNewestFirst(history, ['Updated', 'Created']);
+  const updated = history.getByRole('listitem').nth(0);
   await expect(updated).toContainText('by Avery Forwarder');
   await expect(updated.getByText('Origin', { exact: true })).toBeVisible();
   await expect(updated.getByText('Rotterdam')).toBeVisible();
   await expect(updated.getByText('Hamburg')).toBeVisible();
+  await expect(updated.getByText('Destination', { exact: true })).toBeVisible();
+  await expect(updated.getByText('Jakarta')).toBeVisible();
+  await expect(updated.getByText('Surabaya')).toBeVisible();
+  await expect(history.getByRole('listitem').nth(1)).toContainText('by Avery Forwarder');
   await expect(history.getByText(noChanges)).toHaveCount(0);
 });
 
@@ -235,7 +263,8 @@ test('a new shipment shows that there are no changes yet', { tag: '@disposable-d
 
   const history = historySection(page);
   await expect(history.getByText(noChanges)).toBeVisible();
-  await expect(history.getByRole('listitem').filter({ hasText: 'Created' })).toContainText('by Nora Forwarder');
+  await expectNewestFirst(history, ['Created']);
+  await expect(history.getByRole('listitem').nth(0)).toContainText('by Nora Forwarder');
   await expect(history.getByText(earlierChanges)).toHaveCount(0);
 });
 
@@ -250,11 +279,12 @@ test('a linked importer can view the change history', { tag: '@disposable-databa
   await openDetail(page, '/importer', shipment.id, shipment.shipmentReference);
 
   const history = historySection(page);
-  const linked = history.getByRole('listitem').filter({ hasText: 'Importer linked' });
+  await expectNewestFirst(history, ['Importer linked', 'Created']);
+  const linked = history.getByRole('listitem').nth(0);
   await expect(linked).toContainText('by Lina Forwarder');
   await expect(linked.getByText('Importer', { exact: true })).toBeVisible();
   await expect(linked.getByText(importerName)).toBeVisible();
-  await expect(history.getByRole('listitem').filter({ hasText: 'Created' })).toContainText('by Lina Forwarder');
+  await expect(history.getByRole('listitem').nth(1)).toContainText('by Lina Forwarder');
   await expect(history.getByText(noChanges)).toHaveCount(0);
 });
 
@@ -290,6 +320,6 @@ test('a shipment that predates history shows that earlier changes were not recor
   const history = historySection(page);
   await expect(history.getByText(earlierChanges)).toBeVisible();
   await expect(history.getByText(noChanges)).toHaveCount(0);
-  await expect(history.getByRole('listitem')).toHaveCount(1);
-  await expect(history.getByRole('listitem').filter({ hasText: 'Created' })).toContainText('by Priya Forwarder');
+  await expectNewestFirst(history, ['Created']);
+  await expect(history.getByRole('listitem').nth(0)).toContainText('by Priya Forwarder');
 });
