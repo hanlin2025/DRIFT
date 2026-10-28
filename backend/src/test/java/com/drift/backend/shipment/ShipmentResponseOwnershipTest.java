@@ -48,12 +48,23 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(listedJson.has("risk")).isFalse();
 		assertThat(listedJson.has("riskContributions")).isFalse();
+		assertThat(listedJson.has("recommendation")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
 		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
 		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
 				.isEqualTo("Planned connection window");
 		assertThat(detailJson.get("riskContributions").get("contributions").get(2).get("value").asText())
 				.isEqualTo("No AIS position has been received for the mother vessel.");
+		assertThat(detailJson.get("recommendation").get("available").asBoolean()).isFalse();
+		assertThat(detailJson.get("recommendation").get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+		assertThat(detailJson.get("recommendation").get("response").isNull()).isTrue();
+		assertThat(detailJson.get("recommendation").get("riskLevel").asText()).isEqualTo("LOW");
+		assertThat(detailJson.get("recommendation").get("riskExplanation").asText())
+				.isEqualTo(detailJson.get("risk").get("explanation").asText());
+		assertThat(detailJson.get("recommendation").get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
+		assertThat(detailJson.get("recommendation").get("impact").get("detail").asText())
+				.isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
 		assertThat(listedJson.has("importer")).isFalse();
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();

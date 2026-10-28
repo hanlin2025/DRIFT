@@ -52,6 +52,46 @@ export type RiskContributions = {
   contributions: [];
 };
 
+export type RecommendationCode =
+  | 'NO_ACTION'
+  | 'MONITOR_CONSTRAINTS'
+  | 'NOTE_TIMING'
+  | 'REVIEW_PLAN'
+  | 'WATCH_CONNECTION'
+  | 'PREPARE_INTERVENTION'
+  | 'CONFIRM_CONNECTION'
+  | 'ACT_ON_CONNECTION';
+
+export type RecommendationImpact = {
+  outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT';
+  detail: null;
+} | {
+  outcome: 'UNAVAILABLE';
+  detail: string;
+};
+
+export type RecommendedResponse = {
+  code: RecommendationCode;
+  label: string;
+  wording: string;
+};
+
+export type ShipmentRecommendation = {
+  available: true;
+  unavailable: null;
+  response: RecommendedResponse;
+  riskLevel: RiskLevel;
+  riskExplanation: string;
+  impact: Extract<RecommendationImpact, { outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT' }>;
+} | {
+  available: false;
+  unavailable: string;
+  response: null;
+  riskLevel: RiskLevel | null;
+  riskExplanation: string | null;
+  impact: RecommendationImpact;
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -136,6 +176,7 @@ export type Shipment = {
   remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
   riskContributions?: RiskContributions | null;
+  recommendation?: ShipmentRecommendation | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -411,6 +452,10 @@ function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingC
   };
 }
 
+function isRiskLevel(value: unknown): value is RiskLevel {
+  return typeof value === 'string' && (RISK_LEVELS as readonly string[]).includes(value);
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
@@ -472,6 +517,102 @@ function contributionSet(contributions: RiskContribution[]): boolean {
   if (measured.length !== 1) return false;
   const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
   return codes.includes('ESTIMATE_NOT_USED') === planned;
+}
+
+const RECOMMENDATION_RESPONSES: Record<RecommendationCode, { label: string; wording: string }> = {
+  NO_ACTION: {
+    label: 'No action',
+    wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
+  },
+  MONITOR_CONSTRAINTS: {
+    label: 'Monitor',
+    wording: 'Monitor the shipment. The connection risk is low, and the prediction affects the importer\'s constraints.',
+  },
+  NOTE_TIMING: {
+    label: 'Note the timing',
+    wording: 'Note the connection timing. The connection risk is medium, and the prediction does not affect the importer\'s constraints.',
+  },
+  REVIEW_PLAN: {
+    label: 'Review the plan',
+    wording: 'Review the transfer plan. The connection risk is medium, and the prediction affects the importer\'s constraints.',
+  },
+  WATCH_CONNECTION: {
+    label: 'Watch the connection',
+    wording: 'Watch the connection. The connection risk is high, and the prediction does not affect the importer\'s constraints.',
+  },
+  PREPARE_INTERVENTION: {
+    label: 'Prepare an intervention',
+    wording: 'Prepare an intervention. The connection risk is high, and the prediction affects the importer\'s constraints.',
+  },
+  CONFIRM_CONNECTION: {
+    label: 'Confirm the connection',
+    wording: 'Confirm the connection plan. The connection risk is critical, and the prediction does not affect the importer\'s constraints.',
+  },
+  ACT_ON_CONNECTION: {
+    label: 'Act on the connection',
+    wording: 'Act on this connection. The connection risk is critical, and the prediction affects the importer\'s constraints.',
+  },
+};
+
+const RECOMMENDATION_FOR: Record<RiskLevel, Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', RecommendationCode>> = {
+  LOW: { AFFECTS_CONSTRAINTS: 'MONITOR_CONSTRAINTS', NO_PREDICTED_IMPACT: 'NO_ACTION' },
+  MEDIUM: { AFFECTS_CONSTRAINTS: 'REVIEW_PLAN', NO_PREDICTED_IMPACT: 'NOTE_TIMING' },
+  HIGH: { AFFECTS_CONSTRAINTS: 'PREPARE_INTERVENTION', NO_PREDICTED_IMPACT: 'WATCH_CONNECTION' },
+  CRITICAL: { AFFECTS_CONSTRAINTS: 'ACT_ON_CONNECTION', NO_PREDICTED_IMPACT: 'CONFIRM_CONNECTION' },
+};
+
+function recommendationOf(value: Record<string, unknown>, risk: ShipmentRisk | null): ShipmentRecommendation | null | undefined {
+  if (!('recommendation' in value) || value.recommendation == null) return null;
+  const recommendation = parseRecommendation(value.recommendation);
+  if (!recommendation) return undefined;
+  if (risk == null) {
+    if (recommendation.riskLevel != null || recommendation.riskExplanation != null) return undefined;
+  } else if (recommendation.riskLevel !== risk.level || recommendation.riskExplanation !== risk.explanation) {
+    return undefined;
+  }
+  return recommendation;
+}
+
+function parseRecommendation(value: unknown): ShipmentRecommendation | undefined {
+  if (!isRecord(value) || typeof value.available !== 'boolean') return undefined;
+  const impact = parseRecommendationImpact(value.impact);
+  if (!impact) return undefined;
+  const riskLevel = value.riskLevel == null ? null : (isRiskLevel(value.riskLevel) ? value.riskLevel : undefined);
+  if (riskLevel === undefined) return undefined;
+  if (value.riskExplanation != null && (typeof value.riskExplanation !== 'string' || value.riskExplanation.trim().length === 0)) {
+    return undefined;
+  }
+  const riskExplanation = typeof value.riskExplanation === 'string' ? value.riskExplanation : null;
+  if (riskLevel == null && riskExplanation != null) return undefined;
+  if (riskLevel != null && riskExplanation == null) return undefined;
+  if (value.available) {
+    if (value.unavailable != null || riskLevel == null || riskExplanation == null || impact.outcome === 'UNAVAILABLE') return undefined;
+    const response = parseRecommendedResponse(value.response);
+    if (!response || response.code !== RECOMMENDATION_FOR[riskLevel][impact.outcome]) return undefined;
+    return { available: true, unavailable: null, response, riskLevel, riskExplanation, impact };
+  }
+  if (typeof value.unavailable !== 'string' || value.unavailable.trim().length === 0 || value.response != null) return undefined;
+  if (riskLevel != null && impact.outcome !== 'UNAVAILABLE') return undefined;
+  return { available: false, unavailable: value.unavailable, response: null, riskLevel, riskExplanation, impact };
+}
+
+function parseRecommendationImpact(value: unknown): RecommendationImpact | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.outcome === 'UNAVAILABLE') {
+    if (typeof value.detail !== 'string' || value.detail.trim().length === 0) return undefined;
+    return { outcome: 'UNAVAILABLE', detail: value.detail };
+  }
+  if (value.outcome !== 'AFFECTS_CONSTRAINTS' && value.outcome !== 'NO_PREDICTED_IMPACT') return undefined;
+  if (value.detail != null) return undefined;
+  return { outcome: value.outcome, detail: null };
+}
+
+function parseRecommendedResponse(value: unknown): RecommendedResponse | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in RECOMMENDATION_RESPONSES)) return undefined;
+  const code = value.code as RecommendationCode;
+  const expected = RECOMMENDATION_RESPONSES[code];
+  if (value.label !== expected.label || value.wording !== expected.wording) return undefined;
+  return { code, label: expected.label, wording: expected.wording };
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -595,6 +736,8 @@ function asShipment(value: unknown): Shipment | null {
   if (risk != null && !isRisk(risk)) return null;
   const riskContributions = riskContributionsOf(value);
   if (riskContributions === undefined) return null;
+  const recommendation = recommendationOf(value, risk ?? null);
+  if (recommendation === undefined) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -638,6 +781,7 @@ function asShipment(value: unknown): Shipment | null {
     remainingConnectionWindow,
     risk: risk ?? null,
     riskContributions,
+    recommendation,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
