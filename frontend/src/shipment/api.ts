@@ -920,3 +920,61 @@ function isImportStatus(value: unknown): value is ShipmentImportJobStatus {
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
+
+export type ShipmentChangeType = 'CREATED' | 'UPDATED' | 'IMPORTER_LINKED' | 'ARCHIVED' | 'RESTORED';
+
+export type ShipmentFieldChange = {
+  field: string;
+  previousValue: string | null;
+  newValue: string | null;
+};
+
+export type ShipmentHistoryEntry = {
+  id: number;
+  changeType: ShipmentChangeType;
+  changedBy: { id: number; fullName: string };
+  recordedAt: string;
+  changes: ShipmentFieldChange[];
+};
+
+export type ShipmentHistory = {
+  shipmentId: number;
+  earlierChangesUnrecorded: boolean;
+  entries: ShipmentHistoryEntry[];
+};
+
+export async function getShipmentHistory(token: string, shipmentId: string): Promise<ShipmentHistory> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/history`, token);
+  const history = asHistory(data);
+  if (!history) throw new ApiError(UNEXPECTED, 502);
+  return history;
+}
+
+const CHANGE_TYPES: readonly ShipmentChangeType[] = ['CREATED', 'UPDATED', 'IMPORTER_LINKED', 'ARCHIVED', 'RESTORED'];
+
+function asHistory(value: unknown): ShipmentHistory | null {
+  if (!isRecord(value) || !isWhole(value.shipmentId) || typeof value.earlierChangesUnrecorded !== 'boolean') return null;
+  if (!Array.isArray(value.entries)) return null;
+  const entries = value.entries.map(asHistoryEntry);
+  if (entries.some(entry => entry === null)) return null;
+  return { shipmentId: value.shipmentId, earlierChangesUnrecorded: value.earlierChangesUnrecorded, entries: entries as ShipmentHistoryEntry[] };
+}
+
+function asHistoryEntry(value: unknown): ShipmentHistoryEntry | null {
+  if (!isRecord(value) || !isWhole(value.id) || typeof value.recordedAt !== 'string') return null;
+  if (typeof value.changeType !== 'string' || !CHANGE_TYPES.includes(value.changeType as ShipmentChangeType)) return null;
+  const actor = value.changedBy;
+  if (!isRecord(actor) || !isWhole(actor.id) || typeof actor.fullName !== 'string') return null;
+  if (!Array.isArray(value.changes) || !value.changes.every(isFieldChange)) return null;
+  return {
+    id: value.id,
+    changeType: value.changeType as ShipmentChangeType,
+    changedBy: { id: actor.id, fullName: actor.fullName },
+    recordedAt: value.recordedAt,
+    changes: value.changes.map(change => ({ field: change.field, previousValue: change.previousValue, newValue: change.newValue })),
+  };
+}
+
+function isFieldChange(value: unknown): value is ShipmentFieldChange {
+  return isRecord(value) && typeof value.field === 'string' && isNullableText(value.previousValue) && isNullableText(value.newValue);
+}
