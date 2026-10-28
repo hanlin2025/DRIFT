@@ -166,13 +166,15 @@ function historySection(page: Page) {
   return page.getByRole('region', { name: 'Change history' });
 }
 
-async function expectNewestFirst(history: ReturnType<typeof historySection>, labels: string[]) {
+async function expectNewestFirst(history: ReturnType<typeof historySection>, labels: string[], recordedAfter?: Date) {
   const items = history.getByRole('listitem');
-  await expect(items).toHaveCount(labels.length);
+  await expect(items).toHaveCount(labels.length, { timeout: 20_000 });
   for (const [index, label] of labels.entries()) {
     const item = items.nth(index);
     await expect(item).toContainText(label);
-    await expect(item.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/);
+    const recordedAt = await item.locator('time').getAttribute('datetime');
+    expect(recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    if (recordedAfter) expect(Date.parse(recordedAt ?? '')).toBeGreaterThan(recordedAfter.getTime() - 5_000);
   }
 }
 
@@ -228,6 +230,7 @@ test.beforeEach(() => {
 });
 
 test('editing a shipment adds a history entry for the changed fields', { tag: '@disposable-database' }, async ({ page, request }) => {
+  const startedAt = new Date();
   const { owner } = companies('C185E');
   const forwarder = await registerAccount(request, 'FREIGHT_FORWARDER', owner, 'Avery Forwarder');
   const shipment = await createShipment(request, forwarder.token);
@@ -240,20 +243,19 @@ test('editing a shipment adds a history entry for the changed fields', { tag: '@
   await page.getByRole('button', { name: 'Save shipment' }).click();
 
   const history = historySection(page);
-  await expectNewestFirst(history, ['Updated', 'Created']);
+  await expectNewestFirst(history, ['Updated', 'Created'], startedAt);
   const updated = history.getByRole('listitem').nth(0);
   await expect(updated).toContainText('by Avery Forwarder');
   await expect(updated.getByText('Origin', { exact: true })).toBeVisible();
-  await expect(updated.getByText('Rotterdam')).toBeVisible();
-  await expect(updated.getByText('Hamburg')).toBeVisible();
+  await expect(updated.locator('.change-history-changes div').filter({ hasText: 'Origin' })).toContainText('Rotterdam → Hamburg');
   await expect(updated.getByText('Destination', { exact: true })).toBeVisible();
-  await expect(updated.getByText('Jakarta')).toBeVisible();
-  await expect(updated.getByText('Surabaya')).toBeVisible();
+  await expect(updated.locator('.change-history-changes div').filter({ hasText: 'Destination' })).toContainText('Jakarta → Surabaya');
   await expect(history.getByRole('listitem').nth(1)).toContainText('by Avery Forwarder');
   await expect(history.getByText(noChanges)).toHaveCount(0);
 });
 
 test('a new shipment shows that there are no changes yet', { tag: '@disposable-database' }, async ({ page, request }) => {
+  const startedAt = new Date();
   const { owner } = companies('C185N');
   const forwarder = await registerAccount(request, 'FREIGHT_FORWARDER', owner, 'Nora Forwarder');
   const shipment = await createShipment(request, forwarder.token);
@@ -263,12 +265,13 @@ test('a new shipment shows that there are no changes yet', { tag: '@disposable-d
 
   const history = historySection(page);
   await expect(history.getByText(noChanges)).toBeVisible();
-  await expectNewestFirst(history, ['Created']);
+  await expectNewestFirst(history, ['Created'], startedAt);
   await expect(history.getByRole('listitem').nth(0)).toContainText('by Nora Forwarder');
   await expect(history.getByText(earlierChanges)).toHaveCount(0);
 });
 
 test('a linked importer can view the change history', { tag: '@disposable-database' }, async ({ page, request }) => {
+  const startedAt = new Date();
   const { owner, importer, importerName } = companies('C185L');
   const forwarder = await registerAccount(request, 'FREIGHT_FORWARDER', owner, 'Lina Forwarder');
   const importerAccount = await registerAccount(request, 'IMPORTER', importer, 'Lina Importer');
@@ -279,7 +282,7 @@ test('a linked importer can view the change history', { tag: '@disposable-databa
   await openDetail(page, '/importer', shipment.id, shipment.shipmentReference);
 
   const history = historySection(page);
-  await expectNewestFirst(history, ['Importer linked', 'Created']);
+  await expectNewestFirst(history, ['Importer linked', 'Created'], startedAt);
   const linked = history.getByRole('listitem').nth(0);
   await expect(linked).toContainText('by Lina Forwarder');
   await expect(linked.getByText('Importer', { exact: true })).toBeVisible();

@@ -24,7 +24,7 @@ import com.drift.backend.BackendApplication;
 public final class GuardedTestApplication {
 
 	private static final Pattern JDBC_URL = Pattern.compile(
-			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg(83|185)_[0-9]{14}_[a-f0-9]{12})$");
+			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg[0-9]+_[0-9]{14}_[a-f0-9]{12})$");
 
 	private GuardedTestApplication() {
 	}
@@ -182,7 +182,11 @@ public final class GuardedTestApplication {
 	}
 
 	private static Path reportPath(String report, String ownershipToken, String database) {
-		String marker = database.startsWith("drift_cdg185_") ? "drift-cdg185-guard-" : "drift-cdg83-guard-";
+		int split = database.indexOf('_', "drift_cdg".length());
+		if (split < 0) {
+			throw new IllegalStateException("Refusing unexpected JDBC target");
+		}
+		String marker = database.substring(0, split).replace('_', '-') + "-guard-";
 		Path path = Path.of(report);
 		if (!path.isAbsolute() || !path.getParent().equals(Path.of("/tmp"))
 				|| !path.getFileName().toString().equals(marker + ownershipToken + ".json")) {
