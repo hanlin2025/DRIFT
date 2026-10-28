@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -675,5 +675,77 @@ describe('vessel track history API', () => {
     }, 400)));
 
     await expect(getVesselTrack('token', '7', 'MOTHER', 24)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('shipment change history API', () => {
+  const history = {
+    shipmentId: 7,
+    earlierChangesUnrecorded: false,
+    entries: [
+      {
+        id: 12,
+        changeType: 'UPDATED',
+        changedBy: { id: 3, fullName: 'Alice Tan' },
+        recordedAt: '2026-10-21T04:52:22.192648Z',
+        changes: [{ field: 'plannedFeederDepartureAt', previousValue: '2026-10-16T04:00:00Z', newValue: '2026-10-17T01:30:00Z' }],
+      },
+      {
+        id: 11,
+        changeType: 'CREATED',
+        changedBy: { id: 3, fullName: 'Alice Tan' },
+        recordedAt: '2026-10-20T01:00:00Z',
+        changes: [],
+      },
+    ],
+  };
+
+  it('requests the shipment history with the bearer token and keeps the entries in order', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(history)));
+
+    const found = await getShipmentHistory('token', 'HL 7');
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/HL%207/history', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+    expect(found).toEqual(history);
+  });
+
+  it('reads null values and the unrecorded earlier changes flag', async () => {
+    const unlinked = {
+      id: 13,
+      changeType: 'IMPORTER_LINKED',
+      changedBy: { id: 4, fullName: 'Ben Ong' },
+      recordedAt: '2026-10-22T00:00:00Z',
+      changes: [{ field: 'importer', previousValue: 'Straits Fresh', newValue: null }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...history, earlierChangesUnrecorded: true, entries: [unlinked, ...history.entries] })));
+
+    const found = await getShipmentHistory('token', '7');
+
+    expect(found.earlierChangesUnrecorded).toBe(true);
+    expect(found.entries[0].changes[0].newValue).toBeNull();
+  });
+
+  it('rejects a malformed history', async () => {
+    const [updated, created] = history.entries;
+    for (const body of [
+      { ...history, entries: null },
+      { ...history, earlierChangesUnrecorded: 'no' },
+      { ...history, entries: [{ ...updated, changeType: 'RENAMED' }, created] },
+      { ...history, entries: [{ ...updated, changedBy: { id: 3 } }, created] },
+      { ...history, entries: [{ ...updated, changes: [{ field: 'origin', previousValue: 5, newValue: null }] }, created] },
+    ]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(body)));
+      await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 502 });
+    }
+  });
+
+  it('passes on the API message for a refused or ended session', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Shipment not found or has been removed.' }, 404)));
+    await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 404, message: 'Shipment not found or has been removed.' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Unauthorized' }, 401)));
+    await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 401 });
   });
 });
