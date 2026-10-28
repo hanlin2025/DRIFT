@@ -2,7 +2,10 @@ package com.drift.backend.maritimecontext;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
+
 import org.junit.jupiter.api.Test;
+import com.drift.backend.shipment.ShipmentStatus;
 
 class MaritimeContextServiceTest {
 	@Test
@@ -29,7 +32,9 @@ class MaritimeContextServiceTest {
 			return new com.drift.backend.shipment.ShipmentDetailResponse(
 					1L, 1L, "DEMO", "SG", "ID", "SG", "KOTA LARIS", null,
 					imo, null, null, null, null, null, null, null,
-					null, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null);
+					Instant.EPOCH, 0L,
+					null, null, null, null, null, null, null,
+					null, null, null, null, null, null, ShipmentStatus.ACTIVE);
 		}
 	}
 }
