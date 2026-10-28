@@ -29,6 +29,14 @@ function shipmentCollection(response: Response, method: string) {
   return response.request().method() === method && new URL(response.url()).pathname === '/api/shipments';
 }
 
+// Risk transitions and their alert deliveries block deleting a shipment, so they go first.
+const deleteShipmentsCreatedByEmail = `
+  DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN (SELECT t.id FROM shipment_risk_transitions t
+    JOIN shipments s ON s.id = t.shipment_id WHERE s.created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
+  DELETE FROM shipment_risk_transitions WHERE shipment_id IN
+    (SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
+  DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');`;
+
 const password = 'Example123';
 
 async function registerFreightForwarder(request: APIRequestContext, email: string) {
@@ -70,7 +78,7 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     expect(await initial.json()).toEqual([]);
     await expect(page.getByText('No shipments yet. Shipments registered for your company will appear here.')).toBeVisible();
 
-    await page.getByLabel('Shipment reference').fill(shipment.shipmentReference);
+    await page.getByLabel('Shipment reference', { exact: true }).fill(shipment.shipmentReference);
     await page.getByLabel('Origin', { exact: true }).fill(shipment.origin);
     await page.getByLabel('Destination', { exact: true }).fill(shipment.destination);
     await page.getByLabel('Transshipment port').fill(shipment.transshipmentPort);
@@ -117,7 +125,8 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.motherVessel);
     await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.feederVessel);
   } finally {
-    sql("DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'); DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';", { email });
+    sql(`${deleteShipmentsCreatedByEmail}
+      DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';`, { email });
   }
 });
 
@@ -207,10 +216,11 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     const critical = atRiskRows.find(item => item.shipmentReference === reference('CRITICAL'))!;
     await page.getByRole('link', { name: reference('CRITICAL') }).click();
     const record = page.getByRole('article', { name: `Shipment ${reference('CRITICAL')}` });
-    await expect(record.locator('.risk-badge')).toHaveText('Critical');
-    await expect(record.getByText(critical.risk!.explanation)).toBeVisible();
+    const riskDetail = record.locator('dd').filter({ has: page.locator('.risk-badge') });
+    await expect(riskDetail.locator('.risk-badge')).toHaveText('Critical');
+    await expect(riskDetail).toContainText(critical.risk!.explanation);
   } finally {
-    sql(`DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
+    sql(`${deleteShipmentsCreatedByEmail}
       DELETE FROM vessel_observations WHERE mmsi = :'mmsi';
       DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';
       DELETE FROM companies WHERE code = :'code';`, { email, mmsi: lateMmsi, code: secondImporter.code });
