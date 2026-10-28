@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
@@ -237,7 +237,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 24;
 
 function ShipmentSkeleton() {
   return (
@@ -340,6 +340,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
             : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+          {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
@@ -349,6 +350,38 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
 }
 
 const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+
+const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
+  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
+  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
+};
+
+function recommendationFact(recommendation: Shipment['recommendation']) {
+  if (!recommendation) return null;
+  return (
+    <div>
+      <dt>Recommendation</dt>
+      <dd>
+        {recommendation.available ? recommendation.response.label : recommendation.unavailable}
+        <dl className="arrival-comparison">
+          {recommendation.available && <div><dt>Response</dt><dd>{recommendation.response.wording}</dd></div>}
+          {recommendation.riskLevel && recommendation.riskExplanation && (
+            <div>
+              <dt>Connection risk</dt>
+              <dd><span className={`risk-badge risk-${recommendation.riskLevel.toLowerCase()}`}>{RISK_LABELS[recommendation.riskLevel]}</span> {recommendation.riskExplanation}</dd>
+            </div>
+          )}
+          <div><dt>Impact</dt><dd>{impactOutcome(recommendation.impact)}</dd></div>
+        </dl>
+      </dd>
+    </div>
+  );
+}
+
+function impactOutcome(impact: RecommendationImpact) {
+  if (impact.outcome === 'UNAVAILABLE') return impact.detail;
+  return IMPACT_OUTCOMES[impact.outcome];
+}
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
   if (comparison.unavailableReason) {
