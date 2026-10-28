@@ -224,7 +224,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 25;
 
 function ShipmentSkeleton() {
   return (
