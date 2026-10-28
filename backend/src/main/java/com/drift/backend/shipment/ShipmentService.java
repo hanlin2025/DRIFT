@@ -41,6 +41,8 @@ import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 import com.drift.backend.shipment.csvimport.ShipmentImportRow;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
+import com.drift.backend.shipment.history.ShipmentSnapshot;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -63,6 +65,7 @@ public class ShipmentService {
 	private final Validator validator;
 	private final ShipmentAccessPolicy accessPolicy;
 	private final ObjectMapper objectMapper;
+	private final ShipmentHistoryRecorder history;
 	private final Clock clock;
 	private final ApplicationEventPublisher events;
 	private final ShipmentRiskAlertActivationStore activation;
@@ -70,7 +73,8 @@ public class ShipmentService {
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ShipmentConnectionRisk connectionRisk, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
-			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation) {
+			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation,
+			ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
@@ -81,6 +85,7 @@ public class ShipmentService {
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 		this.events = events;
 		this.activation = activation;
+		this.history = history;
 	}
 
 	@Transactional(readOnly = true)
@@ -204,9 +209,12 @@ public class ShipmentService {
 		if (shipment.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new ShipmentAlreadyArchivedException();
 		}
+		ShipmentStatus previousStatus = shipment.getStatus();
+		Instant now = Instant.now();
 		shipment.archive();
-		shipment.markUpdated(account, Instant.now());
+		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
 	}
 
 	@Transactional
@@ -225,10 +233,12 @@ public class ShipmentService {
 		if (shipment.getStatus() == ShipmentStatus.ACTIVE) {
 			throw new ShipmentAlreadyActiveException();
 		}
+		ShipmentStatus previousStatus = shipment.getStatus();
 		Instant now = Instant.now();
 		shipment.restore();
 		shipment.markUpdated(account, now);
 		shipments.saveAndFlush(shipment);
+		history.recordStatusChange(shipment, account, previousStatus, now);
 	}
 
 	@Transactional
@@ -271,14 +281,13 @@ public class ShipmentService {
 		UserAccount editor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		boolean scheduleChanged = !shipment.getPlannedMotherArrivalAt().equals(details.plannedMotherArrivalAt())
 				|| !shipment.getPlannedFeederDepartureAt().equals(details.plannedFeederDepartureAt());
-		shipment.replaceDetails(details, editor, Instant.now());
+		ShipmentSnapshot before = ShipmentSnapshot.of(shipment);
+		Instant now = Instant.now();
+		shipment.replaceDetails(details, editor, now);
 		shipment.applySpecifiedIdentity(details, identity);
+		Shipment saved;
 		try {
-			Shipment saved = shipments.saveAndFlush(shipment);
-			if (scheduleChanged) {
-				events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(saved.getId()));
-			}
-			return respond(saved);
+			saved = shipments.saveAndFlush(shipment);
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
@@ -287,6 +296,11 @@ public class ShipmentService {
 		} catch (OptimisticLockingFailureException ex) {
 			throw new StaleShipmentVersionException();
 		}
+		history.recordUpdate(before, saved, editor, now);
+		if (scheduleChanged) {
+			events.publishEvent(new ShipmentRiskEvaluationRequestedEvent(saved.getId()));
+		}
+		return respond(saved);
 	}
 
 	private ShipmentDetails validatedDetails(ShipmentDetailsRequest request) {
@@ -344,17 +358,19 @@ public class ShipmentService {
 		if (importerCompany != null) {
 			shipment.linkImporter(importerCompany);
 		}
+		Shipment saved;
 		try {
-			Shipment saved = shipments.saveAndFlush(shipment);
+			saved = shipments.saveAndFlush(shipment);
 			riskStates.saveAndFlush(new ShipmentRiskState(saved,
 					ShipmentRiskBaselineMode.ALERTABLE_FIRST_VALID, activeGeneration.getGeneration(), Instant.now(clock)));
-			return saved;
 		} catch (DataIntegrityViolationException ex) {
 			if (isDuplicateReference(ex)) {
 				throw new DuplicateShipmentReferenceException();
 			}
 			throw ex;
 		}
+		history.recordCreation(saved, creator);
+		return saved;
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
