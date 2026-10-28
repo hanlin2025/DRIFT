@@ -63,12 +63,17 @@ def assess(question, hit):
     requested_activity, observed_activity = activity(question), set(hit.get('document_activities', []))
     activity_status = UNKNOWN if not requested_activity or not observed_activity else (COMPATIBLE if requested_activity == 'dredging' and any('dredging' in item for item in observed_activity) or requested_activity in observed_activity else INCOMPATIBLE)
     requested_location, observed_location = locations(question), set(hit.get('document_locations', []))
+    if not observed_location:
+        observed_location = locations(hit.get('facts', {}).get('scope') or '')
     location_status = UNKNOWN if not requested_location or not observed_location else (COMPATIBLE if requested_location <= observed_location else INCOMPATIBLE)
     requested_date, period = _query_date(question), _period(hit.get('facts', {}).get('effective_period'))
     temporal_status = UNKNOWN if not requested_date or not period else (COMPATIBLE if period[0] <= requested_date <= period[1] else INCOMPATIBLE)
     number = _notice_number(question)
     if not re.search(r'\b(amend(?:ed|ment)?|supersed(?:e|es|ed|ing))\b', question.lower()) or not number:
         supersession_status = UNKNOWN
+    elif re.search(r'does\s+(?:pmn\s*)?' + re.escape(number) + r'\s+supersede', question.lower()):
+        identifier = hit.get('facts', {}).get('notice_identifier') or ''
+        supersession_status = COMPATIBLE if re.search(r'\b' + re.escape(number) + r'\b', identifier) and hit.get('facts', {}).get('supersedes') else INCOMPATIBLE
     else:
         supersession_status = COMPATIBLE if re.search(r'\b' + re.escape(number) + r'\b', (hit.get('facts', {}).get('supersedes') or '').lower()) else INCOMPATIBLE
     criteria = {'activity': activity_status, 'location': location_status, 'effective_period': temporal_status, 'supersession': supersession_status}

@@ -27,5 +27,11 @@ class CompatibilityTests(unittest.TestCase):
     def test_vessel_causation_question_is_unsupported(self):
         self.assertTrue(compatibility.unsupported_conclusion('Did this notice cause vessel TEST ETA delay?'))
 
+    def test_scope_location_fallback_and_directional_supersession(self):
+        hit = self.hit(locations=(), scope='Mariners near Gul Basin')
+        self.assertEqual(compatibility.assess('Gul Basin dredging', hit)['criteria']['location'], compatibility.COMPATIBLE)
+        self.assertEqual(compatibility.assess('What does PMN 9 supersede?', {**hit, 'facts': {**hit['facts'], 'notice_identifier': '9 OF 2099'}})['criteria']['supersession'], compatibility.COMPATIBLE)
+        self.assertEqual(compatibility.assess('Which notice amended PMN 9?', hit)['criteria']['supersession'], compatibility.INCOMPATIBLE)
+
 if __name__ == '__main__':
     unittest.main()
