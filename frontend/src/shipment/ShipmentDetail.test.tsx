@@ -75,6 +75,10 @@ function open(account: Session, path: string) {
 
 const MOTHER_WARNING = 'The AIS vessel name does not match the stored mother vessel.';
 const FEEDER_WARNING = 'The AIS vessel name does not match the stored feeder vessel.';
+const disabledMaritimeContext: MaritimeContext = {
+  enabled: false, sourceMode: 'DISABLED', shipmentAssociationConfidence: 'UNAVAILABLE',
+  limitation: 'Maritime context is disabled.', notices: [], aiExplanation: null, suggestedActions: null,
+};
 
 function namedFix(vesselName: string, latitude: number) {
   return { ...shipment.motherVesselPosition!, vesselName, latitude };
@@ -138,7 +142,7 @@ beforeEach(() => {
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
-	vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
+  vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
