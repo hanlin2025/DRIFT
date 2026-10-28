@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
+import { RiskBadge } from './RiskBadge';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
@@ -322,16 +323,14 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
             </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
-            ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
-            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
+            : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
     </>
   );
 }
-
-const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
   if (comparison.unavailableReason) {

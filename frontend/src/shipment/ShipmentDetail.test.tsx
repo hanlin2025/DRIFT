@@ -200,8 +200,10 @@ describe('connection window on the shipment detail', () => {
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     const pending = within(record).getAllByText('Pending assignment');
-    expect(pending).toHaveLength(3);
+    expect(pending).toHaveLength(2);
     pending.forEach(field => expect(field).toHaveClass('is-missing'));
+    expect(factValue(record, 'Risk')).toHaveClass('is-missing');
+    expect(within(factValue(record, 'Risk')).getByText('Not assessed')).toHaveClass('risk-badge', 'risk-unassessed');
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(factValue(record, 'Remaining connection window')).toHaveTextContent('No remaining connection window');
     expect(factValue(record, 'Remaining connection window')).toHaveClass('is-missing');
