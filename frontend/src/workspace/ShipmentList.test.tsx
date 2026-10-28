@@ -224,7 +224,7 @@ describe('workspace shipment retrieval', () => {
       vessel: 'Pacific',
       customer: 'STRAITS',
       arrivalDate: '2026-10-12',
-      status: '',
+      status: '', sort: '', atRisk: '',
     });
   });
 
@@ -233,7 +233,7 @@ describe('workspace shipment retrieval', () => {
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
     expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
     });
 
     cleanup();
@@ -266,7 +266,7 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -282,19 +282,19 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Navigate to filtered shipments' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Back through filter history' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(3));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-OLDER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-OLDER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Forward through filter history' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(4));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
   });
 
@@ -491,7 +491,7 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-404', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-404', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
   });
 
@@ -535,7 +535,30 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?status=banana&tab=overview');
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('banana');
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'banana',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'banana', sort: '', atRisk: '',
+    });
+    await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?tab=overview');
+  });
+
+  it('sends an invalid at-risk value from a direct URL and offers to clear it when the API rejects it', async () => {
+    vi.mocked(listShipments)
+      .mockRejectedValueOnce(new ApiError('Shipment information is missing or invalid', 400, {
+        atRisk: 'atRisk must be true or false',
+      }))
+      .mockResolvedValueOnce([newer]);
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?atRisk=maybe&tab=overview');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('atRisk must be true or false');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?atRisk=maybe&tab=overview');
+    expect(screen.getByRole('checkbox', { name: 'At-risk only' })).not.toBeChecked();
+    expect(listShipments).toHaveBeenCalledWith('session-token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe',
     });
     await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
 
@@ -563,7 +586,7 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByRole('cell', { name: formatWhen(newer.plannedMotherArrivalAt) })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '',
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
     cleanup();
 
@@ -687,7 +710,7 @@ describe('shipment removal', () => {
   });
 
   it('refreshes a filtered list without clearing the applied filters', async () => {
-    const filters = { reference: 'HBL', vessel: 'Pacific', customer: 'Harbour', arrivalDate: '2026-10-04' };
+    const filters = { reference: 'HBL', vessel: 'Pacific', customer: 'Harbour', arrivalDate: '2026-10-04', status: '', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
     vi.mocked(archiveShipment).mockResolvedValue('Shipment removed successfully');
     openWorkspace('ADMIN', '/admin/shipments?reference=HBL&vessel=Pacific&customer=Harbour&arrivalDate=2026-10-04');
@@ -763,7 +786,7 @@ describe('shipment removal', () => {
   });
 
   it('refreshes a filtered list after a conflict and keeps the failure notice', async () => {
-    const filters = { reference: 'HBL', vessel: '', customer: '', arrivalDate: '' };
+    const filters = { reference: 'HBL', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
     vi.mocked(archiveShipment).mockRejectedValue(new ApiError('Shipment is already removed or does not exist.', 409));
     openWorkspace('LOGISTICS_MANAGER', '/logistics-manager?reference=HBL');
@@ -831,7 +854,7 @@ describe('shipment restore', () => {
   });
 
   it('removes the shipment from the archived list after a confirmed restore', async () => {
-    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([archived, stillArchived]).mockResolvedValueOnce([stillArchived]);
     vi.mocked(restoreShipment).mockResolvedValue('Shipment restored successfully');
     openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
@@ -862,7 +885,7 @@ describe('shipment restore', () => {
   });
 
   it('refreshes the archived list when the shipment is already active', async () => {
-    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([archived]).mockResolvedValueOnce([]);
     vi.mocked(restoreShipment).mockRejectedValue(new ApiError('This shipment is already active.', 409));
     openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
