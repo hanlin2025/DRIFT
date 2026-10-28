@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import com.drift.backend.shipment.ShipmentStatus;
 
 class MaritimeContextServiceTest {
 	@Test
@@ -60,7 +61,9 @@ class MaritimeContextServiceTest {
 			return new com.drift.backend.shipment.ShipmentDetailResponse(
 					1L, 1L, "DEMO", "SG", "ID", "SG", "KOTA LARIS", null,
 					imo, null, null, null, null, null, null, null,
-					Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+					Instant.EPOCH, 0L,
+					null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
 		}
 	}
 }
