@@ -155,19 +155,25 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
+    // These sources are additive. Promise.resolve starts the chain before invoking a mocked or
+    // optional client, so a synchronous throw or non-Promise result cannot unmount the detail page.
+    Promise.resolve().then(() => getCdg201ArrivalEvidence(token, shipmentId)).then(found => {
       if (active && requestId === requestSeq.current) setCdg201Evidence(found);
     }).catch(() => {
       // Evidence replay is additive: a replay outage must not block shipment detail.
       if (active && requestId === requestSeq.current) setCdg201Evidence(null);
     });
-    getMaritimeContext(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setMaritimeContext(found);
+    Promise.resolve().then(() => getMaritimeContext(token, shipmentId)).then(found => {
+      if (!active || requestId !== requestSeq.current) return;
+      if (found) setMaritimeContext(found);
+      else setMaritimeContextUnavailable(true);
     }).catch(() => {
       if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
     });
-    listMaritimeAiAssessments(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setMaritimeAiAssessments(found);
+    Promise.resolve().then(() => listMaritimeAiAssessments(token, shipmentId)).then(found => {
+      if (!active || requestId !== requestSeq.current) return;
+      if (Array.isArray(found)) setMaritimeAiAssessments(found);
+      else setMaritimeAiUnavailable(true);
     }).catch(() => {
       if (active && requestId === requestSeq.current) setMaritimeAiUnavailable(true);
     });

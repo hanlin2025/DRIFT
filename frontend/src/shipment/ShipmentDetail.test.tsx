@@ -143,6 +143,18 @@ beforeEach(() => {
 });
 
 describe('connection window on the shipment detail', () => {
+
+  it('keeps the shipment detail visible when additive maritime calls throw or return no promise', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockImplementation((() => { throw new Error('replay unavailable'); }) as never);
+    vi.mocked(getMaritimeContext).mockReturnValue(undefined as never);
+    vi.mocked(listMaritimeAiAssessments).mockImplementation((() => { throw new Error('assessment unavailable'); }) as never);
+
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    expect(screen.getByText('Maritime context is unavailable. Shipment details are still up to date.')).toBeInTheDocument();
+  });
+
   it('shows the planned window on the shipment detail', async () => {
     open(forwarder, '/freight-forwarder');
     const user = userEvent.setup();
