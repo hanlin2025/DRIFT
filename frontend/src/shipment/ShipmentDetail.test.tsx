@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -128,6 +128,7 @@ const track: VesselTrack = {
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
+  vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(listShipments).mockResolvedValue([shipment]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
@@ -1251,5 +1252,46 @@ describe('vessel track history on the shipment detail', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Track history' })).not.toBeInTheDocument();
+  });
+});
+
+describe('change history on the shipment detail', () => {
+  const created = { id: 1, changeType: 'CREATED' as const, changedBy: { id: 4, fullName: 'Alice Tan' }, recordedAt: '2026-09-29T04:00:00Z', changes: [] };
+  const renamed = {
+    id: 2,
+    changeType: 'UPDATED' as const,
+    changedBy: { id: 8, fullName: 'Ivan Lim' },
+    recordedAt: '2026-09-30T04:00:00Z',
+    changes: [{ field: 'shipmentReference', previousValue: 'HL-0999', newValue: 'HL-1001' }],
+  };
+
+  it('shows the history below the route facts for an importer', async () => {
+    vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [renamed, created] });
+    open(importer, '/importer/shipments/7');
+
+    const section = await screen.findByRole('region', { name: 'Change history' });
+    const facts = screen.getByRole('article', { name: 'Shipment HL-1001' });
+    expect(facts.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await within(section).findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledWith('importer-token', '7');
+  });
+
+  it('loads the history again on Refresh and after an edit is saved', async () => {
+    vi.mocked(getShipmentHistory)
+      .mockResolvedValueOnce({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [created] })
+      .mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [renamed, created] });
+    vi.mocked(updateShipment).mockResolvedValue(shipment);
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('No changes yet')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Edit shipment' }));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledTimes(3);
   });
 });
