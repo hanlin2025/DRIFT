@@ -32,6 +32,8 @@ class ShipmentResponseOwnershipTest {
 
 		assertThat(listed.companyId()).isEqualTo(11L);
 		assertThat(listed.status()).isEqualTo(ShipmentStatus.ACTIVE);
+		assertThat(listed.updatedByName()).isEqualTo("Ada");
+		assertThat(listed.updatedAt()).isEqualTo(shipment.getUpdatedAt());
 		assertThat(detail.companyId()).isEqualTo(11L);
 		assertThat(detail.status()).isEqualTo(ShipmentStatus.ACTIVE);
 		assertThat(detail.importer().id()).isEqualTo(22L);
@@ -45,10 +47,19 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(listedJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(listedJson.has("risk")).isFalse();
+		assertThat(listedJson.has("riskContributions")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
+		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
+		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
+				.isEqualTo("Planned connection window");
+		assertThat(detailJson.get("riskContributions").get("contributions").get(2).get("value").asText())
+				.isEqualTo("No AIS position has been received for the mother vessel.");
 		assertThat(listedJson.has("importer")).isFalse();
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
+		assertThat(listedJson.get("updatedByName").asString()).isEqualTo("Ada");
+		assertThat(detailJson.has("updatedByName")).isFalse();
+		assertThat(detailJson.has("updatedAt")).isFalse();
 		assertThat(detailJson.get("companyId").asLong()).isEqualTo(11L);
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
