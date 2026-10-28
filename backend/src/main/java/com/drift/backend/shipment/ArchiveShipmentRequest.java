@@ -4,11 +4,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
-@Schema(description = "Archives a shipment by setting its stored status. Only ARCHIVED is accepted.")
+@Schema(description = "Sets a shipment's stored status. ARCHIVED archives an active shipment. ACTIVE restores an archived shipment.")
 public record ArchiveShipmentRequest(
-		@Schema(description = "Required archive status.", example = "ARCHIVED",
+		@Schema(description = "Required status.", example = "ARCHIVED",
 				requiredMode = Schema.RequiredMode.REQUIRED)
 		@NotBlank(message = "Status is required")
-		@Pattern(regexp = "ARCHIVED", message = "Status must be ARCHIVED")
+		@Pattern(regexp = "ACTIVE|ARCHIVED", message = "Status must be ACTIVE or ARCHIVED")
 		String status) {
 }

@@ -3,12 +3,14 @@ import { type Role } from '../session/session';
 
 export type AdminOrganisation = { id: number; code: string; name: string };
 export type AdminRole = { code: Role; label: string };
+export type AccountStatus = 'ACTIVE' | 'REMOVED';
 export type AdminUser = {
   id: number;
   fullName: string;
   email: string;
   role: Role;
   organisation: AdminOrganisation | null;
+  status: AccountStatus;
 };
 export type AssignmentAuditParty = { id: number; fullName: string; email: string };
 export type AssignmentAudit = {
@@ -21,9 +23,19 @@ export type AssignmentAudit = {
   previousOrganisation: AdminOrganisation | null;
   organisation: AdminOrganisation;
 };
+export type AccountStatusAudit = {
+  id: number;
+  recordedAt: string;
+  operator: AssignmentAuditParty;
+  target: AssignmentAuditParty;
+  organisationId: number;
+  previousStatus: AccountStatus;
+  newStatus: AccountStatus;
+};
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
 const ROLES: Role[] = ['IMPORTER', 'FREIGHT_FORWARDER', 'ADMIN', 'LOGISTICS_MANAGER'];
+const STATUSES: AccountStatus[] = ['ACTIVE', 'REMOVED'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -31,6 +43,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isRole(value: unknown): value is Role {
   return typeof value === 'string' && ROLES.includes(value as Role);
+}
+
+function isStatus(value: unknown): value is AccountStatus {
+  return typeof value === 'string' && STATUSES.includes(value as AccountStatus);
 }
 
 function organisationOf(value: unknown): AdminOrganisation | null {
@@ -50,7 +66,7 @@ function partyOf(value: unknown): AssignmentAuditParty {
 
 function userOf(value: unknown): AdminUser {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.fullName !== 'string'
-    || typeof value.email !== 'string' || !isRole(value.role) || !('organisation' in value)) {
+    || typeof value.email !== 'string' || !isRole(value.role) || !('organisation' in value) || !isStatus(value.status)) {
     throw new ApiError(UNEXPECTED, 502);
   }
   return {
@@ -59,6 +75,7 @@ function userOf(value: unknown): AdminUser {
     email: value.email,
     role: value.role,
     organisation: organisationOf(value.organisation),
+    status: value.status,
   };
 }
 
@@ -145,4 +162,29 @@ export async function assignUser(token: string, userId: number, organisationId: 
   });
   if (!isRecord(data) || data.message !== 'User assigned successfully') throw new ApiError(UNEXPECTED, 502);
   return userOf(data.user);
+}
+
+export async function removeUser(token: string, userId: number): Promise<AdminUser> {
+  const data = await send(`/api/admin/users/${userId}/remove`, token, { method: 'PATCH' });
+  return userOf(data);
+}
+
+export async function listAccountStatusAudits(token: string): Promise<AccountStatusAudit[]> {
+  const data = await send('/api/admin/account-status-audits', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(entry => {
+    if (!isRecord(entry) || typeof entry.id !== 'number' || typeof entry.recordedAt !== 'string'
+      || typeof entry.organisationId !== 'number' || !isStatus(entry.previousStatus) || !isStatus(entry.newStatus)) {
+      throw new ApiError(UNEXPECTED, 502);
+    }
+    return {
+      id: entry.id,
+      recordedAt: entry.recordedAt,
+      operator: partyOf(entry.operator),
+      target: partyOf(entry.target),
+      organisationId: entry.organisationId,
+      previousStatus: entry.previousStatus,
+      newStatus: entry.newStatus,
+    };
+  });
 }

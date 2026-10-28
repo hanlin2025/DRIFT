@@ -11,7 +11,7 @@ import { getProfile, updateProfile, type Profile } from './api';
 import { ProfilePage } from './ProfilePage';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), getCdg201ArrivalEvidence: vi.fn() }));
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return { ...actual, getProfile: vi.fn(), updateProfile: vi.fn() };

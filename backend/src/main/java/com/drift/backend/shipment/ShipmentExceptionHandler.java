@@ -21,8 +21,10 @@ import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentAlreadyActiveException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentRestoreForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotEditableException;
@@ -81,6 +83,7 @@ public class ShipmentExceptionHandler {
 			ShipmentAccessForbiddenException.class,
 			ShipmentDetailForbiddenException.class,
 			ShipmentArchiveForbiddenException.class,
+			ShipmentRestoreForbiddenException.class,
 			ShipmentNotEditableException.class
 	})
 	public ResponseEntity<Map<String, String>> handleAccessForbidden(RuntimeException ex) {
@@ -92,6 +95,12 @@ public class ShipmentExceptionHandler {
 	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
 		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ShipmentAlreadyArchivedException.MESSAGE));
+	}
+
+	@ExceptionHandler(ShipmentAlreadyActiveException.class)
+	public ResponseEntity<Map<String, String>> handleAlreadyActive() {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ShipmentAlreadyActiveException.MESSAGE));
 	}
 
 	@ExceptionHandler(ShipmentNotFoundException.class)

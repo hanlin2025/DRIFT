@@ -256,5 +256,5 @@ function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters
       ? <div className="notice">No shipments match your current filters.<br /><button type="button" className="retry-button" onClick={onClearFilters}>Clear filters</button></div>
       : <div className="notice">No shipments yet. Shipments registered for your company will appear here.</div>;
   }
-  return <ShipmentList shipments={shipments} basePath={basePath} archive={archive} />;
+  return <ShipmentList shipments={shipments} basePath={basePath} archive={archive} archived={status === 'ARCHIVED'} />;
 }
