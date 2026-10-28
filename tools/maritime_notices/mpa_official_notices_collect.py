@@ -10,6 +10,7 @@ import json
 import os
 import re
 import urllib.parse
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,8 +28,8 @@ def write(path: Path, body: bytes) -> None:
     temporary.write_bytes(body)
     os.replace(temporary, path)
 
-def listing_url(category: str, year: str, limit: int) -> str:
-    return BASE + '?' + urllib.parse.urlencode({'type': category, 'year': year, 'limit': limit, 'page': 1})
+def listing_url(category: str, year: str, limit: int, page: int = 1) -> str:
+    return BASE + '?' + urllib.parse.urlencode({'type': category, 'year': year, 'limit': limit, 'page': page})
 
 def unique_stem(root: Path, stem: str) -> str:
     """Never replace an earlier observation, including two same-second runs."""
@@ -67,6 +68,31 @@ def listing_items(body: bytes):
     except Exception:
         return None
 
+def listing_count(body: bytes):
+    """Return the source's declared result count, if the listing supplies one."""
+    try:
+        meta = json.loads(body).get('meta', {})
+        value = meta.get('filter_count')
+        return value if isinstance(value, int) and value >= 0 else None
+    except Exception:
+        return None
+
+def request_listing(url: str):
+    status, body, error = None, b'', ''
+    try:
+        request = urllib.request.Request(url, headers={'Accept': 'application/json', 'User-Agent': 'DRIFT-maritime-notice-research/1.0'})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            status, body = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, body, error = exc.code, exc.read(), type(exc).__name__
+    except Exception as exc:  # Preserve failed observations in the manifest.
+        error = type(exc).__name__
+    return status, body, error
+
+def coverage_complete(items, declared_count, errors):
+    """A complete first page is not proof of complete annual coverage."""
+    return not errors and declared_count is not None and len(items) >= declared_count
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--raw-output', default='var/maritime-notices/raw/mpa_official_notices')
@@ -79,31 +105,38 @@ def main() -> None:
     run = 'mpa-notices-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     results = []
     for name, category in CATEGORIES.items():
-        url = listing_url(category, args.year, args.limit)
         started = datetime.now(timezone.utc)
-        status = None
-        body = b''
-        error = ''
-        try:
-            request = urllib.request.Request(url, headers={'Accept': 'application/json', 'User-Agent': 'DRIFT-maritime-notice-research/1.0'})
-            with urllib.request.urlopen(request, timeout=30) as response:
-                status, body = response.status, response.read()
-        except Exception as exc:  # Preserve failed observations in the manifest.
-            error = type(exc).__name__
-        items = listing_items(body)
-        valid = status == 200 and items is not None
         stamp = started.strftime('%Y%m%dT%H%M%S%fZ')
         stem = unique_stem(root, f'{name}_{args.year}_{stamp}')
-        raw = root / (stem + '.json')
-        if body:
-            write(raw, body)
+        page, declared_count, pages, items, errors = 1, None, [], [], []
+        while True:
+            url = listing_url(category, args.year, args.limit, page)
+            status, body, error = request_listing(url)
+            page_items = listing_items(body)
+            raw = root / f'{stem}_page{page}.json'
+            if body:
+                write(raw, body)
+            pages.append({'page': page, 'endpoint': url, 'http_status': status, 'raw_file': raw.name if body else '',
+                          'sha256': hashlib.sha256(body).hexdigest() if body else '',
+                          'schema_valid': page_items is not None, 'record_count': len(page_items) if page_items is not None else None,
+                          'error': error})
+            if declared_count is None:
+                declared_count = listing_count(body)
+            if status != 200 or page_items is None:
+                errors.append(error or 'invalid_response')
+                break
+            items.extend(page_items)
+            if not page_items or len(items) >= (declared_count if declared_count is not None else len(items)):
+                break
+            page += 1
+        valid = coverage_complete(items, declared_count, errors)
         manifest = {
             'collection_run_id': run, 'source': 'MPA public Media Centre API', 'dataset': name,
-            'year': args.year, 'endpoint': url, 'retrieval_started_utc': started.isoformat(),
-            'retrieval_completed_utc': datetime.now(timezone.utc).isoformat(), 'http_status': status,
-            'raw_file': raw.name if body else '', 'sha256': hashlib.sha256(body).hexdigest() if body else '',
-            'schema_valid': items is not None, 'valid_coverage': valid,
-            'record_count': len(items) if items is not None else None, 'error': error,
+            'year': args.year, 'endpoint': listing_url(category, args.year, args.limit), 'retrieval_started_utc': started.isoformat(),
+            'retrieval_completed_utc': datetime.now(timezone.utc).isoformat(), 'http_status': pages[-1]['http_status'] if pages else None,
+            'raw_file': pages[0]['raw_file'] if len(pages) == 1 else '', 'sha256': pages[0]['sha256'] if len(pages) == 1 else '',
+            'schema_valid': not errors, 'valid_coverage': valid,
+            'record_count': len(items), 'source_filter_count': declared_count, 'pages': pages, 'error': '; '.join(errors),
             'observation_kind': observation_kind(args.observation_mode, args.year, started),
             'first_observed_utc': started.isoformat(),
             'notice_versions': [version_observation(item) for item in items] if items is not None else [],
