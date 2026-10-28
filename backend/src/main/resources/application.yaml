@@ -69,3 +69,6 @@ app:
     northeast-longitude: ${AIS_NORTHEAST_LONGITUDE:}
   shipment-import:
     max-upload-bytes: 5242880
+  maritime-context:
+    # CDG-245 is intentionally a fixture-backed, read-only replay until CDG-246 supplies live evidence.
+    demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}

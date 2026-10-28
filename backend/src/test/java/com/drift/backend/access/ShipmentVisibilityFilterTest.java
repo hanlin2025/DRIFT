@@ -106,6 +106,19 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void refusesHiddenMaritimeContextAsAShipmentDetailRead() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		filter.doFilter(request("GET", "/api/shipments/8/maritime-context"), response, chain);
+
+		verify(chain, never()).doFilter(any(), any());
+		assertThat(response.getStatus()).isEqualTo(403);
+		assertThat(response.getContentAsString()).contains(ShipmentDetailForbiddenException.MESSAGE);
+	}
+
+	@Test
 	void letsTheManagingCompanyAndTheLinkedImporterReadTheDetail() throws Exception {
 		signIn();
 		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, COMPANY_ID, null)));

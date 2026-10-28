@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type MaritimeContext, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
 import { VesselPanel } from './VesselPanel';
+import { MaritimeContextPanel } from './MaritimeContextPanel';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
@@ -40,6 +41,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [maritimeContext, setMaritimeContext] = useState<MaritimeContext | null>(null);
+  const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
   const historySeq = useRef(0);
 
   const reloadHistory = useCallback(async () => {
@@ -111,6 +114,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshing(false);
     setHistory(null);
     setSelectedId(null);
+    setMaritimeContext(null);
+    setMaritimeContextUnavailable(false);
     getShipment(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
       setShipment(found);
@@ -140,6 +145,15 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       if (reason instanceof ApiError && reason.status === 403) {
         setProblem({ kind: 'forbidden', message: reason.message });
       }
+    });
+    getMaritimeContext(token, shipmentId).then(found => {
+      if (!active || requestId !== requestSeq.current) return;
+      setMaritimeContext(found);
+      setMaritimeContextUnavailable(false);
+    }).catch(() => {
+      if (!active || requestId !== requestSeq.current) return;
+      // Context is optional evidence: its failure must not make the shipment unreadable.
+      setMaritimeContextUnavailable(true);
     });
     return () => {
       active = false;
@@ -208,7 +222,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                     }}
                     onSelectPoint={setSelectedId} />
                 )}
-                history={history} selectedId={selectedId} onSelectPoint={setSelectedId} />}
+                history={history} selectedId={selectedId} onSelectPoint={setSelectedId}
+                maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} />}
     </section>
   );
 }
@@ -247,7 +262,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint }: {
+function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, maritimeContext, maritimeContextUnavailable }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   refreshing: boolean;
@@ -260,6 +275,8 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
   history: VesselTrack | null;
   selectedId: number | null;
   onSelectPoint: (id: number) => void;
+  maritimeContext: MaritimeContext | null;
+  maritimeContextUnavailable: boolean;
 }) {
   const remaining = remainingWindowFact(shipment);
   return (
@@ -327,6 +344,7 @@ function ShipmentRecord({ shipment, tracking, refreshing, refreshNote, onRefresh
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
     </>
   );
 }

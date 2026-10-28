@@ -90,7 +90,7 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			enforceTracking(request, response, chain, companyId, shipmentId);
 			return;
 		}
-		if (path.matches("/api/shipments/\\d+")) {
+		if (path.matches("/api/shipments/\\d+(/maritime-context)?")) {
 			if (shipmentId == null) {
 				chain.doFilter(request, response);
 				return;

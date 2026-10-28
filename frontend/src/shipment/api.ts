@@ -28,6 +28,19 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type MaritimeNoticeEvidence = {
+  noticeId: string; title: string; officialSourceUrl: string; citation: string;
+  publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null;
+  supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
+  evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string;
+  activityEvidence: string[]; locationEvidence: string[]; limitation: string;
+};
+
+export type MaritimeContext = {
+  enabled: boolean; sourceMode: 'DISABLED' | 'SYNTHETIC_DEMONSTRATION'; shipmentAssociationConfidence: string;
+  limitation: string; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null;
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -147,6 +160,13 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
+}
+
+export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
+  const context = asMaritimeContext(data);
+  if (!context) throw new ApiError(UNEXPECTED, 502);
+  return context;
 }
 
 export type ShipmentTracking = {
@@ -412,8 +432,33 @@ function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undef
     return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
   }
   if (typeof feed.lastReceivedAt !== 'string' || feed.lastReceivedAt.trim().length === 0) return undefined;
-  return { status: feed.status, lastReceivedAt: feed.lastReceivedAt };
+  return { status: feed.status as AisFeedStatusName, lastReceivedAt: feed.lastReceivedAt };
 }
+
+function asMaritimeContext(value: unknown): MaritimeContext | null {
+  if (!isRecord(value) || typeof value.enabled !== 'boolean'
+    || (value.sourceMode !== 'DISABLED' && value.sourceMode !== 'SYNTHETIC_DEMONSTRATION')
+    || !isPresentText(value.shipmentAssociationConfidence) || !isPresentText(value.limitation)
+    || !Array.isArray(value.notices) || value.aiExplanation !== null || value.suggestedActions !== null) return null;
+  const notices = value.notices.map(asMaritimeNotice);
+  return notices.some(notice => notice === null) ? null : { enabled: value.enabled, sourceMode: value.sourceMode,
+    shipmentAssociationConfidence: value.shipmentAssociationConfidence, limitation: value.limitation,
+    notices: notices as MaritimeNoticeEvidence[], aiExplanation: null, suggestedActions: null };
+}
+
+function asMaritimeNotice(value: unknown): MaritimeNoticeEvidence | null {
+  if (!isRecord(value) || !isPresentText(value.noticeId) || !isPresentText(value.title) || !isPresentText(value.officialSourceUrl)
+    || !isPresentText(value.citation) || !nullableText(value.publishedAt) || !nullableText(value.observedAt)
+    || !nullableText(value.effectiveFrom) || !nullableText(value.effectiveUntil) || !isPresentText(value.supersessionStatus)
+    || !['COMPATIBLE', 'INCOMPATIBLE', 'UNKNOWN'].includes(value.compatibilityState as string)
+    || typeof value.evidenceSufficient !== 'boolean' || typeof value.humanReviewRequired !== 'boolean'
+    || !isPresentText(value.shipmentAssociationConfidence) || !Array.isArray(value.activityEvidence)
+    || !value.activityEvidence.every(isPresentText) || !Array.isArray(value.locationEvidence)
+    || !value.locationEvidence.every(isPresentText) || !isPresentText(value.limitation)) return null;
+  return value as MaritimeNoticeEvidence;
+}
+
+function nullableText(value: unknown): value is string | null { return value === null || isPresentText(value); }
 
 function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
   if (!(key in value) || value[key] == null) return null;
