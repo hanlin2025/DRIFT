@@ -12,7 +12,9 @@ class Cdg201ArrivalEvidenceServiceTest {
 		Cdg201ArrivalEvidence evidence = service.forShipment(TestShipments.kotaLaris());
 		assertThat(evidence.vesselImo()).isEqualTo("9351048");
 		assertThat(evidence.revisionMinutes()).isEqualTo(180);
-		assertThat(evidence.sourceTimestampSemantics()).contains("undocumented");
+		assertThat(evidence.sourceTimestampSemantics()).contains("Asia/Singapore");
+		assertThat(evidence.revisedExpectedArrivalSgt()).isEqualTo("2026-10-29T02:00:00+08:00");
+		assertThat(evidence.revisedExpectedArrivalUtc()).isEqualTo("2026-10-28T18:00:00+00:00");
 		assertThat(evidence.locationMappingStatus()).isEqualTo("UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT");
 		assertThat(evidence.shipmentAssociation()).isEqualTo("UNVERIFIED_IMO_ONLY");
 		assertThat(evidence.simulatedScenario().originalConnectionMarginMinutes()).isEqualTo(780);

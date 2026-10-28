@@ -80,7 +80,8 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   expect(body.evidence.vesselImo).toBe('9351048');
   expect(body.evidence.revisionMinutes).toBe(180);
   expect(body.evidence.shipmentAssociation).toBe('UNVERIFIED_IMO_ONLY');
-  expect(body.evidence.sourceTimestampSemantics).toContain('undocumented');
+  expect(body.evidence.sourceTimestampSemantics).toContain('Asia/Singapore');
+  expect(body.evidence.revisedExpectedArrivalUtc).toBe('2026-10-28T18:00:00+00:00');
   expect(body.evidence.locationMappingStatus).toBe('UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT');
   expect(body.evidence.simulatedScenario).toMatchObject({ originalConnectionMarginMinutes: 780, revisedConnectionMarginMinutes: 600, reductionMinutes: 180 });
 

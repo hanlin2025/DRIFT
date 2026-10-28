@@ -15,7 +15,7 @@ verified that the endpoint and shipment-detail panel show:
   `2026-10-29 02:00:00` (`+180` minutes);
 - collection timestamps, run IDs, manifests and raw-file references;
 - `UNVERIFIED_IMO_ONLY` shipment association;
-- unknown source-timezone semantics and unmapped MPA location status;
+- confirmed SGT source-time semantics, derived UTC representations, and unmapped MPA location status;
 - an explicitly simulated connection scenario of `780` to `600` minutes.
 
 The UI labels the scenario as simulated and the evidence as a read-only replay;
@@ -71,8 +71,9 @@ passed (1).
 - The endpoint is fixture-backed replay, not live MPA ingestion.
 - Mother-vessel IMO is only an `UNVERIFIED_IMO_ONLY` association; it is not a
   verified shipment or vessel-visit link.
-- MPA timestamps retain their original strings because source timezone semantics
-  are undocumented.
+- MPA source strings are retained verbatim and interpreted as
+  Asia/Singapore (`UTC+08:00`) in separate derived fields; collection times
+  remain UTC.
 - MPA location code `PEBGA` has not been mapped to a DRIFT terminal.
 - No shipment, ArrivalEstimate, CDG-42 risk result, alert or audit/business
   event is mutated by this feature.

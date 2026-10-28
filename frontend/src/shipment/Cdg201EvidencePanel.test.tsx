@@ -6,11 +6,11 @@ import type { Cdg201ArrivalEvidence } from './api';
 const evidence: Cdg201ArrivalEvidence = {
   contractVersion: 'cdg201.drift-arrival-evidence.v1', evidenceState: 'RECORDED_EVIDENCE_REPLAY',
   vesselName: 'KOTA LARIS', vesselImo: '9351048', previousExpectedArrival: '2026-10-28 23:00:00',
-  revisedExpectedArrival: '2026-10-29 02:00:00', revisionMinutes: 180,
+  revisedExpectedArrival: '2026-10-29 02:00:00', previousExpectedArrivalSgt: '2026-10-28T23:00:00+08:00', previousExpectedArrivalUtc: '2026-10-28T15:00:00+00:00', revisedExpectedArrivalSgt: '2026-10-29T02:00:00+08:00', revisedExpectedArrivalUtc: '2026-10-28T18:00:00+00:00', revisionMinutes: 180,
   previousCollectionUtc: '2026-10-26T15:10:22.248554Z', latestCollectionUtc: '2026-10-26T15:46:03.213897Z',
   previousCollectionRunId: 'run-one', latestCollectionRunId: 'run-two', sourceManifest: 'evidence.manifest.json',
   previousSourceManifest: 'prior-evidence.manifest.json', previousSourceRawFile: 'prior-evidence.json', sourceRawFile: 'evidence.json', confidence: 'conservative_context_time_continuity', ambiguity: 'NONE_FOR_REPLAY_EVENT',
-  sourceTimestampSemantics: 'Source timezone is undocumented.', locationFrom: 'SEA', locationTo: 'PEBGA',
+  sourceTimestampSemantics: 'Source timezone is Asia/Singapore.', locationFrom: 'SEA', locationTo: 'PEBGA',
   locationMappingStatus: 'UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT', shipmentAssociation: 'UNVERIFIED_IMO_ONLY',
   limitations: 'Not a verified shipment.',
   simulatedScenario: { state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: 780,
@@ -23,6 +23,8 @@ describe('Cdg201EvidencePanel', () => {
     render(<Cdg201EvidencePanel evidence={evidence} />);
     expect(screen.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveTextContent('KOTA LARIS · IMO 9351048');
     expect(screen.getByText('+180 minutes')).toBeInTheDocument();
+    expect(screen.getByText('2026-10-29T02:00:00+08:00')).toBeInTheDocument();
+    expect(screen.getByText('2026-10-28T18:00:00+00:00')).toBeInTheDocument();
     expect(screen.getByText(/unverified imo only/i)).toBeInTheDocument();
     expect(screen.getByText(/Margin: 780 → 600 minutes/)).toBeInTheDocument();
     expect(screen.getByText(/Not the production shipment risk/)).toBeInTheDocument();
