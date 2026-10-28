@@ -143,6 +143,17 @@ describe('shipment change history', () => {
     expect(screen.queryByText(NO_CHANGES)).not.toBeInTheDocument();
   });
 
+  it('does not say there are no changes yet when the only recorded event is a backfilled creation', async () => {
+    vi.mocked(getShipmentHistory).mockResolvedValue(history([created], true));
+
+    renderHistory();
+
+    expect(await screen.findByText(EARLIER_CHANGES_UNRECORDED)).toBeInTheDocument();
+    expect(screen.queryByText(NO_CHANGES)).not.toBeInTheDocument();
+    expect(entries()).toHaveLength(1);
+    expect(entries()[0]).toHaveTextContent('Created');
+  });
+
   it('shows a clear error when the history cannot be loaded and loads it again on Try again', async () => {
     vi.mocked(getShipmentHistory)
       .mockRejectedValueOnce(new ApiError('We could not reach DRIFT. Check your connection and try again.', 0))

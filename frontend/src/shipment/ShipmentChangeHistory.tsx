@@ -84,7 +84,7 @@ export function ShipmentChangeHistory({ token, shipmentId, reloadKey, onSessionE
       {loading && !history && failure === null && <p className="change-history-note" role="status">Loading change history...</p>}
       {history && (
         <>
-          {onlyCreation && <p className="change-history-empty">{NO_CHANGES}</p>}
+          {onlyCreation && !history.earlierChangesUnrecorded && <p className="change-history-empty">{NO_CHANGES}</p>}
           <ol className="change-history-list" aria-label="Recorded changes">
             {entries.map(entry => <HistoryEntry key={entry.id} entry={entry} />)}
           </ol>
