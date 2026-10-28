@@ -52,6 +52,8 @@ describe('shipment importer API', () => {
       customer: 'STRAITS',
       arrivalDate: '',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
@@ -66,6 +68,8 @@ describe('shipment importer API', () => {
       customer: 'A&B Logistics',
       arrivalDate: '2026-10-12',
     status: '',
+      sort: '',
+      atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
@@ -75,7 +79,7 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
@@ -95,6 +99,30 @@ describe('shipment importer API', () => {
   it('rejects a list shipment whose last update is not text', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, updatedAt: 1, updatedByName: 'Ada Admin' }])));
     await expect(listShipments('token')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+
+  it('sends the risk sort and the at-risk filter, keeping an invalid at-risk value for the API to reject', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([shipment])));
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'risk', atRisk: 'true',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=risk&atRisk=true', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?sort=risk', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'false',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments', expect.anything());
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?atRisk=maybe', expect.anything());
   });
 
   it('reads the importer on a shipment detail', async () => {
@@ -404,6 +432,53 @@ describe('arrival comparison parsing', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       ...shipment,
       riskContributions: { ...notAssessed, contributions: assessed.contributions },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps a recommendation that agrees with the risk and rejects one that does not', async () => {
+    const explanation = 'At least 24 hours remain to transfer cargo, based on the mother vessel\'s estimated arrival.';
+    const risk = { level: 'LOW' as const, explanation };
+    const unavailable = {
+      available: false,
+      unavailable: 'A recommendation is not available because the impact assessment has not been returned.',
+      response: null,
+      riskLevel: 'LOW',
+      riskExplanation: explanation,
+      impact: { outcome: 'UNAVAILABLE', detail: 'The impact assessment has not been returned.' },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk, recommendation: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: unavailable, risk });
+
+    const noAction = {
+      available: true,
+      unavailable: null,
+      response: {
+        code: 'NO_ACTION',
+        label: 'No action',
+        wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
+      },
+      riskLevel: 'LOW',
+      riskExplanation: explanation,
+      impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk, recommendation: noAction })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: noAction });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ recommendation: null }]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk,
+      recommendation: { ...noAction, impact: { outcome: 'AFFECTS_CONSTRAINTS', detail: null } },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'HIGH', explanation },
+      recommendation: unavailable,
     })));
     await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });

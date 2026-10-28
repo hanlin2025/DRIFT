@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
+import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
@@ -338,8 +339,8 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
             </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
-            ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
-            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
+            : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
@@ -347,8 +348,6 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
     </>
   );
 }
-
-const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
   if (comparison.unavailableReason) {

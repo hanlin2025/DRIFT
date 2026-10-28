@@ -53,13 +53,16 @@ public class ShipmentController {
 			+ "This includes shipments managed by that company and shipments linked to it as the importer. "
 			+ "Archived shipments are excluded unless the optional status filter requests ARCHIVED. "
 			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
-			+ "and who last updated it and when. "
-			+ "Optional filters are combined with AND.",
+			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
+			+ "(null when not assessed), the linked importer organisation (null when not linked), "
+			+ "and who last updated it and when. AIS positions for the whole list are read in one batch. "
+			+ "Optional filters are combined with AND, including atRisk. "
+			+ "Use sort=risk for CRITICAL first; shipments that are not assessed come last.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date or unsupported status", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
 								"""))),
@@ -78,12 +81,16 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional case-insensitive substring search of the linked importer Company Code or Company Name", example = "IMPORTER-SG") @RequestParam(required = false) String customer,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed, with ties ordered by the soonest planned feeder departure. Omit for newest first.", schema = @Schema(allowableValues = { "risk" }), example = "risk") @RequestParam(required = false) String sort,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(shipmentService.list(user, ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status)));
+				.body(shipmentService.list(user,
+						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk),
+						ShipmentSort.fromListParameter(sort)));
 	}
 
 	@GetMapping("/api/shipments/{shipmentId}")
@@ -95,6 +102,10 @@ public class ShipmentController {
 			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
 			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
 			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
+			+ "The same read returns one recommendation from that connection risk and the impact on this read. "
+			+ "The impact assessment is not returned here, so the recommendation is unavailable and names that reason. "
+			+ "It is not stored. Reading it does not send an alert and does not perform the response. "
+			+ "An archived shipment the viewer can open receives the same recommendation. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
