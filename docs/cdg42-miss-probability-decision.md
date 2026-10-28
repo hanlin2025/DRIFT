@@ -6,6 +6,11 @@ connection"). It is a decision only: no database change, API, page, or
 production code. CDG-209 implements the backend calculation from this record;
 CDG-210 shows it on shipment detail.
 
+The Jira story calls this a "miss probability". With the suggested threshold
+`T_h = 0h`, what is actually calculated is narrower: the chance that the mother
+vessel arrives after the planned feeder departure (see [Q1](#q1-what-does-miss-mean)).
+The user-facing wording says exactly that.
+
 ## Context
 
 - The only live arrival time DRIFT has is the straight-line estimate from
@@ -32,7 +37,7 @@ CDG-210 shows it on shipment detail.
 - CDG-201 is Done but pivoted to showing evidence of MPA arrival-time changes
   (`cdg201/` is a read-only replay of a fixed sample). It does not predict
   arrival, so CDG-42 does not wait for it and does not use MPA instants (see
-  [the replay record](cdg201-readonly-replay.md)).
+  [Relationship to CDG-201 / CDG-246 / CDG-247](#relationship-to-cdg-201--cdg-246--cdg-247)).
 - DRIFT stores no actual arrival time. Neither the planned arrival nor the
   straight-line estimate is an actual arrival.
 
@@ -40,23 +45,33 @@ CDG-210 shows it on shipment detail.
 
 ### Q1. What does "miss" mean?
 
-The connection is missed when the mother vessel's actual arrival is later than
-the planned feeder departure minus a handling threshold:
+The event is that the mother vessel's actual arrival is later than the planned
+feeder departure minus a handling threshold:
 
-`miss ⇔ actual arrival > D − T_h`
+`late ⇔ actual arrival > D − T_h`
 
 `D` is the planned feeder departure. `T_h` is a defined threshold, suggested
-value **0h**. With `T_h = 0`, a 50% chance sits exactly on the existing
-remaining-window boundary (remaining = 0 is `MISSED`), so the probability and
-the remaining window never contradict each other. A larger `T_h` is listed
-under [Alternatives considered](#alternatives-considered).
+value **0h**.
+
+With `T_h = 0h`, the probability is the chance that the mother vessel arrives
+after the planned feeder departure. It is not the full chance that the cargo
+misses its transshipment: arriving before the feeder departs does not mean
+there is enough time to discharge, move, and load the cargo. `T_h = 0h` is a
+stated interim baseline, not a claim that zero handling time is realistic. A
+value for `T_h` will be chosen once there is data to support one (see
+[Open questions](#open-questions)).
+
+With `T_h = 0h`, a 50% chance sits exactly on the existing remaining-window
+boundary (remaining = 0 is `MISSED`), so the probability and the remaining
+window never contradict each other. A larger `T_h` is listed under
+[Alternatives considered](#alternatives-considered).
 
 ### Q2. Which arrival time is used?
 
 The existing point estimate `estimatedArrivalAt` (`Â`) is the centre of the
 arrival distribution. The planned mother-vessel arrival does not enter the
-calculation. CDG-42 does not wait for CDG-201 because CDG-201 did not deliver an
-arrival prediction.
+calculation, and neither do MPA times. CDG-42 does not wait for CDG-201 because
+CDG-201 did not deliver an arrival prediction.
 
 ### Q3. What happens to a position more than 6 hours old?
 
@@ -78,12 +93,13 @@ calculated as normal and a separate `plannedWindowInvalid` flag is returned.
 
 ### Q5. What is shown when the probability is unavailable?
 
-`Chance of missing connection unavailable: ` followed by:
+`Chance of arriving after feeder departure unavailable: ` followed by:
 
 | Code | Suffix |
 | --- | --- |
-| `MISSING_FEEDER_DEPARTURE` | the planned feeder departure is not set. |
 | `MISSING_PLANNED_MOTHER_ARRIVAL` | the planned mother-vessel arrival is not set, so no arrival estimate exists. |
+| `MISSING_FEEDER_DEPARTURE` | the planned feeder departure is not set. |
+| `FEEDER_DEPARTURE_PASSED` | the planned feeder departure has already passed, and DRIFT cannot confirm whether the connection was made. |
 | `NO_POSITION` | no position has been received for the mother vessel. |
 | `INVALID_COORDINATES` | the vessel or port position cannot be used. |
 | `MISSING_PORT` | the transshipment port is not set for this shipment. |
@@ -92,16 +108,34 @@ calculated as normal and a separate `plannedWindowInvalid` flag is returned.
 | `POSITION_OUTDATED` | the latest vessel position is more than 6 hours old. |
 
 `MISSING_PLANNED_MOTHER_ARRIVAL` is new and corresponds to
-`arrivalComparison == null`. The five estimate codes reuse the
-`ArrivalEstimate` codes; their suffixes are new text for this probability and do
-not replace the existing estimate or assessment messages.
+`arrivalComparison == null`. `FEEDER_DEPARTURE_PASSED` is new (see below). The
+five estimate codes reuse the `ArrivalEstimate` codes; their suffixes are new
+text for this probability and do not replace the existing estimate or
+assessment messages.
+
+**Planned feeder departure already passed.** When `now` is strictly later than
+`D`, the probability is unavailable with `FEEDER_DEPARTURE_PASSED`. DRIFT stores
+no actual arrival or departure, so after `D` it cannot tell whether the
+connection was made, and a forward-looking chance would be misleading. When
+`now` equals `D` exactly, the probability is calculated as normal.
 
 Only one reason is returned, in this order:
 
-1. planned feeder departure missing;
-2. planned mother-vessel arrival missing (no estimate);
-3. the estimate's own unavailable reason;
-4. position outdated.
+1. `MISSING_PLANNED_MOTHER_ARRIVAL`;
+2. `MISSING_FEEDER_DEPARTURE`;
+3. `FEEDER_DEPARTURE_PASSED`;
+4. the estimate's own unavailable reason (`NO_POSITION`, `INVALID_COORDINATES`,
+   `MISSING_PORT`, `UNKNOWN_PORT`, `UNUSABLE_SPEED`, in the estimate's order);
+5. `POSITION_OUTDATED`.
+
+The first two follow CDG-51: `AssessmentConfidence` / `AssessmentExplanation`
+name a missing planned mother-vessel arrival before a missing planned
+feeder-vessel departure. When both are missing CDG-51 lists both reasons, while
+CDG-42 returns a single code, so it returns the first one; the order is the
+same. The two otherwise differ on purpose: when the estimate is unavailable or
+the position is outdated, CDG-51 falls back to the planned window with a
+limited confidence, whereas CDG-42 depends on the live estimate and returns
+unavailable.
 
 ### Q6. Is anything stored?
 
@@ -117,26 +151,37 @@ the same result. A company that cannot view the shipment sees nothing.
 
 ## Model
 
-Times are in hours. `t₀` is the position's `lastReceivedAt` (`ingestedAt`) and
-`now` is the same clock used to judge `possiblyOutdated`.
+Times are in hours.
+
+- `t₀` is the time the latest AIS position was stored
+  (`ArrivalEstimate.lastReceivedAt`, i.e. `ingestedAt`). It is the reference
+  time of the estimate, not the evaluation time.
+- `now` is the evaluation time, the same clock used to judge
+  `possiblyOutdated` and the passed feeder departure.
 
 | Symbol | Definition |
 | --- | --- |
-| `τ` | `Â − t₀`, remaining voyage hours from the position |
+| `τ` | `Â − t₀`, remaining voyage hours measured from the observation (equals distance / speed) |
 | `a` | `max(0, now − t₀)`, position age |
 | `r` | `(D − T_h) − Â`, margin |
 | `σ` | `√(σ₀² + (c_v·τ)² + (k_age·a)²)` |
-| `P(miss)` | `Φ(−r / σ)` |
+| `P` | `Φ(−r / σ)`, chance of arriving after `D − T_h` |
+
+`τ` is measured from `t₀`, not from `now`. The time between `t₀` and `now` is
+already covered by the separate `k_age·a` term, so measuring `τ` from `now`
+would count it twice. In the base scenario below, `τ = 48h`, not 47h; using 47h
+gives `σ = 5.114h`, which is the wrong convention (the correct value is
+5.206h).
 
 `Φ` is the standard normal CDF. Java has no `erf` in the standard library, so
 CDG-209 uses the Abramowitz–Stegun 7.1.26 approximation
 (`Φ(z) = ½(1 + erf(z/√2))`, absolute `erf` error below 1.5 × 10⁻⁷).
 
-Parameters, all suggested values:
+Parameters, all suggested values and none calibrated:
 
 | Parameter | Suggested value | Meaning |
 | --- | --- | --- |
-| `T_h` | 0h | Handling time needed before feeder departure |
+| `T_h` | 0h | Handling time needed before feeder departure (interim baseline) |
 | `σ₀` | 2.0h | Base spread for any estimate |
 | `c_v` | 0.10 | Spread per hour of remaining voyage (speed variation) |
 | `k_age` | 0.25 h/h | Spread per hour of position age |
@@ -146,7 +191,10 @@ Parameters, all suggested values:
 - Round the raw probability to the nearest 5%, half-up: `floor(P × 20 + 0.5) × 5`.
 - A rounded 0 shows `<5%`; a rounded 100 shows `>95%`. 0% and 100% are never
   shown, even when the raw value is exactly 0 or 1 at double precision.
-- Label: `Chance of missing connection: 35% · rough estimate`.
+- Label: `Chance of arriving after feeder departure: 35% · rough estimate`.
+  The `rough estimate` marker is required wherever the value is shown.
+- Unavailable: `Chance of arriving after feeder departure unavailable: ` plus
+  the suffix from [Q5](#q5-what-is-shown-when-the-probability-is-unavailable).
 - Neutral style: no badge and no red/amber/green colour. The text never uses
   LOW, MEDIUM, HIGH, CRITICAL, MISSED, or "risk", and does not reuse the
   `AssessmentConfidence` confidence sentences.
@@ -158,10 +206,14 @@ Parameters, all suggested values:
 Base scenario: `now = 2026-10-26T12:00Z`, `t₀ = 2026-10-26T11:00Z` (`a = 1h`),
 720 nautical miles straight-line from the port at 15 knots, so `τ = 48h` and
 `Â = 2026-10-28T11:00Z`. Planned mother-vessel arrival `2026-10-28T09:00Z` and
-`D = 2026-10-28T13:00Z` unless the row says otherwise. Parameters are the
-suggested values. These rows are the expected values for CDG-209 tests.
-"Existing" columns show today's remaining window and `ShipmentRisk` for the same
-inputs, for comparison only.
+`D = 2026-10-28T13:00Z` unless the row says otherwise.
+
+Short-distance scenario (rows 7, 17, 18): same `now` and `t₀`, 1 nautical mile
+from the port at 0.5 knots, so `τ = 2h` and `Â = 2026-10-26T13:00Z`.
+
+Parameters are the suggested values. These rows are the expected values for
+CDG-209 tests. "Existing" columns show today's remaining window and
+`ShipmentRisk` for the same inputs, for comparison only.
 
 | # | Case | Changed inputs | `σ` (h) | `r` (h) | Raw P | Shown | Existing remaining / risk | `plannedWindowInvalid` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -171,27 +223,49 @@ inputs, for comparison only.
 | 4 | Margin exactly 0 | `D = 2026-10-28T11:00Z` | 5.206 | 0.000 | 0.5000 | `50%` | MISSED by 0h / CRITICAL | false |
 | 5 | Missed by 3h | `D = 2026-10-28T08:00Z`, planned arrival `2026-10-28T04:00Z` | 5.206 | −3.000 | 0.7178 | `70%` | MISSED by 3h / CRITICAL | false |
 | 6 | Missed by 10h | `D = 2026-10-28T01:00Z`, planned arrival `2026-10-27T21:00Z` | 5.206 | −10.000 | 0.9726 | `95%` | MISSED by 10h / CRITICAL | false |
-| 7 | Speed exactly 0.5 kn | speed 0.5 kn (`τ = 1440h`, `Â = 2026-12-25T11:00Z`) | 144.014 | −1390.000 | 1.0000 | `>95%` | MISSED by 1390h / CRITICAL | false |
-| 8 | Speed 0.4 kn | speed 0.4 kn | — | — | — | unavailable: `UNUSABLE_SPEED` | none / HIGH (planned) | — |
-| 9 | Position exactly 6h old | `now = 2026-10-26T17:00Z` (`a = 6h`) | 5.412 | +2.000 | 0.3559 | `35%` | AVAILABLE 2h / HIGH | false |
-| 10 | Position 6h + 1s old | `now = 2026-10-26T17:00:01Z` | — | — | — | unavailable: `POSITION_OUTDATED` | none / HIGH (planned) | — |
-| 11 | Feeder departure not set | `D` not set | — | — | — | unavailable: `MISSING_FEEDER_DEPARTURE` | none / none | — |
-| 12 | Planned mother arrival not set | planned arrival not set | — | — | — | unavailable: `MISSING_PLANNED_MOTHER_ARRIVAL` | none / none | — |
-| 13 | Both planned times not set | `D` and planned arrival not set | — | — | — | unavailable: `MISSING_FEEDER_DEPARTURE` | none / none | — |
-| 14 | No position | no AIS position | — | — | — | unavailable: `NO_POSITION` | none / HIGH (planned) | — |
-| 15 | Planned window invalid, live margin +12h | `D = 2026-10-28T23:00Z`, planned arrival `2026-10-29T00:00Z` | 5.206 | +12.000 | 0.0106 | `<5%` | AVAILABLE 12h / MEDIUM | true |
+| 7 | Speed exactly 0.5 kn, short distance | short-distance scenario, planned arrival `2026-10-26T13:00Z`, `D = 2026-10-26T15:00Z` | 2.025 | +2.000 | 0.1617 | `15%` | AVAILABLE 2h / HIGH | false |
+| 8 | Speed exactly 0.5 kn, numeric edge | speed 0.5 kn at 720 nm (`τ = 1440h`, `Â = 2026-12-25T11:00Z`) | 144.014 | −1390.000 | 1.0000 | `>95%` | MISSED by 1390h / CRITICAL | false |
+| 9 | Speed 0.4 kn | speed 0.4 kn | — | — | — | unavailable: `UNUSABLE_SPEED` | none / HIGH (planned) | — |
+| 10 | Position exactly 6h old | `now = 2026-10-26T17:00Z` (`a = 6h`) | 5.412 | +2.000 | 0.3559 | `35%` | AVAILABLE 2h / HIGH | false |
+| 11 | Position 6h + 1s old | `now = 2026-10-26T17:00:01Z` | — | — | — | unavailable: `POSITION_OUTDATED` | none / HIGH (planned) | — |
+| 12 | Feeder departure not set | `D` not set | — | — | — | unavailable: `MISSING_FEEDER_DEPARTURE` | none / none | — |
+| 13 | Planned mother arrival not set | planned arrival not set | — | — | — | unavailable: `MISSING_PLANNED_MOTHER_ARRIVAL` | none / none | — |
+| 14 | Both planned times not set | `D` and planned arrival not set | — | — | — | unavailable: `MISSING_PLANNED_MOTHER_ARRIVAL` | none / none | — |
+| 15 | No position | no AIS position | — | — | — | unavailable: `NO_POSITION` | none / HIGH (planned) | — |
+| 16 | Planned window invalid, live margin +12h | `D = 2026-10-28T23:00Z`, planned arrival `2026-10-29T00:00Z` | 5.206 | +12.000 | 0.0106 | `<5%` | AVAILABLE 12h / MEDIUM | true |
+| 17 | `now` exactly at feeder departure | short-distance scenario, planned arrival `2026-10-26T11:00Z`, `D = 2026-10-26T12:00Z` | 2.025 | −1.000 | 0.6892 | `70%` | MISSED by 1h / CRITICAL | false |
+| 18 | `now` 1s after feeder departure | short-distance scenario, planned arrival `2026-10-26T11:00Z`, `D = 2026-10-26T11:59:59Z` | — | — | — | unavailable: `FEEDER_DEPARTURE_PASSED` | MISSED by 1h 0m 1s / CRITICAL | — |
 
 Notes for tests:
 
-- Row 1's raw value underflows to 0 and row 7's rounds to 1 at double
+- Row 1's raw value underflows to 0 and row 8's rounds to 1 at double
   precision; the display still shows `<5%` / `>95%`.
 - Row 4 shows that 50% coincides with the existing `MISSED` "0 seconds" case.
-- Row 13 checks the reason order: the missing feeder departure wins.
-- Row 15 shows that an invalid planned window does not change the probability.
-- A real calculator run will not land on exactly 720 nautical miles unless the
-  position is placed 12° of latitude due south of the port on the same
-  meridian. Compare raw probabilities with a tolerance of 1 × 10⁻³, or test the
-  probability step with a fixed `Â`.
+- Row 7 is the main 0.5-knot example. Row 8 keeps the long-distance 0.5-knot
+  case only as a numeric edge case.
+- Row 14 checks the reason order: the missing planned mother-vessel arrival
+  wins, as in CDG-51.
+- Row 16 shows that an invalid planned window does not change the probability.
+- Rows 17 and 18 check the passed-departure boundary: equal is calculated,
+  strictly later is unavailable. The existing risk is unchanged by this rule.
+- A real calculator run will not land on exactly 720 or 1 nautical miles unless
+  the position is placed 12° or 1′ of latitude due south of the port on the
+  same meridian. Compare raw probabilities with a tolerance of 1 × 10⁻³, or test
+  the probability step with a fixed `Â`.
+
+## Relationship to CDG-201 / CDG-246 / CDG-247
+
+- CDG-42 uses only the AIS-based straight-line estimate. It does not use MPA
+  times. This answers, for CDG-42, the source-precedence question left open in
+  [the replay record](cdg201-readonly-replay.md): AIS is the only input; MPA
+  instants are not used.
+- CDG-201 shows MPA ETA changes read-only. CDG-246 gathers maritime evidence.
+  CDG-247 interprets that evidence and suggests a manual check.
+- These outputs rest on different evidence, so they can disagree, and that is
+  expected. CDG-247 does not override the CDG-42 probability, and the MPA replay
+  is not a validated input to this model.
+- The existing risk level calculation (`ConnectionWindowService`,
+  `ShipmentRisk`) is not affected by CDG-42.
 
 ## Extension seam
 
@@ -209,6 +283,12 @@ fields and the page do not change.
 
 ## Limitations
 
+- This is a statistical model whose parameters are assumptions. It is not a
+  trained model, not machine learning, and not a Monte Carlo simulation. It has
+  not been calibrated: 35% does not mean that 35 of 100 similar past shipments
+  arrived late. The UI must always show the `rough estimate` marker.
+- The event is late arrival relative to `D − T_h`, not a confirmed cargo
+  transshipment failure; with `T_h = 0h` handling time is ignored.
 - The straight-line distance underestimates the real voyage, so the estimate
   is early and the probability is biased low.
 - The normal distribution is symmetric; real delays skew late.
@@ -217,10 +297,14 @@ fields and the page do not change.
 
 ## Open questions
 
-- Should `T_h` stay 0h or use a larger handling time?
-- When the planned feeder departure has already passed and the mother vessel has
-  not arrived, nothing special happens today; the probability follows the model.
-  Does the team want different handling?
+- What value should `T_h` take? It stays 0h as an interim baseline until there
+  is data on handling times.
+
+Resolved:
+
+- Planned feeder departure already passed: the probability is unavailable with
+  `FEEDER_DEPARTURE_PASSED` when `now` is strictly later than `D` (see
+  [Q5](#q5-what-is-shown-when-the-probability-is-unavailable)).
 
 ## Alternatives considered
 
