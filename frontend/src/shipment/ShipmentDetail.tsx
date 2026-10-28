@@ -151,14 +151,17 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
+    // Additive evidence must not take down shipment detail if an optional client is absent or throws.
+    Promise.resolve().then(() => getCdg201ArrivalEvidence(token, shipmentId)).then(found => {
       if (active && requestId === requestSeq.current) setCdg201Evidence(found);
     }).catch(() => {
       // Evidence replay is additive: a replay outage must not block shipment detail.
       if (active && requestId === requestSeq.current) setCdg201Evidence(null);
     });
-    getMaritimeContext(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setMaritimeContext(found);
+    Promise.resolve().then(() => getMaritimeContext(token, shipmentId)).then(found => {
+      if (!active || requestId !== requestSeq.current) return;
+      if (found) setMaritimeContext(found);
+      else setMaritimeContextUnavailable(true);
     }).catch(() => {
       if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
     });
