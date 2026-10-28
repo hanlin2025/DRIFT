@@ -42,8 +42,12 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow,
 		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the planned mother-vessel arrival or the planned feeder-vessel departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Evidence, assumptions, and confidence for the risk on this same read. Calculated when the shipment is read and not stored. Distinct from the contribution list. An unavailable assessment names the missing planned time and does not return a limited confidence.")
+		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
+		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
+		ShipmentRecommendation recommendation,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -66,6 +70,10 @@ public record ShipmentDetailResponse(
 		ShipmentStatus status) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+		ConnectionWindowCalculation calculation = connection.planned();
+		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
+		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
+		ShipmentRisk risk = connection.risk();
 		VesselPosition motherVesselPosition = connection.motherVesselPosition();
 		VesselPosition feederVesselPosition = connection.feederVesselPosition();
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
@@ -73,16 +81,19 @@ public record ShipmentDetailResponse(
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
 				shipment.getMotherVesselOperator(), shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(),
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
-				shipment.getCreatedAt(), shipment.getVersion(), connection.planned().window(), connection.remaining(),
-				connection.risk(),
-				ShipmentRiskContributions.of(connection.planned(), connection.remaining(), connection.arrivalComparison(),
+				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
+				risk,
+				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
+				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
+						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
+				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
-				connection.arrivalComparison(),
+				arrivalComparison,
 				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

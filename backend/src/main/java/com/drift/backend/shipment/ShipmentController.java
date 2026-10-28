@@ -100,6 +100,12 @@ public class ShipmentController {
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
 			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
+			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
+			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
+			+ "The same read returns one recommendation from that connection risk and the impact on this read. "
+			+ "The impact assessment is not returned here, so the recommendation is unavailable and names that reason. "
+			+ "It is not stored. Reading it does not send an alert and does not perform the response. "
+			+ "An archived shipment the viewer can open receives the same recommendation. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
