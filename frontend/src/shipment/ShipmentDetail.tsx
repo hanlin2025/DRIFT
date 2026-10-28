@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationImpact, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
@@ -147,12 +147,16 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
-    }).catch(() => {
-      // Evidence replay is additive: a replay outage must not block shipment detail.
-      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
-    });
+    // Evidence replay is additive. A rejected call, or a call that does not return a
+    // response, must not unmount the shipment the viewer already opened.
+    void Promise.resolve()
+      .then(() => getCdg201ArrivalEvidence(token, shipmentId))
+      .then(found => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(found ?? null);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(null);
+      });
     return () => {
       active = false;
       requestSeq.current += 1;
@@ -238,7 +242,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 24;
 
 function ShipmentSkeleton() {
   return (
@@ -341,12 +345,48 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
       {changeHistory}
     </>
   );
+}
+
+const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
+  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
+  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
+};
+
+function recommendationFact(recommendation: Shipment['recommendation']) {
+  if (!recommendation) return null;
+  const risk = recommendation.riskLevel && recommendation.riskExplanation
+    ? { level: recommendation.riskLevel, explanation: recommendation.riskExplanation }
+    : null;
+  return (
+    <div>
+      <dt>Recommendation</dt>
+      <dd>
+        {recommendation.available ? recommendation.response.label : recommendation.unavailable}
+        <dl className="arrival-comparison">
+          {recommendation.available && <div><dt>Response</dt><dd>{recommendation.response.wording}</dd></div>}
+          {risk && (
+            <div>
+              <dt>Connection risk</dt>
+              <dd><RiskBadge risk={risk} /> {risk.explanation}</dd>
+            </div>
+          )}
+          <div><dt>Impact</dt><dd>{impactOutcome(recommendation.impact)}</dd></div>
+        </dl>
+      </dd>
+    </div>
+  );
+}
+
+function impactOutcome(impact: RecommendationImpact) {
+  if (impact.outcome === 'UNAVAILABLE') return impact.detail;
+  return IMPACT_OUTCOMES[impact.outcome];
 }
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
