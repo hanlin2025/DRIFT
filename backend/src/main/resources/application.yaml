@@ -72,3 +72,5 @@ app:
   maritime-context:
     # CDG-246 is a read-only recorded/synthetic bundle until persistent snapshot adapters are approved.
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}
+    # CDG-248 packaged historical replay; never points at a collector directory or live API.
+    curated-snapshots-enabled: ${MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED:false}
