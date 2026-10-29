@@ -61,6 +61,8 @@ public record ShipmentDetailResponse(
 		ArrivalEstimate arrivalComparison,
 		@Schema(description = "The current linked importer's transshipment-arrival deadline and the port it was confirmed for. Null when that importer has no deadline. applicable is false when the recorded port differs from the shipment's current port.", nullable = true)
 		TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+		@Schema(description = "Comparison of the mother-vessel transshipment-arrival estimate with the current importer's recorded deadline. Calculated when the shipment is read and not stored. outcome is null when the comparison cannot be made. reason is null when it can.")
+		DelayComparison delayComparison,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
@@ -84,6 +86,7 @@ public record ShipmentDetailResponse(
 				ShipmentAisFeed.current(),
 				arrivalComparison,
 				transshipmentArrivalDeadline,
+				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
 				organisation(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

@@ -49,6 +49,10 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.has("risk")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
 		assertThat(listedJson.has("importer")).isFalse();
+		assertThat(listedJson.has("delayComparison")).isFalse();
+		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
+		assertThat(detailJson.get("delayComparison").get("outcome").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
 		assertThat(listedJson.get("updatedByName").asString()).isEqualTo("Ada");
@@ -74,6 +78,8 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
 		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
+		assertThat(detailJson.get("delayComparison").get("deadline").isNull()).isTrue();
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
