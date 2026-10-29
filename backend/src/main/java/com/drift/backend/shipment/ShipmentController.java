@@ -301,6 +301,7 @@ public class ShipmentController {
 			+ "The stored decision replaces any current decision for the shipment and keeps the outcome, the recommendation it was made against, the actor, and the time. "
 			+ "A modification also stores the chosen response, which is another response from the recommendation set. "
 			+ "An unknown shipment is not found. An unavailable recommendation is rejected and stores nothing. "
+			+ "Anyone who can view the shipment may decide, including a linked importer. A company that cannot view it is forbidden, and nothing is stored. "
 			+ "This endpoint does not perform the recommended action and does not send mail.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
@@ -316,6 +317,14 @@ public class ShipmentController {
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Your session has ended. Log in again."}
 								"""))),
+				@ApiResponse(responseCode = "403", description = "Account has no active company, or the company cannot view this shipment", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "No active company", value = """
+										{"message":"Your account must belong to an active company to view shipments"}
+										"""),
+								@ExampleObject(name = "Another company", value = """
+										{"message":"You do not have access to this shipment"}
+										""") })),
 				@ApiResponse(responseCode = "404", description = "No shipment with this id", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment not found"}

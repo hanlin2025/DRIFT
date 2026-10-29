@@ -12,8 +12,11 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.company.Company;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 /**
@@ -29,16 +32,18 @@ class RecommendationDecisionService {
 	private final ShipmentConnectionRisk connectionRisk;
 	private final ShipmentRecommendationImpactSource impacts;
 	private final UserAccountRepository users;
+	private final ShipmentAccessPolicy access;
 	private final Clock clock;
 
 	RecommendationDecisionService(ShipmentRepository shipments, RecommendationDecisionRepository decisions,
 			ShipmentConnectionRisk connectionRisk, ShipmentRecommendationImpactSource impacts,
-			UserAccountRepository users, ObjectProvider<Clock> clocks) {
+			UserAccountRepository users, ShipmentAccessPolicy access, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.decisions = decisions;
 		this.connectionRisk = connectionRisk;
 		this.impacts = impacts;
 		this.users = users;
+		this.access = access;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -53,7 +58,14 @@ class RecommendationDecisionService {
 					"Outcome must be APPROVED, MODIFIED, or DISMISSED"));
 		}
 		UserAccount actor = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		Company company = actor.getCompany();
+		if (company == null || !company.isActive()) {
+			throw new ShipmentAccessForbiddenException();
+		}
 		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		if (!access.canDecide(company, shipment)) {
+			throw new ShipmentDetailForbiddenException();
+		}
 		Instant decidedAt = clock.instant();
 		RecommendationDecision decision = switch (request.outcome()) {
 			case APPROVED -> {

@@ -40,6 +40,8 @@ import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
 import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
+import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -258,6 +260,75 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
 		assertThat(shipmentRow(shipmentId)).isEqualTo(before);
+		assertThat(mailCount(shipmentId)).isZero();
+	}
+
+	@Test
+	void onlyACompanyThatCanViewTheShipmentCanDecide() throws Exception {
+		impacts.use(ShipmentRecommendationImpact.noPredictedImpact());
+		long shipmentId = createShipment();
+		decide(shipmentId, "{\"outcome\":\"APPROVED\"}").andExpect(status().isOk());
+
+		String otherCode = "CDG229-" + UUID.randomUUID().toString().substring(0, 8);
+		jdbc.update("INSERT INTO companies (code, name, active) VALUES (?, ?, true)", otherCode, "Other Logistics");
+		Company other = companies.findByCode(otherCode).orElseThrow();
+		AccountRole forwarder = roles.findByCode(Role.FREIGHT_FORWARDER).orElseThrow();
+		users.saveAndFlush(new UserAccount("Other Company", "decision-other-company@example.test",
+				passwords.encode("Example123"), forwarder, other));
+		String otherToken = tokenFor("decision-other-company@example.test");
+
+		decide(otherToken, shipmentId, "{\"outcome\":\"DISMISSED\"}")
+				.andExpect(status().isForbidden())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
+		detail(otherToken, shipmentId)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
+		decide(otherToken, 9_999_999_999L, "{\"outcome\":\"APPROVED\"}")
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
+
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Unassigned User', ?, ?, id FROM roles WHERE code = ?
+				""", "decision-unassigned@example.test", passwords.encode("Example123"), "FREIGHT_FORWARDER");
+		String unassigned = tokenFor("decision-unassigned@example.test");
+		decide(unassigned, shipmentId, "{\"outcome\":\"DISMISSED\"}")
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ShipmentAccessForbiddenException.MESSAGE));
+
+		detail(shipmentId)
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Decision User"));
+		assertThat(decisionCount(shipmentId)).isEqualTo(1);
+
+		Long importerId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, "STRAITS_FRESH_DEMO");
+		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"importerCompanyId\":" + importerId + "}"))
+				.andExpect(status().isOk());
+		Company importer = companies.findByCode("STRAITS_FRESH_DEMO").orElseThrow();
+		AccountRole importerRole = roles.findByCode(Role.IMPORTER).orElseThrow();
+		users.saveAndFlush(new UserAccount("Linked Importer", "decision-linked-importer@example.test",
+				passwords.encode("Example123"), importerRole, importer));
+		String importerToken = tokenFor("decision-linked-importer@example.test");
+
+		decide(importerToken, shipmentId, "{\"outcome\":\"DISMISSED\"}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.outcome").value("DISMISSED"))
+				.andExpect(jsonPath("$.recommendationName").value("No action"))
+				.andExpect(jsonPath("$.decidedByName").value("Linked Importer"))
+				.andExpect(jsonPath("$.selectedResponseName").value(nullValue()));
+		detail(shipmentId)
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("DISMISSED"))
+				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Linked Importer"))
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
+		detail(importerToken, shipmentId)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("DISMISSED"));
+		assertThat(decisionCount(shipmentId)).isEqualTo(1);
 		assertThat(mailCount(shipmentId)).isZero();
 	}
 
