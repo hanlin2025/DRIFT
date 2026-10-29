@@ -1,6 +1,9 @@
 import { ApiError } from '../signup/api';
+import { RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 import { shipmentFilterSearchParams, type ShipmentFilters } from './shipmentFilters';
 import { type ShipmentFields } from './validation';
+
+export { IMPACT_NOT_RETURNED, RECOMMENDATION_CODES, RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 
 export type ConnectionWindow = {
   duration: string;
@@ -51,6 +54,53 @@ export type RiskContributions = {
   notAssessed: string;
   contributions: [];
 };
+
+export type RecommendationImpact = {
+  outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT';
+  detail: null;
+} | {
+  outcome: 'UNAVAILABLE';
+  detail: string;
+};
+
+export type RecommendedResponse = {
+  code: RecommendationCode;
+  label: string;
+  wording: string;
+};
+
+export type ShipmentRecommendation = {
+  available: true;
+  unavailable: null;
+  response: RecommendedResponse;
+  riskLevel: RiskLevel;
+  riskExplanation: string;
+  impact: Extract<RecommendationImpact, { outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT' }>;
+} | {
+  available: false;
+  unavailable: string;
+  response: null;
+  riskLevel: RiskLevel | null;
+  riskExplanation: string | null;
+  impact: RecommendationImpact;
+};
+
+export type RecommendationDecisionOutcome = 'APPROVED' | 'MODIFIED' | 'DISMISSED';
+
+export type RecommendationDecision = {
+  outcome: RecommendationDecisionOutcome;
+  recommendationName: string;
+  recommendationWording: string;
+  selectedResponseName: string | null;
+  selectedResponseWording: string | null;
+  decidedByUserId: number;
+  decidedByName: string;
+  decidedAt: string;
+};
+
+export type RecommendationDecisionRequest =
+  | { outcome: 'APPROVED' | 'DISMISSED' }
+  | { outcome: 'MODIFIED'; selectedResponse: RecommendationCode };
 
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
@@ -154,6 +204,8 @@ export type Shipment = {
   arrivalComparison: ArrivalComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
+  recommendation?: ShipmentRecommendation | null;
+  recommendationDecision?: RecommendationDecision | null;
 };
 
 export type Cdg201ArrivalEvidence = {
@@ -223,6 +275,24 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
+}
+
+export async function recordRecommendationDecision(
+  token: string,
+  shipmentId: number,
+  request: RecommendationDecisionRequest,
+): Promise<RecommendationDecision> {
+  const body = request.outcome === 'MODIFIED'
+    ? { outcome: request.outcome, selectedResponse: request.selectedResponse }
+    : { outcome: request.outcome };
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/recommendation-decision`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const decision = parseRecommendationDecision(data);
+  if (!decision) throw new ApiError(UNEXPECTED, 502);
+  return decision;
 }
 
 /** Read-only CDG-201 fixture/replay evidence. Null means no replay matches this shipment. */
@@ -528,11 +598,117 @@ function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingC
   };
 }
 
+function isRiskLevel(value: unknown): value is RiskLevel {
+  return RISK_LEVELS.includes(value);
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
-    && RISK_LEVELS.includes(value.level)
+    && isRiskLevel(value.level)
     && typeof value.explanation === 'string'
     && value.explanation.trim().length > 0;
+}
+
+const RECOMMENDATION_FOR: Record<RiskLevel, Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', RecommendationCode>> = {
+  LOW: { AFFECTS_CONSTRAINTS: 'MONITOR_CONSTRAINTS', NO_PREDICTED_IMPACT: 'NO_ACTION' },
+  MEDIUM: { AFFECTS_CONSTRAINTS: 'REVIEW_PLAN', NO_PREDICTED_IMPACT: 'NOTE_TIMING' },
+  HIGH: { AFFECTS_CONSTRAINTS: 'PREPARE_INTERVENTION', NO_PREDICTED_IMPACT: 'WATCH_CONNECTION' },
+  CRITICAL: { AFFECTS_CONSTRAINTS: 'ACT_ON_CONNECTION', NO_PREDICTED_IMPACT: 'CONFIRM_CONNECTION' },
+};
+
+function recommendationOf(value: Record<string, unknown>, risk: ShipmentRisk | null): ShipmentRecommendation | null | undefined {
+  if (!('recommendation' in value) || value.recommendation == null) return null;
+  const recommendation = parseRecommendation(value.recommendation);
+  if (!recommendation) return undefined;
+  if (risk == null) {
+    if (recommendation.riskLevel != null || recommendation.riskExplanation != null) return undefined;
+  } else if (recommendation.riskLevel !== risk.level || recommendation.riskExplanation !== risk.explanation) {
+    return undefined;
+  }
+  return recommendation;
+}
+
+function parseRecommendation(value: unknown): ShipmentRecommendation | undefined {
+  if (!isRecord(value) || typeof value.available !== 'boolean') return undefined;
+  const impact = parseRecommendationImpact(value.impact);
+  if (!impact) return undefined;
+  const riskLevel = value.riskLevel == null ? null : (isRiskLevel(value.riskLevel) ? value.riskLevel : undefined);
+  if (riskLevel === undefined) return undefined;
+  if (value.riskExplanation != null && (typeof value.riskExplanation !== 'string' || value.riskExplanation.trim().length === 0)) {
+    return undefined;
+  }
+  const riskExplanation = typeof value.riskExplanation === 'string' ? value.riskExplanation : null;
+  if (riskLevel == null && riskExplanation != null) return undefined;
+  if (riskLevel != null && riskExplanation == null) return undefined;
+  if (value.available) {
+    if (value.unavailable != null || riskLevel == null || riskExplanation == null || impact.outcome === 'UNAVAILABLE') return undefined;
+    const response = parseRecommendedResponse(value.response);
+    if (!response || response.code !== RECOMMENDATION_FOR[riskLevel][impact.outcome]) return undefined;
+    return { available: true, unavailable: null, response, riskLevel, riskExplanation, impact };
+  }
+  if (typeof value.unavailable !== 'string' || value.unavailable.trim().length === 0 || value.response != null) return undefined;
+  if (riskLevel != null && impact.outcome !== 'UNAVAILABLE') return undefined;
+  return { available: false, unavailable: value.unavailable, response: null, riskLevel, riskExplanation, impact };
+}
+
+function parseRecommendationImpact(value: unknown): RecommendationImpact | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.outcome === 'UNAVAILABLE') {
+    if (typeof value.detail !== 'string' || value.detail.trim().length === 0) return undefined;
+    return { outcome: 'UNAVAILABLE', detail: value.detail };
+  }
+  if (value.outcome !== 'AFFECTS_CONSTRAINTS' && value.outcome !== 'NO_PREDICTED_IMPACT') return undefined;
+  if (value.detail != null) return undefined;
+  return { outcome: value.outcome, detail: null };
+}
+
+function parseRecommendedResponse(value: unknown): RecommendedResponse | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in RECOMMENDATION_RESPONSES)) return undefined;
+  const code = value.code as RecommendationCode;
+  const expected = RECOMMENDATION_RESPONSES[code];
+  if (value.label !== expected.label || value.wording !== expected.wording) return undefined;
+  return { code, label: expected.label, wording: expected.wording };
+}
+
+function recommendationDecisionOf(value: Record<string, unknown>): RecommendationDecision | null | undefined {
+  if (!('recommendationDecision' in value) || value.recommendationDecision == null) return null;
+  return parseRecommendationDecision(value.recommendationDecision);
+}
+
+function parseRecommendationDecision(value: unknown): RecommendationDecision | undefined {
+  if (!isRecord(value)) return undefined;
+  const outcome = value.outcome;
+  if (outcome !== 'APPROVED' && outcome !== 'MODIFIED' && outcome !== 'DISMISSED') return undefined;
+  if (!isPresentText(value.recommendationName) || !isPresentText(value.recommendationWording)) return undefined;
+  if (!isFiniteNumber(value.decidedByUserId) || value.decidedByUserId <= 0) return undefined;
+  if (!isPresentText(value.decidedByName) || !isPresentText(value.decidedAt)) return undefined;
+  const selectedName = value.selectedResponseName;
+  const selectedWording = value.selectedResponseWording;
+  if (outcome === 'MODIFIED') {
+    if (!isPresentText(selectedName) || !isPresentText(selectedWording)) return undefined;
+    if (selectedName.trim() === value.recommendationName.trim()) return undefined;
+    return {
+      outcome,
+      recommendationName: value.recommendationName,
+      recommendationWording: value.recommendationWording,
+      selectedResponseName: selectedName,
+      selectedResponseWording: selectedWording,
+      decidedByUserId: value.decidedByUserId,
+      decidedByName: value.decidedByName,
+      decidedAt: value.decidedAt,
+    };
+  }
+  if (selectedName != null || selectedWording != null) return undefined;
+  return {
+    outcome,
+    recommendationName: value.recommendationName,
+    recommendationWording: value.recommendationWording,
+    selectedResponseName: null,
+    selectedResponseWording: null,
+    decidedByUserId: value.decidedByUserId,
+    decidedByName: value.decidedByName,
+    decidedAt: value.decidedAt,
+  };
 }
 
 const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
@@ -739,6 +915,10 @@ function asShipment(value: unknown): Shipment | null {
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
+  const recommendation = recommendationOf(value, risk ?? null);
+  if (recommendation === undefined) return null;
+  const recommendationDecision = recommendationDecisionOf(value);
+  if (recommendationDecision === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -774,6 +954,8 @@ function asShipment(value: unknown): Shipment | null {
     arrivalComparison,
     updatedAt,
     updatedByName,
+    recommendation,
+    recommendationDecision,
   };
 }
 

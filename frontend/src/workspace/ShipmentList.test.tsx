@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { archiveShipment, getShipment, getShipmentHistory, getShipmentTracking, listShipments, restoreShipment, type Shipment } from '../shipment/api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
@@ -87,6 +87,19 @@ beforeEach(() => {
       feederVessel: null,
       feederVesselNameWarning: null,
     };
+  });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER',
+    vesselName: null,
+    mmsi: null,
+    windowHours: 24,
+    from: '2026-10-04T03:00:00Z',
+    to: '2026-10-05T03:00:00Z',
+    slowdownThresholdKnots: 3,
+    pointLimit: 500,
+    truncated: false,
+    points: [],
   });
 });
 
