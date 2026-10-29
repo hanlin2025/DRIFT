@@ -424,10 +424,14 @@ function isOptionalFiniteNumber(value: unknown): value is number | null {
 
 const AIS_FEED_STATUS: readonly AisFeedStatusName[] = ['LIVE', 'DELAYED', 'OFFLINE'];
 
+function isAisFeedStatus(value: unknown): value is AisFeedStatusName {
+  return AIS_FEED_STATUS.some(status => status === value);
+}
+
 function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undefined {
   if (!('aisFeed' in value) || value.aisFeed == null) return null;
   const feed = value.aisFeed;
-  if (!isRecord(feed) || !AIS_FEED_STATUS.some(status => status === feed.status)) return undefined;
+  if (!isRecord(feed) || !isAisFeedStatus(feed.status)) return undefined;
   if (feed.status === 'OFFLINE') {
     if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
     return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
