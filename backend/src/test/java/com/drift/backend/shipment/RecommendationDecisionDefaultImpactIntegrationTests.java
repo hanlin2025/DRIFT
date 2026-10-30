@@ -87,6 +87,7 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 
 		mvc.perform(get("/api/shipments/" + shipmentId).header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.recommendation.available").value(false))
 				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
 
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM recommendation_decisions WHERE shipment_id = ?",
