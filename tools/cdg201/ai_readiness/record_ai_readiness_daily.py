@@ -17,7 +17,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 BASE = Path(os.environ.get("CDG201_DATA_ROOT", Path.home() / "opt/data/change_detection"))
-TOOLS = BASE / "tools"
+MATURATION_CHECK = Path(__file__).resolve().with_name("run_ai_maturation_check.py")
 OUT = BASE / "analysis/ai_readiness"
 TREND = OUT / "daily_readiness_trend.csv"
 TREND_V2 = OUT / "daily_readiness_trend_v2.csv"
@@ -29,8 +29,13 @@ def utc_now() -> datetime:
 
 
 def run_existing() -> dict:
-    process = subprocess.run([sys.executable, str(TOOLS / "run_ai_maturation_check.py")],
-                             text=True, capture_output=True)
+    if not MATURATION_CHECK.is_file():
+        return {"exit_code": 1, "stdout": "", "stderr": f"Required curated workflow is missing: {MATURATION_CHECK}"}
+    try:
+        process = subprocess.run([sys.executable, str(MATURATION_CHECK)], text=True, capture_output=True,
+                                 env={**os.environ, "CDG201_DATA_ROOT": str(BASE)})
+    except OSError as exc:
+        return {"exit_code": 1, "stdout": "", "stderr": f"Could not start maturation workflow: {exc}"}
     return {"exit_code": process.returncode, "stdout": process.stdout.strip(),
             "stderr": process.stderr.strip()}
 

@@ -16,14 +16,15 @@ from pathlib import Path
 
 
 BASE = Path(os.environ.get("CDG201_DATA_ROOT", Path.home() / "opt/data/change_detection"))
-TOOLS = BASE / "tools"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+CONTEXTUAL_TOOLS = REPOSITORY_ROOT / "tools" / "cdg201" / "contextual"
 OUT = BASE / "analysis/ai_readiness"
 FAILURES = OUT / "workflow_failures"
 
-# These stages intentionally operate on derived artefacts only.  The revision
-# detector must run first: every later stage consumes expected_revisions.csv.
+# These stages intentionally operate on derived artefacts only. The revision
+# detector belongs to CDG-231--233; every stage here consumes its persisted
+# expected_revisions.csv contract.
 WORKFLOW_STAGES = (
-    "detect_mpa_expected_revisions.py",
     "build_eta_ground_truth_candidates.py",
     "build_mpa_nea_inspection_join.py",
     "evaluate_eta_persistence.py",
@@ -33,8 +34,27 @@ WORKFLOW_STAGES = (
 
 
 def run(script: str) -> dict:
-    completed = subprocess.run([sys.executable, str(TOOLS / script)], text=True,
-                               capture_output=True)
+    """Run a curated source script against the configured standalone data root.
+
+    The revision detector deliberately is not invoked here: it belongs to the
+    CDG-231--233 pipeline. A current ``expected_revisions.csv`` is therefore an
+    explicit input contract rather than an accidental call to a machine-local
+    script outside this PR.
+    """
+    path = CONTEXTUAL_TOOLS / script
+    if not path.is_file():
+        return {"script": script, "exit_code": 1, "stdout": "",
+                "stderr": f"Required curated stage is missing: {path}"}
+    arguments = [sys.executable, str(path)]
+    if script == "build_mpa_nea_inspection_join.py":
+        arguments.extend(("--revisions", str(BASE / "analysis/revisions/expected_revisions.csv"),
+                          "--weather-root", str(BASE / "data/external/maritime/raw/nea_weather"),
+                          "--output", str(BASE / "analysis/ai_dataset_readiness")))
+    try:
+        completed = subprocess.run(arguments, text=True, capture_output=True,
+                                   env={**os.environ, "CDG201_DATA_ROOT": str(BASE)})
+    except OSError as exc:
+        return {"script": script, "exit_code": 1, "stdout": "", "stderr": f"Could not start stage: {exc}"}
     return {"script": script, "exit_code": completed.returncode,
             "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
 
@@ -71,7 +91,12 @@ def write_failure(results: list[dict]) -> Path:
 def main() -> None:
     # Order matters: revisions use raw MPA expected snapshots; labels then use
     # refreshed revisions; weather and the baseline consume those refreshed labels.
-    results = run_workflow()
+    revisions = BASE / "analysis/revisions/expected_revisions.csv"
+    if not revisions.is_file():
+        results = [{"script": "expected_revisions.csv", "exit_code": 1, "stdout": "",
+                    "stderr": f"Required CDG-231--233 revision input is missing: {revisions}"}]
+    else:
+        results = run_workflow()
     failed = [result for result in results if result["exit_code"] != 0]
     if failed:
         failure = write_failure(results)

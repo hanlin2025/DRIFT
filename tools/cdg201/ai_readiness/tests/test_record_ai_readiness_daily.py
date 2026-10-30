@@ -1,10 +1,11 @@
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import record_ai_readiness_daily as daily
 from record_ai_readiness_daily import checkpoint_decision, visit_proxies, write_failed_daily_attempt
-from run_ai_maturation_check import WORKFLOW_STAGES, run_workflow
+from run_ai_maturation_check import WORKFLOW_STAGES, run, run_workflow
 
 
 class TestReadinessDecision(unittest.TestCase):
@@ -26,7 +27,7 @@ class TestReadinessDecision(unittest.TestCase):
                 {"eta_imo": "1234567", "eta_location_from": "SEA", "eta_location_to": "P2", "actual_time": "2026-10-27 12:00:00"}]
         self.assertEqual(len(visit_proxies(rows)), 2)
 
-    def test_refreshes_revisions_before_candidates(self):
+    def test_runs_curated_stages_in_dependency_order(self):
         seen = []
         def stage(script):
             seen.append(script)
@@ -36,17 +37,55 @@ class TestReadinessDecision(unittest.TestCase):
             for script in WORKFLOW_STAGES
         ])
         self.assertEqual(seen, list(WORKFLOW_STAGES))
-        self.assertEqual(seen[0], "detect_mpa_expected_revisions.py")
+        self.assertEqual(seen[0], "build_eta_ground_truth_candidates.py")
 
-    def test_failed_revision_refresh_stops_downstream_stages(self):
+    def test_failed_first_stage_stops_downstream_stages(self):
         seen = []
         def stage(script):
             seen.append(script)
-            return {"script": script, "exit_code": 1 if script == "detect_mpa_expected_revisions.py" else 0,
+            return {"script": script, "exit_code": 1 if script == "build_eta_ground_truth_candidates.py" else 0,
                     "stdout": "", "stderr": ""}
         results = run_workflow(stage)
         self.assertEqual(len(results), 1)
-        self.assertEqual(seen, ["detect_mpa_expected_revisions.py"])
+        self.assertEqual(seen, ["build_eta_ground_truth_candidates.py"])
+
+    def test_missing_curated_stage_becomes_a_failure_result(self):
+        import run_ai_maturation_check as workflow
+        original = workflow.CONTEXTUAL_TOOLS
+        try:
+            workflow.CONTEXTUAL_TOOLS = Path("/definitely-missing")
+            result = run("build_eta_ground_truth_candidates.py")
+            self.assertEqual(result["exit_code"], 1)
+            self.assertIn("Required curated stage is missing", result["stderr"])
+        finally:
+            workflow.CONTEXTUAL_TOOLS = original
+
+    def test_weather_join_receives_its_required_curated_arguments(self):
+        import run_ai_maturation_check as workflow
+        class Completed:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+        with patch.object(workflow, "subprocess") as process:
+            process.run.return_value = Completed()
+            result = workflow.run("build_mpa_nea_inspection_join.py")
+        self.assertEqual(result["exit_code"], 0)
+        command = process.run.call_args.args[0]
+        self.assertIn("--revisions", command)
+        self.assertIn("--weather-root", command)
+        self.assertIn("--output", command)
+        self.assertIn(str(workflow.CONTEXTUAL_TOOLS / "build_mpa_nea_inspection_join.py"), command)
+
+    def test_daily_snapshot_invokes_the_curated_workflow_file(self):
+        class Completed:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+        with patch.object(daily, "subprocess") as process:
+            process.run.return_value = Completed()
+            result = daily.run_existing()
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(process.run.call_args.args[0][1], str(daily.MATURATION_CHECK))
 
     def test_legacy_trend_schema_starts_versioned_trend(self):
         with TemporaryDirectory() as directory:
