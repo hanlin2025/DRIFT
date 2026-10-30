@@ -55,7 +55,7 @@ class CuratedMaritimeEvidenceAdapter implements MaritimeEvidenceSourceAdapter {
 			String locationCompatibility, String collectionLabel, String limitation) {
 		MaritimeEvidence toEvidence() { return new MaritimeEvidence(sourceType, sourceMode, evidenceId, title,
 				sourceIdentifier, "", citation, sourceEventAt, observedAt, retrievedAtUtc, freshness,
-				previousValue, currentValue, changeMagnitude, "UNKNOWN", locationCompatibility, "COMPATIBLE",
+				previousValue, currentValue, changeMagnitude, "UNKNOWN", locationCompatibility, "UNKNOWN",
 				"UNKNOWN", true, true, "UNVERIFIED_IMO_ONLY", limitation); }
 	}
 }

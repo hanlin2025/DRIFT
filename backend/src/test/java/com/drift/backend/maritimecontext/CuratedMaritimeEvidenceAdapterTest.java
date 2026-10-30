@@ -22,6 +22,7 @@ class CuratedMaritimeEvidenceAdapterTest {
 		assertThat(evidence).allSatisfy(item -> {
 			assertThat(item.sourceMode()).isEqualTo("RETROSPECTIVE_ANALYSIS");
 			assertThat(item.shipmentAssociationConfidence()).isEqualTo("UNVERIFIED_IMO_ONLY");
+			assertThat(item.timeCompatibility()).isEqualTo("UNKNOWN");
 			assertThat(item.humanReviewRequired()).isTrue();
 		});
 	}
