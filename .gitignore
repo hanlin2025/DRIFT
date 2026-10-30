@@ -21,6 +21,10 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Python runtime artefacts
+__pycache__/
+*.py[cod]
+
 # Log file
 *.log
 
@@ -47,3 +51,6 @@ replay_pid*
 .commit-prep/
 frontend/test-results/
 frontend/playwright-report/
+
+# Private/retrieved maritime-notice evidence; source tools and synthetic tests are tracked.
+var/maritime-notices/

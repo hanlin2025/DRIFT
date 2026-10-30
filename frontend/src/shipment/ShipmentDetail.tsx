@@ -161,8 +161,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       .catch(() => {
         if (active && requestId === requestSeq.current) setCdg201Evidence(null);
       });
-    // Maritime Context is independently additive: it uses the same guarded promise boundary
-    // so an unavailable optional client never prevents shipment detail or recommendations rendering.
+    // Maritime Context is likewise additive. Keep shipment detail available if its
+    // optional client throws synchronously, returns no promise, or rejects; shipment
+    // detail and its recommendation remain available.
     void Promise.resolve()
       .then(() => getMaritimeContext(token, shipmentId))
       .then(found => {
