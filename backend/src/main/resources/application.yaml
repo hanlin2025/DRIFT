@@ -59,6 +59,8 @@ app:
       dispatch-enabled: ${RISK_ALERTS_DISPATCH_ENABLED:false}
       poll-interval: ${RISK_ALERTS_POLL_INTERVAL:1m}
       batch-size: ${RISK_ALERTS_BATCH_SIZE:50}
+  recommendation:
+    impact-outcome: ${DRIFT_RECOMMENDATION_IMPACT_OUTCOME:NOT_RETURNED}
   ais:
     enabled: ${AIS_ENABLED:false}
     stream-uri: wss://stream.aisstream.io/v0/stream

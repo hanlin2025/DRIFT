@@ -1488,6 +1488,7 @@ describe('recommendation decision on the shipment page', () => {
     const panel = await screen.findByRole('article', { name: 'Recommendation' });
     expect(within(panel).getByRole('heading', { name: 'No action' })).toBeInTheDocument();
     expect(panel).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+    expect(within(panel).getByText("Does not affect the importer's constraints")).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: 'Modify' })).toBeDisabled();
@@ -1546,6 +1547,8 @@ describe('recommendation decision on the shipment page', () => {
     const panel = screen.getByRole('article', { name: 'Recommendation' });
     expect(within(panel).getByRole('heading', { name: 'No action' })).toBeInTheDocument();
     expect(panel).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+    expect(within(panel).getByText("Does not affect the importer's constraints")).toBeInTheDocument();
+    expect(screen.getByText(shipment.risk!.explanation)).toBeInTheDocument();
     expect(within(panel).getByRole('region', { name: 'Current decision' })).toHaveTextContent('The recommendation was set aside');
   });
 
