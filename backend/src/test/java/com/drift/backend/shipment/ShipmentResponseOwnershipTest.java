@@ -52,6 +52,10 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.has("riskContributions")).isFalse();
 		assertThat(listedJson.has("recommendation")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
+		assertThat(listedJson.has("delayComparison")).isFalse();
+		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
+		assertThat(detailJson.get("delayComparison").get("outcome").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
 		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
 		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
 				.isEqualTo("Planned connection window");
@@ -113,6 +117,8 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
 		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
+		assertThat(detailJson.get("delayComparison").get("deadline").isNull()).isTrue();
 		assertThat(detailJson.has("assessmentExplanation")).isTrue();
 		assertThat(detailJson.has("riskContributions")).isTrue();
 		assertThat(detailJson.has("recommendation")).isTrue();
