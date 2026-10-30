@@ -23,6 +23,7 @@
     "test:e2e:vessel-details": "node ../scripts/run-vessel-details.mjs",
     "test:e2e:arrival-comparison": "node ../scripts/run-arrival-comparison.mjs",
     "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
+    "test:e2e:assessment-explanation": "node ../scripts/run-assessment-explanation.mjs",
     "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs"
   },
   "dependencies": {

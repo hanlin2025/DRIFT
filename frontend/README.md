@@ -260,3 +260,37 @@ That command runs `scripts/run-arrival-comparison.mjs`, which creates and uses i
 `drift_cdg152_browser_*` database. SQL uses Docker Compose when it is available and `psql` on
 `127.0.0.1` otherwise. The spec uses the path the runner selected. It covers desktop and mobile.
 The runner leaves the database in place. `npm run test:e2e` does not run this spec.
+
+### Assessment explanation
+
+`e2e/assessment-explanation.spec.ts` opens a shipment and checks the evidence, assumptions, and
+confidence returned with the live detail. A usable remaining window keeps the existing risk with
+those three labels. A limited confidence shows that wording with the evidence and assumptions,
+and does not show an unavailable explanation. A missing planned feeder departure names that
+reason and does not show a limited confidence. A linked importer sees the same three as the
+owning company. Another company receives 403 and the Access denied page, with none of the three
+and without the shipment reference.
+
+From `frontend/`, with PostgreSQL accepting connections and ports 8080 and 5173 free:
+
+```bash
+npx playwright install chromium
+npm run test:e2e:assessment-explanation
+```
+
+That command runs `scripts/run-assessment-explanation.mjs`, which creates and uses its own
+`drift_cdg226_browser_*` database. SQL uses Docker Compose when it is available and `psql` on
+`127.0.0.1` otherwise. The spec uses the path the runner selected. It covers the five desktop
+scenarios; the mobile project skips them. After the backend it started has stopped, the runner
+drops that database when the ownership comment still matches the token recorded at creation.
+It never drops `drift`, `drift_test`, `postgres`, `template0`, or `template1`.
+
+A database left from an earlier run, or one this runner refused to drop, stays until it is
+removed by its exact name:
+
+```bash
+docker compose exec -T postgres psql -h 127.0.0.1 -p 5432 -U drift -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE drift_cdg226_browser_<timestamp>_<hex> WITH (FORCE)"
+```
+
+Drop only a name matching `drift_cdg226_browser_` plus 14 digits, an underscore, and 12 hex
+characters. `npm run test:e2e` does not run this spec.
