@@ -27,6 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.access.RolePermissionFilter;
@@ -144,6 +145,82 @@ class ShipmentVisibilityIntegrationTests {
 				.andExpect(jsonPath("$.shipmentReference").value("HBL-CDG123-UPDATED"));
 	}
 
+	@Test
+	void riskSortAndAtRiskFilterNeverIncludeAnotherCompanysShipments() throws Exception {
+		// Fresh companies, so each viewer's list holds only these shipments and the exact order can be asserted.
+		String ownToken = tokenFor(account("FREIGHT_FORWARDER", createCompany()));
+		Long linkedImporterId = createCompany();
+		String linkedImporterToken = tokenFor(account("IMPORTER", linkedImporterId));
+		String rivalToken = tokenFor(account("FREIGHT_FORWARDER", createCompany()));
+		String otherToken = tokenFor(account("IMPORTER", createCompany()));
+
+		// Mother arrives 09:30; the feeder departure sets the risk and breaks ties within a level.
+		create(ownToken, "HBL-CDG189-OWN-HIGH");
+		Long ownLateId = create(ownToken, "HBL-CDG189-OWN-HIGH-LATE");
+		reschedule(ownLateId, "2026-10-10T18:00:00+08:00");
+		Long ownMediumId = create(ownToken, "HBL-CDG189-OWN-MEDIUM");
+		reschedule(ownMediumId, "2026-10-11T03:30:00+08:00");
+		link(ownLateId, linkedImporterId);
+		link(ownMediumId, linkedImporterId);
+		create(rivalToken, "HBL-CDG189-RIVAL-HIGH");
+		Long rivalLinkedId = create(rivalToken, "HBL-CDG189-RIVAL-LINKED-HIGH");
+		reschedule(rivalLinkedId, "2026-10-10T12:30:00+08:00");
+		link(rivalLinkedId, linkedImporterId);
+
+		list(ownToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-OWN-HIGH", "HBL-CDG189-OWN-HIGH-LATE", "HBL-CDG189-OWN-MEDIUM"));
+		list(ownToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-OWN-HIGH", "HBL-CDG189-OWN-HIGH-LATE"));
+
+		list(rivalToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-RIVAL-LINKED-HIGH", "HBL-CDG189-RIVAL-HIGH"));
+		list(rivalToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-RIVAL-LINKED-HIGH", "HBL-CDG189-RIVAL-HIGH"));
+
+		list(linkedImporterToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-RIVAL-LINKED-HIGH", "HBL-CDG189-OWN-HIGH-LATE",
+						"HBL-CDG189-OWN-MEDIUM"));
+		list(linkedImporterToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(references("HBL-CDG189-RIVAL-LINKED-HIGH", "HBL-CDG189-OWN-HIGH-LATE"));
+
+		list(otherToken, "sort", "risk").andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+		list(otherToken, "sort", "risk", "atRisk", "true").andExpect(status().isOk())
+				.andExpect(jsonPath("$").isEmpty());
+	}
+
+	@Test
+	void listedRiskMatchesTheShipmentDetailRiskForEachViewer() throws Exception {
+		Long highId = create(forwarderToken, "HBL-CDG189-HIGH");
+		Long mediumId = create(forwarderToken, "HBL-CDG189-MEDIUM");
+		Long lowId = create(forwarderToken, "HBL-CDG189-LOW");
+		reschedule(mediumId, "2026-10-11T03:30:00+08:00");
+		reschedule(lowId, "2026-10-12T09:30:00+08:00");
+		for (Long shipmentId : java.util.List.of(highId, mediumId, lowId)) {
+			link(shipmentId, importerCompanyId);
+		}
+
+		for (String token : java.util.List.of(forwarderToken, importerToken)) {
+			String listed = list(token, "sort", "risk").andExpect(status().isOk())
+					.andReturn().getResponse().getContentAsString();
+			for (Long shipmentId : java.util.List.of(highId, mediumId, lowId)) {
+				String detail = read(token, shipmentId).andExpect(status().isOk())
+						.andReturn().getResponse().getContentAsString();
+				String item = "$[?(@.id == %d)]".formatted(shipmentId);
+				assertThat((java.util.List<Object>) JsonPath.read(listed, item + ".risk.level"))
+						.containsExactly((Object) JsonPath.read(detail, "$.risk.level"));
+				assertThat((java.util.List<Object>) JsonPath.read(listed, item + ".risk.explanation"))
+						.containsExactly((Object) JsonPath.read(detail, "$.risk.explanation"));
+				assertThat((java.util.List<Object>) JsonPath.read(listed, item + ".importer.id"))
+						.containsExactly((Object) JsonPath.read(detail, "$.importer.id"));
+			}
+		}
+		String detail = read(forwarderToken, mediumId).andReturn().getResponse().getContentAsString();
+		assertThat((String) JsonPath.read(detail, "$.risk.level")).isEqualTo("MEDIUM");
+		detail = read(forwarderToken, lowId).andReturn().getResponse().getContentAsString();
+		assertThat((String) JsonPath.read(detail, "$.risk.level")).isEqualTo("LOW");
+	}
+
 	private static int indexOf(java.util.List<String> names, Class<?> type) {
 		for (int i = 0; i < names.size(); i++) {
 			if (names.get(i).contains(type.getName())) {
@@ -153,8 +230,17 @@ class ShipmentVisibilityIntegrationTests {
 		return -1;
 	}
 
-	private org.springframework.test.web.servlet.ResultActions list(String token) throws Exception {
-		return mvc.perform(get("/api/shipments").header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+	private org.springframework.test.web.servlet.ResultActions list(String token, String... parameters) throws Exception {
+		MockHttpServletRequestBuilder request = get("/api/shipments").header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+		for (int index = 0; index < parameters.length; index += 2) {
+			request.param(parameters[index], parameters[index + 1]);
+		}
+		return mvc.perform(request);
+	}
+
+	/** The listed shipment references, exactly and in this order. */
+	private static org.springframework.test.web.servlet.ResultMatcher references(String... references) {
+		return jsonPath("$[*].shipmentReference").value(org.hamcrest.Matchers.contains(references));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions read(String token, Long shipmentId) throws Exception {
@@ -215,6 +301,13 @@ class ShipmentVisibilityIntegrationTests {
 	private void link(Long shipmentId, Long importerId) {
 		entityManager.clear();
 		jdbc.update("UPDATE shipments SET importer_company_id = ? WHERE id = ?", importerId, shipmentId);
+		entityManager.clear();
+	}
+
+	private void reschedule(Long shipmentId, String plannedFeederDepartureAt) {
+		entityManager.clear();
+		jdbc.update("UPDATE shipments SET planned_feeder_departure_at = ? WHERE id = ?",
+				java.time.OffsetDateTime.parse(plannedFeederDepartureAt), shipmentId);
 		entityManager.clear();
 	}
 
