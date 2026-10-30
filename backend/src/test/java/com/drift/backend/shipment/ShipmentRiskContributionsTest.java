@@ -159,7 +159,7 @@ class ShipmentRiskContributionsTest {
 				.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> ShipmentRiskContributions.of(planned(Duration.ofHours(6)), null, null, PLANNED,
 				PLANNED.plusHours(6))).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new ShipmentRiskContributions(false, "Connection risk is not assessed.", 
+		assertThatThrownBy(() -> new ShipmentRiskContributions(false, "Connection risk is not assessed.",
 				java.util.List.of(ShipmentRiskContribution.window(ShipmentRiskContributions.REMAINING_WINDOW))))
 				.isInstanceOf(IllegalArgumentException.class);
 	}

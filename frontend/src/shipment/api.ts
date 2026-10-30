@@ -28,6 +28,9 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type MaritimeNoticeEvidence = { noticeId: string; title: string; officialSourceUrl: string; citation: string; publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null; supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN'; evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; activityEvidence: string[]; locationEvidence: string[]; limitation: string; };
+export type MaritimeContext = { enabled: boolean; sourceMode: 'DISABLED' | 'SYNTHETIC_DEMONSTRATION'; shipmentAssociationConfidence: string; limitation: string; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
   | 'REMAINING_DURATION'
@@ -274,6 +277,13 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
   const evidence = asCdg201ArrivalEvidence(data.evidence);
   if (!evidence) throw new ApiError(UNEXPECTED, 502);
   return evidence;
+}
+
+export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
+  if (!isRecord(data) || typeof data.enabled !== 'boolean' || (data.sourceMode !== 'DISABLED' && data.sourceMode !== 'SYNTHETIC_DEMONSTRATION') || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
+  const notices = data.notices as MaritimeNoticeEvidence[];
+  return { enabled: data.enabled, sourceMode: data.sourceMode, shipmentAssociationConfidence: data.shipmentAssociationConfidence, limitation: data.limitation, notices, aiExplanation: null, suggestedActions: null };
 }
 
 export type ShipmentTracking = {
