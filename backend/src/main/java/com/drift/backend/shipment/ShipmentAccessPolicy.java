@@ -27,4 +27,16 @@ public class ShipmentAccessPolicy {
 	public boolean canEdit(Company activeCompany, Shipment shipment) {
 		return activeCompany.getId().equals(shipment.getCompany().getId());
 	}
+
+	/**
+	 * Anyone who can view the shipment may approve, modify, or dismiss.
+	 * The managing company and a linked importer may both decide.
+	 */
+	public boolean canDecide(Company activeCompany, Shipment shipment) {
+		return canView(activeCompany, shipment);
+	}
+
+	public boolean canDecide(Long activeCompanyId, Long managingCompanyId, Long importerCompanyId) {
+		return canView(activeCompanyId, managingCompanyId, importerCompanyId);
+	}
 }

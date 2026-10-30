@@ -57,6 +57,8 @@ class OpenApiIntegrationTests {
 						.value("Record the current recommendation decision"))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/recommendation-decision'].patch.security[0].bearerAuth")
 						.exists())
+				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/recommendation-decision'].patch.responses['403'].content['application/json'].examples['Another company'].value.message")
+						.value(ShipmentDetailForbiddenException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/recommendation-decision'].patch.responses['404']")
 						.exists())
 				.andExpect(jsonPath("$.paths['/api/shipments/{shipmentId}/recommendation-decision'].patch.responses['409']")
