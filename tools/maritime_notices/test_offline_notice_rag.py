@@ -86,5 +86,25 @@ class OfflineNoticeRagTests(unittest.TestCase):
             empty = root / 'empty.pdf'; empty.write_bytes(b'')
             self.assertFalse(rag.extract(empty, 'https://example.invalid', 'empty', root / 'index')['ok'])
 
+    def test_validation_rejects_incompatible_candidate_and_keeps_citation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory)
+            record = {'document_id': 'synthetic', 'source_url': 'https://example.invalid/notice', 'pages': [{'page': 1, 'text': 'DREDGING WORKS AT GUL BASIN'}], 'facts': {'scope': 'Mariners near Gul Basin', 'effective_period': 'With effect from 14 Apr 2099 to 13 Oct 2099.', 'fact_pages': {'scope': [1]}}}
+            (index / 'n.json').write_text(json.dumps(record))
+            rejected = rag.query(index, 'bulk carrier anchoring at Gul Basin')
+            self.assertTrue(rejected['abstain'])
+            supported = rag.query(index, 'Gul Basin dredging on 2099-06-01')
+            self.assertEqual(supported['results'][0]['citations'][0]['page'], 1)
+            self.assertEqual(supported['results'][0]['compatibility']['criteria']['location'], 'COMPATIBLE')
+
+    def test_rejects_are_filtered_before_result_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory)
+            for number in range(5):
+                (index / f'reject-{number}.json').write_text(json.dumps({'document_id': f'reject-{number}', 'source_url': 'https://example.invalid', 'pages': [{'page': 1, 'text': 'bulk carrier anchoring at Gul Basin'}], 'facts': {'scope': 'Gul Basin'}}))
+            (index / 'candidate.json').write_text(json.dumps({'document_id': 'candidate', 'source_url': 'https://example.invalid', 'pages': [{'page': 1, 'text': 'dredging at Gul Basin'}], 'facts': {'scope': 'Gul Basin'}}))
+            result = rag.query(index, 'Gul Basin dredging', limit=1)
+            self.assertEqual([hit['document_id'] for hit in result['results']], ['candidate'])
+
 if __name__ == '__main__':
     unittest.main()
