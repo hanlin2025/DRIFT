@@ -308,7 +308,11 @@ class RecommendationDecisionApiIntegrationTests {
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"importerCompanyId\":" + importerId + "}"))
-				.andExpect(status().isOk());
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Decision User"));
+		assertThat(decisionCount(shipmentId)).isEqualTo(1);
 		Company importer = companies.findByCode("STRAITS_FRESH_DEMO").orElseThrow();
 		AccountRole importerRole = roles.findByCode(Role.IMPORTER).orElseThrow();
 		users.saveAndFlush(new UserAccount("Linked Importer", "decision-linked-importer@example.test",
@@ -465,7 +469,10 @@ class RecommendationDecisionApiIntegrationTests {
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"importerCompanyId\":" + importerId + "}"))
-				.andExpect(status().isOk());
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
+		assertThat(decisionCount(shipmentId)).isEqualTo(1);
 
 		Company importer = companies.findByCode("STRAITS_FRESH_DEMO").orElseThrow();
 		AccountRole importerRole = roles.findByCode(Role.IMPORTER).orElseThrow();

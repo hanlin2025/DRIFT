@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -29,6 +30,7 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
+import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
@@ -56,7 +58,7 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 	}
 
 	@Test
-	void theNormalImpactSourceRecordsAnApproval() throws Exception {
+	void theNormalImpactSourceRefusesADecisionAndStoresNothing() throws Exception {
 		MvcResult created = mvc.perform(post("/api/shipments")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -75,25 +77,20 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 				.andExpect(status().isCreated())
 				.andReturn();
 		long shipmentId = ((Number) JsonPath.read(created.getResponse().getContentAsString(), "$.id")).longValue();
-		String noAction = ShipmentRecommendedResponse.Code.NO_ACTION.wording();
 
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/recommendation-decision")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"outcome\":\"APPROVED\"}"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.outcome").value("APPROVED"))
-				.andExpect(jsonPath("$.recommendationName").value("No action"))
-				.andExpect(jsonPath("$.recommendationWording").value(noAction));
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(RecommendationDecisionRejectedException.UNAVAILABLE));
 
 		mvc.perform(get("/api/shipments/" + shipmentId).header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
-				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
-				.andExpect(jsonPath("$.recommendationDecision.recommendationWording").value(noAction));
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
 
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM recommendation_decisions WHERE shipment_id = ?",
-				Integer.class, shipmentId)).isEqualTo(1);
+				Integer.class, shipmentId)).isZero();
 	}
 
 	private String tokenFor(String email) throws Exception {

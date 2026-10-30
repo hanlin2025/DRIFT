@@ -27,15 +27,18 @@ public class ShipmentLinkService {
 	private final UserAccountRepository users;
 	private final CompanyRepository companies;
 	private final ShipmentConnectionRisk connectionRisk;
+	private final RecommendationDecisionService decisions;
 	private final EntityManager entityManager;
 	private final ShipmentHistoryRecorder history;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ShipmentConnectionRisk connectionRisk, EntityManager entityManager, ShipmentHistoryRecorder history) {
+			ShipmentConnectionRisk connectionRisk, RecommendationDecisionService decisions, EntityManager entityManager,
+			ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
 		this.connectionRisk = connectionRisk;
+		this.decisions = decisions;
 		this.entityManager = entityManager;
 		this.history = history;
 	}
@@ -92,6 +95,7 @@ public class ShipmentLinkService {
 	private ShipmentDetailResponse detail(Shipment shipment) {
 		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
 		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
-				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison());
+				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison(),
+				decisions.current(shipment.getId()));
 	}
 }
