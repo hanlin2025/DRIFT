@@ -19,6 +19,9 @@ class ShipmentAccessPolicyTest {
 		assertThat(policy.canView(20L, 10L, 20L)).isTrue();
 		assertThat(policy.canView(30L, 10L, 20L)).isFalse();
 		assertThat(policy.canView(30L, 10L, null)).isFalse();
+		assertThat(policy.canDecide(10L, 10L, null)).isTrue();
+		assertThat(policy.canDecide(20L, 10L, 20L)).isTrue();
+		assertThat(policy.canDecide(30L, 10L, 20L)).isFalse();
 	}
 
 	@Test
@@ -33,10 +36,15 @@ class ShipmentAccessPolicyTest {
 		assertThat(policy.canView(managing, shipment)).isTrue();
 		assertThat(policy.canView(importer, shipment)).isTrue();
 		assertThat(policy.canView(other, shipment)).isFalse();
+		assertThat(policy.canDecide(managing, shipment)).isTrue();
+		assertThat(policy.canDecide(importer, shipment)).isTrue();
+		assertThat(policy.canDecide(other, shipment)).isFalse();
 
 		when(shipment.getImporterCompany()).thenReturn(null);
 		assertThat(policy.canView(managing, shipment)).isTrue();
 		assertThat(policy.canView(importer, shipment)).isFalse();
+		assertThat(policy.canDecide(managing, shipment)).isTrue();
+		assertThat(policy.canDecide(importer, shipment)).isFalse();
 	}
 
 	private static Company company(Long id) {

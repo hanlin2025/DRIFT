@@ -5,7 +5,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentHistory, getShipmentTracking, listShipments, type Shipment } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, listShipments, type Shipment } from './api';
 import { STALE_NOTICE } from './positionNotice';
 import { RouteMap } from './RouteMap';
 
@@ -85,6 +85,7 @@ beforeEach(() => {
     feederVessel: null,
     feederVesselNameWarning: null,
   });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
 });
 
 describe('map permission and missing position', () => {
@@ -94,6 +95,8 @@ describe('map permission and missing position', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Your account must belong to an active company to view shipments');
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Recommendation')).not.toBeInTheDocument();
+    expect(screen.queryByText('No action')).not.toBeInTheDocument();
   });
 
   it('hides the map when tracking is forbidden', async () => {
