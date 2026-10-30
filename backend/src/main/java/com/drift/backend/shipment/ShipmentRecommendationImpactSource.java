@@ -4,12 +4,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * The impact the current shipment read uses when it chooses a recommendation.
- * That read has not returned an assessment yet, so a decision against it is unavailable.
+ * Until a stored impact assessment is returned, the production read treats the
+ * prediction as having no predicted effect on the importer's constraints.
  */
 @Component
 class ShipmentRecommendationImpactSource {
 
 	ShipmentRecommendationImpact current() {
-		return ShipmentRecommendationImpact.notReturned();
+		return ShipmentRecommendationImpact.noPredictedImpact();
 	}
 }
