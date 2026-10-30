@@ -9,6 +9,7 @@ import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
+import { TransshipmentArrivalDeadlineFact } from './TransshipmentArrivalDeadline';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
 import { VesselPanel } from './VesselPanel';
@@ -21,12 +22,13 @@ const NOT_FOUND = 'Shipment not found or has been removed.';
 
 type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
 
-export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, archive }: {
+export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, viewerCompanyId = null, archive }: {
   token: string;
   shipmentId: string;
   basePath: string;
   onSessionEnded: () => void;
   canEdit?: boolean;
+  viewerCompanyId?: number | null;
   archive?: ShipmentArchive;
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
@@ -45,7 +47,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [historyFailed, setHistoryFailed] = useState(false);
   const [cdg201Evidence, setCdg201Evidence] = useState<Cdg201ArrivalEvidence | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
+  const refreshNonce = useRef(0);
 
   const reloadHistory = useCallback(async () => {
     const requestId = ++historySeq.current;
@@ -72,7 +76,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     }
   }, [token, shipmentId, trackVessel, trackHours, onSessionEnded]);
 
-  const reloadTracking = useCallback(async () => {
+  const reloadTracking = useCallback(async (mode: 'background' | 'explicit' = 'background') => {
     const requestId = ++requestSeq.current;
     setRefreshing(true);
     const shipmentRequest = getShipment(token, shipmentId).then(
@@ -96,7 +100,12 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: forbidden.message });
         return;
       }
-      if (shipmentOutcome.ok) setShipment(shipmentOutcome.found);
+      if (shipmentOutcome.ok) {
+        setShipment(shipmentOutcome.found);
+        if (mode === 'explicit') {
+          setPortCapture({ nonce: ++refreshNonce.current, port: shipmentOutcome.found.transshipmentPort });
+        }
+      }
       if (trackingOutcome.ok) setTracking(trackingOutcome.found);
       if (!trackingOutcome.ok) setRefreshNote(REFRESH_NOTE);
       else if (!shipmentOutcome.ok) setRefreshNote(DETAIL_REFRESH_NOTE);
@@ -166,7 +175,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const shipmentLoaded = shipment !== null;
   useEffect(() => {
     if (problem || !shipmentLoaded) return;
-    const timer = window.setInterval(() => { void reloadTracking(); }, TRACKING_POLL_MS);
+    const timer = window.setInterval(() => { void reloadTracking('background'); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
   }, [problem, shipmentLoaded, reloadTracking]);
 
@@ -205,7 +214,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                 }} />
             : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
-                  void reloadTracking();
+                  void reloadTracking('explicit');
                   void reloadHistory();
                   setRefreshCount(value => value + 1);
                 }}
@@ -226,6 +235,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                     onSelectPoint={setSelectedId} />
                 )}
                 history={history} selectedId={selectedId} onSelectPoint={setSelectedId}
+                viewerCompanyId={viewerCompanyId} token={token} onSessionEnded={onSessionEnded}
+                portCapture={portCapture} onExplicitRefresh={() => { void reloadTracking('explicit'); }}
+                onShipment={setShipment}
                 changeHistory={<ShipmentChangeHistory token={token} shipmentId={shipmentId} reloadKey={attempt + refreshCount} onSessionEnded={onSessionEnded} />} />}
     </section>
   );
@@ -265,7 +277,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
@@ -279,6 +291,12 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
   history: VesselTrack | null;
   selectedId: number | null;
   onSelectPoint: (id: number) => void;
+  viewerCompanyId: number | null;
+  token: string;
+  onSessionEnded: () => void;
+  portCapture: { nonce: number; port: string } | null;
+  onExplicitRefresh: () => void;
+  onShipment: (shipment: Shipment) => void;
   changeHistory: ReactNode;
 }) {
   const remaining = remainingWindowFact(shipment);
@@ -319,6 +337,8 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
             {shipment.arrivalComparison && <ArrivalComparisonFacts comparison={shipment.arrivalComparison} />}
           </div>
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
+          <TransshipmentArrivalDeadlineFact shipment={shipment} viewerCompanyId={viewerCompanyId} token={token}
+            onSessionEnded={onSessionEnded} onShipment={onShipment} portCapture={portCapture} onExplicitRefresh={onExplicitRefresh} />
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
           <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
           <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
