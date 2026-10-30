@@ -238,7 +238,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 23;
 
 function ShipmentSkeleton() {
   return (
@@ -341,11 +341,38 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          {lateArrivalChanceFact(shipment.lateArrivalChance)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
       {changeHistory}
     </>
+  );
+}
+
+// Neutral wording on purpose: this is an uncalibrated chance, not a risk level, so it has no badge or colour.
+function lateArrivalChanceFact(chance: Shipment['lateArrivalChance']) {
+  if (!chance) return null;
+  if (!chance.available) {
+    return (
+      <div>
+        <dt>Chance of arriving after feeder departure</dt>
+        <dd className="is-missing">{chance.unavailableReason.message}</dd>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <dt>Chance of arriving after feeder departure</dt>
+      <dd>
+        {`${chance.display} · rough estimate`}
+        <dl className="arrival-comparison">
+          <div><dt>Estimated arrival used</dt><dd><time dateTime={chance.arrivalUsed}>{formatWhen(chance.arrivalUsed)}</time></dd></div>
+          <div><dt>Planned feeder departure used</dt><dd><time dateTime={chance.plannedFeederDepartureUsed}>{formatWhen(chance.plannedFeederDepartureUsed)}</time></dd></div>
+          {chance.plannedWindowInvalid && <div><dt>Note</dt><dd>The planned feeder departure is at or before the planned mother-vessel arrival.</dd></div>}
+        </dl>
+      </dd>
+    </div>
   );
 }
 
