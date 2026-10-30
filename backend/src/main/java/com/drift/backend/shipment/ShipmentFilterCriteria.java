@@ -8,7 +8,8 @@ public record ShipmentFilterCriteria(
 		String vessel,
 		String customer,
 		LocalDate arrivalDate,
-		ShipmentStatus status) {
+		ShipmentStatus status,
+		boolean atRisk) {
 
 	public ShipmentFilterCriteria {
 		reference = optionalText(reference);
@@ -22,11 +23,21 @@ public record ShipmentFilterCriteria(
 
 	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate,
 			ShipmentStatus status) {
-		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate, status);
+		return of(reference, vessel, customer, arrivalDate, status, null);
+	}
+
+	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate,
+			ShipmentStatus status, Boolean atRisk) {
+		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate, status, Boolean.TRUE.equals(atRisk));
 	}
 
 	public static ShipmentFilterCriteria none() {
-		return new ShipmentFilterCriteria(null, null, null, null, null);
+		return new ShipmentFilterCriteria(null, null, null, null, null, false);
+	}
+
+	/** HIGH and CRITICAL count as at risk. A shipment without a risk level is not at risk. */
+	static boolean isAtRisk(ShipmentRisk risk) {
+		return risk != null && (risk.level() == ShipmentRisk.Level.HIGH || risk.level() == ShipmentRisk.Level.CRITICAL);
 	}
 
 	private static String optionalText(String value) {

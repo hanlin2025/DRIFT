@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { archiveShipment, getShipment, getShipmentTracking, listShipments, restoreShipment, type Shipment } from '../shipment/api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -28,7 +28,8 @@ const newer: Shipment = {
   connectionWindow: { duration: '1 day', totalSeconds: 86400 },
   remainingConnectionWindow: null,
   companyId: 1,
-  risk: null,
+  risk: { level: 'HIGH', explanation: 'Less than 12 hours to transfer cargo between vessels.' },
+  importer: { id: 9, code: 'STRAITS_FRESH', name: 'Straits Fresh Imports' },
   status: null,
   motherVesselPosition: null,
   feederVesselPosition: null,
@@ -69,6 +70,13 @@ const account = (role: Session['role']): Session => ({
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
+  vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
+    from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
+    slowdownThresholdKnots: 3, pointLimit: 500, truncated: false, points: [],
+  });
   vi.mocked(loadSession).mockImplementation(async token => ({ ...account('FREIGHT_FORWARDER'), token }));
   vi.mocked(listShipments).mockResolvedValue([newer, older]);
   vi.mocked(getShipment).mockImplementation(async (_token, id) => {
@@ -121,15 +129,15 @@ describe('shipment list', () => {
   it('maps each shipment field to its column and keeps the supplied order', () => {
     render(<MemoryRouter><ShipmentList shipments={[newer, older]} basePath="/freight-forwarder" /></MemoryRouter>);
     expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual([
-      'Reference', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival',
+      'Reference', 'Risk', 'Importer', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival',
     ]);
     const rows = screen.getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
-      'HBL-NEWER', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner', formatWhen('2026-10-04T00:00:00Z'),
+      'HBL-NEWER', 'High', 'Straits Fresh Imports', 'Shanghai, CN', 'Jakarta, ID', 'Tanjung Pelepas', 'MV Pacific Horizon', 'MV Strait Runner', formatWhen('2026-10-04T00:00:00Z'),
     ]);
     expect(within(rows[1]).getAllByRole('cell').map(cell => cell.textContent)).toEqual([
-      'HBL-OLDER', 'Busan, KR', 'Singapore, SG', 'Singapore', 'MV Northern Light', 'MV Harbour Link', formatWhen('2026-10-02T00:00:00Z'),
+      'HBL-OLDER', 'Not assessed', 'Not linked', 'Busan, KR', 'Singapore, SG', 'Singapore', 'MV Northern Light', 'MV Harbour Link', formatWhen('2026-10-02T00:00:00Z'),
     ]);
     expect(rows[0].querySelector('time')).toHaveAttribute('datetime', '2026-10-04T00:00:00Z');
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', '/freight-forwarder/shipments/2');
@@ -140,7 +148,7 @@ describe('shipment list', () => {
 
   it('renders no shipment rows for an empty list', () => {
     render(<MemoryRouter><ShipmentList shipments={[]} basePath="/importer" /></MemoryRouter>);
-    expect(screen.getAllByRole('columnheader')).toHaveLength(7);
+    expect(screen.getAllByRole('columnheader')).toHaveLength(9);
     expect(screen.queryAllByRole('cell')).toHaveLength(0);
   });
 
@@ -165,6 +173,15 @@ describe('shipment list', () => {
   it('shows unknown when an archived shipment has no last update', () => {
     render(<MemoryRouter><ShipmentList shipments={[newer]} basePath="/freight-forwarder" archived /></MemoryRouter>);
     expect(screen.getByRole('cell', { name: 'Unknown' })).toHaveClass('is-missing');
+  });
+
+  it("shows each row's risk badge and importer so cases can be grouped by customer", () => {
+    render(<MemoryRouter><ShipmentList shipments={[newer, older]} basePath="/freight-forwarder" /></MemoryRouter>);
+    const [first, second] = screen.getAllByRole('row').slice(1);
+    expect(within(first).getByText('High')).toHaveClass('risk-badge', 'risk-high');
+    expect(within(first).getByText('Straits Fresh Imports')).toBeInTheDocument();
+    expect(within(second).getByText('Not assessed')).toHaveClass('risk-badge', 'risk-unassessed');
+    expect(within(second).getByRole('cell', { name: 'Not linked' })).toHaveClass('is-missing');
   });
 
   it('shows an unassigned feeder vessel as pending', () => {
@@ -214,7 +231,7 @@ describe('workspace shipment retrieval', () => {
       vessel: 'Pacific',
       customer: 'STRAITS',
       arrivalDate: '2026-10-12',
-      status: '',
+      status: '', sort: '', atRisk: '',
     });
   });
 
@@ -223,7 +240,7 @@ describe('workspace shipment retrieval', () => {
     await screen.findByRole('cell', { name: 'HBL-NEWER' });
     expect(screen.getByRole('columnheader', { name: 'Archived by' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
     });
 
     cleanup();
@@ -256,7 +273,7 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -272,19 +289,19 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Navigate to filtered shipments' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Back through filter history' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(3));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-OLDER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-OLDER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
 
     await user.click(screen.getByRole('button', { name: 'Forward through filter history' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(4));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-NEWER', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
   });
 
@@ -481,7 +498,7 @@ describe('workspace shipment retrieval', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
     expect(listShipments).toHaveBeenLastCalledWith('session-token', {
-      reference: 'HBL-404', vessel: '', customer: '', arrivalDate: '', status: '',
+      reference: 'HBL-404', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
   });
 
@@ -525,7 +542,30 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?status=banana&tab=overview');
     expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('banana');
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'banana',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'banana', sort: '', atRisk: '',
+    });
+    await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(2));
+    expect(listShipments).toHaveBeenLastCalledWith('session-token');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?tab=overview');
+  });
+
+  it('sends an invalid at-risk value from a direct URL and offers to clear it when the API rejects it', async () => {
+    vi.mocked(listShipments)
+      .mockRejectedValueOnce(new ApiError('Shipment information is missing or invalid', 400, {
+        atRisk: 'atRisk must be true or false',
+      }))
+      .mockResolvedValueOnce([newer]);
+    const user = userEvent.setup();
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder?atRisk=maybe&tab=overview');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('atRisk must be true or false');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?atRisk=maybe&tab=overview');
+    expect(screen.getByRole('checkbox', { name: 'At-risk only' })).not.toBeChecked();
+    expect(listShipments).toHaveBeenCalledWith('session-token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe',
     });
     await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
 
@@ -553,7 +593,7 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByRole('cell', { name: formatWhen(newer.plannedMotherArrivalAt) })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token', {
-      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '',
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: '', atRisk: '',
     });
     cleanup();
 
@@ -677,7 +717,7 @@ describe('shipment removal', () => {
   });
 
   it('refreshes a filtered list without clearing the applied filters', async () => {
-    const filters = { reference: 'HBL', vessel: 'Pacific', customer: 'Harbour', arrivalDate: '2026-10-04' };
+    const filters = { reference: 'HBL', vessel: 'Pacific', customer: 'Harbour', arrivalDate: '2026-10-04', status: '', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
     vi.mocked(archiveShipment).mockResolvedValue('Shipment removed successfully');
     openWorkspace('ADMIN', '/admin/shipments?reference=HBL&vessel=Pacific&customer=Harbour&arrivalDate=2026-10-04');
@@ -753,7 +793,7 @@ describe('shipment removal', () => {
   });
 
   it('refreshes a filtered list after a conflict and keeps the failure notice', async () => {
-    const filters = { reference: 'HBL', vessel: '', customer: '', arrivalDate: '' };
+    const filters = { reference: 'HBL', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([newer, older]).mockResolvedValueOnce([older]);
     vi.mocked(archiveShipment).mockRejectedValue(new ApiError('Shipment is already removed or does not exist.', 409));
     openWorkspace('LOGISTICS_MANAGER', '/logistics-manager?reference=HBL');
@@ -821,7 +861,7 @@ describe('shipment restore', () => {
   });
 
   it('removes the shipment from the archived list after a confirmed restore', async () => {
-    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([archived, stillArchived]).mockResolvedValueOnce([stillArchived]);
     vi.mocked(restoreShipment).mockResolvedValue('Shipment restored successfully');
     openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');
@@ -852,7 +892,7 @@ describe('shipment restore', () => {
   });
 
   it('refreshes the archived list when the shipment is already active', async () => {
-    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED' };
+    const filters = { reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '' };
     vi.mocked(listShipments).mockResolvedValueOnce([archived]).mockResolvedValueOnce([]);
     vi.mocked(restoreShipment).mockRejectedValue(new ApiError('This shipment is already active.', 409));
     openWorkspace('ADMIN', '/admin/shipments?status=ARCHIVED');

@@ -21,9 +21,11 @@
     "test:e2e:archive": "node ../scripts/run-shipment-archive.mjs",
     "test:e2e:profile": "node ../scripts/run-profile.mjs",
     "test:e2e:vessel-details": "node ../scripts/run-vessel-details.mjs",
+    "test:e2e:cdg201-replay": "node ../scripts/run-cdg201-readonly-replay.mjs",
     "test:e2e:arrival-comparison": "node ../scripts/run-arrival-comparison.mjs",
     "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
-    "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs"
+    "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs",
+    "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
