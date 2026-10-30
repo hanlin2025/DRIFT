@@ -101,6 +101,23 @@ export type TransshipmentArrivalDeadline = {
   applicable: boolean;
 };
 
+export type DelayComparisonOutcome = 'NO_PREDICTED_IMPACT' | 'EXCEEDS_DEADLINE';
+
+export type DelayComparisonReason =
+  | 'INCOMPATIBLE_MILESTONE'
+  | 'MISSING_PREDICTION'
+  | 'MISSING_CONSTRAINT'
+  | 'STALE_PREDICTION';
+
+export type DelayComparison = {
+  outcome: DelayComparisonOutcome | null;
+  reason: DelayComparisonReason | null;
+  message: string;
+  estimatedArrivalAt: string | null;
+  deadline: string | null;
+  recordedTransshipmentPort: string | null;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -134,6 +151,7 @@ export type Shipment = {
   aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
   transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
+  delayComparison?: DelayComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
 };
@@ -562,6 +580,8 @@ function asShipment(value: unknown): Shipment | null {
   if (arrivalComparison === undefined) return null;
   const transshipmentArrivalDeadline = deadlineOf(value);
   if (transshipmentArrivalDeadline === undefined) return null;
+  const delayComparison = delayComparisonOf(value);
+  if (delayComparison === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -598,6 +618,7 @@ function asShipment(value: unknown): Shipment | null {
     aisFeed,
     arrivalComparison,
     transshipmentArrivalDeadline,
+    delayComparison,
     updatedAt,
     updatedByName,
   };
@@ -605,6 +626,63 @@ function asShipment(value: unknown): Shipment | null {
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
 const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+const DELAY_OUTCOMES: readonly DelayComparisonOutcome[] = ['NO_PREDICTED_IMPACT', 'EXCEEDS_DEADLINE'];
+const DELAY_REASONS: readonly DelayComparisonReason[] = [
+  'INCOMPATIBLE_MILESTONE', 'MISSING_PREDICTION', 'MISSING_CONSTRAINT', 'STALE_PREDICTION',
+];
+
+function delayComparisonOf(value: Record<string, unknown>): DelayComparison | null | undefined {
+  if (!('delayComparison' in value) || value.delayComparison == null) return null;
+  const comparison = value.delayComparison;
+  if (!isRecord(comparison)) return undefined;
+  const fields = ['outcome', 'reason', 'message', 'estimatedArrivalAt', 'deadline', 'recordedTransshipmentPort'] as const;
+  if (!fields.every(field => field in comparison) || !isPresentText(comparison.message)) return undefined;
+  const estimatedArrivalAt = optionalInstant(comparison.estimatedArrivalAt);
+  const deadline = optionalInstant(comparison.deadline);
+  const recordedTransshipmentPort = optionalPort(comparison.recordedTransshipmentPort);
+  if (estimatedArrivalAt === undefined || deadline === undefined || recordedTransshipmentPort === undefined) return undefined;
+  if (isDelayOutcome(comparison.outcome) && comparison.reason === null) {
+    if (estimatedArrivalAt === null || deadline === null || !isPresentText(recordedTransshipmentPort)) return undefined;
+    return {
+      outcome: comparison.outcome,
+      reason: null,
+      message: comparison.message,
+      estimatedArrivalAt,
+      deadline,
+      recordedTransshipmentPort,
+    };
+  }
+  if (comparison.outcome === null && isDelayReason(comparison.reason)) {
+    return {
+      outcome: null,
+      reason: comparison.reason,
+      message: comparison.message,
+      estimatedArrivalAt,
+      deadline,
+      recordedTransshipmentPort,
+    };
+  }
+  return undefined;
+}
+
+function optionalInstant(value: unknown): string | null | undefined {
+  if (value == null) return null;
+  return isPresentText(value) ? value : undefined;
+}
+
+function optionalPort(value: unknown): string | null | undefined {
+  if (value == null) return null;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function isDelayOutcome(value: unknown): value is DelayComparisonOutcome {
+  return DELAY_OUTCOMES.some(outcome => outcome === value);
+}
+
+function isDelayReason(value: unknown): value is DelayComparisonReason {
+  return DELAY_REASONS.some(reason => reason === value);
+}
 
 function deadlineOf(value: Record<string, unknown>): TransshipmentArrivalDeadline | null | undefined {
   if (!('transshipmentArrivalDeadline' in value) || value.transshipmentArrivalDeadline == null) return null;

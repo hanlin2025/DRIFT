@@ -601,3 +601,75 @@ describe('transshipment arrival deadline API client', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/transshipment-arrival-deadline', expect.objectContaining({ method: 'PATCH' }));
   });
 });
+
+const NO_IMPACT = 'No predicted impact on the recorded mother-vessel transshipment-arrival deadline.';
+const EXCEEDS = 'The predicted arrival exceeds the recorded mother-vessel transshipment-arrival deadline.';
+
+function delayComparison(overrides: Record<string, unknown> = {}) {
+  return {
+    outcome: 'NO_PREDICTED_IMPACT',
+    reason: null,
+    message: NO_IMPACT,
+    estimatedArrivalAt: '2026-10-28T15:00:00Z',
+    deadline: '2026-10-28T16:00:00Z',
+    recordedTransshipmentPort: 'Singapore',
+    ...overrides,
+  };
+}
+
+describe('delay comparison API client', () => {
+  it('reads both completed outcomes and keeps a missing assessment null', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: delayComparison() })));
+    expect((await getShipment('token', '9')).delayComparison).toEqual(delayComparison());
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      delayComparison: delayComparison({ outcome: 'EXCEEDS_DEADLINE', message: EXCEEDS }),
+    })));
+    expect((await getShipment('token', '9')).delayComparison?.outcome).toBe('EXCEEDS_DEADLINE');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: null })));
+    expect((await getShipment('token', '9')).delayComparison).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    const listed = await listShipments('token');
+    expect(listed[0].delayComparison).toBeNull();
+    expect(JSON.stringify(listed[0])).not.toContain('NO_PREDICTED_IMPACT');
+  });
+
+  it('reads each unavailable reason and the inputs the server included', async () => {
+    const reasons = [
+      ['INCOMPATIBLE_MILESTONE', 'The recorded deadline is for a different transshipment port.', '2026-10-28T15:00:00Z', '2026-10-28T16:00:00Z', 'Singapore'],
+      ['MISSING_PREDICTION', 'The mother-vessel transshipment-arrival estimate is unavailable.', null, '2026-10-28T16:00:00Z', 'Singapore'],
+      ['MISSING_CONSTRAINT', 'No mother-vessel transshipment-arrival deadline is recorded for the current importer.', '2026-10-28T15:00:00Z', null, null],
+      ['STALE_PREDICTION', 'The mother-vessel transshipment-arrival estimate uses an AIS position received more than six hours ago.', '2026-10-28T15:00:00Z', '2026-10-28T16:00:00Z', 'Singapore'],
+    ] as const;
+    for (const [reason, message, estimatedArrivalAt, deadline, recordedTransshipmentPort] of reasons) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+        ...shipment,
+        delayComparison: delayComparison({
+          outcome: null, reason, message, estimatedArrivalAt, deadline, recordedTransshipmentPort,
+        }),
+      })));
+      expect((await getShipment('token', '9')).delayComparison).toMatchObject({ outcome: null, reason, message });
+    }
+  });
+
+  it('rejects an unknown, combined, or incomplete assessment', async () => {
+    const rejected = [
+      delayComparison({ outcome: 'ON_SCHEDULE' }),
+      delayComparison({ outcome: 'NO_PREDICTED_IMPACT', reason: 'STALE_PREDICTION' }),
+      delayComparison({ outcome: null, reason: null }),
+      delayComparison({ reason: 'LATE' }),
+      delayComparison({ message: ' ' }),
+      delayComparison({ deadline: null }),
+      delayComparison({ recordedTransshipmentPort: ' ' }),
+      delayComparison({ estimatedArrivalAt: 1 }),
+      delayComparison({ outcome: null, reason: 'STALE_PREDICTION', deadline: 1 }),
+    ];
+    for (const comparison of rejected) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: comparison })));
+      await expect(getShipment('token', '9')).rejects.toThrow('unexpected response');
+    }
+  });
+});
