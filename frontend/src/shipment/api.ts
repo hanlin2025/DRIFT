@@ -918,8 +918,6 @@ function asShipment(value: unknown): Shipment | null {
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
-  const recommendation = recommendationOf(value, risk ?? null);
-  if (recommendation === undefined) return null;
   const recommendationDecision = recommendationDecisionOf(value);
   if (recommendationDecision === undefined) return null;
   return {
@@ -939,7 +937,6 @@ function asShipment(value: unknown): Shipment | null {
     remainingConnectionWindow,
     risk: risk ?? null,
     riskContributions,
-    recommendation,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
