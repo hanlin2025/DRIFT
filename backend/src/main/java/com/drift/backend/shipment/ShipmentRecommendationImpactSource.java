@@ -4,7 +4,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The impact the current shipment read uses when it chooses a recommendation.
- * That read has not returned an assessment yet, so a decision against it is unavailable.
+ * Until a stored assessment is returned, that impact is not available, so a
+ * decision against this read is rejected and stores nothing.
  */
 @Component
 class ShipmentRecommendationImpactSource {

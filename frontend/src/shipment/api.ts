@@ -186,6 +186,7 @@ export type Shipment = {
   remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
   riskContributions?: RiskContributions | null;
+  recommendation?: ShipmentRecommendation | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -599,7 +600,7 @@ function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingC
 }
 
 function isRiskLevel(value: unknown): value is RiskLevel {
-  return RISK_LEVELS.includes(value);
+  return typeof value === 'string' && (RISK_LEVELS as readonly string[]).includes(value);
 }
 
 function isRisk(value: unknown): value is ShipmentRisk {
@@ -889,6 +890,8 @@ function asShipment(value: unknown): Shipment | null {
   if (risk != null && !isRisk(risk)) return null;
   const riskContributions = riskContributionsOf(value);
   if (riskContributions === undefined) return null;
+  const recommendation = recommendationOf(value, risk ?? null);
+  if (recommendation === undefined) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -936,6 +939,7 @@ function asShipment(value: unknown): Shipment | null {
     remainingConnectionWindow,
     risk: risk ?? null,
     riskContributions,
+    recommendation,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,

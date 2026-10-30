@@ -2,6 +2,7 @@ package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -73,6 +74,122 @@ class ShipmentFilterServiceIntegrationTests {
 				.containsExactly("HBL-NEWER", "HBL-OLDER");
 		assertThat(references(forwarderUser, ShipmentFilterCriteria.of("  ", "\t", " ", null)))
 				.containsExactly("HBL-NEWER", "HBL-OLDER");
+	}
+
+	@Test
+	void listedShipmentsCarryTheirRiskAndLinkedImporterLikeTheDetail() {
+		insert(forwarder, linkedImporter, "HBL-LINKED", "MV One", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-02T00:00:00Z"));
+		insert(forwarder, null, "HBL-UNLINKED", "MV Two", "MV Feeder", at("2026-10-12T08:00:00+08:00"),
+				Instant.parse("2026-10-01T00:00:00Z"));
+
+		List<ShipmentResponse> listed = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		assertThat(listed).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-LINKED", "HBL-UNLINKED");
+		ShipmentResponse linked = listed.get(0);
+		assertThat(linked.importer().id()).isEqualTo(linkedImporter.id());
+		assertThat(linked.importer().code()).isEqualTo(linkedImporter.code());
+		assertThat(linked.importer().name()).isEqualTo(linkedImporter.name());
+		assertThat(linked.risk().level()).isEqualTo(ShipmentRisk.Level.HIGH);
+		ShipmentDetailResponse detail = shipments.get(forwarderUser, linked.id());
+		assertThat(linked.risk()).isEqualTo(detail.risk());
+		assertThat(listed.get(1).importer()).isNull();
+	}
+
+	@Test
+	void aFreshAisEstimateChangesTheListedRiskExactlyAsOnTheDetail() {
+		OffsetDateTime arrival = OffsetDateTime.now(ZoneOffset.UTC).plusHours(24);
+		insert(forwarder, linkedImporter, "HBL-AIS-LATE", "MV Late Mother", "MV Feeder", arrival,
+				Instant.parse("2026-10-02T00:00:00Z"), 16);
+		insert(forwarder, linkedImporter, "HBL-PLANNED", "MV Unseen Mother", "MV Feeder", arrival,
+				Instant.parse("2026-10-01T00:00:00Z"), 16);
+
+		List<ShipmentResponse> before = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		assertThat(before).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-AIS-LATE", "HBL-PLANNED");
+		ShipmentResponse lateBefore = before.get(0);
+		assertThat(lateBefore.risk().level()).isEqualTo(ShipmentRisk.Level.MEDIUM);
+		assertThat(lateBefore.risk()).isEqualTo(shipments.get(forwarderUser, lateBefore.id()).risk());
+
+		// About 480 nautical miles from Tanjung Pelepas at 5 knots, so the estimate lands well after the feeder leaves.
+		observeLateMother();
+
+		List<ShipmentResponse> after = shipments.list(forwarderUser, ShipmentFilterCriteria.none());
+
+		ShipmentResponse lateAfter = after.get(0);
+		ShipmentResponse planned = after.get(1);
+		assertThat(lateAfter.id()).isEqualTo(lateBefore.id());
+		assertThat(lateAfter.risk().level()).isEqualTo(ShipmentRisk.Level.CRITICAL);
+		ShipmentDetailResponse lateDetail = shipments.get(forwarderUser, lateAfter.id());
+		assertThat(lateDetail.remainingConnectionWindow().status()).isEqualTo(RemainingConnectionWindow.Status.MISSED);
+		assertThat(lateAfter.risk()).isEqualTo(lateDetail.risk());
+		assertThat(planned.risk().level()).isEqualTo(ShipmentRisk.Level.MEDIUM);
+		assertThat(planned.risk()).isEqualTo(shipments.get(forwarderUser, planned.id()).risk());
+	}
+
+	@Test
+	void riskSortOrdersCriticalToLowWithTheSoonestFeederDepartureBreakingTies() {
+		OffsetDateTime arrival = at("2026-10-12T08:00:00+08:00");
+		insert(forwarder, null, "HBL-LOW", "MV A", "MV F", arrival, Instant.parse("2026-10-07T00:00:00Z"), 48);
+		insert(forwarder, null, "HBL-MEDIUM", "MV A", "MV F", arrival, Instant.parse("2026-10-02T00:00:00Z"), 18);
+		insert(forwarder, null, "HBL-HIGH-LATE", "MV A", "MV F", arrival.plusDays(1), Instant.parse("2026-10-03T00:00:00Z"), 8);
+		insert(forwarder, null, "HBL-HIGH-EARLY", "MV A", "MV F", arrival, Instant.parse("2026-10-04T00:00:00Z"), 8);
+		insert(forwarder, null, "HBL-CRITICAL", "MV Late Mother", "MV F", arrival.plusDays(5),
+				Instant.parse("2026-10-05T00:00:00Z"), 30);
+		insert(unrelatedCompany, null, "HBL-HIDDEN", "MV Late Mother", "MV F", arrival,
+				Instant.parse("2026-10-06T00:00:00Z"), 30);
+		observeLateMother();
+
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.none(), ShipmentSort.RISK_FIRST))
+				.containsExactly("HBL-CRITICAL", "HBL-HIGH-EARLY", "HBL-HIGH-LATE", "HBL-MEDIUM", "HBL-LOW");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.none()))
+				.containsExactly("HBL-LOW", "HBL-CRITICAL", "HBL-HIGH-EARLY", "HBL-HIGH-LATE", "HBL-MEDIUM");
+	}
+
+	@Test
+	void atRiskKeepsOnlyHighAndCriticalAndCombinesWithOtherFilters() {
+		OffsetDateTime arrival = at("2026-10-12T08:00:00+08:00");
+		insert(forwarder, linkedImporter, "HBL-HIGH", "MV A", "MV F", arrival, Instant.parse("2026-10-01T00:00:00Z"), 8);
+		insert(forwarder, linkedImporter, "HBL-CRITICAL", "MV Late Mother", "MV F", arrival,
+				Instant.parse("2026-10-02T00:00:00Z"), 30);
+		insert(forwarder, linkedImporter, "HBL-MEDIUM", "MV A", "MV F", arrival, Instant.parse("2026-10-03T00:00:00Z"), 18);
+		insert(forwarder, null, "HBL-OTHER-CUSTOMER", "MV A", "MV F", arrival, Instant.parse("2026-10-04T00:00:00Z"), 8);
+		insert(forwarder, linkedImporter, "HBL-ARCHIVED", "MV A", "MV F", arrival, Instant.parse("2026-10-05T00:00:00Z"), 8);
+		archive("HBL-ARCHIVED");
+		observeLateMother();
+
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.of(null, null, null, null, null, true)))
+				.containsExactly("HBL-OTHER-CUSTOMER", "HBL-CRITICAL", "HBL-HIGH");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.of(null, null, "Ocean_Trade", null,
+				ShipmentStatus.ACTIVE, true), ShipmentSort.RISK_FIRST))
+				.containsExactly("HBL-CRITICAL", "HBL-HIGH");
+		assertThat(references(forwarderUser, ShipmentFilterCriteria.of(null, null, null, null,
+				ShipmentStatus.ARCHIVED, true)))
+				.containsExactly("HBL-ARCHIVED");
+	}
+
+	@Test
+	void aRankedPageIsCutAfterRankingTheWholeAuthorisedPortfolio() {
+		OffsetDateTime arrival = at("2026-10-12T08:00:00+08:00");
+		for (int i = 0; i < ShipmentService.PAGE_SIZE; i++) {
+			insert(forwarder, null, "HBL-MEDIUM-%02d".formatted(i), "MV A", "MV F", arrival,
+					Instant.parse("2026-10-01T00:00:00Z").plusSeconds(i), 18);
+		}
+		insert(forwarder, null, "HBL-LOW-NEWEST", "MV A", "MV F", arrival, Instant.parse("2026-10-09T00:00:00Z"), 48);
+		insert(forwarder, null, "HBL-HIGH-OLDEST", "MV A", "MV F", arrival, Instant.parse("2026-09-01T00:00:00Z"), 8);
+		insert(unrelatedCompany, null, "HBL-HIDDEN", "MV A", "MV F", arrival, Instant.parse("2026-10-09T00:00:00Z"), 8);
+
+		ShipmentPage first = shipments.listPage(forwarderUser, ShipmentFilterCriteria.none(), 1, ShipmentSort.RISK_FIRST);
+		ShipmentPage second = shipments.listPage(forwarderUser, ShipmentFilterCriteria.none(), 2, ShipmentSort.RISK_FIRST);
+		ShipmentPage atRisk = shipments.listPage(forwarderUser, ShipmentFilterCriteria.of(null, null, null, null, null, true),
+				1, ShipmentSort.CREATED_DATE_DESCENDING);
+
+		assertThat(first.total()).isEqualTo(ShipmentService.PAGE_SIZE + 2);
+		assertThat(first.items()).hasSize(ShipmentService.PAGE_SIZE);
+		assertThat(first.items().get(0).shipmentReference()).isEqualTo("HBL-HIGH-OLDEST");
+		assertThat(second.items()).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-LOW-NEWEST");
+		assertThat(atRisk.total()).isEqualTo(1);
+		assertThat(atRisk.items()).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-HIGH-OLDEST");
 	}
 
 	@Test
@@ -175,7 +292,19 @@ class ShipmentFilterServiceIntegrationTests {
 	}
 
 	private List<String> references(AuthenticatedUser principal, ShipmentFilterCriteria criteria) {
-		return shipments.list(principal, criteria).stream().map(ShipmentResponse::shipmentReference).toList();
+		return references(principal, criteria, ShipmentSort.CREATED_DATE_DESCENDING);
+	}
+
+	private List<String> references(AuthenticatedUser principal, ShipmentFilterCriteria criteria, ShipmentSort sort) {
+		return shipments.list(principal, criteria, sort).stream().map(ShipmentResponse::shipmentReference).toList();
+	}
+
+	/**
+	 * The schedule check stops a stored feeder departing at or before the mother arrives, so CRITICAL comes from a
+	 * fresh AIS position whose estimate lands after the feeder has left.
+	 */
+	private void observeLateMother() {
+		observe("563000188", "Late Mother", "8.500000001", "100.250000001", "5.0", Instant.now());
 	}
 
 	private CompanyFixture company(String name) {
@@ -198,6 +327,11 @@ class ShipmentFilterServiceIntegrationTests {
 
 	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
 			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt) {
+		insert(managingCompany, importerCompany, reference, motherVessel, feederVessel, arrival, createdAt, 8);
+	}
+
+	private void insert(CompanyFixture managingCompany, CompanyFixture importerCompany, String reference,
+			String motherVessel, String feederVessel, OffsetDateTime arrival, Instant createdAt, int feederGapHours) {
 		Long creatorId = jdbc.queryForObject(
 				"SELECT id FROM users WHERE company_id = ? ORDER BY id LIMIT 1", Long.class, managingCompany.id());
 		jdbc.update("""
@@ -208,8 +342,17 @@ class ShipmentFilterServiceIntegrationTests {
 					created_at, updated_at, version)
 				VALUES (?, ?, ?, ?, ?, 'Singapore', 'Rotterdam', 'Tanjung Pelepas', ?, ?, ?, ?, ?, ?, 0)
 				""", managingCompany.id(), importerCompany == null ? null : importerCompany.id(), creatorId,
-				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(8),
+				creatorId, reference, motherVessel, arrival, feederVessel, arrival.plusHours(feederGapHours),
 				Timestamp.from(createdAt), Timestamp.from(createdAt));
+	}
+
+	private void observe(String mmsi, String vesselName, String latitude, String longitude, String speed, Instant ingestedAt) {
+		jdbc.update("""
+				INSERT INTO vessel_observations (
+					mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, ingested_at, source)
+				VALUES (?, ?, ?, ?, ?, ?::timestamptz, 'SEEDED')
+				""", mmsi, vesselName, new BigDecimal(latitude), new BigDecimal(longitude), new BigDecimal(speed),
+				ingestedAt.toString());
 	}
 
 	private static OffsetDateTime at(String value) {

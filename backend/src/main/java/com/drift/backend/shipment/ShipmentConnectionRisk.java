@@ -1,10 +1,16 @@
 package com.drift.backend.shipment;
 
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.LatestAisPositions;
 
 /**
@@ -28,7 +34,30 @@ class ShipmentConnectionRisk {
 	}
 
 	Snapshot assess(Shipment shipment) {
-		VesselPosition motherVesselPosition = position(shipment.getMotherVessel());
+		return assess(shipment, this::position);
+	}
+
+	/**
+	 * Assesses many shipments with one batched AIS lookup instead of one lookup per shipment, so the shipment list
+	 * gets the same risk as the detail page without a query per row.
+	 */
+	List<Snapshot> assessAll(List<Shipment> shipments) {
+		List<String> names = new ArrayList<>();
+		for (Shipment shipment : shipments) {
+			addLookupNames(names, shipment.getMotherVessel());
+			addLookupNames(names, shipment.getFeederVessel());
+		}
+		Map<String, AisPosition> found = latestPositions.findByVesselNames(names);
+		Function<String, VesselPosition> positions = vesselName -> Optional.ofNullable(vesselName)
+				.map(found::get)
+				.or(() -> Optional.ofNullable(withoutVesselPrefix(vesselName)).map(found::get))
+				.map(VesselPosition::from)
+				.orElse(null);
+		return shipments.stream().map(shipment -> assess(shipment, positions)).toList();
+	}
+
+	private Snapshot assess(Shipment shipment, Function<String, VesselPosition> positions) {
+		VesselPosition motherVesselPosition = positions.apply(shipment.getMotherVessel());
 		ArrivalEstimate arrivalComparison = shipment.getPlannedMotherArrivalAt() == null ? null
 				: arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
 						shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
@@ -36,8 +65,15 @@ class ShipmentConnectionRisk {
 				shipment.getPlannedFeederDepartureAt());
 		RemainingConnectionWindow remaining = connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(),
 				arrivalComparison);
-		return new Snapshot(planned, remaining, motherVesselPosition, position(shipment.getFeederVessel()),
+		return new Snapshot(planned, remaining, motherVesselPosition, positions.apply(shipment.getFeederVessel()),
 				arrivalComparison, ShipmentRisk.of(planned, remaining));
+	}
+
+	private static void addLookupNames(List<String> names, String vesselName) {
+		if (vesselName != null) {
+			names.add(vesselName);
+			names.add(withoutVesselPrefix(vesselName));
+		}
 	}
 
 	VesselPosition position(String vesselName) {
