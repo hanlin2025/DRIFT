@@ -994,16 +994,15 @@ function availableComparison(value: Record<string, unknown>): ArrivalComparison 
 
 const CHANCE_FIELDS = ['probability', 'display', 'label', 'arrivalUsed', 'plannedFeederDepartureUsed', 'plannedWindowInvalid'] as const;
 
-// The chance is shown as returned. The arrival it used must be the estimate on this same response,
-// otherwise the page would show a chance next to an estimated arrival it was not calculated from.
+// The chance is shown as returned. The arrival and departure it used must be the ones on this same response,
+// otherwise the page would show a chance next to times it was not calculated from.
 function lateArrivalChanceOf(value: Record<string, unknown>, arrivalComparison: ArrivalComparison | null): LateArrivalChance | null | undefined {
   if (!('lateArrivalChance' in value) || value.lateArrivalChance == null) return null;
   const chance = value.lateArrivalChance;
-  if (!isRecord(chance) || typeof chance.available !== 'boolean' || !CHANCE_FIELDS.every(field => field in chance)
-    || !('unavailableReason' in chance)) return undefined;
+  if (!isRecord(chance) || typeof chance.available !== 'boolean') return undefined;
   if (!chance.available) {
     const reason = chance.unavailableReason;
-    if (!CHANCE_FIELDS.every(field => chance[field] === null) || !isUnavailableReason(reason)) return undefined;
+    if (!CHANCE_FIELDS.every(field => chance[field] == null) || !isUnavailableReason(reason)) return undefined;
     return {
       available: false,
       probability: null,
@@ -1019,6 +1018,7 @@ function lateArrivalChanceOf(value: Record<string, unknown>, arrivalComparison: 
     || !isChanceDisplay(chance.display) || !isPresentText(chance.label) || !isPresentText(chance.arrivalUsed)
     || !isPresentText(chance.plannedFeederDepartureUsed) || typeof chance.plannedWindowInvalid !== 'boolean') return undefined;
   if (chance.arrivalUsed !== arrivalComparison?.estimatedArrivalAt) return undefined;
+  if (chance.plannedFeederDepartureUsed !== value.plannedFeederDepartureAt) return undefined;
   return {
     available: true,
     probability: chance.probability,

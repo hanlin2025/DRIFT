@@ -1418,9 +1418,27 @@ describe('late-arrival chance on the shipment detail', () => {
     await expect(decode({ ...chanceShipment, lateArrivalChance: null })).resolves.toMatchObject({ lateArrivalChance: null });
   });
 
+  it('accepts an unavailable chance that carries only its reason', async () => {
+    const reason = { code: 'NO_POSITION', message: `${UNAVAILABLE_CHANCE}no position has been received for the mother vessel.` };
+    await expect(decode({ ...chanceShipment, lateArrivalChance: { available: false, unavailableReason: reason } }))
+      .resolves.toMatchObject({
+        lateArrivalChance: {
+          available: false,
+          probability: null,
+          display: null,
+          label: null,
+          arrivalUsed: null,
+          plannedFeederDepartureUsed: null,
+          plannedWindowInvalid: null,
+          unavailableReason: reason,
+        },
+      });
+  });
+
   it.each([
     ['an arrival that is not the estimate on the same response', { ...availableChance('35%', 0.3504), arrivalUsed: '2026-10-02T02:30:00Z' }, chanceShipment.arrivalComparison],
     ['an available chance without an estimate on the same response', availableChance('35%', 0.3504), null],
+    ['a departure that is not the planned feeder departure on the same response', { ...availableChance('35%', 0.3504), plannedFeederDepartureUsed: '2026-10-02T04:30:00Z' }, chanceShipment.arrivalComparison],
     ['a probability above 1', availableChance('>95%', 1.2), chanceShipment.arrivalComparison],
     ['a probability below 0', availableChance('<5%', -0.01), chanceShipment.arrivalComparison],
     ['a display that is not a 5% step', availableChance('37%', 0.37), chanceShipment.arrivalComparison],
