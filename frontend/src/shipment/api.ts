@@ -92,6 +92,26 @@ export type ShipmentRecommendation = {
   impact: RecommendationImpact;
 };
 
+export type LateArrivalChance = {
+  available: true;
+  probability: number;
+  display: string;
+  label: string;
+  arrivalUsed: string;
+  plannedFeederDepartureUsed: string;
+  plannedWindowInvalid: boolean;
+  unavailableReason: null;
+} | {
+  available: false;
+  probability: null;
+  display: null;
+  label: null;
+  arrivalUsed: null;
+  plannedFeederDepartureUsed: null;
+  plannedWindowInvalid: null;
+  unavailableReason: { code: string; message: string };
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -177,6 +197,7 @@ export type Shipment = {
   risk: ShipmentRisk | null;
   riskContributions?: RiskContributions | null;
   recommendation?: ShipmentRecommendation | null;
+  lateArrivalChance?: LateArrivalChance | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -879,6 +900,8 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const lateArrivalChance = lateArrivalChanceOf(value, arrivalComparison);
+  if (lateArrivalChance === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -900,6 +923,7 @@ function asShipment(value: unknown): Shipment | null {
     risk: risk ?? null,
     riskContributions,
     recommendation,
+    lateArrivalChance,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
@@ -966,6 +990,51 @@ function availableComparison(value: Record<string, unknown>): ArrivalComparison 
     possiblyOutdated: value.possiblyOutdated,
     unavailableReason: null,
   };
+}
+
+const CHANCE_FIELDS = ['probability', 'display', 'label', 'arrivalUsed', 'plannedFeederDepartureUsed', 'plannedWindowInvalid'] as const;
+
+// The chance is shown as returned. The arrival it used must be the estimate on this same response,
+// otherwise the page would show a chance next to an estimated arrival it was not calculated from.
+function lateArrivalChanceOf(value: Record<string, unknown>, arrivalComparison: ArrivalComparison | null): LateArrivalChance | null | undefined {
+  if (!('lateArrivalChance' in value) || value.lateArrivalChance == null) return null;
+  const chance = value.lateArrivalChance;
+  if (!isRecord(chance) || typeof chance.available !== 'boolean' || !CHANCE_FIELDS.every(field => field in chance)
+    || !('unavailableReason' in chance)) return undefined;
+  if (!chance.available) {
+    const reason = chance.unavailableReason;
+    if (!CHANCE_FIELDS.every(field => chance[field] === null) || !isUnavailableReason(reason)) return undefined;
+    return {
+      available: false,
+      probability: null,
+      display: null,
+      label: null,
+      arrivalUsed: null,
+      plannedFeederDepartureUsed: null,
+      plannedWindowInvalid: null,
+      unavailableReason: { code: reason.code, message: reason.message },
+    };
+  }
+  if (chance.unavailableReason !== null || !isFiniteNumber(chance.probability) || chance.probability < 0 || chance.probability > 1
+    || !isChanceDisplay(chance.display) || !isPresentText(chance.label) || !isPresentText(chance.arrivalUsed)
+    || !isPresentText(chance.plannedFeederDepartureUsed) || typeof chance.plannedWindowInvalid !== 'boolean') return undefined;
+  if (chance.arrivalUsed !== arrivalComparison?.estimatedArrivalAt) return undefined;
+  return {
+    available: true,
+    probability: chance.probability,
+    display: chance.display,
+    label: chance.label,
+    arrivalUsed: chance.arrivalUsed,
+    plannedFeederDepartureUsed: chance.plannedFeederDepartureUsed,
+    plannedWindowInvalid: chance.plannedWindowInvalid,
+    unavailableReason: null,
+  };
+}
+
+function isChanceDisplay(value: unknown): value is string {
+  if (value === '<5%' || value === '>95%') return true;
+  const percent = typeof value === 'string' ? /^([1-9][0-9]?)%$/.exec(value) : null;
+  return percent !== null && Number(percent[1]) % 5 === 0;
 }
 
 function isUnavailableReason(value: unknown): value is { code: string; message: string } {

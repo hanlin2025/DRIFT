@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type LateArrivalChance, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -961,16 +961,16 @@ describe('vessel identity on the shipment detail', () => {
   });
 });
 
-describe('shipment detail decoding', () => {
-  async function decode(body: unknown) {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })));
-    const api = await vi.importActual<typeof import('./api')>('./api');
-    return api.getShipment('token', '7').finally(() => vi.unstubAllGlobals());
-  }
+async function decode(body: unknown) {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })));
+  const api = await vi.importActual<typeof import('./api')>('./api');
+  return api.getShipment('token', '7').finally(() => vi.unstubAllGlobals());
+}
 
+describe('shipment detail decoding', () => {
   it('accepts a detail response that omits arrivalComparison', async () => {
     const { arrivalComparison: _comparison, ...omitted } = shipment;
     await expect(decode(omitted)).resolves.toMatchObject({
@@ -1295,5 +1295,155 @@ describe('change history on the shipment detail', () => {
     await user.click(screen.getByRole('button', { name: 'Save shipment' }));
     expect(await screen.findByText('HL-0999')).toBeInTheDocument();
     expect(getShipmentHistory).toHaveBeenCalledTimes(3);
+  });
+});
+
+const CHANCE_ROW = 'Chance of arriving after feeder departure';
+const UNAVAILABLE_CHANCE = 'Chance of arriving after feeder departure unavailable: ';
+const ESTIMATE_USED = '2026-10-02T01:30:00Z';
+const DEPARTURE_USED = '2026-10-02T03:30:00Z';
+const RISK_WORDING = /\b(low|medium|high|critical|missed|risk)\b|actual arrival/i;
+
+function availableChance(display: string, probability: number, plannedWindowInvalid = false): LateArrivalChance {
+  return {
+    available: true,
+    probability,
+    display,
+    label: `Chance of arriving after feeder departure: ${display} · rough estimate`,
+    arrivalUsed: ESTIMATE_USED,
+    plannedFeederDepartureUsed: DEPARTURE_USED,
+    plannedWindowInvalid,
+    unavailableReason: null,
+  };
+}
+
+function unavailableChance(code: string, suffix: string): LateArrivalChance {
+  return {
+    available: false,
+    probability: null,
+    display: null,
+    label: null,
+    arrivalUsed: null,
+    plannedFeederDepartureUsed: null,
+    plannedWindowInvalid: null,
+    unavailableReason: { code, message: UNAVAILABLE_CHANCE + suffix },
+  };
+}
+
+const chanceShipment: Shipment = {
+  ...shipment,
+  plannedFeederDepartureAt: DEPARTURE_USED,
+  connectionWindow: { duration: '3 hours 30 minutes', totalSeconds: 12600 },
+  remainingConnectionWindow: { status: 'AVAILABLE', duration: '2 hours', totalSeconds: 7200, missedBy: null, missedBySeconds: null },
+  risk: { level: 'HIGH', explanation: "Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival." },
+  arrivalComparison: availableComparison('ON_SCHEDULE', 'On schedule · estimated 1h 30m later than planned'),
+  lateArrivalChance: availableChance('35%', 0.3504),
+};
+
+describe('late-arrival chance on the shipment detail', () => {
+  async function recordFor(found: Shipment, account: Session = forwarder) {
+    vi.mocked(getShipment).mockResolvedValue(found);
+    open(account, account.role === 'IMPORTER' ? '/importer/shipments/7' : '/freight-forwarder/shipments/7');
+    return screen.findByRole('article', { name: 'Shipment HL-1001' });
+  }
+
+  it('shows the returned chance as a rough estimate with the arrival and departure it used', async () => {
+    const record = await recordFor(chanceShipment);
+    const chance = factValue(record, CHANCE_ROW);
+    expect(chance.firstChild).toHaveTextContent('35% · rough estimate');
+    expect(chance).not.toHaveClass('is-missing');
+    expect(within(chance).getByText('Estimated arrival used').nextElementSibling).toHaveTextContent(formatWhen(ESTIMATE_USED));
+    expect(within(chance).getByText(formatWhen(ESTIMATE_USED)).closest('time')).toHaveAttribute('dateTime', ESTIMATE_USED);
+    expect(within(chance).getByText('Planned feeder departure used').nextElementSibling).toHaveTextContent(formatWhen(DEPARTURE_USED));
+    expect(within(chance).getByText(formatWhen(DEPARTURE_USED)).closest('time')).toHaveAttribute('dateTime', DEPARTURE_USED);
+    expect(within(chance).queryByText(/planned feeder departure is at or before/)).not.toBeInTheDocument();
+    expect(chance.querySelector('.risk-badge')).toBeNull();
+    expect(chance.textContent).not.toMatch(RISK_WORDING);
+
+    expect(factValue(record, 'Remaining connection window')).toHaveTextContent('2 hours');
+    expect(factValue(record, 'Risk')).toHaveTextContent("High Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival.");
+    expect(within(factValue(record, 'Risk')).getByText('High')).toHaveClass('risk-badge', 'risk-high');
+    const row = chance.closest('div');
+    expect(row?.previousElementSibling?.querySelector('dt')).toHaveTextContent('Risk');
+  });
+
+  it.each([
+    ['<5%', 0.0106],
+    ['>95%', 0.99997],
+  ])('shows %s exactly as returned', async (display, probability) => {
+    const record = await recordFor({ ...chanceShipment, lateArrivalChance: availableChance(display, probability) });
+    expect(factValue(record, CHANCE_ROW).firstChild).toHaveTextContent(`${display} · rough estimate`);
+  });
+
+  it('notes a planned window whose feeder departure is not after the planned arrival', async () => {
+    const record = await recordFor({ ...chanceShipment, lateArrivalChance: availableChance('<5%', 0.0106, true) });
+    const chance = factValue(record, CHANCE_ROW);
+    expect(chance.firstChild).toHaveTextContent('<5% · rough estimate');
+    expect(within(chance).getByText('The planned feeder departure is at or before the planned mother-vessel arrival.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['FEEDER_DEPARTURE_PASSED', 'the planned feeder departure has already passed, and DRIFT cannot confirm whether the connection was made.'],
+    ['POSITION_OUTDATED', 'the latest vessel position is more than 6 hours old.'],
+    ['NO_POSITION', 'no position has been received for the mother vessel.'],
+  ])('explains an unavailable chance for %s without a percentage', async (code, suffix) => {
+    const record = await recordFor({ ...chanceShipment, lateArrivalChance: unavailableChance(code, suffix) });
+    const chance = factValue(record, CHANCE_ROW);
+    expect(chance).toHaveTextContent(UNAVAILABLE_CHANCE + suffix, { normalizeWhitespace: false });
+    expect(chance).toHaveClass('is-missing');
+    expect(chance.textContent).not.toContain('%');
+    expect(chance.textContent).not.toContain('rough estimate');
+    expect(within(chance).queryByText('Estimated arrival used')).not.toBeInTheDocument();
+    expect(chance.textContent).not.toMatch(RISK_WORDING);
+    expect(factValue(record, 'Risk')).toHaveTextContent('High');
+  });
+
+  it.each([
+    ['omitted', (() => { const { lateArrivalChance: _chance, ...omitted } = chanceShipment; return omitted; })()],
+    ['null', { ...chanceShipment, lateArrivalChance: null }],
+  ])('leaves the row out when the chance is %s', async (_case, found) => {
+    const record = await recordFor(found);
+    expect(within(record).queryByText(CHANCE_ROW)).not.toBeInTheDocument();
+    expect(within(record).queryByText(/rough estimate/)).not.toBeInTheDocument();
+    expect(factValue(record, 'Remaining connection window')).toHaveTextContent('2 hours');
+    expect(factValue(record, 'Risk')).toHaveTextContent('High');
+  });
+
+  it('decodes the returned chance and keeps a response without one', async () => {
+    await expect(decode(chanceShipment)).resolves.toMatchObject({ lateArrivalChance: availableChance('35%', 0.3504) });
+    await expect(decode({ ...chanceShipment, lateArrivalChance: unavailableChance('POSITION_OUTDATED', 'the latest vessel position is more than 6 hours old.') }))
+      .resolves.toMatchObject({ lateArrivalChance: { available: false, unavailableReason: { code: 'POSITION_OUTDATED' } } });
+    const { lateArrivalChance: _chance, ...omitted } = chanceShipment;
+    await expect(decode(omitted)).resolves.toMatchObject({ lateArrivalChance: null });
+    await expect(decode({ ...chanceShipment, lateArrivalChance: null })).resolves.toMatchObject({ lateArrivalChance: null });
+  });
+
+  it.each([
+    ['an arrival that is not the estimate on the same response', { ...availableChance('35%', 0.3504), arrivalUsed: '2026-10-02T02:30:00Z' }, chanceShipment.arrivalComparison],
+    ['an available chance without an estimate on the same response', availableChance('35%', 0.3504), null],
+    ['a probability above 1', availableChance('>95%', 1.2), chanceShipment.arrivalComparison],
+    ['a probability below 0', availableChance('<5%', -0.01), chanceShipment.arrivalComparison],
+    ['a display that is not a 5% step', availableChance('37%', 0.37), chanceShipment.arrivalComparison],
+    ['a 0% display', availableChance('0%', 0), chanceShipment.arrivalComparison],
+    ['an available chance with a reason', { ...availableChance('35%', 0.3504), unavailableReason: { code: 'NO_POSITION', message: `${UNAVAILABLE_CHANCE}no position.` } }, chanceShipment.arrivalComparison],
+    ['an unavailable chance with a probability', { ...unavailableChance('NO_POSITION', 'no position.'), probability: 0.35 }, chanceShipment.arrivalComparison],
+    ['an unavailable chance with a blank message', { ...unavailableChance('NO_POSITION', ''), unavailableReason: { code: 'NO_POSITION', message: ' ' } }, chanceShipment.arrivalComparison],
+  ])('rejects %s', async (_case, lateArrivalChance, arrivalComparison) => {
+    await expect(decode({ ...chanceShipment, arrivalComparison, lateArrivalChance })).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('shows the access-denied page without the chance when the shipment is forbidden', async () => {
+    vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
+    open(importer, '/importer/shipments/7');
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('You do not have access to this shipment');
+    expect(screen.queryByText(CHANCE_ROW)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rough estimate/)).not.toBeInTheDocument();
+  });
+
+  it('shows the same chance on an archived shipment the viewer can open', async () => {
+    const record = await recordFor({ ...chanceShipment, status: 'ARCHIVED' }, importer);
+    expect(factValue(record, CHANCE_ROW).firstChild).toHaveTextContent('35% · rough estimate');
+    expect(within(factValue(record, CHANCE_ROW)).getByText(formatWhen(ESTIMATE_USED))).toBeInTheDocument();
   });
 });

@@ -25,7 +25,8 @@
     "test:e2e:arrival-comparison": "node ../scripts/run-arrival-comparison.mjs",
     "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
     "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs",
-    "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
+    "test:e2e:history": "node ../scripts/run-shipment-history.mjs",
+    "test:e2e:late-arrival-chance": "node ../scripts/run-late-arrival-chance.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
