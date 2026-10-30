@@ -63,6 +63,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
+    from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
+    slowdownThresholdKnots: 3, pointLimit: 500, truncated: false, points: [],
+  });
   vi.mocked(loadSession).mockImplementation(async token => ({ ...(token === admin.token ? admin : forwarder), token }));
   vi.mocked(login).mockResolvedValue(admin);
   vi.mocked(listShipments).mockResolvedValue([]);
