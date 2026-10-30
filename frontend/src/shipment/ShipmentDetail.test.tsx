@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, getShipment, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -128,9 +128,11 @@ const track: VesselTrack = {
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
+  vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(listShipments).mockResolvedValue([shipment]);
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
@@ -200,8 +202,10 @@ describe('connection window on the shipment detail', () => {
     open(importer, '/importer/shipments/7');
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     const pending = within(record).getAllByText('Pending assignment');
-    expect(pending).toHaveLength(3);
+    expect(pending).toHaveLength(2);
     pending.forEach(field => expect(field).toHaveClass('is-missing'));
+    expect(factValue(record, 'Risk')).toHaveClass('is-missing');
+    expect(within(factValue(record, 'Risk')).getByText('Not assessed')).toHaveClass('risk-badge', 'risk-unassessed');
     expect(within(record).getByText('No planned connection window')).toBeInTheDocument();
     expect(factValue(record, 'Remaining connection window')).toHaveTextContent('No remaining connection window');
     expect(factValue(record, 'Remaining connection window')).toHaveClass('is-missing');
@@ -461,6 +465,8 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText('Connection window')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recommendation')).not.toBeInTheDocument();
+    expect(screen.queryByText('No action')).not.toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Mother vessel AIS' })).not.toBeInTheDocument();
@@ -1250,5 +1256,177 @@ describe('vessel track history on the shipment detail', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Track history' })).not.toBeInTheDocument();
+  });
+});
+
+describe('change history on the shipment detail', () => {
+  const created = { id: 1, changeType: 'CREATED' as const, changedBy: { id: 4, fullName: 'Alice Tan' }, recordedAt: '2026-09-29T04:00:00Z', changes: [] };
+  const renamed = {
+    id: 2,
+    changeType: 'UPDATED' as const,
+    changedBy: { id: 8, fullName: 'Ivan Lim' },
+    recordedAt: '2026-09-30T04:00:00Z',
+    changes: [{ field: 'shipmentReference', previousValue: 'HL-0999', newValue: 'HL-1001' }],
+  };
+
+  it('shows the history below the route facts for an importer', async () => {
+    vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [renamed, created] });
+    open(importer, '/importer/shipments/7');
+
+    const section = await screen.findByRole('region', { name: 'Change history' });
+    const facts = screen.getByRole('article', { name: 'Shipment HL-1001' });
+    expect(facts.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await within(section).findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledWith('importer-token', '7');
+  });
+
+  it('loads the history again on Refresh and after an edit is saved', async () => {
+    vi.mocked(getShipmentHistory)
+      .mockResolvedValueOnce({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [created] })
+      .mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [renamed, created] });
+    vi.mocked(updateShipment).mockResolvedValue(shipment);
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+
+    expect(await screen.findByText('No changes yet')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Edit shipment' }));
+    await user.click(screen.getByRole('button', { name: 'Save shipment' }));
+    expect(await screen.findByText('HL-0999')).toBeInTheDocument();
+    expect(getShipmentHistory).toHaveBeenCalledTimes(3);
+  });
+});
+
+const PREPARE_WORDING = "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints.";
+const NO_ACTION_WORDING = "No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.";
+const IMPACT_NOT_RETURNED = 'The impact assessment has not been returned.';
+const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact assessment has not been returned.';
+
+const prepareRecommendation: ShipmentRecommendation = {
+  available: true,
+  unavailable: null,
+  response: { code: 'PREPARE_INTERVENTION', label: 'Prepare an intervention', wording: PREPARE_WORDING },
+  riskLevel: 'HIGH',
+  riskExplanation: 'Less than 12 hours to transfer cargo between vessels. The planned connection window is being used.',
+  impact: { outcome: 'AFFECTS_CONSTRAINTS', detail: null },
+};
+
+const noActionRecommendation: ShipmentRecommendation = {
+  available: true,
+  unavailable: null,
+  response: { code: 'NO_ACTION', label: 'No action', wording: NO_ACTION_WORDING },
+  riskLevel: 'LOW',
+  riskExplanation: 'At least 24 hours to transfer cargo between vessels.',
+  impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+};
+
+const unavailableRecommendation: ShipmentRecommendation = {
+  available: false,
+  unavailable: UNAVAILABLE_RECOMMENDATION,
+  response: null,
+  riskLevel: 'HIGH',
+  riskExplanation: prepareRecommendation.riskExplanation,
+  impact: { outcome: 'UNAVAILABLE', detail: IMPACT_NOT_RETURNED },
+};
+
+describe('recommendation on the shipment detail', () => {
+  it('shows the returned response with the risk and the impact that selected it', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      status: 'ARCHIVED',
+      risk: { level: 'HIGH', explanation: prepareRecommendation.riskExplanation },
+      recommendation: prepareRecommendation,
+    });
+    open(importer, '/importer/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const risk = within(record).getByText('Risk', { exact: true, selector: 'dt' }).closest('div');
+    const recommendation = within(record).getByText('Recommendation', { exact: true, selector: 'dt' }).closest('div');
+    expect(risk?.nextElementSibling).toBe(recommendation);
+    expect(factValue(record, 'Risk')).toHaveTextContent(`High ${prepareRecommendation.riskExplanation}`);
+    expect(factValue(record, 'Recommendation')).toHaveTextContent('Prepare an intervention');
+    expect(factValue(record, 'Recommendation')).toHaveTextContent(PREPARE_WORDING);
+    expect(factValue(record, 'Connection risk')).toHaveTextContent(`High ${prepareRecommendation.riskExplanation}`);
+    expect(factValue(record, 'Impact')).toHaveTextContent("Affects the importer's constraints");
+    expect(screen.queryByText(NO_ACTION_WORDING)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modify' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(createShipment).not.toHaveBeenCalled();
+    expect(updateShipment).not.toHaveBeenCalled();
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(restoreShipment).not.toHaveBeenCalled();
+  });
+
+  it('names why an unavailable recommendation was not selected', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: unavailableRecommendation.riskExplanation ?? '' },
+      recommendation: unavailableRecommendation,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Recommendation')).toHaveTextContent(UNAVAILABLE_RECOMMENDATION);
+    expect(factValue(record, 'Impact')).toHaveTextContent(IMPACT_NOT_RETURNED);
+    expect(factValue(record, 'Connection risk')).toHaveTextContent(`High ${unavailableRecommendation.riskExplanation}`);
+    expect(factValue(record, 'Risk')).toHaveTextContent(`High ${unavailableRecommendation.riskExplanation}`);
+    expect(screen.queryByText('No action')).not.toBeInTheDocument();
+    expect(screen.queryByText(NO_ACTION_WORDING)).not.toBeInTheDocument();
+    expect(screen.queryByText('Prepare an intervention')).not.toBeInTheDocument();
+  });
+
+  it('shows no action only when the returned response says no action is needed', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'LOW', explanation: noActionRecommendation.riskExplanation },
+      recommendation: noActionRecommendation,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Recommendation')).toHaveTextContent('No action');
+    expect(factValue(record, 'Response')).toHaveTextContent(NO_ACTION_WORDING);
+    expect(factValue(record, 'Connection risk')).toHaveTextContent(`Low ${noActionRecommendation.riskExplanation}`);
+    expect(factValue(record, 'Impact')).toHaveTextContent("Does not affect the importer's constraints");
+    expect(factValue(record, 'Risk')).toHaveTextContent(`Low ${noActionRecommendation.riskExplanation}`);
+  });
+
+  it('keeps the shipment and recommendation when arrival evidence cannot be loaded', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockRejectedValue(new ApiError('The arrival evidence replay is unavailable', 502));
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: prepareRecommendation.riskExplanation },
+      recommendation: prepareRecommendation,
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(screen.getByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(factValue(record, 'Recommendation')).toHaveTextContent('Prepare an intervention');
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the shipment when arrival evidence does not return a response', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockImplementation(() => {
+      throw new Error('replay client failed');
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+  });
+
+  it('hides the recommendation when the shipment response does not include one', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, recommendation: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText('Recommendation')).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+    expect(screen.queryByText(NO_ACTION_WORDING)).not.toBeInTheDocument();
   });
 });

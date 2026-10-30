@@ -309,7 +309,7 @@ class ShipmentConstraintIntegrationTests {
 		assertThat(jdbc.queryForObject("SELECT transshipment_port FROM shipments WHERE id = ?", String.class,
 				fixture.shipmentId())).isEqualTo("Singapore");
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-				String.class)).contains("26", "28").doesNotContain("27");
+				String.class)).containsSubsequence("26", "27", "28");
 	}
 
 	@Test
