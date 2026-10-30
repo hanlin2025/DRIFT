@@ -75,11 +75,6 @@ function open(account: Session, path: string) {
 
 const MOTHER_WARNING = 'The AIS vessel name does not match the stored mother vessel.';
 const FEEDER_WARNING = 'The AIS vessel name does not match the stored feeder vessel.';
-const disabledMaritimeContext: MaritimeContext = {
-  enabled: false, sourceMode: 'DISABLED', shipmentAssociationConfidence: 'UNAVAILABLE',
-  limitation: 'Maritime context is disabled.', notices: [], aiExplanation: null, suggestedActions: null,
-};
-
 function namedFix(vesselName: string, latitude: number) {
   return { ...shipment.motherVesselPosition!, vesselName, latitude };
 }
@@ -127,6 +122,11 @@ const track: VesselTrack = {
     { id: 102, latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 180, trueHeadingDegrees: 182, ingestedAt: '2026-10-05T02:00:00Z' },
     { id: 103, latitude: 1.25, longitude: 103.75, speedOverGroundKnots: 0.4, courseOverGroundDegrees: null, trueHeadingDegrees: null, ingestedAt: '2026-10-05T03:00:00Z' },
   ],
+};
+
+const disabledMaritimeContext: MaritimeContext = {
+  contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: false, sourceMode: 'DISABLED', assessmentCutoffUtc: '2026-10-05T03:00:00Z',
+  shipmentAssociationConfidence: 'UNAVAILABLE', limitation: 'Disabled in this test.', evidence: [], notices: [], aiExplanation: null, suggestedActions: null,
 };
 
 beforeEach(() => {
