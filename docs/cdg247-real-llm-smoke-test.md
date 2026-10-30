@@ -14,9 +14,11 @@ never place it in source control, a frontend variable, a curl command, or an app
 ```bash
 export MARITIME_AI_ENABLED=true
 export MARITIME_AI_PROVIDER=openai-responses
-export MARITIME_AI_MODEL='<approved structured-output model>'
+export MARITIME_AI_MODEL='gpt-4.1-mini'
 export MARITIME_AI_ENDPOINT='https://api.openai.com/v1/responses'
 export MARITIME_AI_API_KEY='<test-only key>'
+export MARITIME_AI_TIMEOUT_SECONDS=20
+export MARITIME_AI_MAX_OUTPUT_TOKENS=800
 export MARITIME_CONTEXT_DEMO_ENABLED=false
 ```
 
@@ -24,6 +26,15 @@ export MARITIME_CONTEXT_DEMO_ENABLED=false
 README. The backend sends only the `MaritimeAiEvidencePackage`: contract version, cutoff,
 association-confidence flag, and CDG-246 evidence metadata. It does not send database access,
 collector directories, raw PDFs, credentials, or a shipment record.
+
+`MARITIME_AI_TIMEOUT_SECONDS` must be 1–60 and `MARITIME_AI_MAX_OUTPUT_TOKENS` must be
+64–4096. An invalid configuration fails before any provider request. The client does not retry
+provider calls; repeat only through a separately approved smoke-test run.
+
+For a normal backend runtime (not this test-only fixture),
+`MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true` is additionally required. The smoke test has a
+separate, stricter `CDG247_RUN_REAL_SMOKE=APPROVED` gate and cannot be enabled through normal
+application configuration alone.
 
 ## Mandatory evidence gate
 

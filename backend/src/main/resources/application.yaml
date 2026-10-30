@@ -78,3 +78,9 @@ app:
     model: ${MARITIME_AI_MODEL:}
     endpoint: ${MARITIME_AI_ENDPOINT:}
     api-key: ${MARITIME_AI_API_KEY:}
+    # A separate approval gate prevents a configured key from causing external inference by accident.
+    external-requests-approved: ${MARITIME_AI_EXTERNAL_REQUESTS_APPROVED:false}
+    # Explicit bounds apply to every configured provider request.  The feature
+    # remains disabled unless both this flag and provider configuration are set.
+    timeout-seconds: ${MARITIME_AI_TIMEOUT_SECONDS:20}
+    max-output-tokens: ${MARITIME_AI_MAX_OUTPUT_TOKENS:800}

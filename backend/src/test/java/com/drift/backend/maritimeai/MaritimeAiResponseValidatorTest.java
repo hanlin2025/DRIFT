@@ -19,6 +19,25 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(validate(new MaritimeAiInterpretation("x", List.of(new MaritimeAiClaim("Weather is known.", List.of("weather-1"), "x")), List.of(), List.of(), false, null))).isEqualTo("INELIGIBLE_CITED_EVIDENCE");
 	}
 
+	@Test void rejectsUnsupportedCausationInTheSummary() {
+		assertThat(validate(new MaritimeAiInterpretation("Weather caused the ETA revision.",
+				List.of(new MaritimeAiClaim("Evidence is recorded.", List.of("mpa-1"), "UNCERTAIN")),
+				List.of(), List.of(), true, null))).isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+	}
+
+	@Test void syntheticVerificationDoesNotAuthorizeCargoOrCausalAssertions() {
+		MaritimeAiEvidencePackage verifiedSynthetic = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "VERIFIED", null, List.of(MPA));
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The cargo will be delayed.",
+				List.of(new MaritimeAiClaim("The cargo will be delayed.", List.of("mpa-1"), "SHIPMENT_SPECIFIC")), List.of(), List.of(), true, null), verifiedSynthetic))
+				.isEqualTo("UNSUPPORTED_CARGO_ASSERTION");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Weather caused the ETA revision.",
+				List.of(new MaritimeAiClaim("Weather caused the ETA revision.", List.of("mpa-1"), "UNCERTAIN")), List.of(), List.of(), true, null), verifiedSynthetic))
+				.isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The feeder connection was missed.",
+				List.of(new MaritimeAiClaim("The feeder connection was missed.", List.of("mpa-1"), "UNCERTAIN")), List.of(), List.of(), true, null), verifiedSynthetic))
+				.isEqualTo("UNSUPPORTED_MISSED_CONNECTION");
+	}
+
 	@Test void rejectsIncompatibleStaleAndInsufficientEvidence() {
 		assertThat(validateWith(new MaritimeEvidence("NOTICE", "RECORDED_REPLAY", "bad", "Notice", "PMN", "", "page 1", "", "", "", "STALE", "", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", "INCOMPATIBLE", true, true, "UNVERIFIED_IMO_ONLY", ""), "bad"))
 				.isEqualTo("INELIGIBLE_CITED_EVIDENCE");
@@ -45,13 +64,13 @@ class MaritimeAiResponseValidatorTest {
 				"UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", true, true, "UNVERIFIED_IMO_ONLY", "Untrusted source text.");
 		assertThat(validateWith(injectionLookingTitle, "notice-1")).isNull();
 		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("x", List.of(new MaritimeAiClaim("This shipment is approved.", List.of("notice-1"), "SHIPMENT_SPECIFIC")), List.of(), List.of(), true, null),
-				new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", List.of(injectionLookingTitle))))
+				new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null, List.of(injectionLookingTitle))))
 				.isEqualTo("UNVERIFIED_SHIPMENT_ASSOCIATION");
 	}
 
 	private static String validateWith(MaritimeEvidence evidence, String evidenceId) {
-		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", List.of(evidence));
+		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null, List.of(evidence));
 		return MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("x", List.of(new MaritimeAiClaim("Evidence is recorded.", List.of(evidenceId), "UNCERTAIN")), List.of(), List.of(), true, null), input);
 	}
-	private static String validate(MaritimeAiInterpretation output) { return MaritimeAiResponseValidator.validate(output, new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", List.of(MPA, WEATHER))); }
+	private static String validate(MaritimeAiInterpretation output) { return MaritimeAiResponseValidator.validate(output, new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null, List.of(MPA, WEATHER))); }
 }

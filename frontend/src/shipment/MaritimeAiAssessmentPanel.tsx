@@ -1,8 +1,16 @@
 import { type MaritimeAiAssessment } from './api';
 
-export function MaritimeAiAssessmentPanel({ assessments, unavailable }: { assessments: MaritimeAiAssessment[]; unavailable: boolean }) {
+export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating, onGenerate }: {
+  assessments: MaritimeAiAssessment[];
+  unavailable: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
   if (unavailable) return <section className="notice" aria-label="AI maritime interpretation">AI maritime interpretation is unavailable. Maritime evidence remains available.</section>;
-  if (assessments.length === 0) return <section className="notice" aria-label="AI maritime interpretation">No AI maritime interpretation has been generated for this shipment.</section>;
+  if (assessments.length === 0) return <section className="notice" aria-label="AI maritime interpretation">
+    <p>No AI maritime interpretation has been generated for this shipment.</p>
+    <button type="button" onClick={onGenerate} disabled={generating}>{generating ? 'Generating advisory…' : 'Generate AI maritime interpretation'}</button>
+  </section>;
   const assessment = assessments[0];
   return <section className="shipment-record maritime-context" aria-label="AI maritime interpretation">
     <p className="eyebrow">AI MARITIME INTERPRETATION</p>
@@ -14,5 +22,6 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable }: { assess
       {assessment.interpretation.followUpConsiderations.map((item, index) => <p key={`f-${index}`}>Non-binding follow-up: {item}</p>)}
     </> : <p>{assessment.limitation ?? 'The model did not produce a validated interpretation.'}</p>}
     <p className="refresh-note">This is AI-generated advisory context, not the CDG-48 recommendation, CDG-52 decision, shipment risk, ETA, or an operational action.</p>
+    <button type="button" onClick={onGenerate} disabled={generating}>{generating ? 'Generating advisory…' : 'Generate new interpretation'}</button>
   </section>;
 }

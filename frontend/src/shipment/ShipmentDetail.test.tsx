@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeAiAssessment, type MaritimeContext, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), listMaritimeAiAssessments: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), listMaritimeAiAssessments: vi.fn(), generateMaritimeAiAssessment: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -139,10 +139,36 @@ beforeEach(() => {
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
   vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
+  vi.mocked(generateMaritimeAiAssessment).mockResolvedValue({ assessmentId: 'assessment-1', state: 'ABSTAINED', validationStatus: 'FEATURE_DISABLED', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'Disabled.' });
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
 describe('connection window on the shipment detail', () => {
+
+  it('lets the viewer request an advisory without changing shipment detail state', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
+    expect(await screen.findByText('Disabled.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
+
+  it('shows a loading state and keeps shipment detail available when generation fails', async () => {
+    let resolveGeneration!: (value: MaritimeAiAssessment) => void;
+    vi.mocked(generateMaritimeAiAssessment).mockReturnValue(new Promise(resolve => { resolveGeneration = resolve; }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(screen.getByRole('button', { name: 'Generating advisory…' })).toBeDisabled();
+    await act(async () => resolveGeneration({ assessmentId: null, state: 'ABSTAINED', validationStatus: 'INSUFFICIENT_EVIDENCE', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'No sufficient evidence.' }));
+    expect(await screen.findByText('No sufficient evidence.')).toBeInTheDocument();
+
+    vi.mocked(generateMaritimeAiAssessment).mockRejectedValueOnce(new Error('provider unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Generate new interpretation' }));
+    expect(await screen.findByText('AI maritime interpretation is unavailable. Maritime evidence remains available.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
   it('keeps shipment detail visible when additive maritime clients throw or return no response', async () => {
     vi.mocked(getCdg201ArrivalEvidence).mockImplementation((() => { throw new Error('replay unavailable'); }) as never);
     vi.mocked(getMaritimeContext).mockReturnValue(undefined as never);

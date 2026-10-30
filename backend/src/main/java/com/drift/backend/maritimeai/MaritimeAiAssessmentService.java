@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.authentication.AuthenticatedUser;
+import com.drift.backend.maritimecontext.MaritimeEvidence;
 import com.drift.backend.maritimecontext.MaritimeContextResponse;
 import com.drift.backend.maritimecontext.MaritimeContextService;
 import com.drift.backend.shipment.Shipment;
@@ -40,11 +41,19 @@ public class MaritimeAiAssessmentService {
 		ShipmentDetailResponse detail = shipments.get(user, shipmentId); // authorization gate and existing 401/403/404 semantics
 		Instant now = clock.instant();
 		MaritimeContextResponse bundle = context.forShipment(detail);
+		MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(detail.transshipmentPort(),
+				new MaritimeAiShipmentContext.Vessel(detail.motherVessel(), detail.motherVesselImo(), detail.plannedMotherArrivalAt()),
+				new MaritimeAiShipmentContext.Vessel(detail.feederVessel(), detail.feederVesselImo(), detail.plannedFeederDepartureAt()));
+		MaritimeAiEvidencePackage fullInput = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
+				bundle.shipmentAssociationConfidence(), shipmentContext, bundle.evidence());
+		if (!enabled) return transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
+		// Until an approved live-source policy exists, never transmit recorded replay data.
+		// Only sufficient, compatible synthetic demonstration evidence can reach a provider.
+		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence());
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
-				bundle.shipmentAssociationConfidence(), bundle.evidence());
-		if (!enabled) return transientResponse(input, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
-		if (input.evidence().isEmpty() || input.evidence().stream().noneMatch(item -> item.evidenceSufficient())) {
-			return persist(detail, input, now, MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient eligible evidence."), MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE", null);
+				bundle.shipmentAssociationConfidence(), shipmentContext, eligible);
+		if (input.evidence().isEmpty()) {
+			return persist(detail, input, now, MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved synthetic evidence."), MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE", null);
 		}
 		MaritimeAiClient.MaritimeAiClientResult result;
 		try { result = client.interpret(input); }
@@ -52,7 +61,20 @@ public class MaritimeAiAssessmentService {
 		if (result.interpretation() == null) return persist(detail, input, now, result, MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", null);
 		String validation = MaritimeAiResponseValidator.validate(result.interpretation(), input);
 		if (validation != null) return persist(detail, input, now, result, MaritimeAiGenerationState.FAILED, validation, null);
+		if (!result.interpretation().evidenceSufficient()) {
+			MaritimeAiClient.MaritimeAiClientResult abstained = new MaritimeAiClient.MaritimeAiClientResult(result.provider(),
+					result.model(), result.promptVersion(), null, "The model reported that the supplied evidence was insufficient.");
+			return persist(detail, input, now, abstained, MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_MODEL_EVIDENCE", null);
+		}
 		return persist(detail, input, now, result, MaritimeAiGenerationState.GENERATED, "VALID", result.interpretation());
+	}
+
+	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence) {
+		return evidence.stream()
+				.filter(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))
+				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
+						&& !"STALE".equals(item.freshness()))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)

@@ -302,10 +302,17 @@ export async function getMaritimeContext(token: string, shipmentId: string): Pro
 export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
-  return data.map(value => {
-    if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
-    return value as MaritimeAiAssessment;
-  });
+  return data.map(asMaritimeAiAssessment);
+}
+
+export async function generateMaritimeAiAssessment(token: string, shipmentId: string): Promise<MaritimeAiAssessment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token, { method: 'POST' });
+  return asMaritimeAiAssessment(data);
+}
+
+function asMaritimeAiAssessment(value: unknown): MaritimeAiAssessment {
+  if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
+  return value as MaritimeAiAssessment;
 }
 
 export type ShipmentTracking = {
