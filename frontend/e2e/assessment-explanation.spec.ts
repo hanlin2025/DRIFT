@@ -98,6 +98,14 @@ function seed(name: string, ingestedAt: string) {
     { mmsi: mmsi(), vessel: name, ingested: ingestedAt });
 }
 
+function seedRelationship(forwarderEmail: string, importerCode: string) {
+  sql(`INSERT INTO forwarder_importer_relationships
+      (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+    SELECT forwarder.company_id, importer.id, true, NOW(), forwarder.id, NOW(), forwarder.id
+    FROM users forwarder JOIN companies importer ON importer.code = :'importer'
+    WHERE forwarder.email = :'email';`, { email: forwarderEmail, importer: importerCode });
+}
+
 async function createShipment(request: APIRequestContext, token: string, name: string, planned: string, departure: string) {
   const response = await request.post('/api/shipments', {
     headers: { Authorization: `Bearer ${token}` },
@@ -266,6 +274,7 @@ test('a linked importer sees the same evidence, assumptions, and confidence as t
   seed(name, fresh());
   const created = await createShipment(request, forwarder.token, name, fresh(-1), fresh(-2));
   const detail = await placeFeeder(request, forwarder.token, created, -2 * HOUR, 6 * HOUR);
+  seedRelationship(forwarder.email, 'STRAITS_FRESH_DEMO');
   const importerCompanyId = sql("SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO'");
   const linked = await request.patch(`/api/shipments/${detail.id}/link-importer`, {
     headers: { Authorization: `Bearer ${forwarder.token}` },
