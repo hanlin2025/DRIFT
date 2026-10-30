@@ -11,7 +11,7 @@ import { getProfile, updateProfile, type Profile } from './api';
 import { ProfilePage } from './ProfilePage';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), getCdg201ArrivalEvidence: vi.fn() }));
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return { ...actual, getProfile: vi.fn(), updateProfile: vi.fn() };
@@ -104,7 +104,8 @@ describe('profile page', () => {
     await user.clear(name);
     await user.click(screen.getByRole('button', { name: 'Save profile' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Full name is required');
-    await user.type(name, 'n'.repeat(201));
+    await user.click(name);
+    await user.paste('n'.repeat(201));
     await user.click(screen.getByRole('button', { name: 'Save profile' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Full name must be at most 200 characters');
     await user.type(screen.getByLabelText('Current password'), 'WrongPass1');

@@ -28,6 +28,70 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type RiskContributionCode =
+  | 'WINDOW_IN_USE'
+  | 'REMAINING_DURATION'
+  | 'MISSED_BY'
+  | 'PLANNED_DURATION'
+  | 'PLANNED_WINDOW'
+  | 'ESTIMATE_NOT_USED';
+
+export type RiskContribution = {
+  code: RiskContributionCode;
+  label: string;
+  value: string;
+};
+
+export type RiskContributions = {
+  assessed: true;
+  notAssessed: null;
+  contributions: RiskContribution[];
+} | {
+  assessed: false;
+  notAssessed: string;
+  contributions: [];
+};
+
+export type RecommendationCode =
+  | 'NO_ACTION'
+  | 'MONITOR_CONSTRAINTS'
+  | 'NOTE_TIMING'
+  | 'REVIEW_PLAN'
+  | 'WATCH_CONNECTION'
+  | 'PREPARE_INTERVENTION'
+  | 'CONFIRM_CONNECTION'
+  | 'ACT_ON_CONNECTION';
+
+export type RecommendationImpact = {
+  outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT';
+  detail: null;
+} | {
+  outcome: 'UNAVAILABLE';
+  detail: string;
+};
+
+export type RecommendedResponse = {
+  code: RecommendationCode;
+  label: string;
+  wording: string;
+};
+
+export type ShipmentRecommendation = {
+  available: true;
+  unavailable: null;
+  response: RecommendedResponse;
+  riskLevel: RiskLevel;
+  riskExplanation: string;
+  impact: Extract<RecommendationImpact, { outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT' }>;
+} | {
+  available: false;
+  unavailable: string;
+  response: null;
+  riskLevel: RiskLevel | null;
+  riskExplanation: string | null;
+  impact: RecommendationImpact;
+};
+
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 export type VesselPosition = {
@@ -117,6 +181,8 @@ export type Shipment = {
   connectionWindow: ConnectionWindow | null;
   remainingConnectionWindow: RemainingConnectionWindow | null;
   risk: ShipmentRisk | null;
+  riskContributions?: RiskContributions | null;
+  recommendation?: ShipmentRecommendation | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -136,6 +202,57 @@ export type Shipment = {
   transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
+};
+
+export type Cdg201ArrivalEvidence = {
+  contractVersion: string;
+  evidenceState: 'RECORDED_EVIDENCE_REPLAY';
+  vesselName: string;
+  vesselImo: string;
+  previousExpectedArrival: string;
+  revisedExpectedArrival: string;
+  previousExpectedArrivalSgt: string;
+  previousExpectedArrivalUtc: string;
+  revisedExpectedArrivalSgt: string;
+  revisedExpectedArrivalUtc: string;
+  revisionMinutes: number;
+  previousCollectionUtc: string;
+  latestCollectionUtc: string;
+  previousCollectionRunId: string;
+  latestCollectionRunId: string;
+  previousSourceManifest: string;
+  previousSourceRawFile: string;
+  sourceManifest: string;
+  sourceRawFile: string;
+  confidence: string;
+  ambiguity: string;
+  sourceTimestampSemantics: string;
+  locationFrom: string;
+  locationTo: string;
+  locationMappingStatus: string;
+  locationReferences: Cdg201MpaLocationReference[];
+  shipmentAssociation: string;
+  limitations: string;
+  simulatedScenario: {
+    state: 'SIMULATED_CONNECTION_ASSUMPTIONS';
+    originalConnectionMarginMinutes: number;
+    revisedConnectionMarginMinutes: number;
+    reductionMinutes: number;
+    simulatedRiskBefore: string;
+    simulatedRiskAfter: string;
+    disclaimer: string;
+  };
+};
+
+export type Cdg201MpaLocationReference = {
+  rawLocationCode: string;
+  sourceApi: string;
+  sourceField: string;
+  officialDescription: string;
+  derivedCategory: string;
+  mappingStatus: string;
+  referenceProvenance: string;
+  limitation: string;
 };
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
@@ -168,6 +285,16 @@ export async function updateTransshipmentArrivalDeadline(token: string, shipment
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
+}
+
+/** Read-only CDG-201 fixture/replay evidence. Null means no replay matches this shipment. */
+export async function getCdg201ArrivalEvidence(token: string, shipmentId: string): Promise<Cdg201ArrivalEvidence | null> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/cdg201-arrival-evidence`, token);
+  if (!isRecord(data) || data.readOnlyReplay !== true) throw new ApiError(UNEXPECTED, 502);
+  if (data.evidence === null) return null;
+  const evidence = asCdg201ArrivalEvidence(data.evidence);
+  if (!evidence) throw new ApiError(UNEXPECTED, 502);
+  return evidence;
 }
 
 export type ShipmentTracking = {
@@ -369,6 +496,62 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function asCdg201ArrivalEvidence(value: unknown): Cdg201ArrivalEvidence | null {
+  if (!isRecord(value)) return null;
+  const text = ['contractVersion', 'evidenceState', 'vesselName', 'vesselImo', 'previousExpectedArrival', 'revisedExpectedArrival', 'previousExpectedArrivalSgt', 'previousExpectedArrivalUtc', 'revisedExpectedArrivalSgt', 'revisedExpectedArrivalUtc',
+    'previousCollectionUtc', 'latestCollectionUtc', 'previousCollectionRunId', 'latestCollectionRunId', 'previousSourceManifest', 'previousSourceRawFile', 'sourceManifest', 'sourceRawFile',
+    'confidence', 'ambiguity', 'sourceTimestampSemantics', 'locationFrom', 'locationTo', 'locationMappingStatus', 'shipmentAssociation', 'limitations'] as const;
+  if (!text.every(key => typeof value[key] === 'string') || value.evidenceState !== 'RECORDED_EVIDENCE_REPLAY'
+    || !isFiniteNumber(value.revisionMinutes) || !isRecord(value.simulatedScenario)) return null;
+  if (!Array.isArray(value.locationReferences)) return null;
+  const locationReferences = value.locationReferences.map(asCdg201MpaLocationReference);
+  if (locationReferences.some(reference => reference === null)) return null;
+  const scenario = value.simulatedScenario;
+  const scenarioText = ['state', 'simulatedRiskBefore', 'simulatedRiskAfter', 'disclaimer'] as const;
+  const scenarioNumbers = ['originalConnectionMarginMinutes', 'revisedConnectionMarginMinutes', 'reductionMinutes'] as const;
+  if (!scenarioText.every(key => typeof scenario[key] === 'string') || !scenarioNumbers.every(key => isFiniteNumber(scenario[key]))
+    || scenario.state !== 'SIMULATED_CONNECTION_ASSUMPTIONS') return null;
+  return {
+    contractVersion: value.contractVersion as string, evidenceState: 'RECORDED_EVIDENCE_REPLAY', vesselName: value.vesselName as string,
+    vesselImo: value.vesselImo as string, previousExpectedArrival: value.previousExpectedArrival as string,
+    revisedExpectedArrival: value.revisedExpectedArrival as string, previousExpectedArrivalSgt: value.previousExpectedArrivalSgt as string,
+    previousExpectedArrivalUtc: value.previousExpectedArrivalUtc as string, revisedExpectedArrivalSgt: value.revisedExpectedArrivalSgt as string,
+    revisedExpectedArrivalUtc: value.revisedExpectedArrivalUtc as string, revisionMinutes: value.revisionMinutes as number,
+    previousCollectionUtc: value.previousCollectionUtc as string, latestCollectionUtc: value.latestCollectionUtc as string,
+    previousCollectionRunId: value.previousCollectionRunId as string, latestCollectionRunId: value.latestCollectionRunId as string,
+    previousSourceManifest: value.previousSourceManifest as string, previousSourceRawFile: value.previousSourceRawFile as string,
+    sourceManifest: value.sourceManifest as string, sourceRawFile: value.sourceRawFile as string,
+    confidence: value.confidence as string, ambiguity: value.ambiguity as string,
+    sourceTimestampSemantics: value.sourceTimestampSemantics as string, locationFrom: value.locationFrom as string,
+    locationTo: value.locationTo as string, locationMappingStatus: value.locationMappingStatus as string,
+    locationReferences: locationReferences as Cdg201MpaLocationReference[],
+    shipmentAssociation: value.shipmentAssociation as string, limitations: value.limitations as string,
+    simulatedScenario: {
+      state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: scenario.originalConnectionMarginMinutes as number,
+      revisedConnectionMarginMinutes: scenario.revisedConnectionMarginMinutes as number, reductionMinutes: scenario.reductionMinutes as number,
+      simulatedRiskBefore: scenario.simulatedRiskBefore as string, simulatedRiskAfter: scenario.simulatedRiskAfter as string,
+      disclaimer: scenario.disclaimer as string,
+    },
+  };
+}
+
+function asCdg201MpaLocationReference(value: unknown): Cdg201MpaLocationReference | null {
+  if (!isRecord(value)) return null;
+  const text = ['rawLocationCode', 'sourceApi', 'sourceField', 'officialDescription', 'derivedCategory',
+    'mappingStatus', 'referenceProvenance', 'limitation'] as const;
+  if (!text.every(key => typeof value[key] === 'string')) return null;
+  return {
+    rawLocationCode: value.rawLocationCode as string,
+    sourceApi: value.sourceApi as string,
+    sourceField: value.sourceField as string,
+    officialDescription: value.officialDescription as string,
+    derivedCategory: value.derivedCategory as string,
+    mappingStatus: value.mappingStatus as string,
+    referenceProvenance: value.referenceProvenance as string,
+    limitation: value.limitation as string,
+  };
+}
+
 function isConnectionWindow(value: unknown): value is ConnectionWindow {
   return isRecord(value)
     && typeof value.duration === 'string'
@@ -407,11 +590,167 @@ function remainingConnectionWindowOf(value: Record<string, unknown>): RemainingC
   };
 }
 
+function isRiskLevel(value: unknown): value is RiskLevel {
+  return typeof value === 'string' && (RISK_LEVELS as readonly string[]).includes(value);
+}
+
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
     && typeof value.explanation === 'string'
     && value.explanation.trim().length > 0;
+}
+
+const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
+  WINDOW_IN_USE: 'Window in use',
+  REMAINING_DURATION: 'Remaining duration',
+  MISSED_BY: 'Missed by',
+  PLANNED_DURATION: 'Planned duration',
+  PLANNED_WINDOW: 'Planned window',
+  ESTIMATE_NOT_USED: 'Estimate not used',
+};
+
+const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
+  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
+];
+
+function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
+  if (!('riskContributions' in value) || value.riskContributions == null) return null;
+  return parseRiskContributions(value.riskContributions);
+}
+
+function parseRiskContributions(value: unknown): RiskContributions | undefined {
+  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
+  if (value.assessed) {
+    if (value.notAssessed != null) return undefined;
+    const contributions = value.contributions.map(parseContribution);
+    if (contributions.some(contribution => contribution === undefined)) return undefined;
+    const parsed = contributions as RiskContribution[];
+    if (!contributionSet(parsed)) return undefined;
+    return { assessed: true, notAssessed: null, contributions: parsed };
+  }
+  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
+    return undefined;
+  }
+  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
+}
+
+function parseContribution(value: unknown): RiskContribution | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
+  const code = value.code as RiskContributionCode;
+  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
+    return undefined;
+  }
+  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
+    return undefined;
+  }
+  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
+  return { code, label: value.label, value: value.value };
+}
+
+function contributionSet(contributions: RiskContribution[]): boolean {
+  const codes = contributions.map(contribution => contribution.code);
+  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
+  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
+  if (measured.length !== 1) return false;
+  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
+  return codes.includes('ESTIMATE_NOT_USED') === planned;
+}
+
+const RECOMMENDATION_RESPONSES: Record<RecommendationCode, { label: string; wording: string }> = {
+  NO_ACTION: {
+    label: 'No action',
+    wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
+  },
+  MONITOR_CONSTRAINTS: {
+    label: 'Monitor',
+    wording: 'Monitor the shipment. The connection risk is low, and the prediction affects the importer\'s constraints.',
+  },
+  NOTE_TIMING: {
+    label: 'Note the timing',
+    wording: 'Note the connection timing. The connection risk is medium, and the prediction does not affect the importer\'s constraints.',
+  },
+  REVIEW_PLAN: {
+    label: 'Review the plan',
+    wording: 'Review the transfer plan. The connection risk is medium, and the prediction affects the importer\'s constraints.',
+  },
+  WATCH_CONNECTION: {
+    label: 'Watch the connection',
+    wording: 'Watch the connection. The connection risk is high, and the prediction does not affect the importer\'s constraints.',
+  },
+  PREPARE_INTERVENTION: {
+    label: 'Prepare an intervention',
+    wording: 'Prepare an intervention. The connection risk is high, and the prediction affects the importer\'s constraints.',
+  },
+  CONFIRM_CONNECTION: {
+    label: 'Confirm the connection',
+    wording: 'Confirm the connection plan. The connection risk is critical, and the prediction does not affect the importer\'s constraints.',
+  },
+  ACT_ON_CONNECTION: {
+    label: 'Act on the connection',
+    wording: 'Act on this connection. The connection risk is critical, and the prediction affects the importer\'s constraints.',
+  },
+};
+
+const RECOMMENDATION_FOR: Record<RiskLevel, Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', RecommendationCode>> = {
+  LOW: { AFFECTS_CONSTRAINTS: 'MONITOR_CONSTRAINTS', NO_PREDICTED_IMPACT: 'NO_ACTION' },
+  MEDIUM: { AFFECTS_CONSTRAINTS: 'REVIEW_PLAN', NO_PREDICTED_IMPACT: 'NOTE_TIMING' },
+  HIGH: { AFFECTS_CONSTRAINTS: 'PREPARE_INTERVENTION', NO_PREDICTED_IMPACT: 'WATCH_CONNECTION' },
+  CRITICAL: { AFFECTS_CONSTRAINTS: 'ACT_ON_CONNECTION', NO_PREDICTED_IMPACT: 'CONFIRM_CONNECTION' },
+};
+
+function recommendationOf(value: Record<string, unknown>, risk: ShipmentRisk | null): ShipmentRecommendation | null | undefined {
+  if (!('recommendation' in value) || value.recommendation == null) return null;
+  const recommendation = parseRecommendation(value.recommendation);
+  if (!recommendation) return undefined;
+  if (risk == null) {
+    if (recommendation.riskLevel != null || recommendation.riskExplanation != null) return undefined;
+  } else if (recommendation.riskLevel !== risk.level || recommendation.riskExplanation !== risk.explanation) {
+    return undefined;
+  }
+  return recommendation;
+}
+
+function parseRecommendation(value: unknown): ShipmentRecommendation | undefined {
+  if (!isRecord(value) || typeof value.available !== 'boolean') return undefined;
+  const impact = parseRecommendationImpact(value.impact);
+  if (!impact) return undefined;
+  const riskLevel = value.riskLevel == null ? null : (isRiskLevel(value.riskLevel) ? value.riskLevel : undefined);
+  if (riskLevel === undefined) return undefined;
+  if (value.riskExplanation != null && (typeof value.riskExplanation !== 'string' || value.riskExplanation.trim().length === 0)) {
+    return undefined;
+  }
+  const riskExplanation = typeof value.riskExplanation === 'string' ? value.riskExplanation : null;
+  if (riskLevel == null && riskExplanation != null) return undefined;
+  if (riskLevel != null && riskExplanation == null) return undefined;
+  if (value.available) {
+    if (value.unavailable != null || riskLevel == null || riskExplanation == null || impact.outcome === 'UNAVAILABLE') return undefined;
+    const response = parseRecommendedResponse(value.response);
+    if (!response || response.code !== RECOMMENDATION_FOR[riskLevel][impact.outcome]) return undefined;
+    return { available: true, unavailable: null, response, riskLevel, riskExplanation, impact };
+  }
+  if (typeof value.unavailable !== 'string' || value.unavailable.trim().length === 0 || value.response != null) return undefined;
+  if (riskLevel != null && impact.outcome !== 'UNAVAILABLE') return undefined;
+  return { available: false, unavailable: value.unavailable, response: null, riskLevel, riskExplanation, impact };
+}
+
+function parseRecommendationImpact(value: unknown): RecommendationImpact | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.outcome === 'UNAVAILABLE') {
+    if (typeof value.detail !== 'string' || value.detail.trim().length === 0) return undefined;
+    return { outcome: 'UNAVAILABLE', detail: value.detail };
+  }
+  if (value.outcome !== 'AFFECTS_CONSTRAINTS' && value.outcome !== 'NO_PREDICTED_IMPACT') return undefined;
+  if (value.detail != null) return undefined;
+  return { outcome: value.outcome, detail: null };
+}
+
+function parseRecommendedResponse(value: unknown): RecommendedResponse | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in RECOMMENDATION_RESPONSES)) return undefined;
+  const code = value.code as RecommendationCode;
+  const expected = RECOMMENDATION_RESPONSES[code];
+  if (value.label !== expected.label || value.wording !== expected.wording) return undefined;
+  return { code, label: expected.label, wording: expected.wording };
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -432,12 +771,13 @@ function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undef
   if (!('aisFeed' in value) || value.aisFeed == null) return null;
   const feed = value.aisFeed;
   if (!isRecord(feed) || !isAisFeedStatus(feed.status)) return undefined;
-  if (feed.status === 'OFFLINE') {
+  const status = feed.status;
+  if (status === 'OFFLINE') {
     if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
     return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
   }
   if (typeof feed.lastReceivedAt !== 'string' || feed.lastReceivedAt.trim().length === 0) return undefined;
-  return { status: feed.status, lastReceivedAt: feed.lastReceivedAt };
+  return { status, lastReceivedAt: feed.lastReceivedAt };
 }
 
 function operationalStateOf(value: Record<string, unknown>, key: string): OperationalState | null | undefined {
@@ -537,6 +877,10 @@ function asShipment(value: unknown): Shipment | null {
   if (remainingConnectionWindow === undefined) return null;
   const risk = value.risk;
   if (risk != null && !isRisk(risk)) return null;
+  const riskContributions = riskContributionsOf(value);
+  if (riskContributions === undefined) return null;
+  const recommendation = recommendationOf(value, risk ?? null);
+  if (recommendation === undefined) return null;
   const motherVesselPosition = value.motherVesselPosition;
   const feederVesselPosition = value.feederVesselPosition;
   if (motherVesselPosition != null && !isVesselPosition(motherVesselPosition)) return null;
@@ -581,6 +925,8 @@ function asShipment(value: unknown): Shipment | null {
     connectionWindow: window ?? null,
     remainingConnectionWindow,
     risk: risk ?? null,
+    riskContributions,
+    recommendation,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
@@ -757,4 +1103,62 @@ function isImportStatus(value: unknown): value is ShipmentImportJobStatus {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+export type ShipmentChangeType = 'CREATED' | 'UPDATED' | 'IMPORTER_LINKED' | 'ARCHIVED' | 'RESTORED';
+
+export type ShipmentFieldChange = {
+  field: string;
+  previousValue: string | null;
+  newValue: string | null;
+};
+
+export type ShipmentHistoryEntry = {
+  id: number;
+  changeType: ShipmentChangeType;
+  changedBy: { id: number; fullName: string };
+  recordedAt: string;
+  changes: ShipmentFieldChange[];
+};
+
+export type ShipmentHistory = {
+  shipmentId: number;
+  earlierChangesUnrecorded: boolean;
+  entries: ShipmentHistoryEntry[];
+};
+
+export async function getShipmentHistory(token: string, shipmentId: string): Promise<ShipmentHistory> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/history`, token);
+  const history = asHistory(data);
+  if (!history) throw new ApiError(UNEXPECTED, 502);
+  return history;
+}
+
+const CHANGE_TYPES: readonly ShipmentChangeType[] = ['CREATED', 'UPDATED', 'IMPORTER_LINKED', 'ARCHIVED', 'RESTORED'];
+
+function asHistory(value: unknown): ShipmentHistory | null {
+  if (!isRecord(value) || !isWhole(value.shipmentId) || typeof value.earlierChangesUnrecorded !== 'boolean') return null;
+  if (!Array.isArray(value.entries)) return null;
+  const entries = value.entries.map(asHistoryEntry);
+  if (entries.some(entry => entry === null)) return null;
+  return { shipmentId: value.shipmentId, earlierChangesUnrecorded: value.earlierChangesUnrecorded, entries: entries as ShipmentHistoryEntry[] };
+}
+
+function asHistoryEntry(value: unknown): ShipmentHistoryEntry | null {
+  if (!isRecord(value) || !isWhole(value.id) || typeof value.recordedAt !== 'string') return null;
+  if (typeof value.changeType !== 'string' || !CHANGE_TYPES.includes(value.changeType as ShipmentChangeType)) return null;
+  const actor = value.changedBy;
+  if (!isRecord(actor) || !isWhole(actor.id) || typeof actor.fullName !== 'string') return null;
+  if (!Array.isArray(value.changes) || !value.changes.every(isFieldChange)) return null;
+  return {
+    id: value.id,
+    changeType: value.changeType as ShipmentChangeType,
+    changedBy: { id: actor.id, fullName: actor.fullName },
+    recordedAt: value.recordedAt,
+    changes: value.changes.map(change => ({ field: change.field, previousValue: change.previousValue, newValue: change.newValue })),
+  };
+}
+
+function isFieldChange(value: unknown): value is ShipmentFieldChange {
+  return isRecord(value) && typeof value.field === 'string' && isNullableText(value.previousValue) && isNullableText(value.newValue);
 }
