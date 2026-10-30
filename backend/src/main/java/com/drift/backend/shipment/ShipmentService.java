@@ -374,7 +374,7 @@ public class ShipmentService {
 		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
 		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
 				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison(),
-				decisions.current(shipment.getId()));
+				decisions.current(shipment.getId()), decisions.currentImpact());
 	}
 
 	private ConnectionWindow window(Shipment shipment) {

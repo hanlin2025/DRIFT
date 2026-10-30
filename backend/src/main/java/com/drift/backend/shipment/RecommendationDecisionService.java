@@ -47,6 +47,10 @@ class RecommendationDecisionService {
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
+	ShipmentRecommendationImpact currentImpact() {
+		return impacts.current();
+	}
+
 	@Transactional
 	public RecommendationDecisionResponse decide(AuthenticatedUser principal, Long shipmentId,
 			RecommendationDecisionRequest request) {

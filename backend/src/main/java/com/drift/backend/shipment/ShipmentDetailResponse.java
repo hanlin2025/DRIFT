@@ -67,6 +67,9 @@ public record ShipmentDetailResponse(
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
 		ShipmentStatus status,
+		@Schema(description = "The recommendation for this read, from the connection risk and the impact result. Unavailable when either input is missing. It is not stored.",
+				implementation = ShipmentRecommendation.class)
+		ShipmentRecommendation recommendation,
 		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
 				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
 		RecommendationDecisionResponse recommendationDecision) {
@@ -75,20 +78,21 @@ public record ShipmentDetailResponse(
 			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
 			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
 		return from(shipment, calculation, remainingConnectionWindow, motherVesselPosition, feederVesselPosition,
-				arrivalComparison, null);
+				arrivalComparison, null, ShipmentRecommendationImpact.notReturned());
 	}
 
 	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
 			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
 			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison,
-			RecommendationDecisionResponse recommendationDecision) {
+			RecommendationDecisionResponse recommendationDecision, ShipmentRecommendationImpact impact) {
+		ShipmentRisk risk = ShipmentRisk.of(calculation, remainingConnectionWindow);
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
 				shipment.getMotherVesselOperator(), shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(),
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
-				ShipmentRisk.of(calculation, remainingConnectionWindow),
+				risk,
 				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
@@ -99,7 +103,8 @@ public record ShipmentDetailResponse(
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision);
+				organisation(shipment.getImporterCompany()), shipment.getStatus(),
+				ShipmentRecommendation.of(risk, impact), recommendationDecision);
 	}
 
 	private static OrganisationResponse organisation(Company company) {

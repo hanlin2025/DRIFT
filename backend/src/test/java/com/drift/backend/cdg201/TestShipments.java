@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 
 import com.drift.backend.shipment.ShipmentDetailResponse;
+import com.drift.backend.shipment.ShipmentRecommendation;
+import com.drift.backend.shipment.ShipmentRecommendationImpact;
 import com.drift.backend.shipment.ShipmentStatus;
 
 final class TestShipments {
@@ -15,6 +17,15 @@ final class TestShipments {
 				OffsetDateTime.parse("2026-10-28T23:00:00+08:00"), imo, null, null, "SIMULATED FEEDER",
 				OffsetDateTime.parse("2026-10-29T12:00:00+08:00"), null, null, null, Instant.EPOCH, 0L,
 				null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				ShipmentStatus.ACTIVE, null);
+				ShipmentStatus.ACTIVE, unavailableRecommendation(), null);
+	}
+
+	private static ShipmentRecommendation unavailableRecommendation() {
+		ShipmentRecommendationImpact impact = new ShipmentRecommendationImpact(
+				ShipmentRecommendationImpact.Outcome.UNAVAILABLE,
+				"The impact assessment has not been returned.");
+		return new ShipmentRecommendation(false,
+				"A recommendation is not available because the connection risk is not assessed and the impact assessment has not been returned.",
+				null, null, null, impact);
 	}
 }

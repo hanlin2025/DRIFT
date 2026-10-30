@@ -339,6 +339,9 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .recommendation-decision .eyebrow { margin: 0; }
 .recommendation-decision h3 { margin: 6px 0 0; font-size: 18px; }
 .recommendation-decision .intro { margin: 8px 0 0; font-size: 13px; line-height: 1.55; }
+.recommendation-impact { margin: 10px 0 0; }
+.recommendation-impact dt { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.recommendation-impact dd { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink); }
 .current-decision { margin: 14px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fcfcf8; }
 .current-decision-outcome { margin: 0 0 10px; font-size: 13px; font-weight: 750; }
 .current-decision dl { display: grid; gap: 10px; margin: 0; }
