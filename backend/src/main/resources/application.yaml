@@ -91,6 +91,9 @@ app:
     # after source-use and organizational approval. This is not enabled by collector access alone.
     authentic-retrospective-inference-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED:false}
     authentic-retrospective-source-types-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED:}
+    # Exact curated evidence IDs require their own documented source-use approval. A source
+    # type allowlist alone is intentionally insufficient for external transmission.
+    authentic-retrospective-evidence-ids-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED:}
     # Explicit bounds apply to every configured provider request.  The feature
     # remains disabled unless both this flag and provider configuration are set.
     timeout-seconds: ${MARITIME_AI_TIMEOUT_SECONDS:20}

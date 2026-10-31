@@ -15,3 +15,21 @@ Set `MARITIME_CONTEXT_DEMO_ENABLED=true` and
 records are always marked `RETROSPECTIVE_ANALYSIS` / `HISTORICAL_REPLAY`; a past source event
 does not become point-in-time evidence merely because it is present in this resource. Eligibility
 requires the record's UTC retrieval timestamp to be at or before the assessment cutoff.
+
+## External AI processing status
+
+This export is available to the DRIFT application, but that is **not** approval to transmit it to
+an external AI provider. There is currently no committed approval record for either curated item.
+Authentic retrospective inference therefore remains default-deny and must not be enabled until an
+authorised owner records, for each exact evidence ID, its source terms/attribution, permitted
+external processor, retention conditions, and approval date.
+
+The application enforces three separate gates before an authentic record can reach a provider:
+
+1. `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED=true`;
+2. the source type in `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED`; and
+3. the exact curated evidence ID in `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED`.
+
+The ID allowlist is deliberately record-specific: approving `MPA_ETA_REVISION` does not approve a
+future MPA export, and likewise for NEA. These settings are necessary technical controls, not a
+substitute for source-owner approval.

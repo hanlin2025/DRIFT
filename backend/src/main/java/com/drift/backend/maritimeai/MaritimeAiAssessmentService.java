@@ -32,16 +32,20 @@ public class MaritimeAiAssessmentService {
 	private final MaritimeContextService context; private final MaritimeAiClient client; private final MaritimeAiAssessmentRepository assessments;
 	private final ObjectMapper json; private final Clock clock; private final boolean enabled;
 	private final boolean authenticRetrospectiveInferenceApproved; private final Set<String> approvedAuthenticSourceTypes;
+	private final Set<String> approvedAuthenticEvidenceIds;
 
 	public MaritimeAiAssessmentService(ShipmentService shipments, ShipmentRepository shipmentRepository, MaritimeContextService context,
 			MaritimeAiClient client, MaritimeAiAssessmentRepository assessments, ObjectMapper json, ObjectProvider<Clock> clocks,
 			@Value("${app.maritime-ai.enabled:false}") boolean enabled,
 			@Value("${app.maritime-ai.authentic-retrospective-inference-approved:false}") boolean authenticRetrospectiveInferenceApproved,
-			@Value("${app.maritime-ai.authentic-retrospective-source-types-approved:}") String approvedAuthenticSourceTypes) {
+			@Value("${app.maritime-ai.authentic-retrospective-source-types-approved:}") String approvedAuthenticSourceTypes,
+			@Value("${app.maritime-ai.authentic-retrospective-evidence-ids-approved:}") String approvedAuthenticEvidenceIds) {
 		this.shipments = shipments; this.shipmentRepository = shipmentRepository; this.context = context; this.client = client;
 		this.assessments = assessments; this.json = json; this.clock = clocks.getIfAvailable(Clock::systemUTC); this.enabled = enabled;
 		this.authenticRetrospectiveInferenceApproved = authenticRetrospectiveInferenceApproved;
 		this.approvedAuthenticSourceTypes = Arrays.stream(approvedAuthenticSourceTypes.split(",")).map(String::trim)
+				.filter(value -> !value.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+		this.approvedAuthenticEvidenceIds = Arrays.stream(approvedAuthenticEvidenceIds.split(",")).map(String::trim)
 				.filter(value -> !value.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
 	}
 
@@ -57,8 +61,9 @@ public class MaritimeAiAssessmentService {
 				bundle.shipmentAssociationConfidence(), shipmentContext, bundle.evidence());
 		if (!enabled) return transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
 		// Recorded replay, live, and unknown source modes never reach a provider. Authentic
-		// retrospective sources require both a global approval and an explicit source-type allowlist.
-		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence(), authenticRetrospectiveInferenceApproved, approvedAuthenticSourceTypes);
+		// retrospective sources require global, source-type, and exact curated-record approvals.
+		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence(), authenticRetrospectiveInferenceApproved,
+				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds);
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
 				bundle.shipmentAssociationConfidence(), shipmentContext, eligible);
 		if (input.evidence().isEmpty()) {
@@ -84,12 +89,24 @@ public class MaritimeAiAssessmentService {
 
 	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence,
 			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes) {
+		return eligibleForInference(evidence, authenticRetrospectiveInferenceApproved, approvedAuthenticSourceTypes, Set.of());
+	}
+
+	/**
+	 * Authentic records require a global organisational approval, a source-type approval, and an
+	 * exact curated-record approval. The last condition prevents a newly exported record from
+	 * being transmitted merely because another record from the same source type was approved.
+	 */
+	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence,
+			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
+			Set<String> approvedAuthenticEvidenceIds) {
 		return evidence.stream()
 				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
 						&& !"STALE".equals(item.freshness()))
 				.filter(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode())
 						|| (authenticRetrospectiveInferenceApproved && "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode())
-								&& approvedAuthenticSourceTypes.contains(item.sourceType())))
+								&& approvedAuthenticSourceTypes.contains(item.sourceType())
+								&& approvedAuthenticEvidenceIds.contains(item.evidenceId())))
 				.toList();
 	}
 
