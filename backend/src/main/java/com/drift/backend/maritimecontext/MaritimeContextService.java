@@ -45,8 +45,7 @@ public class MaritimeContextService {
 						null, null, "UNKNOWN", item.compatibilityState(), item.evidenceSufficient(), item.humanReviewRequired(),
 						item.shipmentAssociationConfidence(), List.of(item.activityCompatibility()), List.of(item.locationCompatibility()), item.limitation()))
 				.toList();
-		String association = evidence.stream().anyMatch(item -> "UNVERIFIED_IMO_ONLY".equals(item.shipmentAssociationConfidence()))
-				? "UNVERIFIED_IMO_ONLY" : "UNAVAILABLE";
+		String association = shipmentAssociationConfidence(evidence);
 		return new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true, bundleMode(evidence), assessmentCutoffUtc.toString(), association,
 				"Human review is required. This bundle is a read-only replay/demo and does not change ETA, shipment, risk, alerts, or operational decisions.",
 				evidence, notices, null, null);
@@ -56,6 +55,20 @@ public class MaritimeContextService {
 		if (evidence.stream().anyMatch(item -> "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))) return "RETROSPECTIVE_ANALYSIS";
 		if (evidence.stream().anyMatch(item -> "RECORDED_REPLAY".equals(item.sourceMode()))) return "RECORDED_REPLAY";
 		if (evidence.stream().anyMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) return "SYNTHETIC_DEMONSTRATION";
+		return "UNAVAILABLE";
+	}
+
+	private static String shipmentAssociationConfidence(List<MaritimeEvidence> evidence) {
+		if (evidence.stream().anyMatch(item -> "UNVERIFIED_IMO_ONLY".equals(item.shipmentAssociationConfidence()))) {
+			return "UNVERIFIED_IMO_ONLY";
+		}
+		// VERIFIED is deliberately available only to a test-only, all-synthetic fixture.
+		// A recorded or live source is never promoted merely because an adapter supplied that string.
+		if (!evidence.isEmpty()
+				&& evidence.stream().allMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode())
+						&& "VERIFIED".equals(item.shipmentAssociationConfidence()))) {
+			return "VERIFIED";
+		}
 		return "UNAVAILABLE";
 	}
 }

@@ -258,6 +258,15 @@ describe('CDG-246 maritime-context API', () => {
     expect(fetch).toHaveBeenCalledWith('/api/shipments/9/maritime-context', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }));
   });
 
+  it('accepts a clearly labelled retrospective-analysis bundle', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RETROSPECTIVE_ANALYSIS', assessmentCutoffUtc: '2026-10-28T00:00:00Z',
+      shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Historical replay only.', evidence: [{ ...evidence, sourceMode: 'RETROSPECTIVE_ANALYSIS', timeCompatibility: 'UNKNOWN' }], notices: [], aiExplanation: null, suggestedActions: null,
+    })));
+
+    await expect(getMaritimeContext('token', '9')).resolves.toMatchObject({ sourceMode: 'RETROSPECTIVE_ANALYSIS' });
+  });
+
   it('rejects a context bundle that omits its assessment cutoff', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ enabled: true, sourceMode: 'RECORDED_REPLAY', evidence: [], notices: [], aiExplanation: null, suggestedActions: null })));
     await expect(getMaritimeContext('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));

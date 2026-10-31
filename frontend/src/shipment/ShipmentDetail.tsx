@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
 import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
@@ -50,6 +50,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
   const [maritimeAiAssessments, setMaritimeAiAssessments] = useState<MaritimeAiAssessment[]>([]);
   const [maritimeAiUnavailable, setMaritimeAiUnavailable] = useState(false);
+  const [maritimeAiGenerating, setMaritimeAiGenerating] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const historySeq = useRef(0);
 
@@ -112,6 +113,20 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     }
   }, [token, shipmentId, onSessionEnded]);
 
+  const generateMaritimeAi = useCallback(async () => {
+    setMaritimeAiGenerating(true);
+    try {
+      const generated = await generateMaritimeAiAssessment(token, shipmentId);
+      setMaritimeAiAssessments(current => [generated, ...current]);
+      setMaritimeAiUnavailable(false);
+    } catch (reason: unknown) {
+      if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
+      else setMaritimeAiUnavailable(true);
+    } finally {
+      setMaritimeAiGenerating(false);
+    }
+  }, [token, shipmentId, onSessionEnded]);
+
   useEffect(() => {
     let active = true;
     const requestId = ++requestSeq.current;
@@ -155,28 +170,40 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    // These sources are additive. Promise.resolve starts the chain before invoking a mocked or
-    // optional client, so a synchronous throw or non-Promise result cannot unmount the detail page.
-    Promise.resolve().then(() => getCdg201ArrivalEvidence(token, shipmentId)).then(found => {
-      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
-    }).catch(() => {
-      // Evidence replay is additive: a replay outage must not block shipment detail.
-      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
-    });
-    Promise.resolve().then(() => getMaritimeContext(token, shipmentId)).then(found => {
-      if (!active || requestId !== requestSeq.current) return;
-      if (found) setMaritimeContext(found);
-      else setMaritimeContextUnavailable(true);
-    }).catch(() => {
-      if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
-    });
-    Promise.resolve().then(() => listMaritimeAiAssessments(token, shipmentId)).then(found => {
-      if (!active || requestId !== requestSeq.current) return;
-      if (Array.isArray(found)) setMaritimeAiAssessments(found);
-      else setMaritimeAiUnavailable(true);
-    }).catch(() => {
-      if (active && requestId === requestSeq.current) setMaritimeAiUnavailable(true);
-    });
+    // Evidence replay is additive. A rejected call, or a call that does not return a
+    // response, must not unmount the shipment the viewer already opened.
+    void Promise.resolve()
+      .then(() => getCdg201ArrivalEvidence(token, shipmentId))
+      .then(found => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(found ?? null);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(null);
+      });
+    // Maritime Context is independently additive: it uses the same guarded promise boundary
+    // so an unavailable optional client never prevents shipment detail or recommendations rendering.
+    void Promise.resolve()
+      .then(() => getMaritimeContext(token, shipmentId))
+      .then(found => {
+        if (!active || requestId !== requestSeq.current) return;
+        if (found) setMaritimeContext(found);
+        else setMaritimeContextUnavailable(true);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
+      });
+    // AI assessments are independently additive and must not prevent the evidence panel or
+    // shipment detail from rendering when an optional client throws or returns a non-Promise.
+    void Promise.resolve()
+      .then(() => listMaritimeAiAssessments(token, shipmentId))
+      .then(found => {
+        if (!active || requestId !== requestSeq.current) return;
+        if (Array.isArray(found)) setMaritimeAiAssessments(found);
+        else setMaritimeAiUnavailable(true);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setMaritimeAiUnavailable(true);
+      });
     return () => {
       active = false;
       requestSeq.current += 1;
@@ -223,7 +250,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} maritimeAiGenerating={maritimeAiGenerating} onGenerateMaritimeAi={generateMaritimeAi} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
@@ -262,7 +289,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 24;
 
 function ShipmentSkeleton() {
   return (
@@ -285,7 +312,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
@@ -293,6 +320,8 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   maritimeContextUnavailable: boolean;
   maritimeAiAssessments: MaritimeAiAssessment[];
   maritimeAiUnavailable: boolean;
+  maritimeAiGenerating: boolean;
+  onGenerateMaritimeAi: () => void;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
@@ -328,7 +357,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       </div>
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
-      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}
@@ -371,12 +400,48 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
       {changeHistory}
     </>
   );
+}
+
+const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
+  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
+  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
+};
+
+function recommendationFact(recommendation: Shipment['recommendation']) {
+  if (!recommendation) return null;
+  const risk = recommendation.riskLevel && recommendation.riskExplanation
+    ? { level: recommendation.riskLevel, explanation: recommendation.riskExplanation }
+    : null;
+  return (
+    <div>
+      <dt>Recommendation</dt>
+      <dd>
+        {recommendation.available ? recommendation.response.label : recommendation.unavailable}
+        <dl className="arrival-comparison">
+          {recommendation.available && <div><dt>Response</dt><dd>{recommendation.response.wording}</dd></div>}
+          {risk && (
+            <div>
+              <dt>Connection risk</dt>
+              <dd><RiskBadge risk={risk} /> {risk.explanation}</dd>
+            </div>
+          )}
+          <div><dt>Impact</dt><dd>{impactOutcome(recommendation.impact)}</dd></div>
+        </dl>
+      </dd>
+    </div>
+  );
+}
+
+function impactOutcome(impact: RecommendationImpact) {
+  if (impact.outcome === 'UNAVAILABLE') return impact.detail;
+  return IMPACT_OUTCOMES[impact.outcome];
 }
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {

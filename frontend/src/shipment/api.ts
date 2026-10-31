@@ -31,15 +31,16 @@ export type ShipmentRisk = {
 export type MaritimeNoticeEvidence = { noticeId: string; title: string; officialSourceUrl: string; citation: string; publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null; supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN'; evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; activityEvidence: string[]; locationEvidence: string[]; limitation: string; };
 export type MaritimeEvidence = {
   sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
-  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
+  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
   evidenceId: string; title: string; sourceIdentifier: string; sourceUrl: string; citation: string;
   sourceEventAt: string | null; observedAt: string | null; retrievedAtUtc: string | null; freshness: string;
   previousValue: string; currentValue: string; changeMagnitude: string;
   activityCompatibility: string; locationCompatibility: string; timeCompatibility: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
+  vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
-export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
-export type MaritimeAiAssessment = { assessmentId: string | null; state: 'GENERATED' | 'ABSTAINED' | 'FAILED'; validationStatus: string; bundleVersion: string; bundleHash: string; assessmentCutoffUtc: string; provider: string; model: string; promptVersion: string; generatedAtUtc: string | null; interpretation: { summary: string; claims: { statement: string; evidenceIds: string[]; applicability: string }[]; uncertainties: string[]; followUpConsiderations: string[]; evidenceSufficient: boolean; formalRecommendationCode: string | null } | null; limitation: string | null; };
+export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeAiAssessment = { assessmentId: string | null; state: 'GENERATED' | 'ABSTAINED' | 'FAILED'; validationStatus: string; bundleVersion: string; bundleHash: string; assessmentCutoffUtc: string; provider: string; model: string; promptVersion: string; generatedAtUtc: string | null; interpretation: { summary: string; claims: { statement: string; evidenceIds: string[]; applicability: string; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null; factReferences?: string[]; relationshipType?: 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | null }[]; uncertainties: string[]; followUpConsiderations: string[]; evidenceSufficient: boolean; formalRecommendationCode: string | null } | null; limitation: string | null; deterministicSummary?: { summaryVersion: string; label: string; shipmentScheduleFacts: { factReference: string; factType: string; subject: string | null; eventType: string | null; timestamp: string | null; previousValue: string | null; currentValue: string | null; evidenceId: string | null; sourceType: string; sourceMode: string; associationScope: string; citation: string; observedAt?: string | null; retrievedAtUtc?: string | null }[]; evidenceFacts: { factReference: string; factType: string; subject: string | null; eventType: string | null; timestamp: string | null; previousValue: string | null; currentValue: string | null; evidenceId: string | null; sourceType: string; sourceMode: string; associationScope: string; citation: string; observedAt?: string | null; retrievedAtUtc?: string | null }[]; limitations: string[] } | null; };
 
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
@@ -291,7 +292,7 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
 
 export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
-  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
+  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'RETROSPECTIVE_ANALYSIS', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
   const evidence = data.evidence as MaritimeEvidence[];
   if (evidence.some(item => !isRecord(item) || !isPresentText(item.sourceType) || !isPresentText(item.sourceMode) || !isPresentText(item.evidenceId) || !isPresentText(item.title) || !isPresentText(item.shipmentAssociationConfidence) || !isPresentText(item.limitation))) throw new ApiError(UNEXPECTED, 502);
   const notices = data.notices as MaritimeNoticeEvidence[];
@@ -302,10 +303,17 @@ export async function getMaritimeContext(token: string, shipmentId: string): Pro
 export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
-  return data.map(value => {
-    if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
-    return value as MaritimeAiAssessment;
-  });
+  return data.map(asMaritimeAiAssessment);
+}
+
+export async function generateMaritimeAiAssessment(token: string, shipmentId: string): Promise<MaritimeAiAssessment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token, { method: 'POST' });
+  return asMaritimeAiAssessment(data);
+}
+
+function asMaritimeAiAssessment(value: unknown): MaritimeAiAssessment {
+  if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
+  return value as MaritimeAiAssessment;
 }
 
 export type ShipmentTracking = {
