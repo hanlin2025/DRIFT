@@ -114,6 +114,14 @@ class RolePermissionMatrixTest {
 	}
 
 	@Test
+	void appliesActiveCompanyAndVisibilityRulesToAiAssessmentGeneration() {
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "POST", "/api/shipments/4/maritime-ai-assessments"))
+				.contains(ShipmentAccessForbiddenException.MESSAGE);
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, true, "POST", "/api/shipments/4/maritime-ai-assessments")).isEmpty();
+		assertThat(RolePermissionMatrix.isShipmentScoped("POST", "/api/shipments/4/maritime-ai-assessments")).isTrue();
+	}
+
+	@Test
 	void profileIsAvailableToEveryRoleWithoutACompany() {
 		for (Role role : Role.values()) {
 			assertThat(RolePermissionMatrix.denial(role, false, "GET", "/api/profile")).isEmpty();
