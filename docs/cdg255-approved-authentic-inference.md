@@ -22,11 +22,18 @@ canonical references. Requests explicitly set `store:false`; DRIFT does not add 
 ## Approval still required
 
 No source-owner authorization for authentic MPA OCEANS-X arrival records or NEA data.gov.sg
-weather records is committed. Before a real request, the source owner and DRIFT organizational
-approver must record, for every exact curated evidence ID: source terms, permitted processor
-(OpenAI), permitted fields and attribution, retention/deletion conditions, approver, and date.
-An environment flag is a technical control, not that approval record. Authentic inference remains
-blocked until those approvals exist.
+weather records is committed. On 2026-11-01, the DRIFT team confirmed that project-scope
+transmission of the two curated IDs below to OpenAI is permitted:
+
+- `mpa-expected-revision-9351048-20261026T154603`
+- `nea-rainfall-20261027T153306`
+
+The confirmation is limited to relevant retrospective observations, the bounded payload, the
+OpenAI Responses provider, explicit `store:false`, and the exact type/ID gates above. It does not
+authorize other MPA, NEA, notice, collector, private-shipment, or raw-source data. Before a real
+request, DRIFT must still retain the responsible source-owner/organizational approval record with
+source terms, permitted processor and fields, attribution, retention/deletion conditions,
+approver, and date. An environment flag is a technical control, not that approval record.
 
 ## Real-provider readiness
 

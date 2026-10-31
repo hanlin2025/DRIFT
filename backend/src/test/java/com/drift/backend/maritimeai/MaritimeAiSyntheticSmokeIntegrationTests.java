@@ -104,12 +104,13 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				@Value("${app.maritime-ai.model:}") String model,
 				@Value("${app.maritime-ai.api-key:}") String apiKey,
 				@Value("${app.maritime-ai.endpoint:}") String endpoint,
+				@Value("${app.maritime-ai.external-requests-approved:false}") boolean externalRequestsApproved,
 				tools.jackson.databind.ObjectMapper json) {
 			if (useRealClient) {
 				if (!"APPROVED".equals(System.getenv("CDG247_RUN_REAL_SMOKE"))) {
 					throw new IllegalStateException("Real smoke test requires CDG247_RUN_REAL_SMOKE=APPROVED");
 				}
-				return new ConfiguredMaritimeAiClient(provider, model, apiKey, endpoint, json);
+				return new ConfiguredMaritimeAiClient(provider, model, apiKey, endpoint, externalRequestsApproved, json);
 			}
 			return evidence -> new MaritimeAiClient.MaritimeAiClientResult("synthetic-stub", "stubbed-responses", "cdg247.synthetic-smoke.v1",
 					new MaritimeAiInterpretation("Synthetic evidence was interpreted.",
