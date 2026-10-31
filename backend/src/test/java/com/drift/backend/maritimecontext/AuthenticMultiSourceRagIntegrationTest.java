@@ -41,7 +41,10 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Local-only CDG-249 proof that authentic curated evidence reaches the CDG-247 client boundary. */
 @SpringBootTest(properties = { "app.maritime-ai.enabled=true", "app.maritime-context.demo-enabled=true",
-		"app.maritime-context.curated-snapshots-enabled=true" })
+		"app.maritime-context.curated-snapshots-enabled=true",
+		"app.maritime-ai.authentic-retrospective-inference-approved=true",
+		"app.maritime-ai.authentic-retrospective-source-types-approved=MPA_ETA_REVISION,NEA_WEATHER",
+		"app.maritime-ai.authentic-retrospective-evidence-ids-approved=mpa-expected-revision-9351048-20261026T154603,nea-rainfall-20261027T153306" })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(AuthenticMultiSourceRagIntegrationTest.Config.class)
@@ -131,16 +134,16 @@ class AuthenticMultiSourceRagIntegrationTest {
 	}
 
 	private static ShipmentDetailResponse shipment(String imo) {
-		return new ShipmentDetailResponse(1L, 1L, "CDG249", "SG", "ID", "SG", "KOTA LARIS", null, imo,
-				null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null,
+		return new ShipmentDetailResponse(1L, 1L, "CDG249", "SG", "ID", "Singapore", "KOTA LARIS",
+				java.time.OffsetDateTime.parse("2026-10-29T02:00:00+08:00"), imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null,
 				null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
 	}
 
 	private static String shipmentJson() {
 		return ("{\"shipmentReference\":\"CDG249-%s\",\"origin\":\"Synthetic origin\",\"destination\":\"Synthetic destination\","
-				+ "\"transshipmentPort\":\"Synthetic port\",\"motherVessel\":\"KOTA LARIS\",\"motherVesselImo\":\"9351048\","
-				+ "\"plannedMotherArrivalAt\":\"2026-10-01T08:00:00+08:00\",\"feederVessel\":\"Synthetic feeder\","
-				+ "\"plannedFeederDepartureAt\":\"2026-10-01T16:00:00+08:00\"}").formatted(UUID.randomUUID());
+				+ "\"transshipmentPort\":\"Singapore\",\"motherVessel\":\"KOTA LARIS\",\"motherVesselImo\":\"9351048\","
+				+ "\"plannedMotherArrivalAt\":\"2026-10-29T02:00:00+08:00\",\"feederVessel\":\"Synthetic feeder\","
+				+ "\"plannedFeederDepartureAt\":\"2026-10-29T10:00:00+08:00\"}").formatted(UUID.randomUUID());
 	}
 
 	@TestConfiguration
@@ -158,9 +161,14 @@ class AuthenticMultiSourceRagIntegrationTest {
 			last.set(input);
 			return new MaritimeAiClientResult("capturing-stub", "local", "cdg249.local.v1",
 					new MaritimeAiInterpretation("Historical evidence is available.", List.of(
-							new MaritimeAiClaim("The recorded ETA revision and regional rainfall context are retrospective; shipment association is unverified.",
-									input.evidence().stream().map(MaritimeEvidence::evidenceId).toList(), "UNCERTAIN")),
-							List.of("No causation or shipment-specific outcome is asserted."), List.of(), true, null), null);
+							new MaritimeAiClaim("Review the documented retrospective expected-arrival revision against the schedule context.",
+									List.of("mpa-expected-revision-9351048-20261026T154603"), "UNCERTAIN", "MOTHER", "EXPECTED_ARRIVAL",
+									"VESSEL_OBSERVATION", List.of("evidence:mpa-expected-revision-9351048-20261026T154603",
+											"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW"),
+							new MaritimeAiClaim("The regional rainfall observation is context only; it does not establish a vessel-specific effect.",
+									List.of("nea-rainfall-20261027T153306"), "CONTEXTUAL", null, null, "REGIONAL_CONTEXT",
+									List.of("evidence:nea-rainfall-20261027T153306"), "REGIONAL_WEATHER_CONTEXT")),
+							List.of("The evidence remains vessel and regional context only; no causation or shipment-specific outcome is asserted."), List.of(), true, null), null);
 		}
 	}
 }
