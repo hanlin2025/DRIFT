@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Component
 class ConfiguredMaritimeAiClient implements MaritimeAiClient {
-	static final String PROMPT_VERSION = "cdg247.evidence.v9.documented-revision-grounding";
+	static final String PROMPT_VERSION = "cdg247.evidence.v9.documented-revision-grounding.1";
 	private final String provider;
 	private final String model;
 	private final String apiKey;
@@ -140,6 +140,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 								+ "If association confidence is not VERIFIED, state that any shipment-specific relevance is conditional and unverified. "
 								+ "For each claim, copy vesselRole, observationType, and associationScope exactly from its cited evidence when present; otherwise use null. "
 								+ "Each claim is a typed planning insight and must include one or more canonical factReferences from the supplied list. Do not return evidenceIds: the backend derives raw evidence IDs from evidence:<id> factReferences. Do not restate vessel names, timestamps, measurements, notice periods, weather values, or source provenance in the summary or claim statement: the backend renders those facts separately. "
+								+ "For claims with typed canonical references, use abstract planning prose only: include no digits, numeric words, named vessels, calendar or clock text, source IDs or titles, quoted input-field values, or factual source descriptions. A safe claim form is 'The documented revision warrants schedule review.' A safe summary form is 'Review the grounded interpretation and limitations.' "
 								+ "For a cited MPA MOTHER EXPECTED_ARRIVAL revision, describe one documented change between its previous and current values. State a revision magnitude only when its exact duration is supported by that cited canonical MPA evidence. Never call the revision additional, further, another, or subsequent, and never imply a separate or cumulative revision. "
 								+ "The summary must be a non-factual orientation to the AI interpretation; do not describe any vessel, source, schedule, time, value, event, or relationship there. "
 								+ "Use relationshipType SCHEDULE_REVIEW only for a cited MOTHER EXPECTED_ARRIVAL plus both planned schedule references; PORT_CONTEXT_REVIEW only for cited PORT_CONTEXT evidence; PORT_TIME_OVERLAP_REVIEW only when the supplied canonical overlap reference is present; and REGIONAL_WEATHER_CONTEXT only for cited REGIONAL_CONTEXT evidence. "

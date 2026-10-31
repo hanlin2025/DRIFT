@@ -26,7 +26,7 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation()).isNotNull();
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
-			assertThat(result.promptVersion()).isEqualTo("cdg247.evidence.v9.documented-revision-grounding");
+			assertThat(result.promptVersion()).isEqualTo("cdg247.evidence.v9.documented-revision-grounding.1");
 			assertThat(result.interpretation().claims().get(0).vesselRole()).isNull();
 			assertThat(result.interpretation().claims().get(0).observationType()).isNull();
 			assertThat(result.interpretation().claims().get(0).associationScope()).isNull();

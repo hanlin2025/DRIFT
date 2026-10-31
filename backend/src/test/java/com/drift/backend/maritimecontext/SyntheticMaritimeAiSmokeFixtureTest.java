@@ -23,6 +23,10 @@ class SyntheticMaritimeAiSmokeFixtureTest {
 			assertThat(item.title()).doesNotContainIgnoringCase("KOTA");
 			assertThat(item.citation()).doesNotContainIgnoringCase("MPA");
 			assertThat(item.shipmentAssociationConfidence()).isEqualTo("VERIFIED");
+			assertThat(item.sourceType()).isEqualTo("MPA_ETA_REVISION");
+			assertThat(item.vesselRole()).isEqualTo("MOTHER");
+			assertThat(item.observationType()).isEqualTo("EXPECTED_ARRIVAL");
+			assertThat(item.associationScope()).isEqualTo("VESSEL_OBSERVATION");
 		});
 		assertThat(SyntheticMaritimeAiSmokeFixture.context().forShipment(shipment("real-looking-but-unused-imo")).evidence()).isEmpty();
 	}

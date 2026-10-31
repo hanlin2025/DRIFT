@@ -31,12 +31,13 @@ public final class SyntheticMaritimeAiSmokeFixture {
 
 	public static MaritimeEvidence evidence() {
 		return new MaritimeEvidence(
-				"SYNTHETIC_MARITIME_EVENT", "SYNTHETIC_DEMONSTRATION", "synthetic-smoke-001",
+				"MPA_ETA_REVISION", "SYNTHETIC_DEMONSTRATION", "synthetic-smoke-001",
 				"Synthetic port-planning fixture", "CDG-247 test fixture", "https://example.invalid/cdg247/synthetic",
 				"Independently authored synthetic evidence; not an official notice or vessel event.",
 				"2026-10-01T07:00:00+08:00", "2026-10-01T07:00:00+08:00", "2026-09-30T23:00:00Z",
-				"FRESH", "Synthetic prior schedule", "Synthetic revised schedule", "+30 minutes",
+				"FRESH", "2026-10-01T08:00:00+08:00", "2026-10-01T08:30:00+08:00", "+30 minutes",
 				"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true,
-				"VERIFIED", "Verified only within the internally constructed CDG-247 fictional smoke fixture: its fictional shipment, vessel, schedule, and evidence IDs are deliberately matched. It establishes no real shipment, vessel, cargo, ETA, or operational fact.");
+				"VERIFIED", "Verified only within the internally constructed CDG-247 fictional smoke fixture: its fictional shipment, vessel, schedule, and evidence IDs are deliberately matched. It establishes no real shipment, vessel, cargo, ETA, or operational fact.",
+				"Synthetic vessel", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 	}
 }

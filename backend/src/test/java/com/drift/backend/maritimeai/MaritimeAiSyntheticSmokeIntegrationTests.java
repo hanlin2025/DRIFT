@@ -114,8 +114,10 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				return new ConfiguredMaritimeAiClient(provider, model, apiKey, endpoint, externalRequestsApproved, json);
 			}
 			return evidence -> new MaritimeAiClient.MaritimeAiClientResult("synthetic-stub", "stubbed-responses", "cdg247.synthetic-smoke.v1",
-					new MaritimeAiInterpretation("Synthetic evidence was interpreted.",
-							List.of(new MaritimeAiClaim("Synthetic evidence is available for smoke-test validation.", List.of("synthetic-smoke-001"), "UNCERTAIN")),
+					new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+							List.of(new MaritimeAiClaim("The documented synthetic revision warrants schedule review.", List.of("synthetic-smoke-001"), "VERIFIED",
+									"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:synthetic-smoke-001",
+											"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
 							List.of("Synthetic fixture only."), List.of(), true, null), null);
 		}
 	}
