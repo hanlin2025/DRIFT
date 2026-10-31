@@ -175,6 +175,8 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 		Path output = MultiSourceConfiguration.offlineCapturePath();
 		Files.deleteIfExists(output);
 		try {
+			assertThat(MaritimeAiCanonicalFactReferences.allowed(syntheticEvidencePackage()))
+				.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 			MaritimeAiClient capturing = new MultiSourceConfiguration().multiSourceClient(false, "", "", "", "", false,
 					20, 800, new tools.jackson.databind.ObjectMapper(), true, output.toString());
 			MaritimeAiClient.MaritimeAiClientResult result = capturing.interpret(syntheticEvidencePackage());
@@ -254,10 +256,16 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	}
 
 	private static com.drift.backend.maritimecontext.MaritimeEvidence syntheticEvidence(String id, String role, String observationType, String associationScope) {
-		return new com.drift.backend.maritimecontext.MaritimeEvidence("SYNTHETIC", "SYNTHETIC_DEMONSTRATION", id,
+		String sourceType = "VESSEL_OBSERVATION".equals(associationScope) ? "MPA_ETA_REVISION"
+				: "PORT_CONTEXT".equals(associationScope) ? "MPA_OFFICIAL_NOTICE" : "NEA_WEATHER";
+		String previousValue = "MPA_ETA_REVISION".equals(sourceType) ? "2026-10-01T05:00:00+08:00" : null;
+		String currentValue = "MPA_ETA_REVISION".equals(sourceType) ? "2026-10-01T06:00:00+08:00"
+				: "MPA_OFFICIAL_NOTICE".equals(sourceType) ? "Effective 2026-10-01 06:00-12:00 SGT"
+				: "Rainfall observation: 12.0 mm";
+		return new com.drift.backend.maritimecontext.MaritimeEvidence(sourceType, "SYNTHETIC_DEMONSTRATION", id,
 				"Synthetic evidence", "synthetic", "https://example.invalid/synthetic", "Synthetic-only citation.",
 				"2026-10-01T00:00:00+08:00", "2026-10-01T00:00:00+08:00", "2026-09-30T22:00:00Z", "FRESH",
-				null, null, null, "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED",
+				previousValue, currentValue, "MPA_ETA_REVISION".equals(sourceType) ? "+60 minutes" : null, "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED",
 				"Synthetic-only fixture evidence.", "Synthetic Multi-source Vessel", role, observationType, associationScope);
 	}
 
