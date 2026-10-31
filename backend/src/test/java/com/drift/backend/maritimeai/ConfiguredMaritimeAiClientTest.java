@@ -35,6 +35,7 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(authorization.get()).isEqualTo("Bearer test-key");
 			assertThat(requestBody.get()).contains("\"model\":\"test-structured-model\"")
 				.contains("\"max_output_tokens\":800")
+				.contains("\"store\":false")
 					.contains("\"json_schema\"").contains("\"strict\":true")
 					.contains("maritime_ai_interpretation_v8_canonical_typed_grounding")
 					.contains("\"vesselRole\"").contains("\"observationType\"").contains("\"associationScope\"").contains("\"factReferences\"").contains("\"relationshipType\"")

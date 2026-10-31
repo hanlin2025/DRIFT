@@ -62,6 +62,14 @@ public class MaritimeAiAssessmentService {
 		if (!enabled) return transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
 		// Recorded replay, live, and unknown source modes never reach a provider. Authentic
 		// retrospective sources require global, source-type, and exact curated-record approvals.
+		if (hasUnapprovedAuthenticEvidence(bundle.evidence(), authenticRetrospectiveInferenceApproved,
+				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds)) {
+			MaritimeAiEvidencePackage blocked = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
+					bundle.shipmentAssociationConfidence(), shipmentContext, List.of());
+			return persist(detail, blocked, now, MaritimeAiClient.MaritimeAiClientResult.unavailable(
+					"An authentic evidence record is not approved for external processing."),
+					MaritimeAiGenerationState.ABSTAINED, "UNAPPROVED_AUTHENTIC_EVIDENCE", null);
+		}
 		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence(), authenticRetrospectiveInferenceApproved,
 				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds);
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
@@ -108,6 +116,21 @@ public class MaritimeAiAssessmentService {
 								&& approvedAuthenticSourceTypes.contains(item.sourceType())
 								&& approvedAuthenticEvidenceIds.contains(item.evidenceId())))
 				.toList();
+	}
+
+	/**
+	 * A mixed authentic bundle is not safe to trim silently: omitting an unapproved record could
+	 * change the meaning of the approved record. Abstain before invoking any provider instead.
+	 */
+	static boolean hasUnapprovedAuthenticEvidence(List<MaritimeEvidence> evidence,
+			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
+			Set<String> approvedAuthenticEvidenceIds) {
+		return evidence.stream()
+				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
+						&& !"STALE".equals(item.freshness()) && "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))
+				.anyMatch(item -> !authenticRetrospectiveInferenceApproved
+						|| !approvedAuthenticSourceTypes.contains(item.sourceType())
+						|| !approvedAuthenticEvidenceIds.contains(item.evidenceId()));
 	}
 
 	@Transactional(readOnly = true)
