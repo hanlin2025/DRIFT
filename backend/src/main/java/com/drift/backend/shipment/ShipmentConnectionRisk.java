@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -58,15 +59,20 @@ class ShipmentConnectionRisk {
 
 	private Snapshot assess(Shipment shipment, Function<String, VesselPosition> positions) {
 		VesselPosition motherVesselPosition = positions.apply(shipment.getMotherVessel());
+		// One instant judges both the estimate's freshness and the late-arrival chance, so they cannot disagree.
+		Instant now = clock.instant();
 		ArrivalEstimate arrivalComparison = shipment.getPlannedMotherArrivalAt() == null ? null
 				: arrivalEstimates.estimate(ArrivalFix.from(motherVesselPosition),
-						shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(), clock);
+						shipment.getTransshipmentPort(), shipment.getPlannedMotherArrivalAt(),
+						Clock.fixed(now, clock.getZone()));
 		ConnectionWindowCalculation planned = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
 				shipment.getPlannedFeederDepartureAt());
 		RemainingConnectionWindow remaining = connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(),
 				arrivalComparison);
+		LateArrivalChance lateArrivalChance = LateArrivalChance.of(arrivalComparison,
+				shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt(), planned, now);
 		return new Snapshot(planned, remaining, motherVesselPosition, positions.apply(shipment.getFeederVessel()),
-				arrivalComparison, ShipmentRisk.of(planned, remaining));
+				arrivalComparison, ShipmentRisk.of(planned, remaining), lateArrivalChance);
 	}
 
 	private static void addLookupNames(List<String> names, String vesselName) {
@@ -103,6 +109,7 @@ class ShipmentConnectionRisk {
 			VesselPosition motherVesselPosition,
 			VesselPosition feederVesselPosition,
 			ArrivalEstimate arrivalComparison,
-			ShipmentRisk risk) {
+			ShipmentRisk risk,
+			LateArrivalChance lateArrivalChance) {
 	}
 }
