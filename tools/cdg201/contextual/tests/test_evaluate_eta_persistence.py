@@ -1,11 +1,12 @@
 import unittest
-from evaluate_eta_persistence import make_evaluation_rows, metrics, weather_is_safe
+from evaluate_eta_persistence import make_evaluation_rows, metrics, per_distinct_visit_rows, weather_is_safe
 
 
 def label(**changes):
     row = {"label_status":"matched", "eta_imo":"1234567", "vessel_name":"Test", "eta_collection_utc":"2026-10-27T00:00:00+00:00",
            "eta_run_id":"run-1", "eta_revised_source_time":"2026-10-27 12:00:00", "actual_time":"2026-10-27 12:30:00",
-           "eta_manifest":"eta.manifest.json", "actual_manifest":"actual.manifest.json"}
+           "eta_manifest":"eta.manifest.json", "actual_manifest":"actual.manifest.json",
+           "eta_location_from":"SEA", "eta_location_to":"P1"}
     row.update(changes); return row
 
 
@@ -28,6 +29,12 @@ class TestPersistenceEvaluation(unittest.TestCase):
     def test_repeated_visit_labels_do_not_bypass_match_gate(self):
         rows = make_evaluation_rows([label(label_status="ambiguous")], {})
         self.assertEqual(rows, [])
+
+    def test_repeated_snapshots_are_one_distinct_visit_proxy(self):
+        rows = make_evaluation_rows([label(), label(eta_collection_utc="2026-10-27T01:00:00+00:00", eta_run_id="run-2", eta_revised_source_time="2026-10-27 12:10:00")], {})
+        visits = per_distinct_visit_rows(rows)
+        self.assertEqual(len(visits), 1)
+        self.assertEqual(visits[0]["prediction_cutoff_utc"], "2026-10-27T01:00:00+00:00")
 
 
 if __name__ == "__main__":
