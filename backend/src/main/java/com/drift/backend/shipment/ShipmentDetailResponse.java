@@ -64,12 +64,15 @@ public record ShipmentDetailResponse(
 		AisFeedStatus aisFeed,
 		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null. lastReceivedAt is the report time of that estimate. Null when the planned mother-vessel arrival is missing; that is not an unavailable reason.", nullable = true)
 		ArrivalEstimate arrivalComparison,
+		@Schema(description = "The current linked importer's transshipment-arrival deadline and the port it was confirmed for. Null when that importer has no deadline. applicable is false when the recorded port differs from the shipment's current port.", nullable = true)
+		TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
 		ShipmentStatus status) {
 
-	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -94,6 +97,7 @@ public record ShipmentDetailResponse(
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
+				transshipmentArrivalDeadline,
 				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

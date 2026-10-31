@@ -42,6 +42,12 @@ public final class RolePermissionMatrix {
 			}
 			return Optional.empty();
 		}
+		if ("PATCH".equals(method) && normalized.matches("/api/shipments/\\d+/transshipment-arrival-deadline")) {
+			if (!activeCompany) {
+				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
+			}
+			return Optional.empty();
+		}
 		if ("PATCH".equals(method) && normalized.matches("/api/shipments/\\d+/link-importer")) {
 			if (!activeCompany) {
 				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);

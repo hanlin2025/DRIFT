@@ -92,6 +92,9 @@ class ShipmentResponseOwnershipTest {
 				"At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
 		assertThat(detailJson.get("assessmentExplanation").get("confidence").asString())
 				.isEqualTo(detail.assessmentExplanation().confidence());
+		assertThat(detail.transshipmentArrivalDeadline()).isNull();
+		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
+		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
 	}
 
 	@Test
@@ -109,7 +112,10 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
 		assertThat(detailJson.has("assessmentExplanation")).isTrue();
+		assertThat(detailJson.has("riskContributions")).isTrue();
+		assertThat(detailJson.has("recommendation")).isTrue();
 	}
 
 	@Test
@@ -126,6 +132,7 @@ class ShipmentResponseOwnershipTest {
 				"No AIS position has been received for the mother vessel.");
 		assertThat(detail.assessmentExplanation().confidence())
 				.isEqualTo("Confidence is limited because the planned connection window is being used.");
+		assertThat(detail.transshipmentArrivalDeadline()).isNull();
 	}
 
 	@Test
@@ -145,7 +152,7 @@ class ShipmentResponseOwnershipTest {
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connection(shipment));
+		return ShipmentDetailResponse.from(shipment, connection(shipment), null);
 	}
 
 	/** The snapshot both the list and the detail page are built from, here with no AIS position. */
