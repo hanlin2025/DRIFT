@@ -1,6 +1,7 @@
 package com.drift.backend.maritimecontext;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -46,16 +47,33 @@ class CuratedMaritimeEvidenceAdapter implements MaritimeEvidenceSourceAdapter {
 		return snapshots.stream().filter(item -> item.imo().equals(shipment.motherVesselImo()))
 			.filter(item -> !Instant.parse(item.retrievedAtUtc()).isAfter(cutoff))
 			.filter(item -> !"HISTORICAL_BACKFILL".equals(item.collectionLabel()) || "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))
+			.filter(item -> isRelevantToShipment(item, shipment))
 			.map(item -> item.toEvidence()).toList();
+	}
+
+	/** An IMO alone is not a visit identity. MPA arrival evidence also requires a
+	 * temporally plausible stored mother-arrival plan; NEA is Singapore port context only. */
+	private static boolean isRelevantToShipment(Snapshot item, ShipmentDetailResponse shipment) {
+		if ("MPA_ETA_REVISION".equals(item.sourceType())) {
+			if (shipment.plannedMotherArrivalAt() == null || item.currentValue() == null) return false;
+			try {
+				return Duration.between(Instant.parse(item.currentValue()), shipment.plannedMotherArrivalAt().toInstant())
+					.abs().compareTo(Duration.ofHours(24)) <= 0;
+			} catch (RuntimeException ex) { return false; }
+		}
+		return !"NEA_WEATHER".equals(item.sourceType())
+				|| shipment.transshipmentPort() != null
+						&& shipment.transshipmentPort().toLowerCase(java.util.Locale.ROOT).contains("singapore");
 	}
 
 	public record Snapshot(String sourceType, String sourceMode, String evidenceId, String imo, String title,
 			String sourceIdentifier, String citation, String sourceEventAt, String observedAt, String retrievedAtUtc,
 			String freshness, String previousValue, String currentValue, String changeMagnitude,
-			String locationCompatibility, String collectionLabel, String limitation) {
+			String locationCompatibility, String collectionLabel, String limitation, String vesselRole,
+			String observationType, String associationScope) {
 		MaritimeEvidence toEvidence() { return new MaritimeEvidence(sourceType, sourceMode, evidenceId, title,
 				sourceIdentifier, "", citation, sourceEventAt, observedAt, retrievedAtUtc, freshness,
 				previousValue, currentValue, changeMagnitude, "UNKNOWN", locationCompatibility, "UNKNOWN",
-				"UNKNOWN", true, true, "UNVERIFIED_IMO_ONLY", limitation); }
+				"UNKNOWN", true, true, "UNVERIFIED_IMO_ONLY", limitation, null, vesselRole, observationType, associationScope); }
 	}
 }

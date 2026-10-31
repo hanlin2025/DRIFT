@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.util.List;
 import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.Test;
@@ -75,13 +76,13 @@ class CuratedMaritimeEvidenceAdapterTest {
 		assertThat(bundle.notices()).singleElement().extracting(MaritimeNoticeEvidence::noticeId).isEqualTo("DEMO-MPA-245-001");
 	}
 
-	private static ShipmentDetailResponse shipment(String imo) { return new ShipmentDetailResponse(1L, 1L, "REF", "SG", "ID", "SG", "KOTA LARIS", null, imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE); }
+	private static ShipmentDetailResponse shipment(String imo) { return new ShipmentDetailResponse(1L, 1L, "REF", "SG", "ID", "Singapore", "KOTA LARIS", OffsetDateTime.parse("2026-10-29T02:00:00+08:00"), imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE); }
 
 	private static CuratedMaritimeEvidenceAdapter.Snapshot snapshot(String sourceType, String sourceMode,
 			String collectionLabel, String retrievedAtUtc) {
 		return new CuratedMaritimeEvidenceAdapter.Snapshot(sourceType, sourceMode, "test-" + sourceMode + collectionLabel,
 				"9351048", "Test weather context", "NEA", "test-manifest", "2026-10-27T23:00:00+08:00",
 				"2026-10-27T23:00:00+08:00", retrievedAtUtc, "HISTORICAL_REPLAY", "", "test", "",
-				"SINGAPORE_PORT_CONTEXT_ONLY", collectionLabel, "Test only; no vessel-specific claim.");
+				"SINGAPORE_PORT_CONTEXT_ONLY", collectionLabel, "Test only; no vessel-specific claim.", null, null, "REGIONAL_CONTEXT");
 	}
 }
