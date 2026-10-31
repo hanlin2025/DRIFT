@@ -79,6 +79,73 @@ would require a separately approved non-production runtime fixture because test-
 are intentionally unavailable to a normal backend process. Do not promote this fixture into
 production merely to render a demo.
 
+## CDG-248/249 synthetic multi-source smoke test
+
+`MaritimeAiSyntheticMultiSourceIntegrationTests` uses the same authenticated POST/GET,
+eligibility, validator, persistence, and retrieval path. Its test-only context assembles—not
+prebuilds—a bundle from separate fictional MPA-style schedule, port-notice, and regional
+NEA-style rainfall adapters. The fixture includes a fourth, explicitly incompatible fictional
+notice; the existing eligibility filter excludes that item before provider invocation.
+
+The default remains a capturing, no-network stub. A real run requires **all three** gates:
+
+```bash
+export MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true
+export CDG247_RUN_REAL_SMOKE=APPROVED
+cd backend
+bash ./mvnw test \
+  '-Dtest=MaritimeAiSyntheticMultiSourceIntegrationTests#passesMpaNoticeAndNeaContentThroughTheProviderBoundaryThenPersistsAuthorizedAssessment' \
+  -Dcdg247.synthetic-multisource.use-real-client=true \
+  -Dcdg247.synthetic-multisource.capture-interpretation=true \
+  -Dcdg247.synthetic-multisource.capture-path=target/cdg247-synthetic-multisource-interpretation-v5-typed-insights-real-response.json \
+  -Dsurefire.rerunFailingTestsCount=0 \
+  -DforkCount=1 \
+  -DreuseForks=false
+```
+
+Use the same provider/model/endpoint/key configuration above. This command sends only the
+fictional evidence IDs `synthetic-mpa-schedule-001`, `synthetic-notice-001`, and
+`synthetic-nea-rainfall-001`; it never sends curated historical MPA/NEA records, recorded
+replays, raw notices, or real shipment data. The explicitly incompatible
+`synthetic-notice-irrelevant-001` is not sent.
+
+A `GENERATED` / `VALID` result proves only that the structured response passed the existing
+membership and safety validator. It does not independently prove maritime accuracy or natural-language
+entailment. In the v5 contract, model-authored text is a typed planning insight linked to supplied
+canonical fact references; the backend renders all factual schedule and evidence values separately. During a later
+approved run, manually review every claim against the retained synthetic-only assessment:
+
+1. Each evidence ID must be a supplied ID and each cited source must actually support its claim.
+2. The model may use one or more relevant sources; it must not cite a source merely to maximise
+   source count.
+3. Distinguish the fictional schedule observation, notice period/area, and regional weather
+   context; do not infer weather causation or vessel-specific conditions.
+4. Reject invented cargo, real-shipment, delay, ETA, berth, or missed-connection consequences.
+5. Confirm uncertainties and human-review requirements remain explicit and that no formal
+   recommendation code is present.
+
+The test verifies authorized GET retrieval before its transaction rolls the synthetic assessment
+back. The default remains **no capture**. With the separate JVM property
+`-Dcdg247.synthetic-multisource.capture-interpretation=true`, its test-only wrapper writes the
+parsed interpretation, citation IDs, validation status, and provider/model metadata to
+`backend/target/cdg247-synthetic-multisource-interpretation-postfix-real-response.json`, with POSIX owner-only (`0600`)
+permissions. It records neither HTTP requests/responses, authorization headers, API keys, nor
+evidence outside the fixed synthetic fixture. The same wrapper captures a parsed interpretation
+when validation fails, before the transaction rolls back; raw provider responses are never
+persisted. Do not log or retain API credentials or raw provider responses.
+
+The original pre-role-grounding capture is immutable historical evidence at
+`backend/target/cdg247-synthetic-multisource-interpretation-original-real-response.json`.
+It used the earlier `cdg247.evidence.v1` / `maritime_ai_interpretation` contract. The rejected
+post-fix capture reports `cdg247.evidence.v2.role-grounding` and schema name
+`maritime_ai_interpretation_v2_role_grounding`. The deterministic-facts contract reports
+`cdg247.evidence.v3.deterministic-facts` and schema name
+`maritime_ai_interpretation_v3_deterministic_context`; do not overwrite or compare captures as if
+they used the same response contract. The v5 typed-insight contract uses prompt version
+`cdg247.evidence.v5.typed-planning-insights` and schema name
+`maritime_ai_interpretation_v5_typed_planning_insights`; use the distinct v5 capture path above so
+the historical captures remain unchanged.
+
 Repeat with malformed output, a timeout, and omitted credentials. These must produce
    `FAILED` or `ABSTAINED`, never a fabricated generated assessment.
 
