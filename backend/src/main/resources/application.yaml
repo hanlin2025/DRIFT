@@ -74,14 +74,23 @@ app:
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}
     # CDG-248 packaged historical replay; never points at a collector directory or live API.
     curated-snapshots-enabled: ${MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED:false}
+    # Local/staging-only fictional replay; stage changes require an application restart.
+    controlled-replay-enabled: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED:false}
+    controlled-replay-stage: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_STAGE:BASELINE}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
+    # Offline-only client for the controlled fictional replay. Never sends a provider request.
+    controlled-replay-stub-enabled: ${MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED:false}
     provider: ${MARITIME_AI_PROVIDER:}
     model: ${MARITIME_AI_MODEL:}
     endpoint: ${MARITIME_AI_ENDPOINT:}
     api-key: ${MARITIME_AI_API_KEY:}
     # A separate approval gate prevents a configured key from causing external inference by accident.
     external-requests-approved: ${MARITIME_AI_EXTERNAL_REQUESTS_APPROVED:false}
+    # Authentic retrospective evidence remains excluded unless both switches are explicitly set
+    # after source-use and organizational approval. This is not enabled by collector access alone.
+    authentic-retrospective-inference-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED:false}
+    authentic-retrospective-source-types-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED:}
     # Explicit bounds apply to every configured provider request.  The feature
     # remains disabled unless both this flag and provider configuration are set.
     timeout-seconds: ${MARITIME_AI_TIMEOUT_SECONDS:20}
