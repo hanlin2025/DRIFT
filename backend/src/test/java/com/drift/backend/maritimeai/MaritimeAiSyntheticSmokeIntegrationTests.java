@@ -33,7 +33,8 @@ import com.drift.backend.maritimecontext.SyntheticMaritimeAiSmokeFixture;
 import com.jayway.jsonpath.JsonPath;
 
 /** Exercises the normal authenticated assessment endpoints without an external provider or real evidence. */
-@SpringBootTest(properties = { "app.maritime-ai.enabled=true", "app.maritime-context.demo-enabled=false" })
+@SpringBootTest(properties = { "app.maritime-ai.enabled=true", "app.maritime-context.demo-enabled=false",
+		"app.maritime-ai.controlled-replay-stub-enabled=false" })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(MaritimeAiSyntheticSmokeIntegrationTests.SyntheticSmokeConfiguration.class)
