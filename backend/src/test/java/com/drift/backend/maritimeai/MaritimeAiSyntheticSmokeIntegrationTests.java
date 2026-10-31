@@ -86,6 +86,21 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
 	}
 
+	@Test
+	void persistsTheLongFormalRecommendationRejectionStatus() {
+		String rejection = "FORMAL_RECOMMENDATION_NOT_OWNED_BY_CDG247";
+		assertThat(rejection.length()).isGreaterThan(32);
+		jdbc.update("""
+				INSERT INTO maritime_ai_assessments
+				(assessment_id, shipment_id, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+				 provider, model, prompt_version, generation_state, validation_status, output_json, failure_metadata, created_at)
+				VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP)
+				""", UUID.randomUUID().toString(), shipmentId, 1L, "test", "0".repeat(64), "synthetic-stub",
+				"stubbed-responses", "cdg247.synthetic-smoke.v1", "FAILED", rejection, rejection);
+		assertThat(jdbc.queryForObject("SELECT validation_status FROM maritime_ai_assessments WHERE shipment_id = ? ORDER BY id DESC LIMIT 1",
+				String.class, shipmentId)).isEqualTo(rejection);
+	}
+
 	private static String shipmentJson() {
 		return """
 				{"shipmentReference":"SYNTHETIC-SMOKE-%s","origin":"Synthetic origin","destination":"Synthetic destination",
