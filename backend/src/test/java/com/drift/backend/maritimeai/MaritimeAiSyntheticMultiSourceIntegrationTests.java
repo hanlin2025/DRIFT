@@ -331,14 +331,26 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 		private final MaritimeAiClient delegate;
 		private final tools.jackson.databind.ObjectMapper json;
 		private final Path output;
+		private final Set<String> expectedIds;
+		private final String captureFormatVersion;
 
 		SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output) {
+			this(delegate, json, output, EXPECTED_IDS, "cdg247.synthetic-multisource.capture.v2.role-grounding");
+		}
+
+		SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output,
+				Set<String> expectedIds, String captureFormatVersion) {
 			if (HISTORICAL_CAPTURE_FILE.equals(output.getFileName().toString())) {
 				throw new IllegalArgumentException("Refusing to overwrite the protected historical capture destination.");
+			}
+			if (expectedIds == null || expectedIds.isEmpty() || captureFormatVersion == null || captureFormatVersion.isBlank()) {
+				throw new IllegalArgumentException("Synthetic interpretation capture requires an expected synthetic fixture and format version.");
 			}
 			this.delegate = delegate;
 			this.json = json;
 			this.output = output;
+			this.expectedIds = Set.copyOf(expectedIds);
+			this.captureFormatVersion = captureFormatVersion;
 		}
 
 		@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage evidence) {
@@ -348,10 +360,10 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 			return result;
 		}
 
-		private static void verifySyntheticFixtureOnly(MaritimeAiEvidencePackage evidence) {
+		private void verifySyntheticFixtureOnly(MaritimeAiEvidencePackage evidence) {
 			Set<String> ids = evidence.evidence().stream().map(item -> item.evidenceId()).collect(Collectors.toSet());
-			if (!EXPECTED_IDS.equals(ids) || evidence.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
-				throw new IllegalArgumentException("Synthetic interpretation capture accepts only the fixed synthetic multi-source fixture.");
+			if (!expectedIds.equals(ids) || evidence.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
+				throw new IllegalArgumentException("Synthetic interpretation capture accepts only its fixed synthetic fixture.");
 			}
 		}
 
@@ -362,7 +374,7 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				List<String> citationIds = result.interpretation() == null || result.interpretation().claims() == null ? List.of()
 						: result.interpretation().claims().stream().filter(java.util.Objects::nonNull)
 								.filter(claim -> claim.evidenceIds() != null).flatMap(claim -> claim.evidenceIds().stream()).distinct().toList();
-				var capture = new SyntheticInterpretationCapture("cdg247.synthetic-multisource.capture.v2.role-grounding", result.provider(), result.model(),
+				var capture = new SyntheticInterpretationCapture(captureFormatVersion, result.provider(), result.model(),
 						result.promptVersion(), validationStatus, citationIds, result.interpretation());
 				Files.createDirectories(output.getParent());
 				Path temporary = Files.createTempFile(output.getParent(), ".cdg247-synthetic-", ".json");

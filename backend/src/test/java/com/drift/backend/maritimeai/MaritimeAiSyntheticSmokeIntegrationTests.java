@@ -7,7 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -101,24 +103,35 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 		@Bean @Primary MaritimeContextService syntheticSmokeContext() { return SyntheticMaritimeAiSmokeFixture.context(); }
 		@Bean @Primary MaritimeAiClient syntheticSmokeClient(
 				@Value("${cdg247.synthetic-smoke.use-real-client:false}") boolean useRealClient,
+				@Value("${cdg255.synthetic-smoke.capture-interpretation:false}") boolean captureInterpretation,
+				@Value("${cdg255.synthetic-smoke.capture-path:}") String capturePath,
 				@Value("${app.maritime-ai.provider:}") String provider,
 				@Value("${app.maritime-ai.model:}") String model,
 				@Value("${app.maritime-ai.api-key:}") String apiKey,
 				@Value("${app.maritime-ai.endpoint:}") String endpoint,
 				@Value("${app.maritime-ai.external-requests-approved:false}") boolean externalRequestsApproved,
 				tools.jackson.databind.ObjectMapper json) {
+			MaritimeAiClient delegate;
 			if (useRealClient) {
 				if (!"APPROVED".equals(System.getenv("CDG247_RUN_REAL_SMOKE"))) {
 					throw new IllegalStateException("Real smoke test requires CDG247_RUN_REAL_SMOKE=APPROVED");
 				}
-				return new ConfiguredMaritimeAiClient(provider, model, apiKey, endpoint, externalRequestsApproved, json);
+				delegate = new ConfiguredMaritimeAiClient(provider, model, apiKey, endpoint, externalRequestsApproved, json);
+			} else {
+				delegate = evidence -> new MaritimeAiClient.MaritimeAiClientResult("synthetic-stub", "stubbed-responses", "cdg247.synthetic-smoke.v1",
+						new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+								List.of(new MaritimeAiClaim("The documented synthetic revision warrants schedule review.", List.of("synthetic-smoke-001"), "VERIFIED",
+										"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:synthetic-smoke-001",
+												"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
+								List.of("Synthetic fixture only."), List.of(), true, null), null);
 			}
-			return evidence -> new MaritimeAiClient.MaritimeAiClientResult("synthetic-stub", "stubbed-responses", "cdg247.synthetic-smoke.v1",
-					new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
-							List.of(new MaritimeAiClaim("The documented synthetic revision warrants schedule review.", List.of("synthetic-smoke-001"), "VERIFIED",
-									"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:synthetic-smoke-001",
-											"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
-							List.of("Synthetic fixture only."), List.of(), true, null), null);
+			return captureInterpretation ? new MaritimeAiSyntheticMultiSourceIntegrationTests.SyntheticInterpretationCaptureClient(delegate, json,
+					capturePath(capturePath), Set.of("synthetic-smoke-001"), "cdg255.synthetic-smoke.capture.v1") : delegate;
+		}
+
+		static Path capturePath(String configured) {
+			if (configured != null && !configured.isBlank()) return Path.of(configured);
+			return Path.of(System.getProperty("user.dir"), "target", "cdg255-synthetic-smoke-interpretation-real-response.json");
 		}
 	}
 }

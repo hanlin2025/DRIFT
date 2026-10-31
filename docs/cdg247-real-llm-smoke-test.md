@@ -62,7 +62,9 @@ test-only property and an explicit environment approval token:
 export CDG247_RUN_REAL_SMOKE=APPROVED
 cd backend
 bash ./mvnw test -Dtest=MaritimeAiSyntheticSmokeIntegrationTests \
-  -Dcdg247.synthetic-smoke.use-real-client=true
+  -Dcdg247.synthetic-smoke.use-real-client=true \
+  -Dcdg255.synthetic-smoke.capture-interpretation=true \
+  -Dcdg255.synthetic-smoke.capture-path=target/cdg255-synthetic-smoke-interpretation-real-response.json
 ```
 
 The command reads the `MARITIME_AI_*` variables above, uses only
@@ -73,6 +75,14 @@ The integration test itself performs the authenticated POST and GET, validates p
 and rolls its database transaction back afterward. Its report must show a `GENERATED` record
 only when validation is `VALID`, including provider/model/prompt metadata, bundle hash,
 citations, and uncertainties.
+
+The optional CDG-255 capture is test-scope-only and accepts only the fixed
+`synthetic-smoke-001` fixture. Before the endpoint assertion runs, it records the parsed
+interpretation, provider, model, prompt version, citation IDs, and the unchanged V9 validator
+result. It records neither API keys, authorization headers, requests, nor raw provider
+responses. The capture is atomically written at POSIX owner-only (`0600`) permissions; the
+default path is `backend/target/cdg255-synthetic-smoke-interpretation-real-response.json`.
+This is diagnostic evidence for the synthetic smoke only, not production persistence.
 
 The browser panel is covered by the existing component/API tests. A live browser demonstration
 would require a separately approved non-production runtime fixture because test-scope fixtures
