@@ -7,26 +7,29 @@ import org.springframework.stereotype.Component;
 /**
  * Impact for the shipment read and for a decision on that same read.
  * The assessment path is authoritative. No assessment is stored, so the impact
- * stays unavailable. app.recommendation.impact-outcome is used only while the
- * recommendation-impact-override profile is active.
+ * stays unavailable. A completed outcome is used only when the recommendation
+ * decision runner sets DRIFT_RECOMMENDATION_IMPACT_OVERRIDE to its own token.
+ * That switch is not application configuration.
  */
 @Component
 class ShipmentRecommendationImpactSource {
 
-	static final String OVERRIDE_PROFILE = "recommendation-impact-override";
+	static final String RUNNER_SWITCH = "DRIFT_RECOMMENDATION_IMPACT_OVERRIDE";
+	static final String RUNNER_SWITCH_VALUE = "cdg275-e2e";
+	static final String OUTCOME_ENV = "DRIFT_RECOMMENDATION_IMPACT_OUTCOME";
 
 	private final boolean overrideEnabled;
 	private final ShipmentRecommendationImpact override;
 
 	@Autowired
 	ShipmentRecommendationImpactSource(Environment environment) {
-		if (!environment.matchesProfiles(OVERRIDE_PROFILE)) {
+		if (!RUNNER_SWITCH_VALUE.equals(environment.getProperty(RUNNER_SWITCH))) {
 			this.overrideEnabled = false;
 			this.override = null;
 			return;
 		}
 		this.overrideEnabled = true;
-		this.override = configured(environment.getProperty("app.recommendation.impact-outcome", "NOT_RETURNED"));
+		this.override = configured(environment.getProperty(OUTCOME_ENV, "NOT_RETURNED"));
 	}
 
 	ShipmentRecommendationImpactSource() {

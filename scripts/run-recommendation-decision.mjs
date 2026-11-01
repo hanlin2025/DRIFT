@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(root, 'frontend');
 const backendDir = path.join(root, 'backend');
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
-const impactOverrideProfile = 'recommendation-impact-override';
+const impactOverrideSwitch = 'cdg275-e2e';
 const ownedName = /^drift_cdg230_[0-9]{14}_[a-f0-9]{12}$/;
 const createdByThisProcess = new Set();
 let activeBackend = null;
@@ -146,7 +146,7 @@ function backendEnv(owned, impactOutcome) {
     ...process.env,
     JWT_SECRET: randomBytes(48).toString('base64url'),
     AIS_ENABLED: 'false',
-    SPRING_PROFILES_ACTIVE: impactOverrideProfile,
+    DRIFT_RECOMMENDATION_IMPACT_OVERRIDE: impactOverrideSwitch,
     DRIFT_RECOMMENDATION_IMPACT_OUTCOME: impactOutcome,
     SERVER_PORT: '8080',
     SPRING_DATASOURCE_URL: url,

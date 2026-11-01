@@ -35,8 +35,11 @@ import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles({ "test", ShipmentRecommendationImpactSource.OVERRIDE_PROFILE })
-@TestPropertySource(properties = "app.recommendation.impact-outcome=NO_PREDICTED_IMPACT")
+@ActiveProfiles("test")
+@TestPropertySource(properties = {
+		ShipmentRecommendationImpactSource.RUNNER_SWITCH + "=" + ShipmentRecommendationImpactSource.RUNNER_SWITCH_VALUE,
+		ShipmentRecommendationImpactSource.OUTCOME_ENV + "=NO_PREDICTED_IMPACT"
+})
 @Transactional
 class RecommendationDecisionImpactOverrideProfileIntegrationTests {
 
@@ -59,7 +62,7 @@ class RecommendationDecisionImpactOverrideProfileIntegrationTests {
 	}
 
 	@Test
-	void theOverrideProfileUsesTheConfiguredImpactForTheReadAndTheDecision() throws Exception {
+	void theRunnerSwitchUsesTheConfiguredImpactForTheReadAndTheDecision() throws Exception {
 		MvcResult created = mvc.perform(post("/api/shipments")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
