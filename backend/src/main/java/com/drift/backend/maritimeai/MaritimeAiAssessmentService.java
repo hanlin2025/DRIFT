@@ -56,7 +56,8 @@ public class MaritimeAiAssessmentService {
 		MaritimeContextResponse bundle = context.forShipment(detail);
 		MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(detail.transshipmentPort(),
 				new MaritimeAiShipmentContext.Vessel("MOTHER", detail.motherVessel(), detail.motherVesselImo(), "PLANNED_ARRIVAL", detail.plannedMotherArrivalAt()),
-				new MaritimeAiShipmentContext.Vessel("FEEDER", detail.feederVessel(), detail.feederVesselImo(), "PLANNED_DEPARTURE", detail.plannedFeederDepartureAt()));
+				new MaritimeAiShipmentContext.Vessel("FEEDER", detail.feederVessel(), detail.feederVesselImo(), "PLANNED_DEPARTURE", detail.plannedFeederDepartureAt()),
+				MaritimeAiConnectionRiskContext.from(detail));
 		MaritimeAiEvidencePackage fullInput = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
 				bundle.shipmentAssociationConfidence(), shipmentContext, bundle.evidence());
 		if (!enabled) return transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");

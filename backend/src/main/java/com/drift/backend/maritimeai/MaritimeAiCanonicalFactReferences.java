@@ -22,6 +22,19 @@ final class MaritimeAiCanonicalFactReferences {
 				refs.add("schedule:MOTHER:PLANNED_ARRIVAL");
 			if (input.shipmentContext().feederVessel() != null && input.shipmentContext().feederVessel().plannedTime() != null)
 				refs.add("schedule:FEEDER:PLANNED_DEPARTURE");
+			MaritimeAiConnectionRiskContext risk = input.shipmentContext().connectionRisk();
+			if (risk != null) {
+				if (risk.assessed()) refs.add("risk:CONNECTION_SEVERITY");
+				if (risk.plannedWindow() != null && risk.plannedWindow().state() != MaritimeAiConnectionRiskContext.WindowState.INCOMPLETE)
+					refs.add("risk:PLANNED_CONNECTION_WINDOW");
+				if (risk.remainingWindow() != null) refs.add("risk:REMAINING_CONNECTION_WINDOW");
+				if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE)
+					refs.add("risk:AIS_ESTIMATED_ARRIVAL");
+				if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE
+						&& risk.arrivalEstimate() != null
+						&& risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN)
+					refs.add("risk:ARRIVAL_ESTIMATE_NOT_USED");
+			}
 		}
 		input.evidence().forEach(item -> refs.add("evidence:" + item.evidenceId()));
 		if (hasVerifiedPortOverlap(input)) refs.add(PORT_OVERLAP_REFERENCE);

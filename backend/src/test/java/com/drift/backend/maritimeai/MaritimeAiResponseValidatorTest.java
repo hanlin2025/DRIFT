@@ -128,6 +128,32 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(validateWithEvidenceAndSchedule(motherArrival, invalidMotherDeparture)).isEqualTo("OBSERVATION_TYPE_MISMATCH");
 	}
 
+	@Test void validatesRiskBufferClaimsAgainstEligibleEvidenceAndTheSelectedBackendWindow() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 172800L),
+				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 7200L, null),
+				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
+						java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z"), java.time.Instant.parse("2026-10-01T04:00:00Z"), null),
+				List.of("The estimated arrival was used."));
+		var schedule = new MaritimeAiShipmentContext("Synthetic port",
+				new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic mother", "9001", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z")),
+				new MaritimeAiShipmentContext.Vessel("FEEDER", "Synthetic feeder", "9002", "PLANNED_DEPARTURE", java.time.OffsetDateTime.parse("2026-10-01T14:00:00Z")), risk);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", schedule, List.of(motherArrival));
+		var valid = new MaritimeAiClaim("Review the backend risk context alongside the source evidence.", List.of("mother-arrival"),
+				"CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL"),
+				"RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(valid), input)).isNull();
+
+		var missingSelectedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
+				valid.vesselRole(), valid.observationType(), valid.associationScope(),
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY"), "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingSelectedWindow), input))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+	}
+
 	@Test void rejectsUnknownCanonicalFactReferenceAndNumericalRestatementForTheNewContract() {
 		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage("v4", "2026-10-28T00:00:00Z", "VERIFIED",

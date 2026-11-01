@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Component
 class ConfiguredMaritimeAiClient implements MaritimeAiClient {
-	static final String PROMPT_VERSION = "cdg247.evidence.v9.documented-revision-grounding.1";
+	static final String PROMPT_VERSION = "cdg247.evidence.v10.cdg259-risk-context.1";
 	private final String provider;
 	private final String model;
 	private final String apiKey;
@@ -149,11 +149,14 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 								+ "For PORT_CONTEXT and REGIONAL_CONTEXT claims, use applicability CONTEXTUAL or UNCERTAIN, never VERIFIED. A PORT_CONTEXT claim using the supplied port-overlap reference must use relationshipType PORT_TIME_OVERLAP_REVIEW; temporal overlap is not causation. "
 								+ "When sourceMode is SYNTHETIC_DEMONSTRATION, call notices and observations synthetic or fictional; never call a synthetic notice official or real. "
 								+ "shipmentContext is deterministic planned schedule context, not retrieved maritime evidence. Its plannedMovementType is authoritative: a FEEDER PLANNED_DEPARTURE may be referenced by a SCHEDULE_REVIEW claim only through its canonical schedule reference, never as an observed feeder movement or as retrieved maritime evidence. "
+								+ "shipmentContext.connectionRisk is a backend-owned risk result with its source, window states, freshness, and assumptions. It is not retrieved maritime evidence, cannot be cited as an evidence ID, and must never be recalculated or altered. Use only its supplied canonical risk references. A remaining window and its severity use the AIS straight-line estimate only when riskBasis is AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE; otherwise risk uses the planned shipment schedule and the supplied estimate-not-used reason. Historical MPA revisions and NEA context are never risk-engine inputs. No miss probability is supplied here. Do not infer one or state a probability. "
+								+ "Risk severity is the backend's existing threshold-based output, not a recommendation or operational decision. Missing, stale, invalid, or unavailable fields stay unknown/unavailable. Do not invent a remaining buffer. "
+								+ "Use relationshipType RISK_BUFFER_REVIEW only when a claim cites eligible maritime evidence plus risk:CONNECTION_SEVERITY and the canonical reference for the selected window. Risk context does not satisfy evidenceIds and never changes the cited source facts. "
 								+ "Use the retrieved evidence to explain what changed and why a human should review the planned schedule; do not claim that weather or a notice caused the revision. "
 								+ "Never claim that a feeder connection was missed or predict that it will be missed. Ground each claim with supplied canonical factReferences. "
 								+ "Distinguish source-event time, observation time, and retrieval time. State uncertainty and human-review needs."))),
 				new OpenAiMessage("user", List.of(new OpenAiInputText("input_text", "Bounded maritime evidence bundle:\n" + evidenceJson + "\nCanonical factReferences (use these instead of restating facts):\n" + factReferences)))),
-				new OpenAiTextFormat(new OpenAiJsonSchemaFormat("json_schema", "maritime_ai_interpretation_v8_canonical_typed_grounding", true, interpretationSchema())));
+				new OpenAiTextFormat(new OpenAiJsonSchemaFormat("json_schema", "maritime_ai_interpretation_v9_risk_buffer_grounding", true, interpretationSchema())));
 		return json.writeValueAsString(request);
 	}
 
@@ -161,7 +164,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 		return new ObjectMapper().readTree("""
 				{"type":"object","additionalProperties":false,"required":["summary","claims","uncertainties","followUpConsiderations","evidenceSufficient","formalRecommendationCode"],"properties":{
 				  "summary":{"type":"string"},
-				  "claims":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["statement","applicability","vesselRole","observationType","associationScope","factReferences","relationshipType"],"properties":{"statement":{"type":"string"},"applicability":{"type":"string"},"vesselRole":{"anyOf":[{"type":"string"},{"type":"null"}]},"observationType":{"anyOf":[{"type":"string"},{"type":"null"}]},"associationScope":{"anyOf":[{"type":"string"},{"type":"null"}]},"factReferences":{"type":"array","minItems":1,"items":{"type":"string"}},"relationshipType":{"enum":["SCHEDULE_REVIEW","PORT_CONTEXT_REVIEW","PORT_TIME_OVERLAP_REVIEW","REGIONAL_WEATHER_CONTEXT"]}}}},
+			  "claims":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["statement","applicability","vesselRole","observationType","associationScope","factReferences","relationshipType"],"properties":{"statement":{"type":"string"},"applicability":{"type":"string"},"vesselRole":{"anyOf":[{"type":"string"},{"type":"null"}]},"observationType":{"anyOf":[{"type":"string"},{"type":"null"}]},"associationScope":{"anyOf":[{"type":"string"},{"type":"null"}]},"factReferences":{"type":"array","minItems":1,"items":{"type":"string"}},"relationshipType":{"enum":["SCHEDULE_REVIEW","PORT_CONTEXT_REVIEW","PORT_TIME_OVERLAP_REVIEW","REGIONAL_WEATHER_CONTEXT","RISK_BUFFER_REVIEW"]}}}},
 				  "uncertainties":{"type":"array","items":{"type":"string"}},
 				  "followUpConsiderations":{"type":"array","items":{"type":"string"}},
 				  "evidenceSufficient":{"type":"boolean"},

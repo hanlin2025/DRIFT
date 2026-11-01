@@ -103,6 +103,13 @@ class AuthenticMultiSourceRagIntegrationTest {
 
 		MaritimeAiEvidencePackage input = client.last.get();
 		assertThat(input).isNotNull();
+		assertThat(input.shipmentContext().connectionRisk().assessed()).isTrue();
+		assertThat(input.shipmentContext().connectionRisk().riskBasis())
+				.isEqualTo(com.drift.backend.maritimeai.MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE);
+		assertThat(input.shipmentContext().connectionRisk().remainingWindow()).isNull();
+		assertThat(input.shipmentContext().connectionRisk().arrivalEstimate().state())
+				.isEqualTo(com.drift.backend.maritimeai.MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		assertThat(input.shipmentContext().connectionRisk().arrivalEstimate().unavailableReason()).isEqualTo("NO_POSITION");
 		assertThat(input.shipmentAssociationConfidence()).isEqualTo("UNVERIFIED_IMO_ONLY");
 		assertThat(input.evidence()).extracting(MaritimeEvidence::sourceType)
 			.containsExactlyInAnyOrder("MPA_ETA_REVISION", "NEA_WEATHER");

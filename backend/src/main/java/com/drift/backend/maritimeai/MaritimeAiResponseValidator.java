@@ -135,6 +135,10 @@ final class MaritimeAiResponseValidator {
 					&& refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE) ? null : "UNSUPPORTED_PORT_TIME_OVERLAP";
 			case "REGIONAL_WEATHER_CONTEXT" -> cited.stream().anyMatch(item -> "REGIONAL_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_REGIONAL_WEATHER_RELATIONSHIP";
+			case "RISK_BUFFER_REVIEW" -> refs.contains("risk:CONNECTION_SEVERITY")
+					&& (refs.contains("risk:PLANNED_CONNECTION_WINDOW")
+							|| refs.contains("risk:REMAINING_CONNECTION_WINDOW"))
+					? null : "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
 			default -> "UNKNOWN_RELATIONSHIP_TYPE";
 		};
 	}
