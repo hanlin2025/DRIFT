@@ -10,6 +10,7 @@ import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
+import { DelayComparisonFact } from './DelayComparisonFact';
 import { TransshipmentArrivalDeadlineFact } from './TransshipmentArrivalDeadline';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
@@ -53,6 +54,15 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
   const refreshNonce = useRef(0);
+  const contextKey = `${shipmentId}:${viewerCompanyId ?? ''}:${token}`;
+  const [context, setContext] = useState(contextKey);
+  if (context !== contextKey) {
+    setContext(contextKey);
+    setShipment(null);
+    setTracking(null);
+    setProblem(null);
+    setRefreshNote(null);
+  }
 
   const reloadHistory = useCallback(async () => {
     const requestId = ++historySeq.current;
@@ -100,7 +110,15 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       }
       const forbidden = reasons.find(reason => reason instanceof ApiError && reason.status === 403);
       if (forbidden instanceof ApiError) {
+        setShipment(null);
+        setTracking(null);
         setProblem({ kind: 'forbidden', message: forbidden.message });
+        return;
+      }
+      if (!shipmentOutcome.ok && shipmentOutcome.reason instanceof ApiError && shipmentOutcome.reason.status === 404) {
+        setShipment(null);
+        setTracking(null);
+        setProblem({ kind: 'missing', message: NOT_FOUND });
         return;
       }
       if (shipmentOutcome.ok) {
@@ -139,13 +157,15 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         onSessionEnded();
         return;
       }
-      if (reason instanceof ApiError && reason.status === 403) {
-        setProblem({ kind: 'forbidden', message: reason.message });
+      if (reason instanceof ApiError && (reason.status === 403 || reason.status === 404)) {
+        setShipment(null);
+        setTracking(null);
+        setProblem(reason.status === 403
+          ? { kind: 'forbidden', message: reason.message }
+          : { kind: 'missing', message: NOT_FOUND });
         return;
       }
-      setProblem(reason instanceof ApiError && reason.status === 404
-        ? { kind: 'missing', message: NOT_FOUND }
-        : { kind: 'failed', message: reason instanceof Error ? reason.message : UNREACHABLE });
+      setProblem({ kind: 'failed', message: reason instanceof Error ? reason.message : UNREACHABLE });
     });
     getShipmentTracking(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -157,6 +177,8 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         return;
       }
       if (reason instanceof ApiError && reason.status === 403) {
+        setShipment(null);
+        setTracking(null);
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
@@ -187,7 +209,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       active = false;
       requestSeq.current += 1;
     };
-  }, [token, shipmentId, attempt, onSessionEnded]);
+  }, [token, shipmentId, viewerCompanyId, attempt, onSessionEnded]);
 
   const shipmentLoaded = shipment !== null;
   useEffect(() => {
@@ -359,6 +381,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
           <TransshipmentArrivalDeadlineFact shipment={shipment} viewerCompanyId={viewerCompanyId} token={token}
             onSessionEnded={onSessionEnded} onShipment={onShipment} portCapture={portCapture} onExplicitRefresh={onExplicitRefresh} />
+          <DelayComparisonFact shipment={shipment} />
           <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
           <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
           <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
