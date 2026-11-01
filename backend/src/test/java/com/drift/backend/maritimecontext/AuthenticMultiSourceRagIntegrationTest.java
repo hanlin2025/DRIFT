@@ -167,12 +167,19 @@ class AuthenticMultiSourceRagIntegrationTest {
 	@Test @Commit
 	void explicitlyApprovedCaptureReplayPersistsForLocalShipmentDetailsDemonstration() throws Exception {
 		Assumptions.assumeTrue(captureReplayPath != null && !captureReplayPath.isBlank(), "capture replay is opt-in");
+		String beforeArrival = jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
+		String beforeDeparture = jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
+		Long beforeRiskTransitions = jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_transitions WHERE shipment_id = ?", Long.class, shipmentId);
 		mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED"))
 				.andExpect(jsonPath("$.validationStatus").value("VALID"))
 				.andExpect(jsonPath("$.provider").value("openai-responses (verified capture replay)"));
 		mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value("GENERATED"));
+		assertThat(jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeArrival);
+		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_transitions WHERE shipment_id = ?", Long.class, shipmentId))
+				.isEqualTo(beforeRiskTransitions);
 	}
 
 	private static MaritimeAiEvidencePackage packageFor(ShipmentDetailResponse shipment, List<MaritimeEvidence> evidence) {
