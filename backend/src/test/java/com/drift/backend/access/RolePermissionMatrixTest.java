@@ -48,6 +48,16 @@ class RolePermissionMatrixTest {
 	}
 
 	@Test
+	void allowsEveryRoleWithAnActiveCompanyToReachConstraintEdits() {
+		for (Role role : Role.values()) {
+			assertThat(RolePermissionMatrix.denial(role, true, "PATCH", "/api/shipments/12/transshipment-arrival-deadline"))
+					.isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, false, "PATCH", "/api/shipments/12/transshipment-arrival-deadline"))
+					.contains(ShipmentAccessForbiddenException.MESSAGE);
+		}
+	}
+
+	@Test
 	void limitsLinkingToAFreightForwarderWithAnActiveCompany() {
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, true, "PATCH", "/api/shipments/12/link-importer"))
 				.isEmpty();
