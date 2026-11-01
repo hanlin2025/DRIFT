@@ -43,6 +43,8 @@ class MaritimeAiEvidenceEligibilityTest {
 				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of("mpa-approved"))).containsExactly(mpa);
 		assertThat(MaritimeAiAssessmentService.hasUnapprovedAuthenticEvidence(List.of(mpa, unexpected), true,
 				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of("mpa-approved"))).isTrue();
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedAuthenticEvidence(List.of(mpa), false,
+				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of("mpa-approved"))).isTrue();
 		assertThat(MaritimeAiAssessmentService.hasUnapprovedAuthenticEvidence(List.of(mpa), true,
 				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of("mpa-approved"))).isFalse();
 		// Approval never overrides relevance or evidence-sufficiency filters.

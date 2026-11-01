@@ -11,6 +11,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -33,6 +34,31 @@ import tools.jackson.databind.ObjectMapper;
 class MaritimeAiAssessmentServiceTest {
 	@Test
 	void mixedBundleWithUnapprovedAuthenticEvidenceAbstainsBeforeCallingTheProvider() throws Exception {
+		AssessmentResult result = runAssessment(true, authenticEvidence("mpa-approved"), authenticEvidence("mpa-unapproved"));
+
+		assertThat(result.response().state()).isEqualTo("ABSTAINED");
+		assertThat(result.response().validationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
+		assertThat(result.providerCalled()).isFalse();
+		assertThat(result.persisted()).isNotNull();
+		assertThat(result.persisted().getGenerationState()).isEqualTo(MaritimeAiGenerationState.ABSTAINED);
+		assertThat(result.persisted().getValidationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
+		assertThat(result.persisted().getOutputJson()).doesNotContain("mpa-approved", "mpa-unapproved");
+	}
+
+	@Test
+	void disabledAuthenticApprovalAbstainsEvenForAnOtherwiseApprovedRecord() throws Exception {
+		AssessmentResult result = runAssessment(false, authenticEvidence("mpa-approved"));
+
+		assertThat(result.response().state()).isEqualTo("ABSTAINED");
+		assertThat(result.response().validationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
+		assertThat(result.providerCalled()).isFalse();
+		assertThat(result.persisted()).isNotNull();
+		assertThat(result.persisted().getGenerationState()).isEqualTo(MaritimeAiGenerationState.ABSTAINED);
+		assertThat(result.persisted().getValidationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
+		assertThat(result.persisted().getOutputJson()).doesNotContain("mpa-approved");
+	}
+
+	private static AssessmentResult runAssessment(boolean authenticApprovalEnabled, MaritimeEvidence... evidence) throws Exception {
 		Company company = newCompany(44L);
 		UserAccount creator = new UserAccount("Test Forwarder", "forwarder@example.com", "unused",
 				new AccountRole(Role.FREIGHT_FORWARDER), company);
@@ -46,8 +72,12 @@ class MaritimeAiAssessmentServiceTest {
 			if (method.getName().equals("findById")) return Optional.of(shipment);
 			return unsupported(method.getName());
 		});
+		AtomicReference<MaritimeAiAssessment> persisted = new AtomicReference<>();
 		MaritimeAiAssessmentRepository assessments = repository(MaritimeAiAssessmentRepository.class, (proxy, method, args) -> {
-			if (method.getName().equals("save")) return args[0];
+			if (method.getName().equals("save")) {
+				persisted.set((MaritimeAiAssessment) args[0]);
+				return args[0];
+			}
 			return unsupported(method.getName());
 		});
 		ShipmentService shipments = new ShipmentService(null, null, null, null, null, null, new ObjectMapper(),
@@ -55,24 +85,21 @@ class MaritimeAiAssessmentServiceTest {
 			@Override public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) { return detail; }
 		};
 
-		MaritimeEvidence approved = authenticEvidence("mpa-approved");
-		MaritimeEvidence unapproved = authenticEvidence("mpa-unapproved");
-		MaritimeContextService context = contextWith(approved, unapproved);
+		MaritimeContextService context = contextWith(evidence);
 		AtomicBoolean providerCalled = new AtomicBoolean();
-		MaritimeAiClient client = evidence -> {
+		MaritimeAiClient client = packageToInterpret -> {
 			providerCalled.set(true);
 			return MaritimeAiClient.MaritimeAiClientResult.unavailable("The provider must not be called");
 		};
 		var service = new MaritimeAiAssessmentService(shipments, shipmentRepository, context, client, assessments,
-				new ObjectMapper(), new DefaultListableBeanFactory().getBeanProvider(Clock.class), true, true,
+				new ObjectMapper(), new DefaultListableBeanFactory().getBeanProvider(Clock.class), true, authenticApprovalEnabled,
 				"MPA_ETA_REVISION", "mpa-approved");
 
 		var response = service.generate(new AuthenticatedUser(1L, "test@example.com", Role.FREIGHT_FORWARDER, Instant.EPOCH), 7L);
-
-		assertThat(response.state()).isEqualTo("ABSTAINED");
-		assertThat(response.validationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
-		assertThat(providerCalled).isFalse();
+		return new AssessmentResult(response, providerCalled.get(), persisted.get());
 	}
+
+	private record AssessmentResult(MaritimeAiAssessmentResponse response, boolean providerCalled, MaritimeAiAssessment persisted) { }
 
 	private static MaritimeEvidence authenticEvidence(String id) {
 		return new MaritimeEvidence("MPA_ETA_REVISION", "RETROSPECTIVE_ANALYSIS", id, "Historical revision", "MPA", "", "citation",

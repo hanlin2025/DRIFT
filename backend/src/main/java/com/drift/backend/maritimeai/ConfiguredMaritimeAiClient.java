@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Component
 class ConfiguredMaritimeAiClient implements MaritimeAiClient {
-	static final String PROMPT_VERSION = "cdg247.evidence.v9.documented-revision-grounding.1";
+	static final String PROMPT_VERSION = "cdg247.evidence.v10.abstract-revision-grounding.1";
 	private final String provider;
 	private final String model;
 	private final String apiKey;
@@ -141,7 +141,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 								+ "For each claim, copy vesselRole, observationType, and associationScope exactly from its cited evidence when present; otherwise use null. "
 								+ "Each claim is a typed planning insight and must include one or more canonical factReferences from the supplied list. Do not return evidenceIds: the backend derives raw evidence IDs from evidence:<id> factReferences. Do not restate vessel names, timestamps, measurements, notice periods, weather values, or source provenance in the summary or claim statement: the backend renders those facts separately. "
 								+ "For claims with typed canonical references, use abstract planning prose only: include no digits, numeric words, named vessels, calendar or clock text, source IDs or titles, quoted input-field values, or factual source descriptions. A safe claim form is 'The documented revision warrants schedule review.' A safe summary form is 'Review the grounded interpretation and limitations.' "
-								+ "For a cited MPA MOTHER EXPECTED_ARRIVAL revision, describe one documented change between its previous and current values. State a revision magnitude only when its exact duration is supported by that cited canonical MPA evidence. Never call the revision additional, further, another, or subsequent, and never imply a separate or cumulative revision. "
+								+ "For a cited MPA MOTHER EXPECTED_ARRIVAL revision, say only that the documented revision warrants schedule review. Do not state its magnitude or previous/current values; the backend renders those facts in the deterministic summary. Never call the revision additional, further, another, or subsequent, and never imply a separate or cumulative revision. "
 								+ "The summary must be a non-factual orientation to the AI interpretation; do not describe any vessel, source, schedule, time, value, event, or relationship there. "
 								+ "Use relationshipType SCHEDULE_REVIEW only for a cited MOTHER EXPECTED_ARRIVAL plus both planned schedule references; PORT_CONTEXT_REVIEW only for cited PORT_CONTEXT evidence; PORT_TIME_OVERLAP_REVIEW only when the supplied canonical overlap reference is present; and REGIONAL_WEATHER_CONTEXT only for cited REGIONAL_CONTEXT evidence. "
 								+ "A MOTHER expected arrival is not a FEEDER arrival or departure. A feeder schedule is deterministic shipment-context planning information, never an observed feeder movement or a cited evidence claim. "
@@ -149,7 +149,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 								+ "For PORT_CONTEXT and REGIONAL_CONTEXT claims, use applicability CONTEXTUAL or UNCERTAIN, never VERIFIED. A PORT_CONTEXT claim using the supplied port-overlap reference must use relationshipType PORT_TIME_OVERLAP_REVIEW; temporal overlap is not causation. "
 								+ "When sourceMode is SYNTHETIC_DEMONSTRATION, call notices and observations synthetic or fictional; never call a synthetic notice official or real. "
 								+ "shipmentContext is deterministic planned schedule context, not retrieved maritime evidence. Its plannedMovementType is authoritative: a FEEDER PLANNED_DEPARTURE may be referenced by a SCHEDULE_REVIEW claim only through its canonical schedule reference, never as an observed feeder movement or as retrieved maritime evidence. "
-								+ "Use the retrieved evidence to explain what changed and why a human should review the planned schedule; do not claim that weather or a notice caused the revision. "
+								+ "Use retrieved evidence only to ground the abstract schedule-review relevance; the backend renders documented change details in the deterministic summary. Do not claim that weather or a notice caused the revision. "
 								+ "Never claim that a feeder connection was missed or predict that it will be missed. Ground each claim with supplied canonical factReferences. "
 								+ "Distinguish source-event time, observation time, and retrieval time. State uncertainty and human-review needs."))),
 				new OpenAiMessage("user", List.of(new OpenAiInputText("input_text", "Bounded maritime evidence bundle:\n" + evidenceJson + "\nCanonical factReferences (use these instead of restating facts):\n" + factReferences)))),

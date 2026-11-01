@@ -26,7 +26,7 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation()).isNotNull();
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
-			assertThat(result.promptVersion()).isEqualTo("cdg247.evidence.v9.documented-revision-grounding.1");
+			assertThat(result.promptVersion()).isEqualTo("cdg247.evidence.v10.abstract-revision-grounding.1");
 			assertThat(result.interpretation().claims().get(0).vesselRole()).isNull();
 			assertThat(result.interpretation().claims().get(0).observationType()).isNull();
 			assertThat(result.interpretation().claims().get(0).associationScope()).isNull();
@@ -44,9 +44,10 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("A feeder schedule is deterministic shipment-context planning information")
 					.contains("Association verification is evidence-item-specific")
 					.contains("never call a synthetic notice official or real")
-					.contains("describe one documented change between its previous and current values")
+					.contains("say only that the documented revision warrants schedule review")
+					.contains("Do not state its magnitude or previous/current values")
 					.contains("Never call the revision additional, further, another, or subsequent")
-					.contains("exact duration is supported by that cited canonical MPA evidence")
+					.contains("the backend renders documented change details in the deterministic summary")
 					.contains("shipmentContext is deterministic planned schedule context, not retrieved maritime evidence")
 					.contains("Canonical factReferences (use these instead of restating facts)")
 					.contains("\\\"assessmentCutoffUtc\\\":\\\"2026-10-28T00:00:00Z\\\"");
