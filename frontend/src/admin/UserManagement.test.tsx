@@ -6,12 +6,12 @@ import { AppRoutes } from '../App';
 import { loadSession, login } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentTracking, listShipments } from '../shipment/api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
@@ -62,6 +62,13 @@ function Location() { return <output data-testid="location">{useLocation().pathn
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
+  vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
+    from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
+    slowdownThresholdKnots: 3, pointLimit: 500, truncated: false, points: [],
+  });
   vi.mocked(loadSession).mockImplementation(async token => ({ ...(token === admin.token ? admin : forwarder), token }));
   vi.mocked(login).mockResolvedValue(admin);
   vi.mocked(listShipments).mockResolvedValue([]);

@@ -21,11 +21,11 @@ public final class ArrivalEstimateCalculator {
 	static final Duration ON_SCHEDULE_LIMIT = Duration.ofHours(2);
 	static final Duration OUTDATED_AFTER = Duration.ofHours(6);
 
-	private static final String NO_POSITION = "NO_POSITION";
-	private static final String INVALID_COORDINATES = "INVALID_COORDINATES";
-	private static final String MISSING_PORT = "MISSING_PORT";
-	private static final String UNKNOWN_PORT = "UNKNOWN_PORT";
-	private static final String UNUSABLE_SPEED = "UNUSABLE_SPEED";
+	static final String NO_POSITION = "NO_POSITION";
+	static final String INVALID_COORDINATES = "INVALID_COORDINATES";
+	static final String MISSING_PORT = "MISSING_PORT";
+	static final String UNKNOWN_PORT = "UNKNOWN_PORT";
+	static final String UNUSABLE_SPEED = "UNUSABLE_SPEED";
 
 	private final PortCatalog ports;
 

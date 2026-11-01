@@ -16,6 +16,7 @@ import com.drift.backend.shipment.exception.InvalidImporterOrganisationException
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
 
 import jakarta.persistence.EntityManager;
 
@@ -27,14 +28,16 @@ public class ShipmentLinkService {
 	private final CompanyRepository companies;
 	private final ShipmentDetailAssembler details;
 	private final EntityManager entityManager;
+	private final ShipmentHistoryRecorder history;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ShipmentDetailAssembler details, EntityManager entityManager) {
+			ShipmentDetailAssembler details, EntityManager entityManager, ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
 		this.details = details;
 		this.entityManager = entityManager;
+		this.history = history;
 	}
 
 	@Transactional
@@ -45,9 +48,13 @@ public class ShipmentLinkService {
 			throw new ShipmentLinkForbiddenException();
 		}
 		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		Company previousImporter = shipment.getImporterCompany();
+		Instant now = Instant.now();
 		shipment.linkImporter(importer(importerCompanyId, ownerId));
-		shipment.markUpdated(account, Instant.now());
-		return detail(shipments.saveAndFlush(shipment));
+		shipment.markUpdated(account, now);
+		Shipment saved = shipments.saveAndFlush(shipment);
+		history.recordImporterLink(saved, previousImporter, account, now);
+		return detail(saved);
 	}
 
 	private UserAccount forwarder(AuthenticatedUser principal) {

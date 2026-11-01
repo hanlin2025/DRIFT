@@ -340,6 +340,12 @@ class ShipmentCreationIntegrationTests {
 				.andExpect(jsonPath("$.risk.level").value("LOW"))
 				.andExpect(jsonPath("$.remainingConnectionWindow").value(nullValue()))
 				.andExpect(jsonPath("$.risk.explanation").value("At least 24 hours to transfer cargo between vessels. The planned connection window is being used."))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[0]").value("Planned connection window"))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[1]").value("1 day 4 hours"))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[2]").value("No AIS position has been received for the mother vessel."))
+				.andExpect(jsonPath("$.assessmentExplanation.assumptions[0]").value("The planned connection window is used because the estimated arrival could not be used."))
+				.andExpect(jsonPath("$.assessmentExplanation.confidence").value("Confidence is limited because the planned connection window is being used."))
+				.andExpect(jsonPath("$.assessmentExplanation.unavailable").value(nullValue()))
 				.andExpect(jsonPath("$.motherVesselPosition").value(nullValue()))
 				.andExpect(jsonPath("$.feederVesselPosition").value(nullValue()));
 	}
@@ -353,6 +359,7 @@ class ShipmentCreationIntegrationTests {
 		Number shipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 		String createdBody = created.getResponse().getContentAsString();
 		assertThat(createdBody).doesNotContain("motherVesselPosition");
+		assertThat(createdBody).doesNotContain("assessmentExplanation");
 
 		detail(token, shipmentId.toString())
 				.andExpect(status().isOk())
@@ -370,7 +377,8 @@ class ShipmentCreationIntegrationTests {
 		list(token)
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].connectionWindow.duration").value("1 day 4 hours"))
-				.andExpect(jsonPath("$[0].motherVesselPosition").doesNotExist());
+				.andExpect(jsonPath("$[0].motherVesselPosition").doesNotExist())
+				.andExpect(jsonPath("$[0].assessmentExplanation").doesNotExist());
 	}
 
 	@Test
@@ -406,7 +414,8 @@ class ShipmentCreationIntegrationTests {
 		detail(token, otherShipmentId.toString())
 				.andExpect(status().isForbidden())
 				.andExpect(header().string("Cache-Control", "no-store"))
-				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE))
+				.andExpect(jsonPath("$.assessmentExplanation").doesNotExist());
 		detail(token, "999999999")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));

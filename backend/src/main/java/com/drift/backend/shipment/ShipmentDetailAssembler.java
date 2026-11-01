@@ -14,10 +14,7 @@ class ShipmentDetailAssembler {
 	}
 
 	ShipmentDetailResponse detail(Shipment shipment) {
-		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
-		return ShipmentDetailResponse.from(shipment, connection.planned(), connection.remaining(),
-				connection.motherVesselPosition(), connection.feederVesselPosition(), connection.arrivalComparison(),
-				deadline(shipment));
+		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment), deadline(shipment));
 	}
 
 	private TransshipmentArrivalDeadlineResponse deadline(Shipment shipment) {

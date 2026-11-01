@@ -90,13 +90,22 @@ class ShipmentImporterAccessIntegrationTests {
 				forwarderCompanyId, importerCompanyId);
 		entityManager.clear();
 
-		list(forwarderToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
-		get(forwarderToken, shipmentId).andExpect(status().isOk());
+		list(forwarderToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].assessmentExplanation").doesNotExist());
+		get(forwarderToken, shipmentId).andExpect(status().isOk())
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[0]").value("Planned connection window"))
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[1]").value("6 hours 15 minutes"))
+				.andExpect(jsonPath("$.assessmentExplanation.confidence")
+						.value("Confidence is limited because the planned connection window is being used."));
 		tracking(forwarderToken, shipmentId).andExpect(status().isOk());
 		update(forwarderToken, shipmentId, "HBL-FORWARDER-UPDATED", 0L).andExpect(status().isOk());
 
-		list(importerToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
-		get(importerToken, shipmentId).andExpect(status().isOk());
+		list(importerToken).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].assessmentExplanation").doesNotExist());
+		get(importerToken, shipmentId).andExpect(status().isOk())
+				.andExpect(jsonPath("$.assessmentExplanation.evidence[1]").value("6 hours 15 minutes"))
+				.andExpect(jsonPath("$.assessmentExplanation.confidence")
+						.value("Confidence is limited because the planned connection window is being used."));
 		tracking(importerToken, shipmentId).andExpect(status().isOk());
 		update(importerToken, shipmentId, "HBL-IMPROPER-UPDATE", 1L)
 				.andExpect(status().isForbidden())

@@ -4,6 +4,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -28,6 +33,16 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT shipment FROM Shipment shipment WHERE shipment.id = :shipmentId")
 	Optional<Shipment> findByIdForUpdate(@Param("shipmentId") Long shipmentId);
+
+	/** Loads the importer and last editor with each shipment so the list response does not query them per row. */
+	@Override
+	@EntityGraph(attributePaths = { "importerCompany", "updatedBy" })
+	List<Shipment> findAll(Specification<Shipment> spec, Sort sort);
+
+	/** Loads the importer and last editor with each page of shipments so the paged list does not query them per row. */
+	@Override
+	@EntityGraph(attributePaths = { "importerCompany", "updatedBy" })
+	Page<Shipment> findAll(Specification<Shipment> spec, Pageable pageable);
 
 	@Query("""
 			SELECT shipment FROM Shipment shipment

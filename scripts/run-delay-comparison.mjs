@@ -1,7 +1,7 @@
 // Browser check for the CDG-207 deadline assessment.
 //
 // This frontend branch does not contain the CDG-206 backend. Pass a clean checkout of
-// commit e230e5d7e30f7b75c73ed88f87e79b8f30db1f81, for example:
+// commit 0900d30b68ad545c68b2ce8a3310cf9e0d084427, for example:
 //
 //   DRIFT_CDG207_BACKEND=/path/to/cdg-206/backend npm run test:e2e:delay-comparison
 //
@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(root, 'frontend');
 const container = 'drift-cdg207-pg';
 const hostPort = '55434';
-const requiredBackend = 'e230e5d7e30f7b75c73ed88f87e79b8f30db1f81';
+const requiredBackend = '0900d30b68ad545c68b2ce8a3310cf9e0d084427';
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const ownedName = /^drift_cdg207_comparison_[0-9]{14}_[a-f0-9]{12}$/;
 let activeBackend = null;
