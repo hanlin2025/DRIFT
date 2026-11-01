@@ -40,7 +40,7 @@ export type MaritimeEvidence = {
   vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
 export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
-export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW';
+export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW' | 'DELAY_COMPARISON_REVIEW';
 export type MaritimeAiRiskSeverity = RiskLevel;
 export type MaritimeAiRiskBasis = 'PLANNED_SHIPMENT_SCHEDULE' | 'AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE';
 export type MaritimeAiEstimateFreshness = 'AVAILABLE' | 'STALE' | 'UNAVAILABLE' | 'UNKNOWN';
@@ -97,6 +97,43 @@ export type MaritimeAiRiskSnapshot = {
   canonicalFactReferences: string[];
 };
 
+export type MaritimeAiDeadlineState = 'RECORDED' | 'NOT_RECORDED' | 'UNKNOWN';
+export type MaritimeAiComparisonState = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
+export type MaritimeAiComparisonOutcome = 'NO_PREDICTED_IMPACT' | 'EXCEEDS_DEADLINE';
+export type MaritimeAiComparisonUnavailableReason =
+  | 'INCOMPATIBLE_MILESTONE'
+  | 'MISSING_PREDICTION'
+  | 'MISSING_CONSTRAINT'
+  | 'STALE_PREDICTION';
+
+export type MaritimeAiBusinessDeadline = {
+  state: MaritimeAiDeadlineState;
+  instant: string | null;
+  recordedTransshipmentPort: string | null;
+  applicableToCurrentPort: boolean | null;
+};
+
+type MaritimeAiBusinessComparisonFacts = {
+  estimatedArrivalAt: string | null;
+  comparedDeadline: string | null;
+  recordedTransshipmentPort: string | null;
+};
+
+export type MaritimeAiBusinessComparison =
+  | (MaritimeAiBusinessComparisonFacts & { state: 'AVAILABLE'; outcome: MaritimeAiComparisonOutcome; unavailableReason: null })
+  | (MaritimeAiBusinessComparisonFacts & { state: 'UNAVAILABLE'; outcome: null; unavailableReason: MaritimeAiComparisonUnavailableReason | null })
+  | (MaritimeAiBusinessComparisonFacts & { state: 'UNKNOWN'; outcome: null; unavailableReason: null });
+
+export type MaritimeAiBusinessContext = {
+  deadline: MaritimeAiBusinessDeadline | null;
+  comparison: MaritimeAiBusinessComparison | null;
+};
+
+export type MaritimeAiBusinessSnapshot = {
+  context: MaritimeAiBusinessContext | null;
+  canonicalFactReferences: string[];
+};
+
 export type MaritimeAiDeterministicSummary = {
   summaryVersion: string;
   label: string;
@@ -105,6 +142,8 @@ export type MaritimeAiDeterministicSummary = {
   limitations: string[];
   /** Absent on historical assessments created before CDG-259. */
   connectionRisk?: MaritimeAiRiskSnapshot | null;
+  /** Absent on historical assessments created before business-context snapshots were added. */
+  businessContext?: MaritimeAiBusinessSnapshot | null;
 };
 
 export type MaritimeAiAssessment = {

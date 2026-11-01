@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
-import type { MaritimeAiAssessment, MaritimeAiFact, MaritimeAiRiskSnapshot } from './api';
+import type { MaritimeAiAssessment, MaritimeAiBusinessSnapshot, MaritimeAiFact, MaritimeAiRiskSnapshot } from './api';
 
 const observedFact: MaritimeAiFact = {
   factReference: 'evidence:mpa-approved', factType: 'RETRIEVED_EVIDENCE', subject: 'Synthetic mother', eventType: 'EXPECTED_ARRIVAL',
@@ -35,6 +35,37 @@ const assessment: MaritimeAiAssessment = {
     evidenceFacts: [observedFact], limitations: ['Matching IMO verifies vessel identity only.'], connectionRisk: availablePlannedRisk,
   },
 };
+
+const recordedDeadline = '2026-11-01T10:00:00Z';
+const availableBusinessSnapshot: MaritimeAiBusinessSnapshot = {
+  context: {
+    deadline: { state: 'RECORDED', instant: recordedDeadline, recordedTransshipmentPort: 'Singapore', applicableToCurrentPort: true },
+    comparison: {
+      state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null,
+      estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: recordedDeadline, recordedTransshipmentPort: 'Singapore',
+    },
+  },
+  canonicalFactReferences: [
+    'business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT',
+    'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY', 'comparison:DELAY_OUTCOME',
+    'comparison:ESTIMATED_ARRIVAL', 'comparison:RECORDED_DEADLINE', 'comparison:RECORDED_TRANSSHIPMENT_PORT',
+  ],
+};
+const businessClaim = {
+  statement: 'The predicted arrival exceeds the applicable transshipment-arrival deadline.',
+  evidenceIds: ['mpa-approved'], applicability: 'CONTEXTUAL', vesselRole: 'MOTHER' as const,
+  observationType: 'EXPECTED_ARRIVAL', associationScope: 'VESSEL_OBSERVATION',
+  factReferences: ['evidence:mpa-approved', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+  relationshipType: 'DELAY_COMPARISON_REVIEW' as const,
+};
+
+function withBusinessSnapshot(snapshot: MaritimeAiBusinessSnapshot = availableBusinessSnapshot, claim = businessClaim): MaritimeAiAssessment {
+  return {
+    ...assessment,
+    interpretation: { ...assessment.interpretation!, claims: [...assessment.interpretation!.claims, claim] },
+    deterministicSummary: { ...assessment.deterministicSummary!, businessContext: snapshot },
+  };
+}
 
 function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn()) {
   return { ...render(<MaritimeAiAssessmentPanel assessments={[value]} unavailable={false} generating={false} onGenerate={onGenerate} />), onGenerate };
@@ -183,7 +214,145 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(screen.getByRole('region', { name: 'Observed maritime evidence' })).toBeInTheDocument();
     expect(screen.getByText(/without a validated connection risk-review claim/)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Why this shipment warrants review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Business implications' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Assessment-time importer business context' })).not.toBeInTheDocument();
     expect(screen.getByText(/Provider-generated assessment from openai-responses/)).toBeInTheDocument();
+  });
+
+  it('shows a validated deadline comparison under Business implications and its saved facts in details', () => {
+    renderPanel(withBusinessSnapshot());
+    const evidence = screen.getByRole('region', { name: 'Observed maritime evidence' });
+    const business = screen.getByRole('region', { name: 'Business implications' });
+    expect(within(evidence).queryByText(businessClaim.statement)).not.toBeInTheDocument();
+    expect(within(business).getByText('Validated importer deadline comparison')).toBeInTheDocument();
+    expect(within(business).getByText(businessClaim.statement)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getByText('Recorded')).toBeInTheDocument();
+    expect(within(details).getAllByText(recordedDeadline)).toHaveLength(2);
+    expect(within(details).getAllByText('Singapore')).toHaveLength(2);
+    expect(within(details).getByText('Applies to this shipment’s transshipment port')).toBeInTheDocument();
+    expect(within(details).getByText('Exceeds Deadline')).toBeInTheDocument();
+    expect(within(details).getByText('2026-11-01T11:00:00Z')).toBeInTheDocument();
+    expect(within(details).getByText(/business:TRANSSHIPMENT_ARRIVAL_DEADLINE/)).toBeInTheDocument();
+    expect(within(details).getByText(/comparison:DELAY_OUTCOME/)).toBeInTheDocument();
+  });
+
+  it('displays NO_PREDICTED_IMPACT only when the saved comparison is available with that outcome', () => {
+    const snapshot: MaritimeAiBusinessSnapshot = {
+      ...availableBusinessSnapshot,
+      context: {
+        ...availableBusinessSnapshot.context!,
+        comparison: {
+          state: 'AVAILABLE', outcome: 'NO_PREDICTED_IMPACT', unavailableReason: null,
+          estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: recordedDeadline, recordedTransshipmentPort: 'Singapore',
+        },
+      },
+    };
+    const value = withBusinessSnapshot(snapshot, { ...businessClaim, statement: 'No predicted impact is shown against the applicable transshipment-arrival deadline.' });
+    renderPanel(value);
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    expect(screen.getByText('No Predicted Impact')).toBeInTheDocument();
+    expect(screen.queryByText('Comparison unavailable reason')).not.toBeInTheDocument();
+  });
+
+  it('shows a missing deadline as unavailable rather than as no predicted impact', () => {
+    const snapshot: MaritimeAiBusinessSnapshot = {
+      context: {
+        deadline: { state: 'NOT_RECORDED', instant: null, recordedTransshipmentPort: null, applicableToCurrentPort: null },
+        comparison: { state: 'UNAVAILABLE', outcome: null, unavailableReason: 'MISSING_CONSTRAINT', estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: null, recordedTransshipmentPort: null },
+      },
+      canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE_NOT_RECORDED', 'comparison:UNAVAILABLE_REASON'],
+    };
+    const value = withBusinessSnapshot(snapshot, {
+      ...businessClaim,
+      statement: 'No current importer deadline is recorded, so the comparison is unavailable.',
+      factReferences: ['evidence:mpa-approved', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_NOT_RECORDED', 'comparison:UNAVAILABLE_REASON'],
+    });
+    renderPanel(value);
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getByText('No deadline recorded at assessment time')).toBeInTheDocument();
+    expect(within(details).getByText('Missing Constraint')).toBeInTheDocument();
+    expect(within(details).queryByText('No Predicted Impact')).not.toBeInTheDocument();
+  });
+
+  it('preserves an inapplicable different-port deadline and its unavailable comparison reason', () => {
+    const snapshot: MaritimeAiBusinessSnapshot = {
+      context: {
+        deadline: { state: 'RECORDED', instant: recordedDeadline, recordedTransshipmentPort: 'Tanjung Pelepas', applicableToCurrentPort: false },
+        comparison: { state: 'UNAVAILABLE', outcome: null, unavailableReason: 'INCOMPATIBLE_MILESTONE', estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: recordedDeadline, recordedTransshipmentPort: 'Tanjung Pelepas' },
+      },
+      canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY', 'comparison:UNAVAILABLE_REASON'],
+    };
+    const value = withBusinessSnapshot(snapshot, {
+      ...businessClaim,
+      statement: 'The recorded deadline is for a different transshipment port, so comparison is unavailable.',
+      factReferences: ['evidence:mpa-approved', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY', 'comparison:UNAVAILABLE_REASON'],
+    });
+    renderPanel(value);
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getAllByText('Tanjung Pelepas')).toHaveLength(2);
+    expect(within(details).getByText('Does not apply to this shipment’s transshipment port')).toBeInTheDocument();
+    expect(within(details).getByText('Incompatible Milestone')).toBeInTheDocument();
+    expect(within(details).queryByText('No Predicted Impact')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['missing', 'MISSING_PREDICTION' as const, null],
+    ['stale', 'STALE_PREDICTION' as const, '2026-11-01T11:00:00Z'],
+  ])('keeps a %s estimate comparison unavailable without inventing an outcome', (label, reason, estimatedArrivalAt) => {
+    const snapshot: MaritimeAiBusinessSnapshot = {
+      ...availableBusinessSnapshot,
+      context: {
+        ...availableBusinessSnapshot.context!,
+        comparison: { ...availableBusinessSnapshot.context!.comparison!, state: 'UNAVAILABLE', outcome: null, unavailableReason: reason, estimatedArrivalAt },
+      },
+      canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:UNAVAILABLE_REASON'],
+    };
+    const value = withBusinessSnapshot(snapshot, {
+      ...businessClaim,
+      statement: `The ${label} estimate leaves the deadline comparison unavailable.`,
+      factReferences: ['evidence:mpa-approved', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:UNAVAILABLE_REASON'],
+    });
+    renderPanel(value);
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getByText(reason === 'STALE_PREDICTION' ? 'Stale Prediction' : 'Missing Prediction')).toBeInTheDocument();
+    expect(within(details).queryByText('No Predicted Impact')).not.toBeInTheDocument();
+  });
+
+  it('keeps an older assessment deadline after the shipment deadline changes', () => {
+    const savedDeadline = '2026-10-31T10:00:00Z';
+    const currentShipmentDeadline = '2026-11-03T10:00:00Z';
+    const snapshot: MaritimeAiBusinessSnapshot = {
+      ...availableBusinessSnapshot,
+      context: {
+        ...availableBusinessSnapshot.context!,
+        deadline: { ...availableBusinessSnapshot.context!.deadline!, instant: savedDeadline },
+        comparison: { ...availableBusinessSnapshot.context!.comparison!, comparedDeadline: savedDeadline },
+      },
+    };
+    renderPanel(withBusinessSnapshot(snapshot));
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getAllByText(savedDeadline)).toHaveLength(2);
+    expect(within(details).queryByText(currentShipmentDeadline)).not.toBeInTheDocument();
+  });
+
+  it('does not show business claims for failed or abstained assessments', () => {
+    const value = withBusinessSnapshot();
+    const failed = { ...value, state: 'FAILED' as const, validationStatus: 'UNSTRUCTURED_FACTUAL_DETAIL', limitation: 'Validation rejected the output.' };
+    const { rerender } = render(<MaritimeAiAssessmentPanel assessments={[failed]} unavailable={false} generating={false} onGenerate={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Business implications' })).not.toBeInTheDocument();
+    expect(screen.queryByText(businessClaim.statement)).not.toBeInTheDocument();
+
+    const abstained = { ...value, state: 'ABSTAINED' as const, validationStatus: 'INSUFFICIENT_EVIDENCE', limitation: 'Evidence was insufficient.' };
+    rerender(<MaritimeAiAssessmentPanel assessments={[abstained]} unavailable={false} generating={false} onGenerate={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Business implications' })).not.toBeInTheDocument();
+    expect(screen.queryByText(businessClaim.statement)).not.toBeInTheDocument();
   });
 
   it('distinguishes a verified provider-capture replay from an actual provider-generated assessment and a stub', () => {

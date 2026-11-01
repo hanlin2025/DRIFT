@@ -1,5 +1,8 @@
 import {
   type MaritimeAiAssessment,
+  type MaritimeAiBusinessSnapshot,
+  type MaritimeAiComparisonUnavailableReason,
+  type MaritimeAiDeadlineState,
   type MaritimeAiClaim,
   type MaritimeAiEstimateFreshness,
   type MaritimeAiFact,
@@ -69,8 +72,39 @@ function relationshipLabel(claim: MaritimeAiClaim) {
     case 'PORT_TIME_OVERLAP_REVIEW': return 'Port timing context';
     case 'REGIONAL_WEATHER_CONTEXT': return 'Regional weather context';
     case 'RISK_BUFFER_REVIEW': return 'Connection risk review';
+    case 'DELAY_COMPARISON_REVIEW': return 'Importer deadline comparison';
     default: return 'Unclassified relationship';
   }
+}
+
+function deadlineStateLabel(state: MaritimeAiDeadlineState | null | undefined) {
+  switch (state) {
+    case 'RECORDED': return 'Recorded';
+    case 'NOT_RECORDED': return 'Not recorded';
+    case 'UNKNOWN': return 'Unknown';
+    default: return 'Not available';
+  }
+}
+
+function deadlineInstantLabel(state: MaritimeAiDeadlineState | null | undefined, instant: string | null | undefined) {
+  if (state === 'NOT_RECORDED') return 'No deadline recorded at assessment time';
+  if (state === 'UNKNOWN') return 'Unknown at assessment time';
+  return instant || (state === 'RECORDED' ? 'Recorded deadline time not available' : 'Not recorded');
+}
+
+function deadlineApplicabilityLabel(applicable: boolean | null | undefined) {
+  if (applicable === true) return 'Applies to this shipment’s transshipment port';
+  if (applicable === false) return 'Does not apply to this shipment’s transshipment port';
+  return 'Applicability not recorded';
+}
+
+function comparisonUnavailableReasonLabel(reason: MaritimeAiComparisonUnavailableReason | null | undefined) {
+  return reason ? humanizeCode(reason) : 'Reason not recorded';
+}
+
+function canShowBusinessClaims(snapshot: MaritimeAiBusinessSnapshot | null | undefined) {
+  const comparison = snapshot?.context?.comparison;
+  return comparison != null && comparison.state !== 'UNKNOWN';
 }
 
 function sourceLabel(sourceType: string | null | undefined) {
@@ -171,6 +205,29 @@ function RiskFacts({ assessment, snapshot, riskReview }: {
   </section>;
 }
 
+function BusinessContextDetails({ snapshot }: { snapshot: MaritimeAiBusinessSnapshot }) {
+  const deadline = snapshot.context?.deadline;
+  const comparison = snapshot.context?.comparison;
+
+  return <section aria-label="Assessment-time importer business context">
+    <h4>Assessment-time importer business context</h4>
+    <dl>
+      <div><dt>Deadline state</dt><dd>{deadlineStateLabel(deadline?.state)}</dd></div>
+      <div><dt>Transshipment-arrival deadline at assessment time</dt><dd>{deadlineInstantLabel(deadline?.state, deadline?.instant)}</dd></div>
+      <div><dt>Port recorded with deadline</dt><dd>{deadline?.recordedTransshipmentPort || 'Not recorded'}</dd></div>
+      <div><dt>Deadline applicability</dt><dd>{deadlineApplicabilityLabel(deadline?.applicableToCurrentPort)}</dd></div>
+      <div><dt>Comparison state</dt><dd>{comparison ? humanizeCode(comparison.state) : 'Unknown'}</dd></div>
+      {comparison?.state === 'AVAILABLE' && <div><dt>Comparison outcome</dt><dd>{comparison.outcome ? humanizeCode(comparison.outcome) : 'Outcome not recorded'}</dd></div>}
+      {comparison?.state === 'UNAVAILABLE' && <div><dt>Comparison unavailable reason</dt><dd>{comparisonUnavailableReasonLabel(comparison.unavailableReason)}</dd></div>}
+      {comparison?.state === 'UNKNOWN' && <div><dt>Comparison outcome</dt><dd>Unknown at assessment time</dd></div>}
+      {comparison?.estimatedArrivalAt && <div><dt>Arrival estimate used or retained</dt><dd>{comparison.estimatedArrivalAt}</dd></div>}
+      {comparison?.comparedDeadline && <div><dt>Deadline used for comparison</dt><dd>{comparison.comparedDeadline}</dd></div>}
+      {comparison?.recordedTransshipmentPort && <div><dt>Comparison transshipment port</dt><dd>{comparison.recordedTransshipmentPort}</dd></div>}
+    </dl>
+    <p><strong>Canonical business references:</strong> {snapshot.canonicalFactReferences.length ? snapshot.canonicalFactReferences.join(', ') : 'none recorded'}.</p>
+  </section>;
+}
+
 export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating, onGenerate }: {
   assessments: MaritimeAiAssessment[];
   unavailable: boolean;
@@ -187,7 +244,11 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
   const validated = isValidatedInterpretation(assessment);
   const claims = validated ? assessment.interpretation?.claims ?? [] : [];
   const riskClaims = claims.filter(claim => claim.relationshipType === 'RISK_BUFFER_REVIEW');
-  const evidenceClaims = claims.filter(claim => claim.relationshipType !== 'RISK_BUFFER_REVIEW');
+  const businessSnapshot = assessment.deterministicSummary?.businessContext ?? null;
+  const businessClaims = canShowBusinessClaims(businessSnapshot)
+    ? claims.filter(claim => claim.relationshipType === 'DELAY_COMPARISON_REVIEW')
+    : [];
+  const evidenceClaims = claims.filter(claim => claim.relationshipType !== 'RISK_BUFFER_REVIEW' && claim.relationshipType !== 'DELAY_COMPARISON_REVIEW');
   const riskSnapshot = assessment.deterministicSummary?.connectionRisk ?? null;
   const riskReview = riskClaims.find(claim => claim.riskReview)?.riskReview ?? null;
   const snapshotContradictsRiskClaim = riskClaims.length > 0 && riskSnapshot?.assessed === false;
@@ -229,7 +290,14 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
           <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>{claim.statement}</li>)}</ul>
           <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
         </section>
-      </> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p>}
+      </> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : businessClaims.length === 0 ? <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p> : null}
+
+      {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Business implications">
+        <h3>Business implications</h3>
+        <p><strong>Validated importer deadline comparison</strong></p>
+        <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>{claim.statement}</li>)}</ul>
+        <p className="maritime-ai-note">This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.</p>
+      </section>}
 
       <section className="maritime-ai-uncertainty" aria-label="Assessment uncertainty and human follow-up">
         <div><h3>Uncertainty</h3>
@@ -280,6 +348,7 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
         {riskSnapshot.calculationLimitations.length > 0 && <ul>{riskSnapshot.calculationLimitations.map((limitation, index) => <li key={`risk-detail-${index}`}>{limitation}</li>)}</ul>}
         <p><strong>Canonical risk references:</strong> {riskSnapshot.canonicalFactReferences.length ? riskSnapshot.canonicalFactReferences.join(', ') : 'none recorded'}.</p>
       </section>}
+      {businessSnapshot && <BusinessContextDetails snapshot={businessSnapshot} />}
       {claims.length > 0 && <section aria-label="Claim grounding details">
         <h4>Claim grounding</h4>
         {claims.map((claim, index) => <section key={`claim-${index}`} aria-label={`Grounding for claim ${index + 1}`}>
