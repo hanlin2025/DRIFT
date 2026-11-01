@@ -4,15 +4,16 @@
 This is an explanation layer over the maturation data. It does not relabel an
 unmatched ETA as negative, failed, or delayed.
 """
-import argparse
 import csv
 import hashlib
 import json
+import os
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from build_eta_ground_truth_candidates import valid_arrivals
+from cdg201_time import parse_mpa_source, parse_retrieval_utc
 
 
 def parse(value):
@@ -43,7 +44,7 @@ def group_visits(rows):
         values.sort(key=lambda row: row["revised_expected"])
         number, prior = 0, None
         for row in values:
-            stamp = parse(row["revised_expected"])
+            stamp = parse_mpa_source(row["revised_expected"])
             if prior is None or not stamp or (stamp - prior).total_seconds() > 6 * 3600:
                 number += 1
             row["tentative_visit_group"] = f"{context[0]}:{context[1]}:{context[2]}:{number}"
@@ -52,36 +53,35 @@ def group_visits(rows):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mpa-root", type=Path, required=True)
-    parser.add_argument("--revisions", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args(); root = args.mpa_root; output = args.output; output.mkdir(parents=True, exist_ok=True)
-    revisions = list(csv.DictReader(args.revisions.open()))
+    base = Path(os.environ.get("CDG201_DATA_ROOT", Path.home() / "opt/data/change_detection"))
+    root = base / "data/external/maritime/raw/mpa_oceansx"
+    output = base / "analysis/ai_readiness"; output.mkdir(parents=True, exist_ok=True)
+    revisions = list(csv.DictReader((base / "analysis/revisions/expected_revisions.csv").open()))
     prospective = group_visits([dict(row) for row in revisions if row.get("prospective") == "True"])
     actuals, slices = valid_arrivals(root), valid_arrival_slices(root)
-    latest_actual_collection = max((parse(x["retrieval_started_utc"]) for x in slices if parse(x.get("retrieval_started_utc"))), default=None)
+    latest_actual_collection = max((parse_retrieval_utc(x["retrieval_started_utc"]) for x in slices if parse_retrieval_utc(x.get("retrieval_started_utc"))), default=None)
     diagnostic = []
     for eta in prospective:
-        cutoff, early, late = parse(eta.get("latest_collection_utc")), parse(eta.get("source_timestamp_utc_earliest_bound")), parse(eta.get("source_timestamp_utc_latest_bound"))
-        same_imo = [a for a in actuals if a["imo"] == eta["imo"] and parse(a["collection_utc"]) and cutoff and parse(a["collection_utc"]) > cutoff]
+        cutoff, expected = parse_retrieval_utc(eta.get("latest_collection_utc")), parse_mpa_source(eta.get("revised_expected"))
+        same_imo = [a for a in actuals if a["imo"] == eta["imo"] and parse_retrieval_utc(a["collection_utc"]) and cutoff and parse_retrieval_utc(a["collection_utc"]) > cutoff]
         same_destination = [a for a in same_imo if a["location_to"] == eta["location_to"]]
-        expected = parse(eta["revised_expected"])
-        near = [a for a in same_destination if expected and abs((parse(a["arrived_time"]) - expected).total_seconds()) <= 72 * 3600]
+        near = [a for a in same_destination if expected and (actual_time := parse_mpa_source(a["arrived_time"])) and abs((actual_time - expected).total_seconds()) <= 72 * 3600]
         exact = [a for a in near if a["location_from"] == eta["location_from"] and (not eta.get("call_sign") or a["call_sign"] == eta["call_sign"])]
-        source_dates = sorted({eta["revised_expected"][:10], early.date().isoformat() if early else "", late.date().isoformat() if late else ""} - {""})
-        relevant_slices = [s for s in slices if s.get("queried_date") in source_dates and cutoff and parse(s.get("retrieval_started_utc")) and parse(s["retrieval_started_utc"]) > cutoff]
-        definitely_future = bool(latest_actual_collection and early and latest_actual_collection < early)
-        if len(exact) == 1:
+        future_exact = [a for a in exact if (actual_time := parse_mpa_source(a["arrived_time"])) and cutoff and actual_time > cutoff]
+        already_occurred_exact = [a for a in exact if (actual_time := parse_mpa_source(a["arrived_time"])) and cutoff and actual_time <= cutoff]
+        source_dates = [expected.date().isoformat()] if expected else []
+        relevant_slices = [s for s in slices if s.get("queried_date") in source_dates and cutoff and parse_retrieval_utc(s.get("retrieval_started_utc")) and parse_retrieval_utc(s["retrieval_started_utc"]) > cutoff]
+        definitely_future = bool(latest_actual_collection and expected and latest_actual_collection < expected.astimezone(timezone.utc))
+        if len(future_exact) == 1 and len(near) == 1:
             reason, status = "single_context_match_available", "match_available_recheck_maturation"
+        elif already_occurred_exact and not future_exact:
+            reason, status = "context_match_not_after_prediction_cutoff", "ambiguous_source_event_timing"
         elif len(exact) > 1 or len(near) > 1:
             reason, status = "multiple_possible_visits", "ambiguous"
-        elif latest_actual_collection is None or early is None or late is None:
+        elif latest_actual_collection is None or expected is None:
             reason, status = "insufficient_collection_or_source_time_bounds", "timestamp_or_coverage_unresolved"
         elif definitely_future:
             reason, status = "expected_time_definitely_after_latest_actual_collection", "awaiting_future_outcome"
-        elif latest_actual_collection < late:
-            reason, status = "source_timezone_window_extends_beyond_actual_collection", "timestamp_or_coverage_unresolved"
         elif not relevant_slices:
             reason, status = "no_successful_reported_arrival_slice_after_cutoff_for_relevant_dates", "coverage_unresolved"
         elif not same_imo:
@@ -94,7 +94,7 @@ def main():
             "tentative_visit_group": eta["tentative_visit_group"], "imo":eta["imo"], "vessel_name":eta.get("vessel_name", ""),
             "call_sign":eta.get("call_sign", ""), "location_from":eta["location_from"], "location_to":eta["location_to"],
             "prediction_cutoff_utc":eta["latest_collection_utc"], "expected_arrival_source_string":eta["revised_expected"],
-            "source_timezone_classification":eta["prospectiveness_classification"], "possible_utc_earliest":eta.get("source_timestamp_utc_earliest_bound", ""), "possible_utc_latest":eta.get("source_timestamp_utc_latest_bound", ""),
+            "source_timezone_classification":"confirmed_Asia/Singapore", "expected_sgt":expected.isoformat() if expected else "", "expected_utc":expected.astimezone(timezone.utc).isoformat() if expected else "",
             "latest_successful_actual_collection_utc":latest_actual_collection.isoformat() if latest_actual_collection else "",
             "relevant_actual_slice_count_after_cutoff":len(relevant_slices), "same_imo_actual_count":len(same_imo), "same_destination_actual_count":len(same_destination),
             "within_72h_actual_count":len(near), "exact_context_actual_count":len(exact),
@@ -109,9 +109,9 @@ def main():
     report = {"candidate_rows":len(diagnostic), "tentative_underlying_visits":len({r["tentative_visit_group"] for r in diagnostic}),
               "latest_successful_reported_arrival_collection_utc":latest_actual_collection.isoformat() if latest_actual_collection else None,
               "status_counts":status_counts, "reason_counts":reason_counts,
-              "conclusion":"No forced matches. Results distinguish outcomes genuinely in the future from source-timezone/coverage and context constraints."}
+              "conclusion":"No forced matches. Results distinguish outcomes genuinely in the future from coverage and context constraints under the confirmed SGT source-time convention."}
     (output / "ETA_OUTCOME_DIAGNOSTIC_REPORT.json").write_text(json.dumps(report, indent=2, default=dict) + "\n")
-    lines = ["# Prospective ETA outcome diagnostic", "", f"Candidate snapshots: {len(diagnostic)}; tentative underlying visits: {report['tentative_underlying_visits']}.", f"Latest successful reported-arrival collection: `{report['latest_successful_reported_arrival_collection_utc']}`.", "", f"Status counts: {dict(status_counts)}.", f"Reasons: {dict(reason_counts)}.", "", "No unmatched candidate was treated as a negative outcome. Source timestamp timezone remains unresolved; reported-arrival coverage is assessed separately from matching identity."]
+    lines = ["# Prospective ETA outcome diagnostic", "", f"Candidate snapshots: {len(diagnostic)}; tentative underlying visits: {report['tentative_underlying_visits']}.", f"Latest successful reported-arrival collection: `{report['latest_successful_reported_arrival_collection_utc']}`.", "", f"Status counts: {dict(status_counts)}.", f"Reasons: {dict(reason_counts)}.", "", "No unmatched candidate was treated as a negative outcome. MPA source event strings are interpreted as SGT; reported-arrival coverage is assessed separately from matching identity."]
     (output / "ETA_OUTCOME_DIAGNOSTIC_REPORT.md").write_text("\n".join(lines) + "\n")
     print(json.dumps(report, default=dict))
 
