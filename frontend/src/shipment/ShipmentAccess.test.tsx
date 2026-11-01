@@ -97,6 +97,9 @@ describe('map permission and missing position', () => {
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
     expect(screen.queryByText('Recommendation')).not.toBeInTheDocument();
     expect(screen.queryByText('No action')).not.toBeInTheDocument();
+    expect(screen.queryByText('Port conditions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
   });
 
   it('hides the map when tracking is forbidden', async () => {

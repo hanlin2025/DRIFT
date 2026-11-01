@@ -157,6 +157,9 @@ test('another company does not see the shipment and gets the access denied page'
     await expect(page.getByText('Risk', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Recommendation', { exact: true })).toHaveCount(0);
     await expect(page.getByText('No action', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Port conditions', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Matches own reports', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/congested/i)).toHaveCount(0);
   } finally {
     cleanup([owner.email, outsider.email]);
   }
@@ -244,6 +247,99 @@ test('the shipment page shows the recommendation returned with the shipment', { 
     await expect(page.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
     expect(writes).toEqual([]);
   } finally {
+    cleanup([owner.email]);
+  }
+});
+
+test('the shipment page shows the port-condition comparison returned with the shipment', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000);
+  test.skip(testInfo.project.name !== 'desktop', 'The detail page is covered once on desktop.');
+  const owner = await registerAccount(request, 'HARBOURLINE_DEMO');
+  const vessel = `CDG278 ${randomBytes(4).toString('hex')}`;
+  const mmsi = `563${randomBytes(3).toString('hex').replace(/\D/g, '0').slice(-6).padStart(6, '0')}`;
+  try {
+    const created = await request.post('/api/shipments', {
+      headers: { Authorization: `Bearer ${owner.token}` },
+      data: { ...itinerary, motherVessel: vessel, shipmentReference: `CDG278-${randomBytes(4).toString('hex')}` },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const shipment = await created.json() as { id: number; shipmentReference: string };
+    sql(`INSERT INTO vessel_observations (
+        mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, navigational_status, position_valid, ingested_at, source)
+      VALUES
+        (:'mmsi', :'vessel', 1.264, 103.840, 4, 0, TRUE, NOW() - INTERVAL '3 hours', 'AIS_STREAM'),
+        (:'mmsi', :'vessel', 1.264, 103.840, 6, 0, TRUE, NOW() - INTERVAL '4 hours', 'AIS_STREAM'),
+        (:'mmsi', :'vessel', 1.264, 103.840, 8, 0, TRUE, NOW() - INTERVAL '2 minutes', 'AIS_STREAM');`,
+      { mmsi, vessel });
+
+    const detail = await request.get(`/api/shipments/${shipment.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+    expect(detail.status()).toBe(200);
+    const body = await detail.json() as {
+      motherOperationalState: { label: string; description: string } | null;
+      portConditionComparison: {
+        outcome: string | null;
+        reason: string | null;
+        message: string;
+        vessel: string;
+        vesselName: string | null;
+        knownPort: string | null;
+        transshipmentPort: string | null;
+        speedOverGroundKnots: number | null;
+        slowestOwnSpeedKnots: number | null;
+        earlierReportCount: number;
+      };
+    };
+    expect(body.portConditionComparison.vessel).toBe('MOTHER');
+    expect(body.portConditionComparison.outcome).toBe('MATCHES_NORMAL');
+    expect(body.portConditionComparison.message).toBeTruthy();
+    expect(body.portConditionComparison.message).not.toMatch(/congested/i);
+    if (body.motherOperationalState) {
+      expect(body.portConditionComparison.message).not.toBe(body.motherOperationalState.label);
+      expect(body.portConditionComparison.message).not.toBe(body.motherOperationalState.description);
+    }
+
+    const writes: string[] = [];
+    page.on('request', req => {
+      const path = new URL(req.url()).pathname;
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method()) && path.startsWith('/api/')) {
+        writes.push(`${req.method()} ${path}`);
+      }
+    });
+    await signIn(page, owner.email);
+    writes.length = 0;
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible({ timeout: 20_000 });
+    const comparison = page.locator('.route-facts > dl > div').filter({ has: page.locator('dt', { hasText: /^Port conditions$/ }) }).locator('> dd');
+    await expect(comparison).toBeVisible();
+    if (body.portConditionComparison.outcome === 'MATCHES_NORMAL') {
+      await expect(comparison).toContainText('Matches own reports');
+    } else if (body.portConditionComparison.outcome === 'SLOWER_THAN_OWN_REPORTS') {
+      await expect(comparison).toContainText('Slower than own reports');
+    }
+    await expect(comparison).toContainText(body.portConditionComparison.message);
+    await expect(comparison).toContainText(body.portConditionComparison.vesselName ? `Mother · ${body.portConditionComparison.vesselName}` : 'Mother');
+    const port = body.portConditionComparison.knownPort ?? body.portConditionComparison.transshipmentPort;
+    if (port) await expect(comparison).toContainText(port);
+    if (body.portConditionComparison.speedOverGroundKnots != null) {
+      await expect(comparison).toContainText(`${body.portConditionComparison.speedOverGroundKnots} knots`);
+    }
+    if (body.portConditionComparison.slowestOwnSpeedKnots != null) {
+      await expect(comparison).toContainText(`${body.portConditionComparison.slowestOwnSpeedKnots} knots`);
+    }
+    if (body.portConditionComparison.outcome) {
+      await expect(comparison).toContainText(String(body.portConditionComparison.earlierReportCount));
+    }
+    await expect(comparison).not.toContainText(/congested/i);
+    if (body.motherOperationalState) {
+      const operation = page.locator('.route-facts > dl > div').filter({ has: page.locator('dt', { hasText: /^Mother vessel operation$/ }) }).locator('> dd');
+      await expect(operation).toContainText(body.motherOperationalState.description);
+      await expect(comparison).not.toContainText(body.motherOperationalState.description);
+    }
+    await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
+    expect(writes).toEqual([]);
+  } finally {
+    sql(`DELETE FROM vessel_observations WHERE mmsi = :'mmsi' OR vessel_name = :'vessel';`, { mmsi, vessel });
     cleanup([owner.email]);
   }
 });
