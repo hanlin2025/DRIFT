@@ -72,3 +72,13 @@ app:
   maritime-context:
     # CDG-246 is a read-only recorded/synthetic bundle until persistent snapshot adapters are approved.
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}
+  maritime-reassessment:
+    # External processing stays off until a dataset, the global gate, and every source type are approved.
+    external-processing-enabled: false
+    approved-datasets: []
+    approved-source-types: []
+    max-concurrent-requests: 1
+    max-calls-per-minute: 2
+    max-estimated-cost-units: 1
+    call-timeout: 2s
+    max-attempts: 2
