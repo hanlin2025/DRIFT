@@ -69,13 +69,13 @@ public class ShipmentService {
 	private final Clock clock;
 	private final ApplicationEventPublisher events;
 	private final ShipmentRiskAlertActivationStore activation;
-	private final RecommendationDecisionService decisions;
+	private final ShipmentDetailAssembler details;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ShipmentConnectionRisk connectionRisk, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
 			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation,
-			ShipmentHistoryRecorder history, RecommendationDecisionService decisions) {
+			ShipmentHistoryRecorder history, ShipmentDetailAssembler details) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
@@ -87,7 +87,7 @@ public class ShipmentService {
 		this.events = events;
 		this.activation = activation;
 		this.history = history;
-		this.decisions = decisions;
+		this.details = details;
 	}
 
 	@Transactional(readOnly = true)
@@ -409,8 +409,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment),
-				decisions.current(shipment.getId()));
+		return details.detail(shipment);
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

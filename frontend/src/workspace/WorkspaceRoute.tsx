@@ -111,7 +111,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
         {page === 'import'
           ? <ShipmentImportPage token={account.token} basePath={listPath} jobId={jobId} onSessionEnded={onSessionEnded} />
           : shipmentId
-          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={listPath} onSessionEnded={onSessionEnded} canEdit={canEdit} archive={{ ...archive, onRemoved: message => navigate(listPath, { state: { shipmentRemoved: message } }) }} />
+          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={listPath} onSessionEnded={onSessionEnded} canEdit={canEdit} viewerCompanyId={account.company?.id ?? null} archive={{ ...archive, onRemoved: message => navigate(listPath, { state: { shipmentRemoved: message } }) }} />
           : <>
             <p className="eyebrow">{copy.eyebrow}</p>
             <h2>{copy.title}</h2>

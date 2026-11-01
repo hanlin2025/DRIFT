@@ -48,6 +48,16 @@ class RolePermissionMatrixTest {
 	}
 
 	@Test
+	void allowsEveryRoleWithAnActiveCompanyToReachConstraintEdits() {
+		for (Role role : Role.values()) {
+			assertThat(RolePermissionMatrix.denial(role, true, "PATCH", "/api/shipments/12/transshipment-arrival-deadline"))
+					.isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, false, "PATCH", "/api/shipments/12/transshipment-arrival-deadline"))
+					.contains(ShipmentAccessForbiddenException.MESSAGE);
+		}
+	}
+
+	@Test
 	void limitsLinkingToAFreightForwarderWithAnActiveCompany() {
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, true, "PATCH", "/api/shipments/12/link-importer"))
 				.isEmpty();
@@ -107,6 +117,7 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/tracking")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/track-history?hours=6")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/cdg201-arrival-evidence")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-context")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history?page=1")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/")).isTrue();

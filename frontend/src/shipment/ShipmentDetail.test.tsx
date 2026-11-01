@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type RecommendationDecision, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type RecommendationDecision, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -20,11 +20,13 @@ vi.mock('../shipment/api', async importOriginal => ({
   getShipment: vi.fn(),
   getShipmentTracking: vi.fn(),
   getCdg201ArrivalEvidence: vi.fn(),
+  getMaritimeContext: vi.fn(),
   archiveShipment: vi.fn(),
   restoreShipment: vi.fn(),
   getVesselTrack: vi.fn(),
   getShipmentHistory: vi.fn(),
   recordRecommendationDecision: vi.fn(),
+  updateTransshipmentArrivalDeadline: vi.fn(),
 }));
 
 const importer: Session = {
@@ -88,7 +90,6 @@ function open(account: Session, path: string) {
 
 const MOTHER_WARNING = 'The AIS vessel name does not match the stored mother vessel.';
 const FEEDER_WARNING = 'The AIS vessel name does not match the stored feeder vessel.';
-
 function namedFix(vesselName: string, latitude: number) {
   return { ...shipment.motherVesselPosition!, vesselName, latitude };
 }
@@ -138,6 +139,11 @@ const track: VesselTrack = {
   ],
 };
 
+const disabledMaritimeContext: MaritimeContext = {
+  contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: false, sourceMode: 'DISABLED', assessmentCutoffUtc: '2026-10-05T03:00:00Z',
+  shipmentAssociationConfidence: 'UNAVAILABLE', limitation: 'Disabled in this test.', evidence: [], notices: [], aiExplanation: null, suggestedActions: null,
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
@@ -146,10 +152,21 @@ beforeEach(() => {
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
 describe('connection window on the shipment detail', () => {
+  it('keeps shipment detail visible when additive evidence clients throw or return no response', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockImplementation((() => { throw new Error('replay unavailable'); }) as never);
+    vi.mocked(getMaritimeContext).mockReturnValue(undefined as never);
+
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    expect(screen.getByText('Maritime context is unavailable. Shipment details are still up to date.')).toBeInTheDocument();
+  });
+
   it('shows the planned window on the shipment detail', async () => {
     open(forwarder, '/freight-forwarder');
     const user = userEvent.setup();
@@ -166,6 +183,8 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('Destination')).toBeInTheDocument();
     expect(within(record).getByText('Registered')).toBeInTheDocument();
     expect(within(record).getByText('Connection window')).toBeInTheDocument();
+    expect(factValue(record, 'Mother-vessel arrival deadline')).toHaveTextContent('Not recorded');
+    expect(screen.queryByRole('button', { name: 'Save deadline' })).not.toBeInTheDocument();
     expect(within(record).getByText('1 day 10 hours')).toBeInTheDocument();
     expect(factValue(record, 'Remaining connection window')).toHaveTextContent('No remaining connection window');
     expect(factValue(record, 'Remaining connection window')).toHaveClass('is-missing');
