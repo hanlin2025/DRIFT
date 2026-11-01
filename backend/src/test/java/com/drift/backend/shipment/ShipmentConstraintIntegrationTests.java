@@ -311,7 +311,7 @@ class ShipmentConstraintIntegrationTests {
 		// Fresh installation only: main's V28 and V29, then this constraint table as V30.
 		// A database that already applied the constraint script as V28 is outside this assertion.
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-				String.class)).endsWith("28", "29", "30");
+				String.class)).endsWith("28", "29", "30", "32");
 		assertThat(jdbc.queryForList("""
 				SELECT script FROM flyway_schema_history
 				WHERE success AND version IN ('28', '29', '30')
