@@ -268,7 +268,7 @@ describe('connection window on the shipment detail', () => {
     const user = userEvent.setup();
     await user.click(screen.getByText('Assessment and evidence details'));
     const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
-    expect(within(details).getByText(assessmentDeadline)).toBeInTheDocument();
+    expect(within(details).getAllByText(assessmentDeadline)).toHaveLength(2);
     expect(within(details).getByText('Exceeds Deadline')).toBeInTheDocument();
     expect(within(details).getByText('2026-11-01T11:00:00Z')).toBeInTheDocument();
     expect(within(details).queryByText(currentDeadline)).not.toBeInTheDocument();
