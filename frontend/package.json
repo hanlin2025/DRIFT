@@ -26,6 +26,7 @@
     "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
     "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs",
     "test:e2e:deadline": "node ../scripts/run-transshipment-arrival-deadline.mjs",
+    "test:e2e:delay-comparison": "node ../scripts/run-delay-comparison.mjs",
     "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
   },
   "dependencies": {
