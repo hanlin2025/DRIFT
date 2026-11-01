@@ -139,6 +139,12 @@ class MaritimeAiResponseValidatorTest {
 		var valid = riskClaim("The documented arrival revision warrants human review alongside the backend HIGH AIS-based remaining-window risk; the estimate is available.",
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), aisRisk);
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(valid), input)).isNull();
+		for (String falsePositive : List.of("unavailable", "not available", "refresh")) {
+			String statement = valid.statement().replace("the estimate is available.", "the estimate is " + falsePositive + ".");
+			var wrongFreshness = riskClaim(statement, valid.factReferences(), aisRisk);
+			assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongFreshness), input))
+					.as("freshness wording: %s", falsePositive).isEqualTo("RISK_REVIEW_FRESHNESS_MISMATCH");
+		}
 		var missingRiskReview = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(), valid.vesselRole(),
 				valid.observationType(), valid.associationScope(), valid.factReferences(), "RISK_BUFFER_REVIEW");
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingRiskReview), input)).isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
@@ -437,6 +443,17 @@ class MaritimeAiResponseValidatorTest {
 				List.of("synthetic-mpa"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
 				List.of("evidence:synthetic-mpa", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW");
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(exact), input)).isNull();
+
+		MaritimeAiClaim supportedDelayWording = new MaritimeAiClaim("The expected arrival was delayed by 60 minutes.",
+				List.of("synthetic-mpa"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				List.of("evidence:synthetic-mpa", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(supportedDelayWording), input)).isNull();
+		MaritimeAiClaim unsupportedAdditionalOutcome = new MaritimeAiClaim(
+				"The expected arrival was delayed by 60 minutes, and the shipment will be late.",
+				List.of("synthetic-mpa"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				List.of("evidence:synthetic-mpa", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(unsupportedAdditionalOutcome), input))
+				.isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
 
 		MaritimeAiClaim incorrect = new MaritimeAiClaim("The expected arrival was revised by 90 minutes and warrants review.",
 				List.of("synthetic-mpa"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
