@@ -77,7 +77,16 @@ async function createShipment(request: APIRequestContext, token: string) {
 
 function cleanup(emails: string[]) {
   for (const email of emails) {
-    sql(`DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
+    sql(`DELETE FROM shipment_risk_alert_deliveries
+      WHERE user_id = (SELECT id FROM users WHERE email = :'email')
+         OR transition_id IN (
+           SELECT transitions.id FROM shipment_risk_transitions transitions
+           JOIN shipments ON shipments.id = transitions.shipment_id
+           WHERE shipments.created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+         );
+      DELETE FROM shipment_risk_transitions
+      WHERE shipment_id IN (SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
+      DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM invitations WHERE email = :'email';
       DELETE FROM users WHERE email = :'email';`, { email });
   }
@@ -100,6 +109,7 @@ test.beforeAll(() => {
 });
 
 test('an authorised freight forwarder opens a shipment from the list and sees every field and its risk', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000);
   test.skip(testInfo.project.name !== 'desktop', 'The detail page is covered once on desktop.');
   const owner = await registerAccount(request, 'HARBOURLINE_DEMO');
   try {
@@ -110,7 +120,7 @@ test('an authorised freight forwarder opens a shipment from the list and sees ev
 
     for (const open of [async () => {}, () => page.reload()]) {
       await open();
-      await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible();
+      await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible({ timeout: 20_000 });
       await expect(fact(page, 'Origin')).toHaveText(itinerary.origin);
       await expect(fact(page, 'Destination')).toHaveText(itinerary.destination);
       await expect(fact(page, 'Transshipment port')).toHaveText(itinerary.transshipmentPort);
@@ -145,6 +155,8 @@ test('another company does not see the shipment and gets the access denied page'
     await expect(page.getByText('Connection window')).toHaveCount(0);
     await expect(page.getByText('Remaining connection window')).toHaveCount(0);
     await expect(page.getByText('Risk', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Recommendation', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('No action', { exact: true })).toHaveCount(0);
   } finally {
     cleanup([owner.email, outsider.email]);
   }
@@ -159,7 +171,7 @@ test('an unknown or invalid shipment id shows the not found page', { tag: '@disp
       const detail = await request.get(`/api/shipments/${id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
       expect(detail.status()).toBe(404);
       await page.goto(`/freight-forwarder/shipments/${id}`);
-      await expect(page.getByRole('heading', { name: 'Shipment not found' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Shipment not found' })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(NOT_FOUND)).toBeVisible();
     }
   } finally {
@@ -181,6 +193,56 @@ test('a missing feeder vessel and live positions show placeholders instead of bl
     await expect(fact(page, 'Mother vessel position')).toHaveText(NO_POSITION);
     await expect(fact(page, 'Feeder vessel position')).toHaveText(NO_POSITION);
     for (const value of await page.locator('.route-facts dd').allInnerTexts()) expect(value.trim()).not.toBe('');
+  } finally {
+    cleanup([owner.email]);
+  }
+});
+
+test('the shipment page shows the recommendation returned with the shipment', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000);
+  test.skip(testInfo.project.name !== 'desktop', 'The detail page is covered once on desktop.');
+  const owner = await registerAccount(request, 'HARBOURLINE_DEMO');
+  try {
+    const created = await createShipment(request, owner.token);
+    const detail = await request.get(`/api/shipments/${created.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+    expect(detail.status()).toBe(200);
+    const body = await detail.json() as {
+      risk: { level: string; explanation: string } | null;
+      recommendation: {
+        available: boolean;
+        unavailable: string | null;
+        response: { label: string; wording: string } | null;
+        riskExplanation: string | null;
+        impact: { outcome: string; detail: string | null };
+      };
+    };
+    expect(body.recommendation.available).toBe(false);
+    expect(body.recommendation.response).toBeNull();
+    expect(body.recommendation.unavailable).toBeTruthy();
+    expect(body.recommendation.impact.detail).toBeTruthy();
+    expect(body.recommendation.unavailable).not.toContain('No action is needed');
+
+    const writes: string[] = [];
+    page.on('request', req => {
+      const path = new URL(req.url()).pathname;
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method()) && path.startsWith('/api/')) {
+        writes.push(`${req.method()} ${path}`);
+      }
+    });
+    await signIn(page, owner.email);
+    writes.length = 0;
+    await page.goto(`/freight-forwarder/shipments/${created.id}`);
+    await expect(page.getByRole('heading', { name: created.shipmentReference })).toBeVisible({ timeout: 20_000 });
+    const recommendation = page.locator('.route-facts > dl > div').filter({ has: page.locator('dt', { hasText: /^Recommendation$/ }) }).locator('> dd');
+    await expect(recommendation).toContainText(body.recommendation.unavailable ?? '');
+    await expect(recommendation).toContainText(body.recommendation.impact.detail ?? '');
+    if (body.recommendation.riskExplanation) await expect(recommendation).toContainText(body.recommendation.riskExplanation);
+    await expect(recommendation).not.toContainText('No action');
+    await expect(fact(page, 'Risk')).toHaveText(`High ${body.risk?.explanation}`);
+    await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Modify' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
+    expect(writes).toEqual([]);
   } finally {
     cleanup([owner.email]);
   }

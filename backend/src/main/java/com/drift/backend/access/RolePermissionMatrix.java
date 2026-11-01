@@ -42,6 +42,12 @@ public final class RolePermissionMatrix {
 			}
 			return Optional.empty();
 		}
+		if ("PATCH".equals(method) && normalized.matches("/api/shipments/\\d+/transshipment-arrival-deadline")) {
+			if (!activeCompany) {
+				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
+			}
+			return Optional.empty();
+		}
 		if ("PATCH".equals(method) && normalized.matches("/api/shipments/\\d+/link-importer")) {
 			if (!activeCompany) {
 				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
@@ -95,6 +101,7 @@ public final class RolePermissionMatrix {
 	private static boolean shipmentRead(String method, String path) {
 		return "GET".equals(method) && (path.equals("/api/shipments")
 				|| path.matches("/api/shipments/\\d+")
+				|| path.matches("/api/shipments/\\d+/maritime-context")
 				|| path.matches("/api/shipments/\\d+/tracking")
 				|| path.matches("/api/shipments/\\d+/track-history")
 				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence")

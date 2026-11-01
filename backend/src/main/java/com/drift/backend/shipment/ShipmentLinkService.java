@@ -26,16 +26,16 @@ public class ShipmentLinkService {
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
 	private final CompanyRepository companies;
-	private final ShipmentConnectionRisk connectionRisk;
+	private final ShipmentDetailAssembler details;
 	private final EntityManager entityManager;
 	private final ShipmentHistoryRecorder history;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ShipmentConnectionRisk connectionRisk, EntityManager entityManager, ShipmentHistoryRecorder history) {
+			ShipmentDetailAssembler details, EntityManager entityManager, ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
-		this.connectionRisk = connectionRisk;
+		this.details = details;
 		this.entityManager = entityManager;
 		this.history = history;
 	}
@@ -90,6 +90,6 @@ public class ShipmentLinkService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment));
+		return details.detail(shipment);
 	}
 }

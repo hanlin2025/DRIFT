@@ -28,6 +28,18 @@ export type ShipmentRisk = {
   explanation: string;
 };
 
+export type MaritimeNoticeEvidence = { noticeId: string; title: string; officialSourceUrl: string; citation: string; publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null; supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN'; evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; activityEvidence: string[]; locationEvidence: string[]; limitation: string; };
+export type MaritimeEvidence = {
+  sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
+  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
+  evidenceId: string; title: string; sourceIdentifier: string; sourceUrl: string; citation: string;
+  sourceEventAt: string | null; observedAt: string | null; retrievedAtUtc: string | null; freshness: string;
+  previousValue: string; currentValue: string; changeMagnitude: string;
+  activityCompatibility: string; locationCompatibility: string; timeCompatibility: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
+  evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
+};
+export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
   | 'REMAINING_DURATION'
@@ -159,6 +171,29 @@ export type ArrivalComparison = {
   unavailableReason: { code: string; message: string };
 };
 
+export type TransshipmentArrivalDeadline = {
+  deadline: string;
+  transshipmentPort: string;
+  applicable: boolean;
+};
+
+export type DelayComparisonOutcome = 'NO_PREDICTED_IMPACT' | 'EXCEEDS_DEADLINE';
+
+export type DelayComparisonReason =
+  | 'INCOMPATIBLE_MILESTONE'
+  | 'MISSING_PREDICTION'
+  | 'MISSING_CONSTRAINT'
+  | 'STALE_PREDICTION';
+
+export type DelayComparison = {
+  outcome: DelayComparisonOutcome | null;
+  reason: DelayComparisonReason | null;
+  message: string;
+  estimatedArrivalAt: string | null;
+  deadline: string | null;
+  recordedTransshipmentPort: string | null;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -193,6 +228,8 @@ export type Shipment = {
   feederOperationalState?: OperationalState | null;
   aisFeed?: AisFeedStatus | null;
   arrivalComparison: ArrivalComparison | null;
+  transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
+  delayComparison?: DelayComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
 };
@@ -266,6 +303,20 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   return shipment;
 }
 
+export async function updateTransshipmentArrivalDeadline(token: string, shipmentId: number, body: {
+  transshipmentArrivalDeadline: string | null;
+  expectedTransshipmentPort: string;
+}): Promise<Shipment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/transshipment-arrival-deadline`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const shipment = asShipment(data);
+  if (!shipment) throw new ApiError(UNEXPECTED, 502);
+  return shipment;
+}
+
 /** Read-only CDG-201 fixture/replay evidence. Null means no replay matches this shipment. */
 export async function getCdg201ArrivalEvidence(token: string, shipmentId: string): Promise<Cdg201ArrivalEvidence | null> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/cdg201-arrival-evidence`, token);
@@ -274,6 +325,16 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
   const evidence = asCdg201ArrivalEvidence(data.evidence);
   if (!evidence) throw new ApiError(UNEXPECTED, 502);
   return evidence;
+}
+
+export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
+  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
+  const evidence = data.evidence as MaritimeEvidence[];
+  if (evidence.some(item => !isRecord(item) || !isPresentText(item.sourceType) || !isPresentText(item.sourceMode) || !isPresentText(item.evidenceId) || !isPresentText(item.title) || !isPresentText(item.shipmentAssociationConfidence) || !isPresentText(item.limitation))) throw new ApiError(UNEXPECTED, 502);
+  const notices = data.notices as MaritimeNoticeEvidence[];
+  const sourceMode = data.sourceMode as MaritimeContext['sourceMode'];
+  return { contractVersion: data.contractVersion, enabled: data.enabled, sourceMode, assessmentCutoffUtc: data.assessmentCutoffUtc, shipmentAssociationConfidence: data.shipmentAssociationConfidence, limitation: data.limitation, evidence, notices, aiExplanation: null, suggestedActions: null };
 }
 
 export type ShipmentTracking = {
@@ -742,11 +803,15 @@ function isOptionalFiniteNumber(value: unknown): value is number | null {
 
 const AIS_FEED_STATUS: readonly AisFeedStatusName[] = ['LIVE', 'DELAYED', 'OFFLINE'];
 
+function isAisFeedStatus(value: unknown): value is AisFeedStatusName {
+  return AIS_FEED_STATUS.some(status => status === value);
+}
+
 function aisFeedOf(value: Record<string, unknown>): AisFeedStatus | null | undefined {
   if (!('aisFeed' in value) || value.aisFeed == null) return null;
   const feed = value.aisFeed;
-  if (!isRecord(feed) || !AIS_FEED_STATUS.some(status => status === feed.status)) return undefined;
-  const status = feed.status as AisFeedStatusName;
+  if (!isRecord(feed) || !isAisFeedStatus(feed.status)) return undefined;
+  const status = feed.status;
   if (status === 'OFFLINE') {
     if (feed.lastReceivedAt != null && typeof feed.lastReceivedAt !== 'string') return undefined;
     return { status: 'OFFLINE', lastReceivedAt: typeof feed.lastReceivedAt === 'string' ? feed.lastReceivedAt : null };
@@ -879,6 +944,10 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const transshipmentArrivalDeadline = deadlineOf(value);
+  if (transshipmentArrivalDeadline === undefined) return null;
+  const delayComparison = delayComparisonOf(value);
+  if (delayComparison === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -916,6 +985,8 @@ function asShipment(value: unknown): Shipment | null {
     feederOperationalState,
     aisFeed,
     arrivalComparison,
+    transshipmentArrivalDeadline,
+    delayComparison,
     updatedAt,
     updatedByName,
   };
@@ -923,6 +994,76 @@ function asShipment(value: unknown): Shipment | null {
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
 const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+const DELAY_OUTCOMES: readonly DelayComparisonOutcome[] = ['NO_PREDICTED_IMPACT', 'EXCEEDS_DEADLINE'];
+const DELAY_REASONS: readonly DelayComparisonReason[] = [
+  'INCOMPATIBLE_MILESTONE', 'MISSING_PREDICTION', 'MISSING_CONSTRAINT', 'STALE_PREDICTION',
+];
+
+function delayComparisonOf(value: Record<string, unknown>): DelayComparison | null | undefined {
+  if (!('delayComparison' in value) || value.delayComparison == null) return null;
+  const comparison = value.delayComparison;
+  if (!isRecord(comparison)) return undefined;
+  const fields = ['outcome', 'reason', 'message', 'estimatedArrivalAt', 'deadline', 'recordedTransshipmentPort'] as const;
+  if (!fields.every(field => field in comparison) || !isPresentText(comparison.message)) return undefined;
+  const estimatedArrivalAt = optionalInstant(comparison.estimatedArrivalAt);
+  const deadline = optionalInstant(comparison.deadline);
+  const recordedTransshipmentPort = optionalPort(comparison.recordedTransshipmentPort);
+  if (estimatedArrivalAt === undefined || deadline === undefined || recordedTransshipmentPort === undefined) return undefined;
+  if (isDelayOutcome(comparison.outcome) && comparison.reason === null) {
+    if (estimatedArrivalAt === null || deadline === null || !isPresentText(recordedTransshipmentPort)) return undefined;
+    return {
+      outcome: comparison.outcome,
+      reason: null,
+      message: comparison.message,
+      estimatedArrivalAt,
+      deadline,
+      recordedTransshipmentPort,
+    };
+  }
+  if (comparison.outcome === null && isDelayReason(comparison.reason)) {
+    return {
+      outcome: null,
+      reason: comparison.reason,
+      message: comparison.message,
+      estimatedArrivalAt,
+      deadline,
+      recordedTransshipmentPort,
+    };
+  }
+  return undefined;
+}
+
+function optionalInstant(value: unknown): string | null | undefined {
+  if (value == null) return null;
+  if (!isPresentText(value) || !Number.isFinite(Date.parse(value))) return undefined;
+  return value;
+}
+
+function optionalPort(value: unknown): string | null | undefined {
+  if (value == null) return null;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function isDelayOutcome(value: unknown): value is DelayComparisonOutcome {
+  return DELAY_OUTCOMES.some(outcome => outcome === value);
+}
+
+function isDelayReason(value: unknown): value is DelayComparisonReason {
+  return DELAY_REASONS.some(reason => reason === value);
+}
+
+function deadlineOf(value: Record<string, unknown>): TransshipmentArrivalDeadline | null | undefined {
+  if (!('transshipmentArrivalDeadline' in value) || value.transshipmentArrivalDeadline == null) return null;
+  const deadline = value.transshipmentArrivalDeadline;
+  if (!isRecord(deadline) || !isPresentText(deadline.deadline) || typeof deadline.transshipmentPort !== 'string'
+    || typeof deadline.applicable !== 'boolean') return undefined;
+  return {
+    deadline: deadline.deadline,
+    transshipmentPort: deadline.transshipmentPort,
+    applicable: deadline.applicable,
+  };
+}
 
 function arrivalComparisonOf(value: Record<string, unknown>): ArrivalComparison | null | undefined {
   if (!('arrivalComparison' in value) || value.arrivalComparison == null) return null;
