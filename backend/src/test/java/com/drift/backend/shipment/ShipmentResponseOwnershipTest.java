@@ -51,6 +51,7 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(listedJson.has("riskContributions")).isFalse();
 		assertThat(listedJson.has("recommendation")).isFalse();
+		assertThat(listedJson.has("portConditionComparison")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
 		assertThat(listedJson.has("delayComparison")).isFalse();
 		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
@@ -71,6 +72,18 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("recommendation").get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
 		assertThat(detailJson.get("recommendation").get("impact").get("detail").asText())
 				.isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(detailJson.get("portConditionComparison").get("vessel").asText()).isEqualTo("MOTHER");
+		assertThat(detailJson.get("portConditionComparison").get("outcome").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("reason").asText()).isEqualTo("NO_REPORT");
+		assertThat(detailJson.get("portConditionComparison").get("message").asText())
+				.isEqualTo(PortConditionComparison.NO_REPORT_MESSAGE);
+		assertThat(detailJson.get("portConditionComparison").get("knownPort").asText()).isEqualTo("Singapore");
+		assertThat(detailJson.get("portConditionComparison").get("earlierReportCount").asInt()).isZero();
+		assertThat(detailJson.get("portConditionComparison").get("slowestOwnSpeedKnots").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("ingestedAt").isNull()).isTrue();
+		assertThat(detailJson.get("motherOperationalState").get("ingestedAt").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("message").asText())
+				.isNotEqualTo(detailJson.get("motherOperationalState").get("description").asText());
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
 		assertThat(listedJson.get("updatedByName").asString()).isEqualTo("Ada");
