@@ -47,9 +47,9 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 		});
 	}
 
-	/** Package-visible convenience constructor retained for the guarded synthetic smoke configuration. */
+	/** Package-visible convenience constructor remains deny-by-default. */
 	ConfiguredMaritimeAiClient(String provider, String model, String apiKey, String endpoint, ObjectMapper json) {
-		this(provider, model, apiKey, endpoint, true, 20, 800, json, (request, ignoredBody) -> {
+		this(provider, model, apiKey, endpoint, false, 20, 800, json, (request, ignoredBody) -> {
 			var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 			var response = http.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
 			return new TransportResponse(response.statusCode(), response.body());
@@ -67,7 +67,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 	}
 
 	ConfiguredMaritimeAiClient(String provider, String model, String apiKey, String endpoint, ObjectMapper json, Transport transport) {
-		this(provider, model, apiKey, endpoint, true, 20, 800, json, transport);
+		this(provider, model, apiKey, endpoint, false, 20, 800, json, transport);
 	}
 
 	ConfiguredMaritimeAiClient(String provider, String model, String apiKey, String endpoint, boolean externalRequestsApproved, int timeoutSeconds,

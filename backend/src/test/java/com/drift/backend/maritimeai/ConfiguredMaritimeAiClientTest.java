@@ -16,7 +16,7 @@ class ConfiguredMaritimeAiClientTest {
 	@Test void sendsOnlyTheBoundedPackageInAnOpenAiResponsesRequestAndParsesStructuredOutput() throws Exception {
 		AtomicReference<String> authorization = new AtomicReference<>();
 		AtomicReference<String> requestBody = new AtomicReference<>();
-		var client = new ConfiguredMaritimeAiClient("openai-responses", "test-structured-model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper(), (request, body) -> {
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "test-structured-model", "test-key", "https://example.invalid/v1/responses", true, 20, 800, new ObjectMapper(), (request, body) -> {
 			authorization.set(request.headers().firstValue("Authorization").orElse(null));
 			requestBody.set(body);
 			return new ConfiguredMaritimeAiClient.TransportResponse(200, responsesEnvelope());
@@ -77,32 +77,39 @@ class ConfiguredMaritimeAiClientTest {
 	}
 
 	@Test void retainsTheApprovedGenericGatewayProtocol() throws Exception {
-		var result = new ConfiguredMaritimeAiClient("approved-gateway", "gateway-model", "test-key", "https://example.invalid/gateway", new ObjectMapper(), (request, body) ->
+		var result = new ConfiguredMaritimeAiClient("approved-gateway", "gateway-model", "test-key", "https://example.invalid/gateway", true, 20, 800, new ObjectMapper(), (request, body) ->
 				new ConfiguredMaritimeAiClient.TransportResponse(200, "{\"summary\":\"Recorded evidence.\",\"claims\":[],\"uncertainties\":[],\"followUpConsiderations\":[],\"evidenceSufficient\":true,\"formalRecommendationCode\":null}"))
 				.interpret(EVIDENCE);
 		assertThat(result.interpretation().summary()).isEqualTo("Recorded evidence.");
 	}
 
 	@Test void treatsMalformedProviderOutputAndMissingConfigurationAsUnavailable() throws Exception {
-		var malformed = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper(), (request, body) ->
+		var malformed = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true, 20, 800, new ObjectMapper(), (request, body) ->
 				new ConfiguredMaritimeAiClient.TransportResponse(200, "{\"output\":[]}"))
 				.interpret(EVIDENCE);
 		assertThat(malformed.interpretation()).isNull();
 		assertThat(malformed.failure()).contains("Inference gateway failure");
 		var missing = new ConfiguredMaritimeAiClient("openai-responses", "model", "", "http://unused", new ObjectMapper()).interpret(EVIDENCE);
 		assertThat(missing.interpretation()).isNull();
-		assertThat(missing.failure()).contains("No approved maritime AI provider is configured");
+		assertThat(missing.failure()).contains("not approved");
+	}
+
+	@Test void convenienceConstructorCannotBypassExternalRequestApproval() {
+		var result = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper())
+				.interpret(EVIDENCE);
+		assertThat(result.interpretation()).isNull();
+		assertThat(result.failure()).contains("not approved");
 	}
 
 	@Test void treatsRefusalIncompleteOutputHttpErrorsAndTimeoutsAsUnavailable() {
 		assertUnavailable("{\"output\":[{\"content\":[{\"type\":\"refusal\",\"refusal\":\"Cannot comply\"}]}]}");
 		assertUnavailable("{\"status\":\"incomplete\",\"output\":[{\"content\":[{\"type\":\"output_text\",\"text\":\"{}\"}]}]}");
-		var httpError = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper(), (request, body) ->
+		var httpError = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true, 20, 800, new ObjectMapper(), (request, body) ->
 				new ConfiguredMaritimeAiClient.TransportResponse(429, "{\"error\":{}}"))
 				.interpret(EVIDENCE);
 		assertThat(httpError.interpretation()).isNull();
 		assertThat(httpError.failure()).isEqualTo("Inference gateway returned HTTP 429.");
-		var timeout = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper(), (request, body) -> {
+		var timeout = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true, 20, 800, new ObjectMapper(), (request, body) -> {
 			throw new HttpTimeoutException("test timeout");
 		}).interpret(EVIDENCE);
 		assertThat(timeout.interpretation()).isNull();
@@ -110,7 +117,7 @@ class ConfiguredMaritimeAiClientTest {
 	}
 
 	private static void assertUnavailable(String response) {
-		var result = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", new ObjectMapper(), (request, body) ->
+		var result = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true, 20, 800, new ObjectMapper(), (request, body) ->
 				new ConfiguredMaritimeAiClient.TransportResponse(200, response))
 				.interpret(EVIDENCE);
 		assertThat(result.interpretation()).isNull();
