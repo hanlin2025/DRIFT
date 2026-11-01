@@ -19,9 +19,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.TestInfo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -33,12 +34,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.annotation.Commit;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.maritimeai.MaritimeAiClaim;
 import com.drift.backend.maritimeai.MaritimeAiClient;
@@ -74,8 +75,22 @@ class AuthenticMultiSourceRagIntegrationTest {
 	private Long shipmentId;
 
 	@BeforeEach
-	void setUp() throws Exception {
+	void setUp(TestInfo testInfo) throws Exception {
 		client.last.set(null);
+		boolean commitsToDatabase = testInfo.getTestMethod()
+				.map(method -> method.isAnnotationPresent(Commit.class)).orElse(false);
+		if (commitsToDatabase) {
+			Assumptions.assumeTrue(captureReplayPath != null && !captureReplayPath.isBlank(),
+					"capture replay is opt-in before setup writes");
+			Assumptions.assumeTrue("APPROVED".equals(System.getenv("CDG256_PERSIST_VERIFIED_CAPTURE")),
+					"committing capture replay requires CDG256_PERSIST_VERIFIED_CAPTURE=APPROVED");
+			String expectedDatabase = System.getenv("CDG256_ISOLATED_DEMO_DATABASE");
+			Assumptions.assumeTrue(expectedDatabase != null && expectedDatabase.startsWith("cdg256_demo_"),
+					"committing capture replay requires an explicitly named isolated cdg256_demo_ database");
+			String currentDatabase = jdbc.queryForObject("SELECT current_database()", String.class);
+			Assumptions.assumeTrue(expectedDatabase.equals(currentDatabase),
+					"the configured database must match CDG256_ISOLATED_DEMO_DATABASE");
+		}
 		Long companyId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, "HARBOURLINE_DEMO");
 		String email = "cdg249-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("INSERT INTO users (full_name, email, password_hash, role_id, company_id) "
@@ -166,7 +181,6 @@ class AuthenticMultiSourceRagIntegrationTest {
 
 	@Test @Commit
 	void explicitlyApprovedCaptureReplayPersistsForLocalShipmentDetailsDemonstration() throws Exception {
-		Assumptions.assumeTrue(captureReplayPath != null && !captureReplayPath.isBlank(), "capture replay is opt-in");
 		String beforeArrival = jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
 		String beforeDeparture = jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
 		Long beforeRiskTransitions = jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_transitions WHERE shipment_id = ?", Long.class, shipmentId);
