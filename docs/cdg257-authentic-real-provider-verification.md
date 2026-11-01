@@ -30,3 +30,56 @@ Do not run this against a shared or production database. The manually operated c
 an isolated local test database and a privately exported API key. A successful HTTP response or
 JSON output is not success: `GENERATED` and `VALID` are required, and the capture must be
 reviewed for unsupported claims before any downstream demonstration.
+
+## One-request WSL procedure
+
+After setting `MARITIME_AI_API_KEY` privately in the current shell, use the following command
+from this branch. It targets only `drift_test`, selects one JUnit method, disables Surefire
+reruns, and returns Maven's actual exit status.
+
+```bash
+cd /tmp/cdg255-approved-authentic-inference
+git pull --ff-only origin feature/CDG-257-verify-authentic-rag-grounding-failure-paths
+cd backend
+
+test -n "${MARITIME_AI_API_KEY:-}" || { echo "Set MARITIME_AI_API_KEY privately first."; exit 2; }
+export MARITIME_AI_ENABLED=true
+export MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true
+export MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED=true
+export MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED='MPA_ETA_REVISION,NEA_WEATHER'
+export MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED='mpa-expected-revision-9351048-20261026T154603,nea-rainfall-20261027T153306'
+export MARITIME_AI_PROVIDER='openai-responses'
+export MARITIME_AI_MODEL='gpt-4.1-mini'
+export MARITIME_AI_ENDPOINT='https://api.openai.com/v1/responses'
+export MARITIME_AI_TIMEOUT_SECONDS=20
+export MARITIME_AI_MAX_OUTPUT_TOKENS=800
+export MARITIME_CONTEXT_DEMO_ENABLED=true
+export MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED=true
+export CDG257_RUN_REAL_AUTHENTIC_SMOKE=APPROVED
+export DRIFT_TEST_DATABASE_URL='jdbc:postgresql://localhost:5432/drift_test'
+export DRIFT_TEST_DATABASE_USERNAME='drift'
+export DRIFT_TEST_DATABASE_PASSWORD='drift'
+umask 077
+export CAPTURE="/tmp/cdg257-authentic-real-$(date -u +%Y%m%dT%H%M%SZ).json"
+export LOG="/tmp/cdg257-authentic-real-$(date -u +%Y%m%dT%H%M%SZ).log"
+
+bash -c '
+  set -o pipefail
+  ./mvnw test \
+    "-Dtest=AuthenticMultiSourceRagIntegrationTest#sendsAuthenticMpaAndNeaFieldsToClientThenPersistsAndReturnsAuthorizedAssessment" \
+    -Dcdg257.authentic-smoke.use-real-client=true \
+    -Dcdg257.authentic-smoke.capture-interpretation=true \
+    -Dcdg257.authentic-smoke.capture-path="$CAPTURE" \
+    -Dsurefire.rerunFailingTestsCount=0 \
+    -DforkCount=1 \
+    -DreuseForks=false \
+    |& tee "$LOG"
+  status=${PIPESTATUS[0]}
+  printf "\\nMaven exit code: %s\\nCapture: %s\\nLog: %s\\n" "$status" "$CAPTURE" "$LOG"
+  test -f "$CAPTURE" && stat -c "capture permissions: %a %n" "$CAPTURE"
+  exit "$status"
+'
+```
+
+Review the local capture with `jq '{provider,model,promptVersion,validationStatus,citationIds,limitations,interpretation}' "$CAPTURE"`.
+Never add the key, capture, or raw Maven log to Git.
