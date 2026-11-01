@@ -271,7 +271,6 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                     if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
                   });
                 }}
-                onSessionEnded={onSessionEnded}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
