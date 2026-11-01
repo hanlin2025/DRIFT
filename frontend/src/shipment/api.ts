@@ -40,7 +40,96 @@ export type MaritimeEvidence = {
   vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
 export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
-export type MaritimeAiAssessment = { assessmentId: string | null; state: 'GENERATED' | 'ABSTAINED' | 'FAILED'; validationStatus: string; bundleVersion: string; bundleHash: string; assessmentCutoffUtc: string; provider: string; model: string; promptVersion: string; generatedAtUtc: string | null; interpretation: { summary: string; claims: { statement: string; evidenceIds: string[]; applicability: string; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null; factReferences?: string[]; relationshipType?: 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | null }[]; uncertainties: string[]; followUpConsiderations: string[]; evidenceSufficient: boolean; formalRecommendationCode: string | null } | null; limitation: string | null; deterministicSummary?: { summaryVersion: string; label: string; shipmentScheduleFacts: { factReference: string; factType: string; subject: string | null; eventType: string | null; timestamp: string | null; previousValue: string | null; currentValue: string | null; evidenceId: string | null; sourceType: string; sourceMode: string; associationScope: string; citation: string; observedAt?: string | null; retrievedAtUtc?: string | null }[]; evidenceFacts: { factReference: string; factType: string; subject: string | null; eventType: string | null; timestamp: string | null; previousValue: string | null; currentValue: string | null; evidenceId: string | null; sourceType: string; sourceMode: string; associationScope: string; citation: string; observedAt?: string | null; retrievedAtUtc?: string | null }[]; limitations: string[] } | null; };
+export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW';
+export type MaritimeAiRiskSeverity = RiskLevel;
+export type MaritimeAiRiskBasis = 'PLANNED_SHIPMENT_SCHEDULE' | 'AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE';
+export type MaritimeAiEstimateFreshness = 'AVAILABLE' | 'STALE' | 'UNAVAILABLE' | 'UNKNOWN';
+export type MaritimeAiRiskReviewWindowState = 'AVAILABLE' | 'NO_REMAINING_WINDOW' | 'INVALID' | 'INCOMPLETE';
+export type MaritimeAiRiskSnapshotWindowState = 'AVAILABLE' | 'MISSED' | 'INVALID' | 'INCOMPLETE';
+
+export type MaritimeAiRiskReview = {
+  severity: MaritimeAiRiskSeverity | null;
+  selectedWindowBasis: MaritimeAiRiskBasis | null;
+  selectedWindowState: MaritimeAiRiskReviewWindowState | null;
+  estimateFreshness: MaritimeAiEstimateFreshness | null;
+};
+
+export type MaritimeAiClaim = {
+  statement: string;
+  evidenceIds: string[];
+  applicability: string;
+  vesselRole?: 'MOTHER' | 'FEEDER' | null;
+  observationType?: string | null;
+  associationScope?: string | null;
+  factReferences?: string[];
+  relationshipType?: MaritimeAiRelationshipType | null;
+  riskReview?: MaritimeAiRiskReview | null;
+};
+
+export type MaritimeAiFact = {
+  factReference: string;
+  factType: string;
+  subject: string | null;
+  eventType: string | null;
+  timestamp: string | null;
+  previousValue: string | null;
+  currentValue: string | null;
+  evidenceId: string | null;
+  sourceType: string;
+  sourceMode: string;
+  associationScope: string;
+  citation: string;
+  observedAt?: string | null;
+  retrievedAtUtc?: string | null;
+};
+
+export type MaritimeAiRiskSnapshot = {
+  assessed: boolean;
+  severity: MaritimeAiRiskSeverity | null;
+  selectedWindowBasis: MaritimeAiRiskBasis | null;
+  selectedWindowState: MaritimeAiRiskSnapshotWindowState;
+  windowSeconds: number | null;
+  missedBySeconds: number | null;
+  estimateFreshness: MaritimeAiEstimateFreshness;
+  estimateUnavailableCode: string | null;
+  unavailableReason: string | null;
+  calculationLimitations: string[];
+  canonicalFactReferences: string[];
+};
+
+export type MaritimeAiDeterministicSummary = {
+  summaryVersion: string;
+  label: string;
+  shipmentScheduleFacts: MaritimeAiFact[];
+  evidenceFacts: MaritimeAiFact[];
+  limitations: string[];
+  /** Absent on historical assessments created before CDG-259. */
+  connectionRisk?: MaritimeAiRiskSnapshot | null;
+};
+
+export type MaritimeAiAssessment = {
+  assessmentId: string | null;
+  state: 'GENERATED' | 'ABSTAINED' | 'FAILED';
+  validationStatus: string;
+  bundleVersion: string;
+  bundleHash: string;
+  assessmentCutoffUtc: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  generatedAtUtc: string | null;
+  interpretation: {
+    summary: string;
+    claims: MaritimeAiClaim[];
+    uncertainties: string[];
+    followUpConsiderations: string[];
+    evidenceSufficient: boolean;
+    formalRecommendationCode: string | null;
+  } | null;
+  limitation: string | null;
+  /** Absent on historical assessments created before CDG-256. */
+  deterministicSummary?: MaritimeAiDeterministicSummary | null;
+};
 
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
