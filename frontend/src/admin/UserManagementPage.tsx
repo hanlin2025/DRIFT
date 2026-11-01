@@ -4,6 +4,7 @@ import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { ReactivateUser } from './ReactivateUser';
 import { RemoveUser } from './RemoveUser';
 
 type StatusFilter = 'ALL' | AccountStatus;
@@ -108,6 +109,22 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
     setProblem(error.message);
   }
 
+  async function reactivated(updated: AdminUser) {
+    setUsers(current => current?.map(user => user.id === updated.id ? updated : user) ?? null);
+    setProblem('');
+    setSaved(`${updated.fullName}'s account was reactivated.`);
+    if (!shows(statusFilter, updated)) setSelectedId(null);
+    try {
+      setRemovals(await listAccountStatusAudits(account.token));
+    } catch (reason: unknown) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        onSessionEnded();
+        return;
+      }
+      setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
+    }
+  }
+
   async function save() {
     if (!selected || selectedRemoved || !role || organisationId === '') return;
     setPending(true);
@@ -146,7 +163,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       <main className="workspace-main">
         <p className="eyebrow">ADMINISTRATOR</p>
         <h2>User management</h2>
-        <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session. Removing a user keeps their account record and ends their current session.</p>
+        <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session. Removing a user keeps their account record and ends their current session. Reactivating a removed user lets them sign in again with their existing password.</p>
         {problem && users === null ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div> : null}
         {users === null && !problem ? <div className="notice" role="status">Loading users...</div> : null}
         {users !== null ? (
@@ -193,6 +210,9 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
               {selected && selected.id !== account.id && selected.status === 'ACTIVE' ? (
                 <RemoveUser key={selected.id} token={account.token} user={selected} onSessionEnded={onSessionEnded} onRemoved={user => { void removed(user); }} onFailed={removalFailed} />
               ) : null}
+              {selected && selected.status === 'REMOVED' ? (
+                <ReactivateUser key={selected.id} token={account.token} user={selected} onSessionEnded={onSessionEnded} onReactivated={user => { void reactivated(user); }} onFailed={removalFailed} />
+              ) : null}
             </div>
           </form>
         ) : null}
@@ -226,15 +246,15 @@ function AssignmentHistory({ audits, roles }: { audits: AssignmentAudit[]; roles
 
 function RemovalHistory({ removals }: { removals: AccountStatusAudit[] }) {
   return (
-    <section className="audit-panel" aria-labelledby="removal-history">
-      <h3 id="removal-history">Removal history</h3>
-      {removals.length === 0 ? <p className="notice">No account removals yet.</p> : (
+    <section className="audit-panel" aria-labelledby="account-status-history">
+      <h3 id="account-status-history">Account status history</h3>
+      {removals.length === 0 ? <p className="notice">No account status changes yet.</p> : (
         <ol className="audit-list">
-          {removals.map(removal => (
-            <li key={removal.id}>
-              <strong>{removal.operator.fullName}</strong> removed <strong>{removal.target.fullName}</strong>
-              <span>{STATUS_LABELS[removal.previousStatus]} → {STATUS_LABELS[removal.newStatus]}</span>
-              <time dateTime={removal.recordedAt}>{formatRecordedAt(removal.recordedAt)}</time>
+          {removals.map(audit => (
+            <li key={audit.id}>
+              <strong>{audit.operator.fullName}</strong> {audit.newStatus === 'ACTIVE' ? 'reactivated' : 'removed'} <strong>{audit.target.fullName}</strong>
+              <span>{STATUS_LABELS[audit.previousStatus]} → {STATUS_LABELS[audit.newStatus]}</span>
+              <time dateTime={audit.recordedAt}>{formatRecordedAt(audit.recordedAt)}</time>
             </li>
           ))}
         </ol>
