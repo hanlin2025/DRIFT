@@ -326,10 +326,7 @@ final class MaritimeAiResponseValidator {
 	}
 	private static boolean describesFreshness(String statement, MaritimeAiConnectionRiskContext.EstimateState state) {
 		return switch (state) {
-			case AVAILABLE -> !containsWord(statement, "unavailable")
-					&& !containsWholePhrase(statement, "not available")
-					&& !containsWholePhrase(statement, "not fresh")
-					&& (containsPositiveWord(statement, "fresh") || containsPositiveWord(statement, "available"));
+			case AVAILABLE -> containsPositiveWord(statement, "fresh") || containsPositiveWord(statement, "available");
 			case STALE -> containsWord(statement, "stale") || containsWord(statement, "outdated");
 			case UNAVAILABLE -> containsWord(statement, "unavailable") || containsWholePhrase(statement, "not available");
 			case UNKNOWN -> containsWord(statement, "unknown") || containsWholePhrase(statement, "not known");

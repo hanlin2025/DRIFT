@@ -146,6 +146,10 @@ class MaritimeAiResponseValidatorTest {
 			assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongFreshness), input))
 					.as("freshness wording: %s", falsePositive).isEqualTo("RISK_REVIEW_FRESHNESS_MISMATCH");
 		}
+		var availableEstimateWithUnavailableComparison = riskClaim(
+				valid.statement().replace("the estimate is available.", "the estimate is available; the comparison is unavailable."),
+				valid.factReferences(), aisRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(availableEstimateWithUnavailableComparison), input)).isNull();
 		var missingRiskReview = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(), valid.vesselRole(),
 				valid.observationType(), valid.associationScope(), valid.factReferences(), "RISK_BUFFER_REVIEW");
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingRiskReview), input)).isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
