@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
@@ -273,7 +274,7 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("A cautious review may be useful.", List.of(claim), List.of(),
 				List.of("Verify the urgent shipment's delivery deadline."), true, null), input))
 				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
-		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("No delivery deadline or urgency is recorded in the supplied shipment context.", List.of(claim), List.of(), followUp, true, null), input))
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("No delivery deadline is recorded, and urgency is not recorded in the supplied shipment context.", List.of(claim), List.of(), followUp, true, null), input))
 				.isNull();
 		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The probability of a missed connection is high.", List.of(claim), List.of(), followUp, true, null), input))
 				.isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
@@ -283,6 +284,39 @@ class MaritimeAiResponseValidatorTest {
 				.isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
 		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The feeder connection was missed.", List.of(claim), List.of(), followUp, true, null), input))
 				.isEqualTo("UNSUPPORTED_MISSED_CONNECTION");
+	}
+
+	@Test void scopesBusinessConstraintUncertaintyAndAllowsVerificationQuestionsAndAuthorizedFacts() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+		var verificationQuestion = new MaritimeAiInterpretation("A cautious planning review may be useful.", List.of(claim), List.of(),
+				List.of("Confirm whether a delivery deadline exists with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(verificationQuestion, input)).isNull();
+
+		var unrelatedUncertainty = new MaritimeAiInterpretation("No AIS estimate is available for this urgent shipment.", List.of(claim), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(unrelatedUncertainty, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+
+		var missingDeadline = new MaritimeAiInterpretation("No delivery deadline is recorded.", List.of(claim), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(missingDeadline, input)).isNull();
+
+		var assertedUrgencyAndDeadline = new MaritimeAiInterpretation("This shipment has an urgent delivery deadline.", List.of(claim), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(assertedUrgencyAndDeadline, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+
+		var authorizedBusinessClaim = new MaritimeAiClaim(claim.statement(), claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
+				claim.observationType(), claim.associationScope(), java.util.stream.Stream.concat(claim.factReferences().stream(),
+						java.util.stream.Stream.of("business:SHIPMENT_URGENCY")).toList(), claim.relationshipType(), claim.riskReview());
+		var authorizedUrgency = new MaritimeAiInterpretation("This shipment is urgent.", List.of(authorizedBusinessClaim), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(authorizedUrgency,
+				Set.of("business:SHIPMENT_URGENCY"))).isFalse();
 	}
 
 	@Test void humanVerificationCanBeIdentifiedByAnOperationsTeamAndSystemOnlyChecksDoNotQualify() {

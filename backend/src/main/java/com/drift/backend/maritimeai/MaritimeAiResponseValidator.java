@@ -41,7 +41,10 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern RISK_OUTCOME_UNCERTAINTY_AFTER = Pattern.compile("(?i)\\b(?:(?:[\\p{L}\\p{M}'’-]+\\s+){0,5})(?:(?:is|are|was|were|remain(?:s)?|has been|have been)\\s+)?(?:unknown|uncertain|unclear|unavailable|unsupported|unestablished|uncalibrated|not\\s+(?:known|established|supported|available|calibrated|estimated|provided|confirmed|determined)|cannot\\s+be\\s+(?:known|established|supported|calibrated|estimated|determined))\\b");
 	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
-	private static final Pattern BUSINESS_CONSTRAINT_UNCERTAINTY = Pattern.compile("(?i)\\b(?:no|unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified)|not\\s+yet\\s+(?:known|provided|recorded|specified))\\b");
+	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
+	private static final Pattern BUSINESS_CONSTRAINT_MISSING_PREFIX = Pattern.compile("(?i)\\bno\\s+(?:(?:final|commercial|delivery|transshipment(?:[- ]arrival)?|shipment|recorded)\\s+){0,3}$");
+	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)\\b");
+	private static final Pattern BUSINESS_CONSTRAINT_UNKNOWN_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified))\\b");
 	private static final Pattern HUMAN_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\b(?:human|person|people|operator|operations\\s+(?:team|staff)|agent|coordinator|planner|dispatcher|staff|team)\\b");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
@@ -56,7 +59,7 @@ final class MaritimeAiResponseValidator {
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
 		List<String> authoredText = authoredText(output);
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCargoAsFact)) return "UNSUPPORTED_CARGO_ASSERTION";
-		if (businessConstraintAssertions(output).stream().anyMatch(MaritimeAiResponseValidator::claimsUnavailableBusinessConstraint))
+		if (claimsUnsupportedBusinessConstraint(output, MaritimeAiCanonicalFactReferences.allowed(input)))
 			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsMissedConnection)) return "UNSUPPORTED_MISSED_CONNECTION";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCausation)) return "UNSUPPORTED_CAUSAL_CLAIM";
@@ -264,14 +267,45 @@ final class MaritimeAiResponseValidator {
 				.filter(java.util.Objects::nonNull).forEach(text::add);
 		return text;
 	}
-	private static List<String> businessConstraintAssertions(MaritimeAiInterpretation output) {
-		return authoredText(output);
+	static boolean claimsUnsupportedBusinessConstraint(MaritimeAiInterpretation output, Set<String> allowedFactReferences) {
+		if (output == null) return false;
+		for (String text : authoredText(output)) {
+			if (text == null) continue;
+			for (String clause : text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b")) {
+				Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
+				while (assertion.find()) {
+					String constraint = assertion.group();
+					if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertion.start())).find()) continue;
+					if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) continue;
+					if (hasAuthorizedBusinessReference(constraint, output.claims(), allowedFactReferences)) continue;
+					return true;
+				}
+			}
+		}
+		return false;
 	}
-	private static boolean claimsUnavailableBusinessConstraint(String text) {
-		if (text == null) return false;
-		return java.util.Arrays.stream(text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and)\\b"))
-				.anyMatch(clause -> BUSINESS_CONSTRAINT_ASSERTION.matcher(clause).find()
-						&& !BUSINESS_CONSTRAINT_UNCERTAINTY.matcher(clause).find());
+	private static boolean hasExplicitlyMissingContext(String clause, int assertionStart, int assertionEnd) {
+		String prefix = clause.substring(Math.max(0, assertionStart - 48), assertionStart);
+		String suffix = clause.substring(assertionEnd, Math.min(clause.length(), assertionEnd + 48));
+		return BUSINESS_CONSTRAINT_UNKNOWN_STATUS.matcher(suffix).find()
+				|| (BUSINESS_CONSTRAINT_MISSING_PREFIX.matcher(prefix).find()
+						&& BUSINESS_CONSTRAINT_MISSING_STATUS.matcher(suffix).find());
+	}
+	/** An assertion can be grounded once an authorized typed business fact is supplied and cited. */
+	private static boolean hasAuthorizedBusinessReference(String constraint, List<MaritimeAiClaim> claims,
+			Set<String> allowedFactReferences) {
+		if (claims == null || allowedFactReferences == null) return false;
+		String expectedTerm = isUrgencyConstraint(constraint) ? "URGENCY" : "DEADLINE";
+		return claims.stream().filter(java.util.Objects::nonNull).map(MaritimeAiClaim::factReferences)
+				.filter(java.util.Objects::nonNull).flatMap(List::stream)
+				.anyMatch(reference -> allowedFactReferences.contains(reference)
+						&& reference.toUpperCase(Locale.ROOT).startsWith("BUSINESS:")
+						&& reference.toUpperCase(Locale.ROOT).contains(expectedTerm));
+	}
+	private static boolean isUrgencyConstraint(String constraint) {
+		String normalized = constraint.toLowerCase(Locale.ROOT);
+		return normalized.contains("urg") || normalized.contains("time-sensitive")
+				|| normalized.contains("time sensitive") || normalized.contains("priority");
 	}
 	private static boolean claimsRiskOutcome(String text) {
 		if (text == null) return false;
