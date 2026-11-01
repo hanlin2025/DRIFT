@@ -34,6 +34,8 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern UNSUPPORTED_REVISION_QUALIFIER = Pattern.compile("(?i)\\b(?:additional|further|another|subsequent)\\b");
 	private static final Pattern REVISION_DELAY_DIRECTION = Pattern.compile("(?i)\\bdelay(?:ed)?\\b");
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
+	private static final Pattern RISK_OUTCOME_CLAIM = Pattern.compile("(?i)\\b(?:confirmed|actual|will|would|has|had|is|was|might|may)\\s+(?:be\\s+)?(?:delay(?:ed)?|late|miss(?:ed|es)?|lost)\\b|\\b(?:shipment|vessel|arrival)\\s+(?:is|was|will be|has been)\\s+(?:delay(?:ed)?|late)\\b|\\b(?:business|financial)\\s+loss\\b|\\blost\\s+revenue\\b|\\b(?:penalt(?:y|ies)|demurrage|compensation|delivery outcome|cargo outcome)\\b|\\b(?:probabilit(?:y|ies)|chance|odds)\\s+(?:of|that)\\b|\\b(?:predict|forecast|expect)\\b[^.!?]{0,60}\\b(?:delay|late|miss(?:ed|es)?)\\b");
+	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
 			Map.entry("four", 4L), Map.entry("five", 5L), Map.entry("six", 6L), Map.entry("seven", 7L), Map.entry("eight", 8L),
@@ -45,12 +47,25 @@ final class MaritimeAiResponseValidator {
 		if (output == null || output.summary() == null || output.summary().isBlank() || output.claims() == null
 				|| output.uncertainties() == null || output.followUpConsiderations() == null
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
+		List<String> authoredText = authoredText(output);
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCargoAsFact)) return "UNSUPPORTED_CARGO_ASSERTION";
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsMissedConnection)) return "UNSUPPORTED_MISSED_CONNECTION";
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCausation)) return "UNSUPPORTED_CAUSAL_CLAIM";
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsOperationalAction))
+			return "UNSUPPORTED_OPERATIONAL_DECISION";
 		if (!"VERIFIED".equals(input.shipmentAssociationConfidence()) && referencesShipmentAsFact(output.summary(), "")) {
 			return "UNVERIFIED_SHIPMENT_ASSOCIATION";
 		}
-		if (claimsCargoAsFact(output.summary())) return "UNSUPPORTED_CARGO_ASSERTION";
-		if (claimsMissedConnection(output.summary())) return "UNSUPPORTED_MISSED_CONNECTION";
-		if (claimsCausation(output.summary())) return "UNSUPPORTED_CAUSAL_CLAIM";
+		boolean hasRiskBufferReview = output.claims().stream().filter(java.util.Objects::nonNull)
+				.anyMatch(claim -> "RISK_BUFFER_REVIEW".equals(claim.relationshipType()));
+		if (hasRiskBufferReview) {
+			if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+					.noneMatch(MaritimeAiResponseValidator::isHumanVerificationFollowUp)) return "MISSING_HUMAN_RISK_FOLLOW_UP";
+			for (String text : java.util.stream.Stream.concat(output.uncertainties().stream(), output.followUpConsiderations().stream())
+					.filter(java.util.Objects::nonNull).toList()) {
+				if (generatedDetailViolation(text, input, null, List.of()) != null) return "UNSTRUCTURED_FACTUAL_DETAIL";
+			}
+		}
 		Set<String> ids = input.evidence().stream().map(MaritimeEvidence::evidenceId).collect(Collectors.toSet());
 		Set<String> allowedFactReferences = MaritimeAiCanonicalFactReferences.allowed(input);
 		for (MaritimeAiClaim claim : output.claims()) {
@@ -63,9 +78,6 @@ final class MaritimeAiResponseValidator {
 				String generatedDetail = generatedDetailViolation(claim.statement(), input, claim, cited);
 				if (generatedDetail != null) return generatedDetail;
 			}
-			if (claimsCausation(claim.statement())) return "UNSUPPORTED_CAUSAL_CLAIM";
-			if (claimsMissedConnection(claim.statement())) return "UNSUPPORTED_MISSED_CONNECTION";
-			if (claimsCargoAsFact(claim.statement())) return "UNSUPPORTED_CARGO_ASSERTION";
 			if (!"VERIFIED".equals(input.shipmentAssociationConfidence())
 					&& referencesShipmentAsFact(claim.statement(), claim.applicability())) return "UNVERIFIED_SHIPMENT_ASSOCIATION";
 
@@ -78,6 +90,7 @@ final class MaritimeAiResponseValidator {
 			String relationshipGrounding = validateRelationship(claim, cited, input);
 			if (relationshipGrounding != null) return relationshipGrounding;
 		}
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsRiskOutcome)) return "UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM";
 		return null;
 	}
 
@@ -121,6 +134,8 @@ final class MaritimeAiResponseValidator {
 	/** v5 validates the model's asserted relationship from typed references, rather than trying to
 	 * infer which noun a free-form sentence belongs to. Null remains readable for legacy records. */
 	private static String validateRelationship(MaritimeAiClaim claim, List<MaritimeEvidence> cited, MaritimeAiEvidencePackage input) {
+		if (!"RISK_BUFFER_REVIEW".equals(claim.relationshipType()) && claim.riskReview() != null)
+			return "UNEXPECTED_RISK_REVIEW_CONTEXT";
 		if (claim.relationshipType() == null || claim.relationshipType().isBlank()) return null;
 		Set<String> refs = claim.factReferences() == null ? Set.of() : Set.copyOf(claim.factReferences());
 		if (refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE)
@@ -135,18 +150,126 @@ final class MaritimeAiResponseValidator {
 					&& refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE) ? null : "UNSUPPORTED_PORT_TIME_OVERLAP";
 			case "REGIONAL_WEATHER_CONTEXT" -> cited.stream().anyMatch(item -> "REGIONAL_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_REGIONAL_WEATHER_RELATIONSHIP";
-			case "RISK_BUFFER_REVIEW" -> validateRiskRelationship(refs, input);
+			case "RISK_BUFFER_REVIEW" -> validateRiskRelationship(refs, claim, cited, input);
 			default -> "UNKNOWN_RELATIONSHIP_TYPE";
 		};
 	}
-	private static String validateRiskRelationship(Set<String> refs, MaritimeAiEvidencePackage input) {
+	private static String validateRiskRelationship(Set<String> refs, MaritimeAiClaim claim,
+			List<MaritimeEvidence> cited, MaritimeAiEvidencePackage input) {
 		MaritimeAiConnectionRiskContext risk = input.shipmentContext() == null ? null : input.shipmentContext().connectionRisk();
 		if (risk == null || !risk.assessed() || risk.riskLevel() == null || risk.riskBasis() == null
 				|| !refs.contains("risk:CONNECTION_SEVERITY"))
 			return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
 		String selected = risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
 				? "risk:REMAINING_CONNECTION_WINDOW" : "risk:PLANNED_CONNECTION_WINDOW";
-		return refs.contains(selected) ? null : "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		if (!refs.contains(selected)) return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		String unselected = risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+				? "risk:PLANNED_CONNECTION_WINDOW" : "risk:REMAINING_CONNECTION_WINDOW";
+		if (refs.contains(unselected)) return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		if (risk.arrivalEstimate() != null && risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN
+				&& !refs.contains("risk:ARRIVAL_ESTIMATE_FRESHNESS")) return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+				&& (!refs.contains("risk:AIS_ESTIMATED_ARRIVAL") || risk.arrivalEstimate() == null
+						|| risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE))
+			return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE
+				&& risk.arrivalEstimate() != null && risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN
+				&& !refs.contains("risk:ARRIVAL_ESTIMATE_NOT_USED")) return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		Set<String> citedEvidenceReferences = refs.stream().filter(reference -> reference.startsWith("evidence:"))
+				.map(reference -> reference.substring("evidence:".length())).collect(Collectors.toSet());
+		Set<String> citedEvidenceIds = cited.stream().map(MaritimeEvidence::evidenceId).collect(Collectors.toSet());
+		if (!citedEvidenceReferences.equals(citedEvidenceIds))
+			return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		if (!expectedRiskReview(risk).equals(claim.riskReview())) return "RISK_REVIEW_CONTEXT_MISMATCH";
+		if (!"CONTEXTUAL".equals(claim.applicability()) && !"UNCERTAIN".equals(claim.applicability()))
+			return "RISK_REVIEW_NOT_TENTATIVE";
+		String statement = claim.statement().toLowerCase(Locale.ROOT);
+		if (!containsAny(statement, "review", "check", "verify", "consider", "assess", "monitor")
+				|| !containsAny(statement, "recorded", "documented", "revision", "observation", "notice", "weather", "evidence", "source")
+				|| !statesSeverity(statement, risk.riskLevel())) return "RISK_REVIEW_NOT_ACTIONABLE";
+		if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE) {
+			if (!statement.contains("planned") || !containsAny(statement, "window", "schedule")) return "RISK_REVIEW_WINDOW_BASIS_MISMATCH";
+		} else if (!statement.contains("ais") || !statement.contains("remaining")
+				|| !containsAny(statement, "window", "buffer")) return "RISK_REVIEW_WINDOW_BASIS_MISMATCH";
+		if (!describesFreshness(statement, risk.arrivalEstimate() == null
+				? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state()))
+			return "RISK_REVIEW_FRESHNESS_MISMATCH";
+		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = expectedRiskReview(risk).selectedWindowState();
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW
+				&& !containsAny(statement, "no positive buffer", "no remaining window", "no available buffer"))
+			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID && !containsAny(statement, "invalid", "not valid"))
+			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE && !containsAny(statement, "incomplete", "not established", "unknown"))
+			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
+		return null;
+	}
+	private static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
+		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
+		if (risk.assessed() && risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+				&& risk.remainingWindow() != null) {
+			windowState = "AVAILABLE".equals(risk.remainingWindow().status())
+					? MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE
+					: "MISSED".equals(risk.remainingWindow().status())
+							? MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW
+							: MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
+		} else if (risk.assessed() && risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE
+				&& risk.plannedWindow() != null) {
+			windowState = switch (risk.plannedWindow().state()) {
+				case AVAILABLE -> MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE;
+				case INVALID -> MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID;
+				case INCOMPLETE -> MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
+			};
+		}
+		return new MaritimeAiClaim.RiskReview(risk.riskLevel(), risk.riskBasis(), windowState,
+				risk.arrivalEstimate() == null ? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state());
+	}
+	private static boolean describesFreshness(String statement, MaritimeAiConnectionRiskContext.EstimateState state) {
+		return switch (state) {
+			case AVAILABLE -> containsAny(statement, "fresh", "available");
+			case STALE -> containsAny(statement, "stale", "outdated");
+			case UNAVAILABLE -> containsAny(statement, "unavailable", "not available");
+			case UNKNOWN -> containsAny(statement, "unknown", "not known");
+		};
+	}
+	private static boolean statesSeverity(String statement, com.drift.backend.shipment.ShipmentRisk.Level severity) {
+		for (com.drift.backend.shipment.ShipmentRisk.Level candidate : com.drift.backend.shipment.ShipmentRisk.Level.values()) {
+			if (containsWord(statement, candidate.name().toLowerCase(Locale.ROOT)) && candidate != severity) return false;
+		}
+		return containsWord(statement, severity.name().toLowerCase(Locale.ROOT));
+	}
+	private static boolean containsAny(String text, String... phrases) {
+		for (String phrase : phrases) if (text.contains(phrase)) return true;
+		return false;
+	}
+	private static boolean containsWord(String text, String word) {
+		return Pattern.compile("(?i)\\b" + Pattern.quote(word) + "\\b").matcher(text).find();
+	}
+	private static List<String> authoredText(MaritimeAiInterpretation output) {
+		List<String> text = new java.util.ArrayList<>();
+		text.add(output.summary());
+		if (output.claims() != null) output.claims().stream().filter(java.util.Objects::nonNull)
+				.map(MaritimeAiClaim::statement).filter(java.util.Objects::nonNull).forEach(text::add);
+		if (output.uncertainties() != null) output.uncertainties().stream().filter(java.util.Objects::nonNull).forEach(text::add);
+		if (output.followUpConsiderations() != null) output.followUpConsiderations().stream()
+				.filter(java.util.Objects::nonNull).forEach(text::add);
+		return text;
+	}
+	private static boolean claimsRiskOutcome(String text) {
+		if (text == null) return false;
+		Matcher matcher = RISK_OUTCOME_CLAIM.matcher(text);
+		while (matcher.find()) {
+			int sentenceStart = Math.max(text.lastIndexOf('.', matcher.start()),
+					Math.max(text.lastIndexOf('!', matcher.start()), text.lastIndexOf('?', matcher.start()))) + 1;
+			String leadIn = text.substring(sentenceStart, matcher.start()).toLowerCase(Locale.ROOT);
+			if (!Pattern.compile("\\b(?:not|no|never|cannot|can't|does not|doesn't|without|unconfirmed|unverified)\\b").matcher(leadIn).find()) return true;
+		}
+		return false;
+	}
+	private static boolean containsOperationalAction(String text) { return text != null && OPERATIONAL_ACTION.matcher(text).find(); }
+	private static boolean isHumanVerificationFollowUp(String text) {
+		String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
+		return lower.contains("human") && containsAny(lower, "review", "check", "verify", "compare", "confirm", "reconcile");
 	}
 	private static boolean hasMotherExpectedArrival(List<MaritimeEvidence> cited) {
 		return cited.stream().anyMatch(item -> "MOTHER".equals(item.vesselRole())
@@ -284,7 +407,9 @@ final class MaritimeAiResponseValidator {
 	private static boolean claimsMissedConnection(String text) {
 		String statement = text == null ? "" : text.toLowerCase();
 		return statement.contains("missed feeder connection") || statement.contains("feeder connection was missed")
-				|| statement.contains("connection has been missed") || statement.contains("will miss the connection");
+				|| statement.contains("connection has been missed") || statement.contains("will miss the connection")
+				|| statement.contains("connection is missed") || statement.contains("actual missed connection")
+				|| statement.contains("confirmed missed connection");
 	}
 
 	private static boolean claimsCausation(String text) {

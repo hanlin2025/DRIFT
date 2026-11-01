@@ -35,6 +35,9 @@ final class MaritimeAiCanonicalFactReferences {
 						&& risk.arrivalEstimate() != null
 						&& risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN)
 					refs.add("risk:ARRIVAL_ESTIMATE_NOT_USED");
+				if (risk.arrivalEstimate() != null
+						&& risk.arrivalEstimate().state() != MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN)
+					refs.add("risk:ARRIVAL_ESTIMATE_FRESHNESS");
 			}
 		}
 		input.evidence().forEach(item -> refs.add("evidence:" + item.evidenceId()));
@@ -44,7 +47,8 @@ final class MaritimeAiCanonicalFactReferences {
 	static List<String> riskReferences(MaritimeAiEvidencePackage input) {
 		Set<String> allowed = allowed(input);
 		return List.of("risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW",
-				"risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_NOT_USED")
+				"risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_NOT_USED",
+				"risk:ARRIVAL_ESTIMATE_FRESHNESS")
 			.stream().filter(allowed::contains).toList();
 	}
 	private static boolean hasVerifiedPortOverlap(MaritimeAiEvidencePackage input) {

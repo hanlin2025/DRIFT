@@ -81,6 +81,11 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				.andExpect(jsonPath("$.validationStatus").value("VALID"))
 				.andExpect(jsonPath("$.provider").isNotEmpty())
 				.andExpect(jsonPath("$.interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"))
+				.andExpect(jsonPath("$.interpretation.claims[0].relationshipType").value("RISK_BUFFER_REVIEW"))
+				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.severity").value("HIGH"))
+				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
+				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.selectedWindowState").value("AVAILABLE"))
+				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.estimateFreshness").value("UNAVAILABLE"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.assessed").value(true))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.severity").value("HIGH"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
@@ -89,7 +94,8 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.estimateFreshness").value("UNAVAILABLE"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[0]").value("risk:CONNECTION_SEVERITY"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[1]").value("risk:PLANNED_CONNECTION_WINDOW"))
-				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[2]").value("risk:ARRIVAL_ESTIMATE_NOT_USED"));
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[2]").value("risk:ARRIVAL_ESTIMATE_NOT_USED"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[3]").value("risk:ARRIVAL_ESTIMATE_FRESHNESS"));
 		assertThat(jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeArrival);
 		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
 
@@ -102,6 +108,7 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$[0].state").value("GENERATED"))
 				.andExpect(jsonPath("$[0].interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"))
+				.andExpect(jsonPath("$[0].interpretation.claims[0].riskReview.severity").value("HIGH"))
 				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.severity").value("HIGH"))
 				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
 				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.selectedWindowState").value("AVAILABLE"))
@@ -146,10 +153,14 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 			} else {
 				delegate = evidence -> new MaritimeAiClient.MaritimeAiClientResult("synthetic-stub", "stubbed-responses", "cdg247.synthetic-smoke.v1",
 						new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
-								List.of(new MaritimeAiClaim("The documented synthetic revision warrants schedule review.", List.of("synthetic-smoke-001"), "VERIFIED",
+								List.of(new MaritimeAiClaim("The documented arrival revision warrants human review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.", List.of("synthetic-smoke-001"), "CONTEXTUAL",
 										"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:synthetic-smoke-001",
-												"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
-								List.of("Synthetic fixture only."), List.of(), true, null), null);
+											"risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW",
+										new MaritimeAiClaim.RiskReview(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+											MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+											MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE,
+											MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE))),
+								List.of("Synthetic fixture only."), List.of("Have a human compare the current evidence with the stored schedule."), true, null), null);
 			}
 			return captureInterpretation ? new MaritimeAiSyntheticMultiSourceIntegrationTests.SyntheticInterpretationCaptureClient(delegate, json,
 					capturePath(capturePath), Set.of("synthetic-smoke-001"), Set.of("SYNTHETIC_DEMONSTRATION"),

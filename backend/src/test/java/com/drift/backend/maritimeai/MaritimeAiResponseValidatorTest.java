@@ -130,53 +130,108 @@ class MaritimeAiResponseValidatorTest {
 
 	@Test void validatesRiskBufferClaimsAgainstEligibleEvidenceAndTheSelectedBackendWindow() {
 		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
-		var risk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+		var aisRisk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
 				MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
-				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 172800L),
 				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 7200L, null),
-				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
-						java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z"), java.time.Instant.parse("2026-10-01T04:00:00Z"), null),
-				List.of("The estimated arrival was used."));
-		var schedule = new MaritimeAiShipmentContext("Synthetic port",
-				new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic mother", "9001", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z")),
-				new MaritimeAiShipmentContext.Vessel("FEEDER", "Synthetic feeder", "9002", "PLANNED_DEPARTURE", java.time.OffsetDateTime.parse("2026-10-01T14:00:00Z")), risk);
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		var schedule = shipmentContext(aisRisk);
 		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", schedule, List.of(motherArrival));
-		var valid = new MaritimeAiClaim("Review the backend risk context alongside the source evidence.", List.of("mother-arrival"),
-				"CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
-				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL"),
-				"RISK_BUFFER_REVIEW");
+		var valid = riskClaim("The documented arrival revision warrants human review alongside the backend HIGH AIS-based remaining-window risk; the estimate is available.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), aisRisk);
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(valid), input)).isNull();
+		var missingRiskReview = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(), valid.vesselRole(),
+				valid.observationType(), valid.associationScope(), valid.factReferences(), "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingRiskReview), input)).isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
+		var unexpectedRiskReview = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(), valid.vesselRole(),
+				valid.observationType(), valid.associationScope(), valid.factReferences(), null, valid.riskReview());
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(unexpectedRiskReview), input)).isEqualTo("UNEXPECTED_RISK_REVIEW_CONTEXT");
 
 		var missingSelectedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
 				valid.vesselRole(), valid.observationType(), valid.associationScope(),
-				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY"), "RISK_BUFFER_REVIEW");
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", valid.riskReview());
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingSelectedWindow), input))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
 
 		var wrongAisWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
 				valid.vesselRole(), valid.observationType(), valid.associationScope(),
-				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", valid.riskReview());
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongAisWindow), input))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
 
-		var plannedRisk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+		var plannedRisk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
 				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
-				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 64800L),
 				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 7200L, null),
-				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.STALE,
-						java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z"), java.time.Instant.parse("2026-09-30T20:00:00Z"), null),
-				List.of("The stale estimate was not used."));
-		var plannedInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED",
-				new MaritimeAiShipmentContext("Synthetic port", schedule.motherVessel(), schedule.feederVessel(), plannedRisk), List.of(motherArrival));
-		var correctPlannedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
-				valid.vesselRole(), valid.observationType(), valid.associationScope(),
-				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var plannedInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(plannedRisk), List.of(motherArrival));
+		var correctPlannedWindow = riskClaim("The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), plannedRisk);
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(correctPlannedWindow), plannedInput)).isNull();
 		var wrongPlannedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
 				valid.vesselRole(), valid.observationType(), valid.associationScope(),
-				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:REMAINING_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", correctPlannedWindow.riskReview());
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongPlannedWindow), plannedInput))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+	}
+
+	@Test void preservesStaleEstimateStateAndRejectsMismatchedOrUnsupportedRiskClaims() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var staleRisk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.STALE);
+		var staleInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(staleRisk), List.of(motherArrival));
+		var staleClaim = riskClaim("The documented arrival revision warrants review alongside the backend MEDIUM planned connection window; the AIS estimate is stale.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), staleRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(staleClaim), staleInput)).isNull();
+		var missingFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.",
+				List.of(staleClaim), List.of(), List.of(), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(missingFollowUp, staleInput)).isEqualTo("MISSING_HUMAN_RISK_FOLLOW_UP");
+
+		var wrongFreshness = new MaritimeAiClaim(staleClaim.statement(), staleClaim.evidenceIds(), staleClaim.applicability(), staleClaim.vesselRole(),
+				staleClaim.observationType(), staleClaim.associationScope(), staleClaim.factReferences(), staleClaim.relationshipType(),
+				new MaritimeAiClaim.RiskReview(staleClaim.riskReview().severity(), staleClaim.riskReview().selectedWindowBasis(),
+						staleClaim.riskReview().selectedWindowState(), MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE));
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongFreshness), staleInput)).isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
+
+		var missingFreshnessReference = new MaritimeAiClaim(staleClaim.statement(), staleClaim.evidenceIds(), staleClaim.applicability(), staleClaim.vesselRole(),
+				staleClaim.observationType(), staleClaim.associationScope(), List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED"),
+				staleClaim.relationshipType(), staleClaim.riskReview());
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingFreshnessReference), staleInput)).isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+
+		var causal = riskClaim("The MPA arrival revision caused the backend MEDIUM planned-window risk; the estimate is stale.", staleClaim.factReferences(), staleRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(causal), staleInput)).isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+		var delay = riskClaim("The documented arrival revision warrants review of the backend MEDIUM planned connection window; the shipment will be delayed, though the AIS estimate is stale.", staleClaim.factReferences(), staleRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(delay), staleInput)).isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
+
+		var action = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(staleClaim), List.of(),
+				List.of("Reroute the shipment immediately."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(action, staleInput)).isEqualTo("UNSUPPORTED_OPERATIONAL_DECISION");
+	}
+
+	@Test void aNonPositiveAisWindowIsNamedAsComputedBufferStateNotAnObservedMiss() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.CRITICAL,
+				MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
+				new MaritimeAiConnectionRiskContext.RemainingWindow("MISSED", null, 120L),
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants human review alongside the backend CRITICAL AIS-based remaining window with no positive buffer; the estimate is available.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+		assertThat(claim.riskReview().selectedWindowState()).isEqualTo(MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(claim), input)).isNull();
+	}
+
+	@Test void invalidPlannedWindowStateRemainsExplicitInTheRiskReview() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.CRITICAL,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.INVALID, null), null,
+				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE, null, null, "NO_POSITION"),
+				List.of("The planned window is invalid."));
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants human review alongside the backend CRITICAL planned connection window, which is invalid; the AIS estimate is unavailable.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+		assertThat(claim.riskReview().selectedWindowState()).isEqualTo(MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(claim), input)).isNull();
 	}
 
 	@Test void riskBufferReviewRequiresAnAssessedRiskContext() {
@@ -406,7 +461,38 @@ class MaritimeAiResponseValidatorTest {
 				"VERIFIED", "Synthetic-only test evidence.", "Synthetic vessel", role, observationType, associationScope);
 	}
 	private static MaritimeAiInterpretation interpretation(MaritimeAiClaim claim) {
-		return new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(), List.of(), true, null);
+		return new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
+				"RISK_BUFFER_REVIEW".equals(claim.relationshipType())
+						? List.of("Have a human compare the current evidence with the stored schedule.") : List.of(), true, null);
+	}
+	private static MaritimeAiConnectionRiskContext riskContext(com.drift.backend.shipment.ShipmentRisk.Level level,
+			MaritimeAiConnectionRiskContext.RiskBasis basis, MaritimeAiConnectionRiskContext.RemainingWindow remaining,
+			MaritimeAiConnectionRiskContext.EstimateState estimateState) {
+		var arrival = new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(estimateState, null, null,
+				estimateState == MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE ? "NO_POSITION" : null);
+		return new MaritimeAiConnectionRiskContext(true, null, level, basis,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 64800L),
+				remaining, arrival, List.of("Backend schedule window selected."));
+	}
+	private static MaritimeAiShipmentContext shipmentContext(MaritimeAiConnectionRiskContext risk) {
+		return new MaritimeAiShipmentContext("Synthetic port",
+				new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic mother", "9001", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z")),
+				new MaritimeAiShipmentContext.Vessel("FEEDER", "Synthetic feeder", "9002", "PLANNED_DEPARTURE", java.time.OffsetDateTime.parse("2026-10-01T14:00:00Z")), risk);
+	}
+	private static MaritimeAiClaim riskClaim(String statement, List<String> refs, MaritimeAiConnectionRiskContext risk) {
+		var state = risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+				? risk.remainingWindow() == null ? MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE
+						: "MISSED".equals(risk.remainingWindow().status()) ? MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW
+							: MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE
+				: switch (risk.plannedWindow().state()) {
+					case AVAILABLE -> MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE;
+					case INVALID -> MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID;
+					case INCOMPLETE -> MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
+				};
+		var review = new MaritimeAiClaim.RiskReview(risk.riskLevel(), risk.riskBasis(), state,
+				risk.arrivalEstimate().state());
+		return new MaritimeAiClaim(statement, List.of("mother-arrival"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL",
+				"VESSEL_OBSERVATION", refs, "RISK_BUFFER_REVIEW", review);
 	}
 	private static MaritimeAiEvidencePackage completeSyntheticInput() {
 		return completeSyntheticInput("synthetic-mpa", "synthetic-notice", "synthetic-weather");
