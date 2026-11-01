@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -36,6 +38,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.annotation.Commit;
 
 import com.drift.backend.maritimeai.MaritimeAiClaim;
 import com.drift.backend.maritimeai.MaritimeAiClient;
@@ -66,6 +69,7 @@ class AuthenticMultiSourceRagIntegrationTest {
 	@Autowired CapturingClient client;
 	@Value("${cdg257.authentic-smoke.capture-interpretation:false}") boolean captureInterpretation;
 	@Value("${cdg257.authentic-smoke.capture-path:}") String capturePath;
+	@Value("${cdg256.authentic-capture-replay-path:}") String captureReplayPath;
 	private String token;
 	private Long shipmentId;
 
@@ -155,9 +159,20 @@ class AuthenticMultiSourceRagIntegrationTest {
 	@Test
 	void authenticRealClientModeCannotStartWithoutTheGlobalExternalApprovalGate() {
 		assertThatThrownBy(() -> new Config().authenticClient(new CapturingClient(), input -> MaritimeAiClient.MaritimeAiClientResult.unavailable("unused"),
-				true, false, "", false, new ObjectMapper()))
+				true, false, "", "", false, new ObjectMapper()))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true");
+	}
+
+	@Test @Commit
+	void explicitlyApprovedCaptureReplayPersistsForLocalShipmentDetailsDemonstration() throws Exception {
+		Assumptions.assumeTrue(captureReplayPath != null && !captureReplayPath.isBlank(), "capture replay is opt-in");
+		mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.validationStatus").value("VALID"))
+				.andExpect(jsonPath("$.provider").value("openai-responses (verified capture replay)"));
+		mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value("GENERATED"));
 	}
 
 	private static MaritimeAiEvidencePackage packageFor(ShipmentDetailResponse shipment, List<MaritimeEvidence> evidence) {
@@ -193,10 +208,16 @@ class AuthenticMultiSourceRagIntegrationTest {
 				@Value("${cdg257.authentic-smoke.use-real-client:false}") boolean useRealClient,
 				@Value("${cdg257.authentic-smoke.capture-interpretation:false}") boolean captureInterpretation,
 				@Value("${cdg257.authentic-smoke.capture-path:}") String capturePath,
+				@Value("${cdg256.authentic-capture-replay-path:}") String captureReplayPath,
 				@Value("${app.maritime-ai.external-requests-approved:false}") boolean externalRequestsApproved,
 				ObjectMapper json) {
 			MaritimeAiClient delegate;
-			if (useRealClient) {
+			if (captureReplayPath != null && !captureReplayPath.isBlank()) {
+				if (!"APPROVED".equals(System.getenv("CDG256_PERSIST_VERIFIED_CAPTURE"))) {
+					throw new IllegalStateException("Capture replay requires CDG256_PERSIST_VERIFIED_CAPTURE=APPROVED");
+				}
+				delegate = new VerifiedCaptureReplayClient(capturingClient, json, Path.of(captureReplayPath));
+			} else if (useRealClient) {
 				if (!externalRequestsApproved) {
 					throw new IllegalStateException("Authentic real smoke test requires MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true");
 				}
@@ -218,6 +239,28 @@ class AuthenticMultiSourceRagIntegrationTest {
 		static Path capturePath(String configured) {
 			if (configured != null && !configured.isBlank()) return Path.of(configured);
 			return Path.of(System.getProperty("user.dir"), "target", "cdg257-authentic-retrospective-interpretation-real-response.json");
+		}
+	}
+
+	/** Test-scope-only local seeder; it never calls OpenAI and labels the persisted record as a replay. */
+	static final class VerifiedCaptureReplayClient implements MaritimeAiClient {
+		private static final Set<String> IDS = Set.of("mpa-expected-revision-9351048-20261026T154603", "nea-rainfall-20261027T153306");
+		private final CapturingClient observer; private final ObjectMapper json; private final Path capture;
+		VerifiedCaptureReplayClient(CapturingClient observer, ObjectMapper json, Path capture) { this.observer = observer; this.json = json; this.capture = capture; }
+		@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
+			observer.last.set(input);
+			if (!IDS.equals(input.evidence().stream().map(MaritimeEvidence::evidenceId).collect(java.util.stream.Collectors.toSet()))
+					|| input.evidence().stream().anyMatch(item -> !"RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))) throw new IllegalArgumentException("Capture replay accepts only the approved authentic fixture.");
+			try {
+				Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(capture);
+				if (!permissions.equals(PosixFilePermissions.fromString("rw-------"))) throw new IllegalArgumentException("Capture replay requires an owner-only capture file.");
+				var root = json.readTree(Files.readString(capture));
+				if (!"openai-responses".equals(root.path("provider").asText()) || !"VALID".equals(root.path("validationStatus").asText())) throw new IllegalArgumentException("Capture replay requires a VALID OpenAI Responses capture.");
+				Set<String> citations = new java.util.LinkedHashSet<>(); root.path("citationIds").forEach(item -> citations.add(item.asText()));
+				if (!IDS.equals(citations)) throw new IllegalArgumentException("Capture replay citations do not match the approved authentic bundle.");
+				MaritimeAiInterpretation interpretation = json.treeToValue(root.path("interpretation"), MaritimeAiInterpretation.class);
+				return new MaritimeAiClientResult("openai-responses (verified capture replay)", root.path("model").asText(), root.path("promptVersion").asText(), interpretation, null);
+			} catch (Exception ex) { throw new IllegalStateException("Unable to replay verified authentic capture", ex); }
 		}
 	}
 
