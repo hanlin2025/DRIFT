@@ -39,7 +39,8 @@ import com.jayway.jsonpath.JsonPath;
 @ActiveProfiles({ "test", "recommendation-impact-override" })
 @TestPropertySource(properties = {
 		"app.recommendation.impact-outcome=NO_PREDICTED_IMPACT",
-		"DRIFT_RECOMMENDATION_IMPACT_OUTCOME=NO_PREDICTED_IMPACT"
+		"DRIFT_RECOMMENDATION_IMPACT_OUTCOME=NO_PREDICTED_IMPACT",
+		"DRIFT_RECOMMENDATION_IMPACT_OVERRIDE=cdg275-e2e"
 })
 @Transactional
 class RecommendationDecisionDefaultImpactIntegrationTests {
@@ -63,7 +64,7 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 	}
 
 	@Test
-	void thePackagedProfileAndOutcomeWithoutTheRunnerSwitchStayUnavailable() throws Exception {
+	void packagedProfilePropertiesAndRunnerTokenStayUnavailableAndStoreNothing() throws Exception {
 		MvcResult created = mvc.perform(post("/api/shipments")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

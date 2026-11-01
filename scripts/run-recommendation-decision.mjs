@@ -7,7 +7,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(root, 'frontend');
 const backendDir = path.join(root, 'backend');
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
-const impactOverrideSwitch = 'cdg275-e2e';
 const ownedName = /^drift_cdg230_[0-9]{14}_[a-f0-9]{12}$/;
 const createdByThisProcess = new Set();
 let activeBackend = null;
@@ -146,7 +145,6 @@ function backendEnv(owned, impactOutcome) {
     ...process.env,
     JWT_SECRET: randomBytes(48).toString('base64url'),
     AIS_ENABLED: 'false',
-    DRIFT_RECOMMENDATION_IMPACT_OVERRIDE: impactOverrideSwitch,
     DRIFT_RECOMMENDATION_IMPACT_OUTCOME: impactOutcome,
     SERVER_PORT: '8080',
     SPRING_DATASOURCE_URL: url,
@@ -159,7 +157,8 @@ function backendEnv(owned, impactOutcome) {
 }
 
 function defaultSpawnBackend(env) {
-  return spawn('bash', ['./mvnw', 'spring-boot:run'], {
+  return spawn('bash', ['./mvnw', '-DskipTests', 'test-compile', 'spring-boot:test-run',
+    '-Dspring-boot.run.main-class=com.drift.backend.shipment.RecommendationDecisionBrowserApplication'], {
     cwd: backendDir, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
@@ -189,7 +188,7 @@ function waitForBackend(child, owned) {
     child.on('exit', onExit);
     child.on('error', onError);
     check = setInterval(() => {
-      if (!log.includes('Started BackendApplication')) return;
+      if (!log.includes('Started RecommendationDecisionBrowserApplication')) return;
       const urls = log.match(/jdbc:postgresql:\S+/g) ?? [];
       if (!urls.some(item => item.startsWith(url)) || urls.some(item => item.startsWith('jdbc:postgresql:') && !item.startsWith(url))) {
         finish(new Error('The backend did not use the database this runner created.'));
