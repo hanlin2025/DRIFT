@@ -76,6 +76,20 @@ class TestReadinessDecision(unittest.TestCase):
         self.assertIn("--output", command)
         self.assertIn(str(workflow.CONTEXTUAL_TOOLS / "build_mpa_nea_inspection_join.py"), command)
 
+    def test_matured_outcome_audit_resolves_from_ai_readiness_package(self):
+        import run_ai_maturation_check as workflow
+        class Completed:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+        with patch.object(workflow, "subprocess") as process:
+            process.run.return_value = Completed()
+            result = workflow.run("audit_matured_eta_outcomes.py")
+        self.assertEqual(result["exit_code"], 0)
+        command = process.run.call_args.args[0]
+        self.assertIn(str(workflow.AI_READINESS_TOOLS / "audit_matured_eta_outcomes.py"), command)
+        self.assertNotIn(str(workflow.CONTEXTUAL_TOOLS / "audit_matured_eta_outcomes.py"), command)
+
     def test_daily_snapshot_invokes_the_curated_workflow_file(self):
         class Completed:
             returncode = 0

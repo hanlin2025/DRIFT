@@ -18,6 +18,7 @@ from pathlib import Path
 BASE = Path(os.environ.get("CDG201_DATA_ROOT", Path.home() / "opt/data/change_detection"))
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 CONTEXTUAL_TOOLS = REPOSITORY_ROOT / "tools" / "cdg201" / "contextual"
+AI_READINESS_TOOLS = REPOSITORY_ROOT / "tools" / "cdg201" / "ai_readiness"
 OUT = BASE / "analysis/ai_readiness"
 FAILURES = OUT / "workflow_failures"
 
@@ -33,6 +34,13 @@ WORKFLOW_STAGES = (
 )
 
 
+def stage_path(script: str) -> Path:
+    """Resolve each stage from its curated source package, not a data-root copy."""
+    if script == "audit_matured_eta_outcomes.py":
+        return AI_READINESS_TOOLS / script
+    return CONTEXTUAL_TOOLS / script
+
+
 def run(script: str) -> dict:
     """Run a curated source script against the configured standalone data root.
 
@@ -41,7 +49,7 @@ def run(script: str) -> dict:
     explicit input contract rather than an accidental call to a machine-local
     script outside this PR.
     """
-    path = CONTEXTUAL_TOOLS / script
+    path = stage_path(script)
     if not path.is_file():
         return {"script": script, "exit_code": 1, "stdout": "",
                 "stderr": f"Required curated stage is missing: {path}"}
