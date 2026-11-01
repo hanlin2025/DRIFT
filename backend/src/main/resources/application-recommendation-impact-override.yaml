@@ -1,0 +1,3 @@
+app:
+  recommendation:
+    impact-outcome: ${DRIFT_RECOMMENDATION_IMPACT_OUTCOME:NOT_RETURNED}

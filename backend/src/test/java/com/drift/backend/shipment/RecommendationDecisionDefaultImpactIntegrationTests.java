@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,10 @@ import com.jayway.jsonpath.JsonPath;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@TestPropertySource(properties = {
+		"app.recommendation.impact-outcome=NO_PREDICTED_IMPACT",
+		"DRIFT_RECOMMENDATION_IMPACT_OUTCOME=NO_PREDICTED_IMPACT"
+})
 @Transactional
 class RecommendationDecisionDefaultImpactIntegrationTests {
 
@@ -58,7 +63,7 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 	}
 
 	@Test
-	void theNormalImpactSourceRefusesADecisionAndStoresNothing() throws Exception {
+	void aConfiguredOutcomeWithoutTheOverrideProfileStaysUnavailableAndStoresNothing() throws Exception {
 		MvcResult created = mvc.perform(post("/api/shipments")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -88,10 +93,19 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 		mvc.perform(get("/api/shipments/" + shipmentId).header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.recommendation.available").value(false))
-				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
+				.andExpect(jsonPath("$.recommendation.impact.outcome").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.recommendation.impact.detail").value(ShipmentRecommendationImpact.NOT_RETURNED))
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory").isEmpty());
 
-		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM recommendation_decisions WHERE shipment_id = ?",
-				Integer.class, shipmentId)).isZero();
+		assertThat(count("recommendation_decisions", shipmentId)).isZero();
+		assertThat(count("recommendation_decision_history", shipmentId)).isZero();
+	}
+
+	private int count(String table, long shipmentId) {
+		Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE shipment_id = ?", Integer.class,
+				shipmentId);
+		return count == null ? 0 : count;
 	}
 
 	private String tokenFor(String email) throws Exception {

@@ -698,7 +698,7 @@ class RecommendationDecisionApiIntegrationTests {
 		private ShipmentRecommendationImpact impact = ShipmentRecommendationImpact.notReturned();
 
 		ChosenImpact() {
-			super("NOT_RETURNED");
+			super();
 		}
 
 		@Override
