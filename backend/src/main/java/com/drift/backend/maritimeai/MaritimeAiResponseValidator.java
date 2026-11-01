@@ -269,17 +269,25 @@ final class MaritimeAiResponseValidator {
 	}
 	static boolean claimsUnsupportedBusinessConstraint(MaritimeAiInterpretation output, Set<String> allowedFactReferences) {
 		if (output == null) return false;
-		for (String text : authoredText(output)) {
-			if (text == null) continue;
-			for (String clause : text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b")) {
-				Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
-				while (assertion.find()) {
-					String constraint = assertion.group();
-					if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertion.start())).find()) continue;
-					if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) continue;
-					if (hasAuthorizedBusinessReference(constraint, output.claims(), allowedFactReferences)) continue;
-					return true;
-				}
+		if (hasUnsupportedBusinessConstraint(output.summary(), null, allowedFactReferences)) return true;
+		if (output.claims() != null && output.claims().stream().filter(java.util.Objects::nonNull)
+				.anyMatch(claim -> hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(), allowedFactReferences))) return true;
+		if (output.uncertainties() != null && output.uncertainties().stream()
+				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences))) return true;
+		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
+				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences));
+	}
+	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
+			Set<String> allowedFactReferences) {
+		if (text == null) return false;
+		for (String clause : text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b")) {
+			Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
+			while (assertion.find()) {
+				String constraint = assertion.group();
+				if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertion.start())).find()) continue;
+				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) continue;
+				if (hasAuthorizedBusinessReference(constraint, claimReferences, allowedFactReferences)) continue;
+				return true;
 			}
 		}
 		return false;
@@ -292,12 +300,11 @@ final class MaritimeAiResponseValidator {
 						&& BUSINESS_CONSTRAINT_MISSING_STATUS.matcher(suffix).find());
 	}
 	/** An assertion can be grounded once an authorized typed business fact is supplied and cited. */
-	private static boolean hasAuthorizedBusinessReference(String constraint, List<MaritimeAiClaim> claims,
+	private static boolean hasAuthorizedBusinessReference(String constraint, List<String> claimReferences,
 			Set<String> allowedFactReferences) {
-		if (claims == null || allowedFactReferences == null) return false;
+		if (claimReferences == null || allowedFactReferences == null) return false;
 		String expectedTerm = isUrgencyConstraint(constraint) ? "URGENCY" : "DEADLINE";
-		return claims.stream().filter(java.util.Objects::nonNull).map(MaritimeAiClaim::factReferences)
-				.filter(java.util.Objects::nonNull).flatMap(List::stream)
+		return claimReferences.stream()
 				.anyMatch(reference -> allowedFactReferences.contains(reference)
 						&& reference.toUpperCase(Locale.ROOT).startsWith("BUSINESS:")
 						&& reference.toUpperCase(Locale.ROOT).contains(expectedTerm));

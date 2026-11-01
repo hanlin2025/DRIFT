@@ -286,7 +286,7 @@ class MaritimeAiResponseValidatorTest {
 				.isEqualTo("UNSUPPORTED_MISSED_CONNECTION");
 	}
 
-	@Test void scopesBusinessConstraintUncertaintyAndAllowsVerificationQuestionsAndAuthorizedFacts() {
+	@Test void scopesBusinessConstraintUncertaintyAndBusinessReferencesToTheClaimMakingTheAssertion() {
 		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
 				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
@@ -310,13 +310,32 @@ class MaritimeAiResponseValidatorTest {
 				List.of("Verify the carrier's ETA with the operations team."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(assertedUrgencyAndDeadline, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 
-		var authorizedBusinessClaim = new MaritimeAiClaim(claim.statement(), claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
-				claim.observationType(), claim.associationScope(), java.util.stream.Stream.concat(claim.factReferences().stream(),
-						java.util.stream.Stream.of("business:SHIPMENT_URGENCY")).toList(), claim.relationshipType(), claim.riskReview());
-		var authorizedUrgency = new MaritimeAiInterpretation("This shipment is urgent.", List.of(authorizedBusinessClaim), List.of(),
+		var authorizedUrgencyClaim = new MaritimeAiClaim("This shipment is urgent.", claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
+				claim.observationType(), claim.associationScope(), List.of("business:SHIPMENT_URGENCY"), null, null);
+		var authorizedUrgency = new MaritimeAiInterpretation("A cautious planning review may be useful.", List.of(authorizedUrgencyClaim), List.of(),
 				List.of("Verify the carrier's ETA with the operations team."), true, null);
 		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(authorizedUrgency,
 				Set.of("business:SHIPMENT_URGENCY"))).isFalse();
+
+		var unrelatedUrgencyReference = new MaritimeAiClaim(claim.statement(), claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
+				claim.observationType(), claim.associationScope(), List.of("business:SHIPMENT_URGENCY"), claim.relationshipType(), claim.riskReview());
+		var unsupportedClaim = new MaritimeAiClaim("This shipment is urgent.", claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
+				claim.observationType(), claim.associationScope(), List.of(), null, null);
+		var allowedReferences = Set.of("business:SHIPMENT_URGENCY", "business:SHIPMENT_DELIVERY_DEADLINE");
+
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"This shipment is urgent.", List.of(unrelatedUrgencyReference), List.of(), List.of(), true, null), allowedReferences)).isTrue();
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"A cautious planning review may be useful.", List.of(unrelatedUrgencyReference), List.of("This shipment is urgent."), List.of(), true, null), allowedReferences)).isTrue();
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"A cautious planning review may be useful.", List.of(unrelatedUrgencyReference), List.of(), List.of("This shipment is urgent."), true, null), allowedReferences)).isTrue();
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"A cautious planning review may be useful.", List.of(unrelatedUrgencyReference, unsupportedClaim), List.of(), List.of(), true, null), allowedReferences)).isTrue();
+
+		var wrongTypeUrgencyClaim = new MaritimeAiClaim("This shipment is urgent.", claim.evidenceIds(), claim.applicability(), claim.vesselRole(),
+				claim.observationType(), claim.associationScope(), List.of("business:SHIPMENT_DELIVERY_DEADLINE"), null, null);
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"A cautious planning review may be useful.", List.of(wrongTypeUrgencyClaim), List.of(), List.of(), true, null), allowedReferences)).isTrue();
 	}
 
 	@Test void humanVerificationCanBeIdentifiedByAnOperationsTeamAndSystemOnlyChecksDoNotQualify() {
