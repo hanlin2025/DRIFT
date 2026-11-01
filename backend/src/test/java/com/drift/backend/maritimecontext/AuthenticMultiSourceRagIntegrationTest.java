@@ -200,7 +200,7 @@ class AuthenticMultiSourceRagIntegrationTest {
 	private static ShipmentDetailResponse shipment(String imo) {
 		return new ShipmentDetailResponse(1L, 1L, "CDG249", "SG", "ID", "Singapore", "KOTA LARIS",
 				java.time.OffsetDateTime.parse("2026-10-29T02:00:00+08:00"), imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null,
-				null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
+				null, null, null, null, null, null, null, null,null, null,  null, ShipmentStatus.ACTIVE);
 	}
 
 	private static String shipmentJson() {

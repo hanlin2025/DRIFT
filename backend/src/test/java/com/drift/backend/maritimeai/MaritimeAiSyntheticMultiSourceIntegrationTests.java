@@ -89,7 +89,7 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				.andExpect(jsonPath("$.validationStatus").value("VALID"))
 				.andExpect(jsonPath("$.interpretation.claims[0].evidenceIds").isArray())
 				.andExpect(jsonPath("$.interpretation.claims[0].factReferences[0]").value("evidence:" + SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID))
-				.andExpect(jsonPath("$.deterministicSummary.summaryVersion").value("cdg247.deterministic-facts.v3.risk-snapshot"))
+				.andExpect(jsonPath("$.deterministicSummary.summaryVersion").value("cdg247.deterministic-facts.v4.business-risk-snapshots"))
 				.andExpect(jsonPath("$.deterministicSummary.shipmentScheduleFacts[0].eventType").value("PLANNED_ARRIVAL"))
 				.andExpect(jsonPath("$.deterministicSummary.shipmentScheduleFacts[0].factReference").value("schedule:MOTHER:PLANNED_ARRIVAL"))
 				.andExpect(jsonPath("$.deterministicSummary.shipmentScheduleFacts[1].eventType").value("PLANNED_DEPARTURE"))
@@ -151,7 +151,7 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 					.andExpect(jsonPath("$.state").value("FAILED"))
 					.andExpect(jsonPath("$.validationStatus").value("UNSUPPORTED_CAUSAL_CLAIM"))
 					.andExpect(jsonPath("$.interpretation").doesNotExist())
-					.andExpect(jsonPath("$.deterministicSummary.label").value("Backend-owned evidence, shipment-schedule, and risk facts; not AI reasoning."));
+					.andExpect(jsonPath("$.deterministicSummary.label").value("Backend-owned evidence, shipment-schedule, risk, and importer-constraint facts; not AI reasoning."));
 		} finally {
 			stub.clearNextResult();
 		}

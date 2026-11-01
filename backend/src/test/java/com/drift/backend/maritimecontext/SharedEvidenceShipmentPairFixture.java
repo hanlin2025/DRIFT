@@ -38,7 +38,12 @@ public final class SharedEvidenceShipmentPairFixture {
 	}
 
 	private static boolean matchesSharedVisit(ShipmentDetailResponse shipment) {
-		if (shipment == null || !"Synthetic Multi-source Port".equals(shipment.transshipmentPort())
+		// The mismatched-deadline integration case deliberately changes the current port after
+		// recording a deadline. Keep the same fictional vessel observations in that test so it can
+		// verify deadline applicability; these synthetic rows do not represent production evidence.
+		boolean retainedDeadlineForOtherPort = shipment != null && shipment.transshipmentArrivalDeadline() != null
+				&& !shipment.transshipmentArrivalDeadline().applicable();
+		if (shipment == null || (!"Synthetic Multi-source Port".equals(shipment.transshipmentPort()) && !retainedDeadlineForOtherPort)
 				|| !"Synthetic Multi-source Vessel".equals(shipment.motherVessel())
 				|| !"9000002".equals(shipment.motherVesselImo())
 				|| !"Synthetic Multi-source Feeder".equals(shipment.feederVessel())
@@ -52,7 +57,7 @@ public final class SharedEvidenceShipmentPairFixture {
 		return new ShipmentDetailResponse(1L, 1L, "CDG262-FIXTURE", "Synthetic origin", "Synthetic destination",
 				"Synthetic Multi-source Port", "Synthetic Multi-source Vessel", EARLIER_ARRIVAL, "9000002", null, null,
 				"Synthetic Multi-source Feeder", OffsetDateTime.parse("2026-10-01T14:00:00+08:00"), null, null, null,
-				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null,
 				ShipmentStatus.ACTIVE);
 	}
 }

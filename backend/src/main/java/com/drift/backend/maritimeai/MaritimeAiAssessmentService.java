@@ -57,7 +57,7 @@ public class MaritimeAiAssessmentService {
 		MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(detail.transshipmentPort(),
 				new MaritimeAiShipmentContext.Vessel("MOTHER", detail.motherVessel(), detail.motherVesselImo(), "PLANNED_ARRIVAL", detail.plannedMotherArrivalAt()),
 				new MaritimeAiShipmentContext.Vessel("FEEDER", detail.feederVessel(), detail.feederVesselImo(), "PLANNED_DEPARTURE", detail.plannedFeederDepartureAt()),
-				MaritimeAiConnectionRiskContext.from(detail));
+				MaritimeAiConnectionRiskContext.from(detail), MaritimeAiBusinessContext.from(detail));
 		MaritimeAiEvidencePackage fullInput = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
 				bundle.shipmentAssociationConfidence(), shipmentContext, bundle.evidence());
 		if (!enabled) return transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
@@ -175,9 +175,12 @@ public class MaritimeAiAssessmentService {
 						item.observedAt(), item.retrievedAtUtc())).toList();
 		List<String> limitations = input.evidence().stream().map(MaritimeEvidence::limitation).filter(java.util.Objects::nonNull).distinct().toList();
 		MaritimeAiConnectionRiskContext risk = input.shipmentContext() == null ? null : input.shipmentContext().connectionRisk();
-		return new MaritimeAiDeterministicSummary("cdg247.deterministic-facts.v3.risk-snapshot", "Backend-owned evidence, shipment-schedule, and risk facts; not AI reasoning.",
+		MaritimeAiBusinessContext business = input.shipmentContext() == null ? null : input.shipmentContext().businessContext();
+		return new MaritimeAiDeterministicSummary("cdg247.deterministic-facts.v4.business-risk-snapshots", "Backend-owned evidence, shipment-schedule, risk, and importer-constraint facts; not AI reasoning.",
 				List.copyOf(schedule), evidence, limitations,
-				MaritimeAiDeterministicSummary.RiskSnapshot.from(risk, MaritimeAiCanonicalFactReferences.riskReferences(input)));
+				MaritimeAiDeterministicSummary.RiskSnapshot.from(risk, MaritimeAiCanonicalFactReferences.riskReferences(input)),
+				MaritimeAiDeterministicSummary.BusinessSnapshot.from(business,
+						MaritimeAiCanonicalFactReferences.businessReferences(input)));
 	}
 	private static void addScheduleFact(List<MaritimeAiDeterministicSummary.Fact> schedule, MaritimeAiShipmentContext.Vessel vessel) {
 		if (vessel == null || vessel.plannedTime() == null) return;

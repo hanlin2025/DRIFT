@@ -29,6 +29,7 @@ final class MaritimeAiResponseValidator {
 	 * context alongside an observed mother expected arrival. */
 	private static final Pattern MOTHER_DEPARTURE = Pattern.compile("\\bmother(?:\\s+vessel)?\\b(?:(?!\\bfeeder(?:\\s+vessel)?\\b)[^.!?;]){0,120}\\bdeparture\\b");
 	private static final Pattern FACTUAL_NUMBER = Pattern.compile("\\d");
+	private static final Pattern ISO_OFFSET_DATE_TIME = Pattern.compile("\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2})\\b");
 	private static final Pattern FACTUAL_DURATION = Pattern.compile("(?i)\\b(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)\\s+(?:minute|minutes|hour|hours|day|days)\\b");
 	private static final Pattern REVISION_DURATION = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b[^.!?;]{0,48}?\\b(an?|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)\\s+(minute|minutes|hour|hours|day|days)\\b");
 	private static final Pattern UNSUPPORTED_REVISION_QUALIFIER = Pattern.compile("(?i)\\b(?:additional|further|another|subsequent)\\b");
@@ -41,6 +42,8 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern RISK_OUTCOME_UNCERTAINTY_AFTER = Pattern.compile("(?i)\\b(?:(?:[\\p{L}\\p{M}'’-]+\\s+){0,5})(?:(?:is|are|was|were|remain(?:s)?|has been|have been)\\s+)?(?:unknown|uncertain|unclear|unavailable|unsupported|unestablished|uncalibrated|not\\s+(?:known|established|supported|available|calibrated|estimated|provided|confirmed|determined)|cannot\\s+be\\s+(?:known|established|supported|calibrated|estimated|determined))\\b");
 	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
+	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
+	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_PREFIX = Pattern.compile("(?i)\\bno\\s+(?:(?:final|commercial|delivery|transshipment(?:[- ]arrival)?|shipment|recorded)\\s+){0,3}$");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)\\b");
@@ -59,8 +62,9 @@ final class MaritimeAiResponseValidator {
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
 		List<String> authoredText = authoredText(output);
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCargoAsFact)) return "UNSUPPORTED_CARGO_ASSERTION";
-		if (claimsUnsupportedBusinessConstraint(output, MaritimeAiCanonicalFactReferences.allowed(input)))
+		if (claimsUnsupportedBusinessConstraint(output, input))
 			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
+		if (claimsUnsupportedDelayConclusion(output, input)) return "UNSUPPORTED_DELAY_COMPARISON";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsMissedConnection)) return "UNSUPPORTED_MISSED_CONNECTION";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCausation)) return "UNSUPPORTED_CAUSAL_CLAIM";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsOperationalAction))
@@ -146,7 +150,8 @@ final class MaritimeAiResponseValidator {
 	/** v5 validates the model's asserted relationship from typed references, rather than trying to
 	 * infer which noun a free-form sentence belongs to. Null remains readable for legacy records. */
 	private static String validateRelationship(MaritimeAiClaim claim, List<MaritimeEvidence> cited, MaritimeAiEvidencePackage input) {
-		if (!"RISK_BUFFER_REVIEW".equals(claim.relationshipType()) && claim.riskReview() != null)
+		if (!"RISK_BUFFER_REVIEW".equals(claim.relationshipType())
+				&& !"DELAY_COMPARISON_REVIEW".equals(claim.relationshipType()) && claim.riskReview() != null)
 			return "UNEXPECTED_RISK_REVIEW_CONTEXT";
 		if (claim.relationshipType() == null || claim.relationshipType().isBlank()) return null;
 		Set<String> refs = claim.factReferences() == null ? Set.of() : Set.copyOf(claim.factReferences());
@@ -163,6 +168,7 @@ final class MaritimeAiResponseValidator {
 			case "REGIONAL_WEATHER_CONTEXT" -> cited.stream().anyMatch(item -> "REGIONAL_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_REGIONAL_WEATHER_RELATIONSHIP";
 			case "RISK_BUFFER_REVIEW" -> validateRiskRelationship(refs, claim, cited, input);
+			case "DELAY_COMPARISON_REVIEW" -> validateDelayComparisonRelationship(refs, claim, cited, input);
 			default -> "UNKNOWN_RELATIONSHIP_TYPE";
 		};
 	}
@@ -216,6 +222,88 @@ final class MaritimeAiResponseValidator {
 			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
 		return null;
 	}
+	private static String validateDelayComparisonRelationship(Set<String> refs, MaritimeAiClaim claim,
+			List<MaritimeEvidence> cited, MaritimeAiEvidencePackage input) {
+		MaritimeAiBusinessContext business = input.shipmentContext() == null ? null : input.shipmentContext().businessContext();
+		if (business == null || business.deadline() == null || business.comparison() == null
+				|| business.comparison().state() == MaritimeAiBusinessContext.ComparisonState.UNKNOWN)
+			return "UNSUPPORTED_DELAY_COMPARISON";
+		Set<String> evidenceRefs = refs.stream().filter(reference -> reference.startsWith("evidence:"))
+				.map(reference -> reference.substring("evidence:".length())).collect(Collectors.toSet());
+		if (cited.isEmpty() || !evidenceRefs.equals(cited.stream().map(MaritimeEvidence::evidenceId).collect(Collectors.toSet())))
+			return "UNSUPPORTED_DELAY_COMPARISON";
+		if (refs.stream().anyMatch(reference -> reference.startsWith("risk:")) || claim.riskReview() != null) {
+			String riskValidation = validateRiskRelationship(refs, claim, cited, input);
+			if (riskValidation != null) return riskValidation;
+		}
+		MaritimeAiBusinessContext.Deadline deadline = business.deadline();
+		MaritimeAiBusinessContext.Comparison comparison = business.comparison();
+		if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.RECORDED) {
+			if (deadline.instant() == null || deadline.recordedTransshipmentPort() == null || deadline.applicableToCurrentPort() == null
+					|| !hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+							MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+							MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+							MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY))
+				return "UNSUPPORTED_BUSINESS_CONSTRAINT";
+			if (comparison.comparedDeadline() == null || !comparison.comparedDeadline().toInstant().equals(deadline.instant().toInstant())
+					|| !java.util.Objects.equals(comparison.recordedTransshipmentPort(), deadline.recordedTransshipmentPort()))
+				return "UNSUPPORTED_DELAY_COMPARISON";
+		} else if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.NOT_RECORDED) {
+			if (!hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+					MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_NOT_RECORDED)) return "UNSUPPORTED_BUSINESS_CONSTRAINT";
+		} else return "UNSUPPORTED_DELAY_COMPARISON";
+
+		if (comparison.state() == MaritimeAiBusinessContext.ComparisonState.AVAILABLE) {
+			if (comparison.outcome() == null || comparison.unavailableReason() != null
+					|| deadline.state() != MaritimeAiBusinessContext.DeadlineState.RECORDED
+					|| !Boolean.TRUE.equals(deadline.applicableToCurrentPort())
+					|| !hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+							MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+							MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+							MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+							MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT))
+				return "UNSUPPORTED_DELAY_COMPARISON";
+		} else if (comparison.state() == MaritimeAiBusinessContext.ComparisonState.UNAVAILABLE) {
+			if (comparison.unavailableReason() == null || comparison.outcome() != null
+					|| !hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+							MaritimeAiCanonicalFactReferences.COMPARISON_UNAVAILABLE_REASON))
+				return "UNSUPPORTED_DELAY_COMPARISON";
+			if (comparison.estimatedArrivalAt() != null && !hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+					MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL)) return "UNSUPPORTED_DELAY_COMPARISON";
+			if (comparison.comparedDeadline() != null && !hasAllowedReferences(refs, MaritimeAiCanonicalFactReferences.allowed(input),
+					MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+					MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT)) return "UNSUPPORTED_DELAY_COMPARISON";
+		} else return "UNSUPPORTED_DELAY_COMPARISON";
+
+		String statement = claim.statement().toLowerCase(Locale.ROOT);
+		if (!TRANSSHIPMENT_ARRIVAL_DEADLINE.matcher(statement).find()
+				|| !containsAny(statement, "review", "check", "verify", "consider", "assess", "monitor")
+				|| !containsAny(statement, "evidence", "observation", "revision", "source"))
+			return "DELAY_COMPARISON_NOT_ACTIONABLE";
+		if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.RECORDED) {
+			if (Boolean.TRUE.equals(deadline.applicableToCurrentPort())
+					&& !containsAny(statement, "applicable", "applies to the current transshipment port", "current transshipment port"))
+				return "BUSINESS_APPLICABILITY_MISMATCH";
+			if (Boolean.FALSE.equals(deadline.applicableToCurrentPort())
+					&& !containsAny(statement, "different port", "port differs", "port mismatch", "not applicable", "does not apply"))
+				return "BUSINESS_APPLICABILITY_MISMATCH";
+		}
+		if (comparison.state() == MaritimeAiBusinessContext.ComparisonState.UNAVAILABLE
+				&& !describesUnavailableComparison(statement, comparison.unavailableReason()))
+			return "DELAY_COMPARISON_REASON_MISMATCH";
+		return null;
+	}
+	private static boolean hasAllowedReferences(Set<String> claimReferences, Set<String> allowedReferences, String... required) {
+		return claimReferences.containsAll(List.of(required)) && allowedReferences.containsAll(List.of(required));
+	}
+	private static boolean describesUnavailableComparison(String statement, com.drift.backend.shipment.DelayComparison.Reason reason) {
+		return switch (reason) {
+			case INCOMPATIBLE_MILESTONE -> containsAny(statement, "different port", "port differs", "port mismatch", "not applicable", "does not apply");
+			case MISSING_PREDICTION -> containsAny(statement, "unavailable", "missing estimate", "no estimate");
+			case MISSING_CONSTRAINT -> containsAny(statement, "not recorded", "no deadline", "unrecorded", "no transshipment-arrival deadline");
+			case STALE_PREDICTION -> containsAny(statement, "stale", "outdated");
+		};
+	}
 	private static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
 		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
 		if (risk.assessed() && risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
@@ -268,27 +356,50 @@ final class MaritimeAiResponseValidator {
 		return text;
 	}
 	static boolean claimsUnsupportedBusinessConstraint(MaritimeAiInterpretation output, Set<String> allowedFactReferences) {
+		return claimsUnsupportedBusinessConstraint(output, allowedFactReferences, null);
+	}
+	static boolean claimsUnsupportedBusinessConstraint(MaritimeAiInterpretation output, MaritimeAiEvidencePackage input) {
+		return claimsUnsupportedBusinessConstraint(output, MaritimeAiCanonicalFactReferences.allowed(input),
+				input.shipmentContext() == null ? null : input.shipmentContext().businessContext());
+	}
+	private static boolean claimsUnsupportedBusinessConstraint(MaritimeAiInterpretation output,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
 		if (output == null) return false;
-		if (hasUnsupportedBusinessConstraint(output.summary(), null, allowedFactReferences)) return true;
+		if (hasUnsupportedBusinessConstraint(output.summary(), null, allowedFactReferences, businessContext)) return true;
 		if (output.claims() != null && output.claims().stream().filter(java.util.Objects::nonNull)
-				.anyMatch(claim -> hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(), allowedFactReferences))) return true;
+				.anyMatch(claim -> hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(), allowedFactReferences, businessContext))) return true;
 		if (output.uncertainties() != null && output.uncertainties().stream()
-				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences))) return true;
+				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
 		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
-				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences));
+				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext));
 	}
 	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
-			Set<String> allowedFactReferences) {
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
 		if (text == null) return false;
 		for (String clause : text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b")) {
 			Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
 			while (assertion.find()) {
 				String constraint = assertion.group();
 				if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertion.start())).find()) continue;
-				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) continue;
-				if (hasAuthorizedBusinessReference(constraint, claimReferences, allowedFactReferences)) continue;
+				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) {
+					if (missingContextContradictsOrLacksReference(clause, claimReferences, allowedFactReferences, businessContext)) return true;
+					continue;
+				}
+				if (hasAuthorizedBusinessReference(clause, constraint, claimReferences, allowedFactReferences, businessContext)) continue;
 				return true;
 			}
+		}
+		return false;
+	}
+	private static boolean missingContextContradictsOrLacksReference(String clause, List<String> claimReferences,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (businessContext == null || businessContext.deadline() == null
+				|| !TRANSSHIPMENT_ARRIVAL_DEADLINE.matcher(clause).find()) return false;
+		MaritimeAiBusinessContext.Deadline deadline = businessContext.deadline();
+		if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.RECORDED) return true;
+		if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.NOT_RECORDED) {
+			String missingReference = MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_NOT_RECORDED;
+			return claimReferences == null || !claimReferences.contains(missingReference) || !allowedFactReferences.contains(missingReference);
 		}
 		return false;
 	}
@@ -300,19 +411,64 @@ final class MaritimeAiResponseValidator {
 						&& BUSINESS_CONSTRAINT_MISSING_STATUS.matcher(suffix).find());
 	}
 	/** An assertion can be grounded once an authorized typed business fact is supplied and cited. */
-	private static boolean hasAuthorizedBusinessReference(String constraint, List<String> claimReferences,
-			Set<String> allowedFactReferences) {
-		if (claimReferences == null || allowedFactReferences == null) return false;
-		String expectedTerm = isUrgencyConstraint(constraint) ? "URGENCY" : "DEADLINE";
-		return claimReferences.stream()
-				.anyMatch(reference -> allowedFactReferences.contains(reference)
-						&& reference.toUpperCase(Locale.ROOT).startsWith("BUSINESS:")
-						&& reference.toUpperCase(Locale.ROOT).contains(expectedTerm));
+	private static boolean hasAuthorizedBusinessReference(String clause, String constraint, List<String> claimReferences,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (claimReferences == null || allowedFactReferences == null || businessContext == null
+				|| isUrgencyConstraint(constraint) || !TRANSSHIPMENT_ARRIVAL_DEADLINE.matcher(clause).find()) return false;
+		MaritimeAiBusinessContext.Deadline deadline = businessContext.deadline();
+		if (deadline == null || deadline.state() != MaritimeAiBusinessContext.DeadlineState.RECORDED
+				|| deadline.instant() == null || deadline.recordedTransshipmentPort() == null
+				|| deadline.applicableToCurrentPort() == null) return false;
+		Set<String> required = Set.of(MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY);
+		if (!claimReferences.containsAll(required) || !allowedFactReferences.containsAll(required)) return false;
+		String lower = clause.toLowerCase(Locale.ROOT);
+		boolean saysNotApplicable = containsAny(lower, "different port", "not applicable", "does not apply", "doesn't apply");
+		boolean saysApplicable = !saysNotApplicable
+				&& containsAny(lower, "applicable", "applies to the current transshipment port", "current transshipment port");
+		return Boolean.TRUE.equals(deadline.applicableToCurrentPort()) ? saysApplicable && !saysNotApplicable
+				: Boolean.FALSE.equals(deadline.applicableToCurrentPort()) && saysNotApplicable && !saysApplicable;
 	}
 	private static boolean isUrgencyConstraint(String constraint) {
 		String normalized = constraint.toLowerCase(Locale.ROOT);
 		return normalized.contains("urg") || normalized.contains("time-sensitive")
 				|| normalized.contains("time sensitive") || normalized.contains("priority");
+	}
+	private static boolean claimsUnsupportedDelayConclusion(MaritimeAiInterpretation output, MaritimeAiEvidencePackage input) {
+		if (hasUnsupportedDelayConclusion(output.summary(), null, input)) return true;
+		if (output.claims() != null && output.claims().stream().filter(java.util.Objects::nonNull)
+				.anyMatch(claim -> hasUnsupportedDelayConclusion(claim.statement(), claim, input))) return true;
+		if (output.uncertainties() != null && output.uncertainties().stream()
+				.anyMatch(text -> hasUnsupportedDelayConclusion(text, null, input))) return true;
+		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
+				.anyMatch(text -> hasUnsupportedDelayConclusion(text, null, input));
+	}
+	private static boolean hasUnsupportedDelayConclusion(String text, MaritimeAiClaim claim, MaritimeAiEvidencePackage input) {
+		if (text == null) return false;
+		MaritimeAiBusinessContext business = input.shipmentContext() == null ? null : input.shipmentContext().businessContext();
+		MaritimeAiBusinessContext.Comparison comparison = business == null ? null : business.comparison();
+		Set<String> allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		Matcher matcher = POSITIVE_DELAY_OUTCOME.matcher(text);
+		while (matcher.find()) {
+			if (negatesDelayConclusion(text, matcher.start(), matcher.end())) continue;
+			if (claim == null || !"DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())
+					|| comparison == null || comparison.state() != MaritimeAiBusinessContext.ComparisonState.AVAILABLE
+					|| comparison.outcome() == null || claim.factReferences() == null
+					|| !claim.factReferences().contains(MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME)
+					|| !allowed.contains(MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME)) return true;
+			boolean noImpact = matcher.group().toLowerCase(Locale.ROOT).contains("no predicted impact");
+			if (noImpact != (comparison.outcome() == com.drift.backend.shipment.DelayComparison.Outcome.NO_PREDICTED_IMPACT)) return true;
+		}
+		return false;
+	}
+	private static boolean negatesDelayConclusion(String text, int start, int end) {
+		String prefix = text.substring(Math.max(0, start - 48), start);
+		String suffix = text.substring(end, Math.min(text.length(), end + 48));
+		return Pattern.compile("(?i)\\b(?:cannot|can't|does not|doesn't|not|never)\\s+(?:infer|claim|conclude|establish|confirm|support|show|indicate|prove)\\s*$")
+				.matcher(prefix).find()
+				|| Pattern.compile("(?i)^\\s+(?:cannot be concluded|is not established|has not been established|cannot be established|is unsupported)\\b")
+						.matcher(suffix).find();
 	}
 	private static boolean claimsRiskOutcome(String text) {
 		if (text == null) return false;
@@ -394,12 +550,44 @@ final class MaritimeAiResponseValidator {
 						? "UNSUPPORTED_REVISION_QUALIFIER" : "UNSTRUCTURED_FACTUAL_DETAIL";
 			}
 			String withoutDuration = duration.replaceFirst("");
-			if (FACTUAL_NUMBER.matcher(withoutDuration).find()) return "UNSTRUCTURED_FACTUAL_DETAIL";
-		} else if (FACTUAL_NUMBER.matcher(text).find()) return "UNSTRUCTURED_FACTUAL_DETAIL";
+			if (FACTUAL_NUMBER.matcher(withoutDuration).find() && !supportedBusinessDateTokens(withoutDuration, input, claim))
+				return "UNSTRUCTURED_FACTUAL_DETAIL";
+		} else if (FACTUAL_NUMBER.matcher(text).find() && !supportedBusinessDateTokens(text, input, claim))
+			return "UNSTRUCTURED_FACTUAL_DETAIL";
 		String lower = text.toLowerCase();
 		if (input.shipmentContext() == null) return null;
 		return containsIdentity(lower, input.shipmentContext().motherVessel())
 				|| containsIdentity(lower, input.shipmentContext().feederVessel()) ? "UNSTRUCTURED_FACTUAL_DETAIL" : null;
+	}
+	private static boolean supportedBusinessDateTokens(String text, MaritimeAiEvidencePackage input, MaritimeAiClaim claim) {
+		if (claim == null || claim.factReferences() == null || input.shipmentContext() == null
+				|| input.shipmentContext().businessContext() == null) return false;
+		Set<String> allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		Set<String> refs = Set.copyOf(claim.factReferences());
+		MaritimeAiBusinessContext business = input.shipmentContext().businessContext();
+		Matcher date = ISO_OFFSET_DATE_TIME.matcher(text);
+		int matched = 0;
+		while (date.find()) {
+			matched++;
+			OffsetDateTime stated;
+			try { stated = OffsetDateTime.parse(date.group()); }
+			catch (RuntimeException invalidDate) { return false; }
+			boolean matchesDeadline = business.deadline() != null && business.deadline().instant() != null
+					&& stated.toInstant().equals(business.deadline().instant().toInstant())
+					&& hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+							MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+							MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY);
+			MaritimeAiBusinessContext.Comparison comparison = business.comparison();
+			boolean matchesEstimate = comparison != null && comparison.estimatedArrivalAt() != null
+					&& stated.toInstant().equals(comparison.estimatedArrivalAt().toInstant())
+					&& hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL);
+			boolean matchesComparedDeadline = comparison != null && comparison.comparedDeadline() != null
+					&& stated.toInstant().equals(comparison.comparedDeadline().toInstant())
+					&& hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+							MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT);
+			if (!matchesDeadline && !matchesEstimate && !matchesComparedDeadline) return false;
+		}
+		return matched > 0 && !FACTUAL_NUMBER.matcher(ISO_OFFSET_DATE_TIME.matcher(text).replaceAll("")).find();
 	}
 	private static boolean isExactSupportedRevisionDuration(String text, MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
 		if (claim == null || !"MOTHER".equals(claim.vesselRole()) || !"EXPECTED_ARRIVAL".equals(claim.observationType())

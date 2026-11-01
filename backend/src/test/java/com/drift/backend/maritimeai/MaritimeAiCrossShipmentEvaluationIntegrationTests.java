@@ -2,6 +2,7 @@ package com.drift.backend.maritimeai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -9,6 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 
 import jakarta.persistence.EntityManager;
 
@@ -32,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.drift.backend.maritimecontext.MaritimeContextService;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
 import com.drift.backend.maritimecontext.SharedEvidenceShipmentPairFixture;
+import com.drift.backend.shipment.SyntheticPortCatalogTestConfiguration;
 import com.jayway.jsonpath.JsonPath;
 
 import tools.jackson.databind.JsonNode;
@@ -42,7 +48,7 @@ import tools.jackson.databind.ObjectMapper;
 		"app.ais.enabled=false", "app.maritime-ai.controlled-replay-stub-enabled=false" })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(MaritimeAiCrossShipmentEvaluationIntegrationTests.CrossShipmentConfiguration.class)
+@Import({ MaritimeAiCrossShipmentEvaluationIntegrationTests.CrossShipmentConfiguration.class, SyntheticPortCatalogTestConfiguration.class })
 @Transactional
 class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 	private static final String PORT = "Synthetic Multi-source Port";
@@ -51,6 +57,7 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 	private static final String MPA_ID = "synthetic-mpa-schedule-001";
 	private static final String NEA_ID = "synthetic-nea-rainfall-001";
 	private static final String MPA_CITATION = "Synthetic MPA-style revision record; source string and retrieval record are fictional.";
+	private static final Instant TEST_NOW = Instant.parse("2026-10-01T00:00:00Z");
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
@@ -65,6 +72,7 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 	private Long lowShipmentId;
 	private String managerToken;
 	private String currentImporterToken;
+	private String successorImporterToken;
 	private String unrelatedToken;
 	private Long currentImporterCompanyId;
 	private Long successorCompanyId;
@@ -81,6 +89,7 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		managerUserId = userId(managerEmail);
 		managerToken = login(managerEmail);
 		currentImporterToken = login(createAccount(currentImporterCompanyId, "IMPORTER", "current-importer"));
+		successorImporterToken = login(createAccount(successorCompanyId, "IMPORTER", "successor-importer"));
 		unrelatedToken = login(createAccount(unrelatedCompanyId, "IMPORTER", "unrelated-importer"));
 
 		highShipmentId = createShipment("CDG262-HIGH", "2026-10-01T05:00:00+08:00", "2026-10-01T14:00:00+08:00");
@@ -137,6 +146,10 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		assertThat(lowInput.shipmentContext().connectionRisk().riskBasis()).isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE);
 		assertThat(highInput.shipmentContext().connectionRisk().arrivalEstimate().state())
 				.isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		assertThat(highInput.shipmentContext().businessContext().deadline().state())
+				.isEqualTo(MaritimeAiBusinessContext.DeadlineState.UNKNOWN);
+		assertThat(highInput.shipmentContext().businessContext().comparison().state())
+				.isEqualTo(MaritimeAiBusinessContext.ComparisonState.UNAVAILABLE);
 		assertThat(lowInput.shipmentContext().connectionRisk().arrivalEstimate().state())
 				.isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(highInput)).contains("evidence:" + MPA_ID, "evidence:" + NEA_ID,
@@ -171,6 +184,8 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		linkImporter(highShipmentId, currentImporterCompanyId);
 		createRelationship(managerCompanyId, currentImporterCompanyId, managerUserId);
 		entityManager.clear();
+		saveDeadline(highShipmentId, "2026-10-02T10:00:00Z", PORT);
+		entityManager.clear();
 
 		shipmentDetail(highShipmentId, currentImporterToken);
 		assessmentHistory(highShipmentId, currentImporterToken).andExpect(status().isOk());
@@ -187,8 +202,141 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		assertThat(client.inputs()).hasSize(1);
 		for (MvcResult denied : List.of(formerRead, formerGenerate, unrelatedRead, unrelatedGenerate)) {
 			assertThat(denied.getResponse().getContentAsString())
-					.doesNotContain("HIGH", "LOW", "CRITICAL", "risk:CONNECTION_SEVERITY", MPA_ID, NEA_ID);
+					.doesNotContain("HIGH", "LOW", "CRITICAL", "risk:CONNECTION_SEVERITY", MPA_ID, NEA_ID,
+							"business:TRANSSHIPMENT_ARRIVAL_DEADLINE", "2026-10-02T10:00:00Z");
 		}
+		generate(highShipmentId, successorImporterToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.deadline.state").value("NOT_RECORDED"));
+		assertThat(client.inputs()).hasSize(2);
+		assertThat(client.inputs().get(1).shipmentContext().businessContext().deadline().state())
+				.isEqualTo(MaritimeAiBusinessContext.DeadlineState.NOT_RECORDED);
+		assertThat(client.inputs().get(1).shipmentContext().businessContext().deadline().instant()).isNull();
+	}
+
+	@Test
+	void authorizedDeadlineAndFreshAisComparisonEnterTypedContextAndRemainInHistoricalSnapshots() throws Exception {
+		createRelationship(managerCompanyId, currentImporterCompanyId, managerUserId);
+		linkImporter(highShipmentId, currentImporterCompanyId);
+		linkImporter(lowShipmentId, currentImporterCompanyId);
+		seedMotherPosition();
+		entityManager.clear();
+
+		JsonNode estimateDetail = shipmentDetail(highShipmentId, managerToken);
+		Instant estimatedArrival = Instant.parse(estimateDetail.at("/arrivalComparison/estimatedArrivalAt").asString());
+		String earlierDeadline = estimatedArrival.minusSeconds(60).toString();
+		String laterDeadline = estimatedArrival.plusSeconds(3600).toString();
+		saveDeadline(highShipmentId, earlierDeadline, PORT);
+		saveDeadline(lowShipmentId, laterDeadline, PORT);
+		JsonNode highDetail = shipmentDetail(highShipmentId, managerToken);
+		JsonNode lowDetail = shipmentDetail(lowShipmentId, managerToken);
+		assertThat(highDetail.at("/delayComparison/outcome").asString()).isEqualTo("EXCEEDS_DEADLINE");
+		assertThat(lowDetail.at("/delayComparison/outcome").asString()).isEqualTo("NO_PREDICTED_IMPACT");
+		assertThat(highDetail.at("/risk/level").asString()).isEqualTo("HIGH");
+		assertThat(lowDetail.at("/risk/level").asString()).isEqualTo("LOW");
+
+		String businessBefore = rows("SELECT to_jsonb(c)::text FROM shipment_importer_constraints c WHERE shipment_id IN (?, ?) ORDER BY shipment_id",
+				new Object[] { highShipmentId, lowShipmentId });
+		String operationsBefore = operationalSnapshot(highShipmentId, lowShipmentId);
+		MvcResult highResult = generate(highShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.validationStatus").value("VALID"))
+				.andExpect(jsonPath("$.interpretation.claims[2].relationshipType").value("DELAY_COMPARISON_REVIEW"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.deadline.instant").value(earlierDeadline))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.comparison.outcome").value("EXCEEDS_DEADLINE"))
+				.andReturn();
+		MvcResult lowResult = generate(lowShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.validationStatus").value("VALID"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.comparison.outcome").value("NO_PREDICTED_IMPACT"))
+				.andReturn();
+
+		assertThat(client.inputs()).hasSize(2);
+		MaritimeAiBusinessContext highBusiness = client.inputs().get(0).shipmentContext().businessContext();
+		MaritimeAiBusinessContext lowBusiness = client.inputs().get(1).shipmentContext().businessContext();
+		assertThat(highBusiness.deadline().state()).isEqualTo(MaritimeAiBusinessContext.DeadlineState.RECORDED);
+		assertThat(highBusiness.deadline().recordedTransshipmentPort()).isEqualTo(PORT);
+		assertThat(highBusiness.deadline().applicableToCurrentPort()).isTrue();
+		assertThat(highBusiness.comparison().state()).isEqualTo(MaritimeAiBusinessContext.ComparisonState.AVAILABLE);
+		assertThat(highBusiness.comparison().outcome()).isEqualTo(com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE);
+		assertThat(lowBusiness.comparison().outcome()).isEqualTo(com.drift.backend.shipment.DelayComparison.Outcome.NO_PREDICTED_IMPACT);
+		assertThat(client.inputs().get(0).shipmentContext().connectionRisk().arrivalEstimate().state())
+				.isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		assertThat(client.inputs().get(0).shipmentContext().connectionRisk().riskBasis())
+				.isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
+		assertThat(client.inputs().get(0).evidence()).containsExactlyElementsOf(client.inputs().get(1).evidence());
+
+		JsonNode highAssessment = json.readTree(highResult.getResponse().getContentAsString());
+		JsonNode lowAssessment = json.readTree(lowResult.getResponse().getContentAsString());
+		assertThat(highAssessment.at("/interpretation/claims/2/statement").asText()).contains("exceeds", "transshipment-arrival deadline");
+		assertThat(lowAssessment.at("/interpretation/claims/2/statement").asText()).contains("no predicted impact");
+		assertThat(highAssessment.at("/deterministicSummary/businessContext/canonicalFactReferences").toString())
+				.contains("business:TRANSSHIPMENT_ARRIVAL_DEADLINE", "comparison:DELAY_OUTCOME");
+		assertThat(highAssessment.toString()).doesNotContain(currentImporterToken, "STRAITS_FRESH_DEMO", "Synthetic origin", "Synthetic destination");
+		assertThat(rows("SELECT to_jsonb(c)::text FROM shipment_importer_constraints c WHERE shipment_id IN (?, ?) ORDER BY shipment_id",
+				new Object[] { highShipmentId, lowShipmentId })).isEqualTo(businessBefore);
+
+		String changedDeadline = estimatedArrival.plusSeconds(7200).toString();
+		saveDeadline(highShipmentId, changedDeadline, PORT);
+		assessmentHistory(highShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$[0].deterministicSummary.businessContext.context.deadline.instant").value(earlierDeadline))
+				.andExpect(jsonPath("$[0].deterministicSummary.businessContext.context.comparison.outcome").value("EXCEEDS_DEADLINE"));
+		assertThat(operationalSnapshot(highShipmentId, lowShipmentId)).isEqualTo(operationsBefore);
+	}
+
+	@Test
+	void missingAndDifferentPortDeadlinesStayExplicitlyUnavailableAndUnauthorizedContextDoesNotReachTheClient() throws Exception {
+		createRelationship(managerCompanyId, currentImporterCompanyId, managerUserId);
+		linkImporter(highShipmentId, currentImporterCompanyId);
+		linkImporter(lowShipmentId, currentImporterCompanyId);
+		seedMotherPosition();
+		entityManager.clear();
+		saveDeadline(lowShipmentId, "2026-10-02T10:00:00Z", PORT);
+		jdbc.update("UPDATE shipments SET transshipment_port = 'Tanjung Pelepas' WHERE id = ?", lowShipmentId);
+		entityManager.clear();
+
+		generate(highShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.deadline.state").value("NOT_RECORDED"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.comparison.unavailableReason").value("MISSING_CONSTRAINT"));
+		generate(lowShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.deadline.applicableToCurrentPort").value(false))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.comparison.unavailableReason").value("INCOMPATIBLE_MILESTONE"));
+		assertThat(client.inputs()).hasSize(2);
+		assertThat(MaritimeAiCanonicalFactReferences.businessReferences(client.inputs().get(0)))
+				.contains(MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_NOT_RECORDED,
+						MaritimeAiCanonicalFactReferences.COMPARISON_UNAVAILABLE_REASON)
+				.doesNotContain(MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME);
+		assertThat(client.inputs().get(1).shipmentContext().businessContext().comparison().unavailableReason())
+				.isEqualTo(com.drift.backend.shipment.DelayComparison.Reason.INCOMPATIBLE_MILESTONE);
+
+		createRelationship(managerCompanyId, successorCompanyId, managerUserId);
+		linkImporter(highShipmentId, successorCompanyId);
+		entityManager.clear();
+		client.clear();
+		generate(highShipmentId, currentImporterToken).andExpect(status().isForbidden());
+		generate(highShipmentId, unrelatedToken).andExpect(status().isForbidden());
+		assertThat(client.inputs()).isEmpty();
+	}
+
+	@Test
+	void staleAisEstimateRemainsUnavailableAndDoesNotBecomeASelectedRemainingWindow() throws Exception {
+		createRelationship(managerCompanyId, currentImporterCompanyId, managerUserId);
+		linkImporter(highShipmentId, currentImporterCompanyId);
+		entityManager.clear();
+		saveDeadline(highShipmentId, "2026-10-01T03:00:00Z", PORT);
+		seedMotherPosition(TEST_NOW.minusSeconds(7 * 3600 + 1));
+		entityManager.clear();
+
+		generate(highShipmentId, managerToken).andExpect(status().isOk())
+				.andExpect(jsonPath("$.state").value("GENERATED"))
+				.andExpect(jsonPath("$.validationStatus").value("VALID"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.estimateFreshness").value("STALE"))
+				.andExpect(jsonPath("$.deterministicSummary.businessContext.context.comparison.unavailableReason").value("STALE_PREDICTION"));
+		MaritimeAiEvidencePackage input = client.inputs().getFirst();
+		assertThat(input.shipmentContext().connectionRisk().remainingWindow()).isNull();
+		assertThat(input.shipmentContext().businessContext().comparison().state()).isEqualTo(MaritimeAiBusinessContext.ComparisonState.UNAVAILABLE);
 	}
 
 	private org.springframework.test.web.servlet.ResultActions generate(Long shipmentId, String token) throws Exception {
@@ -283,10 +431,32 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		jdbc.update("UPDATE shipments SET importer_company_id = ? WHERE id = ?", importerCompanyId, shipmentId);
 	}
 
+	private void saveDeadline(Long shipmentId, String deadline, String port) throws Exception {
+		mvc.perform(patch("/api/shipments/" + shipmentId + "/transshipment-arrival-deadline")
+				.header("Authorization", "Bearer " + currentImporterToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"transshipmentArrivalDeadline\":\"%s\",\"expectedTransshipmentPort\":\"%s\"}"
+						.formatted(deadline, port)))
+				.andExpect(status().isOk());
+	}
+
+	private void seedMotherPosition() {
+		seedMotherPosition(TEST_NOW);
+	}
+
+	private void seedMotherPosition(Instant ingestedAt) {
+		jdbc.update("""
+				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude,
+					speed_over_ground_knots, ingested_at, source)
+				VALUES (?, ?, ?, ?, ?, ?::timestamptz, 'SEEDED')
+				""", "512345678", MOTHER, new BigDecimal("1.26"), new BigDecimal("103.82"), new BigDecimal("12.5"), ingestedAt.toString());
+	}
+
 	@TestConfiguration
 	static class CrossShipmentConfiguration {
 		@Bean @Primary MaritimeContextService sharedEvidenceContext() { return SharedEvidenceShipmentPairFixture.context(); }
 		@Bean @Primary ContextDerivedClient contextDerivedClient() { return new ContextDerivedClient(); }
+		@Bean @Primary Clock testClock() { return Clock.fixed(TEST_NOW, ZoneOffset.UTC); }
 	}
 
 	static final class ContextDerivedClient implements MaritimeAiClient {
@@ -301,15 +471,42 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 			List<String> riskRefs = new ArrayList<>(MaritimeAiCanonicalFactReferences.riskReferences(input));
 			List<String> mpaRefs = new ArrayList<>(riskRefs);
 			mpaRefs.add("evidence:" + mpa.evidenceId());
+			String selectedWindow = risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+					? "AIS-estimated remaining connection window" : "planned connection window";
+			String estimateState = switch (risk.arrivalEstimate().state()) {
+				case AVAILABLE -> "available";
+				case STALE -> "stale";
+				case UNAVAILABLE -> "unavailable";
+				case UNKNOWN -> "unknown";
+			};
 			String statement = "The documented MPA arrival revision warrants review alongside the backend " + risk.riskLevel().name()
-					+ " planned connection window; the AIS estimate is unavailable.";
+					+ " " + selectedWindow + "; the AIS estimate is " + estimateState + ".";
 			MaritimeAiClaim riskClaim = new MaritimeAiClaim(statement, List.of(mpa.evidenceId()), "CONTEXTUAL", mpa.vesselRole(),
 				mpa.observationType(), mpa.associationScope(), mpaRefs, "RISK_BUFFER_REVIEW", reviewFor(risk));
 			MaritimeAiClaim weatherClaim = new MaritimeAiClaim("The synthetic rainfall observation provides regional context only.",
 				List.of(nea.evidenceId()), "CONTEXTUAL", null, null, nea.associationScope(),
 				List.of("evidence:" + nea.evidenceId()), "REGIONAL_WEATHER_CONTEXT");
+			List<MaritimeAiClaim> claims = new ArrayList<>(List.of(riskClaim, weatherClaim));
+			MaritimeAiBusinessContext business = input.shipmentContext().businessContext();
+			if (business != null && business.deadline() != null
+					&& business.deadline().state() != MaritimeAiBusinessContext.DeadlineState.UNKNOWN
+					&& business.comparison() != null
+					&& business.comparison().state() != MaritimeAiBusinessContext.ComparisonState.UNKNOWN) {
+				String comparisonText = switch (business.comparison().state()) {
+					case UNKNOWN -> throw new IllegalStateException("Unknown comparison is not interpreted.");
+					case AVAILABLE -> business.comparison().outcome() == com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE
+							? "The documented MPA arrival revision warrants review alongside the deterministic comparison: the predicted arrival exceeds the applicable transshipment-arrival deadline."
+							: "The documented MPA arrival revision warrants review alongside the deterministic comparison: no predicted impact is shown against the applicable transshipment-arrival deadline.";
+					case UNAVAILABLE -> unavailableComparisonText(business);
+				};
+			List<String> comparisonRefs = new ArrayList<>();
+			comparisonRefs.add("evidence:" + mpa.evidenceId());
+			comparisonRefs.addAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
+			claims.add(new MaritimeAiClaim(comparisonText, List.of(mpa.evidenceId()), "CONTEXTUAL", mpa.vesselRole(),
+					mpa.observationType(), mpa.associationScope(), comparisonRefs, "DELAY_COMPARISON_REVIEW"));
+			}
 			MaritimeAiInterpretation interpretation = new MaritimeAiInterpretation(
-				"The maritime observations remain separate from the backend connection calculation.", List.of(riskClaim, weatherClaim),
+				"The maritime observations remain separate from the backend connection calculation.", claims,
 				List.of("The source records do not establish a delay or missed connection."),
 				List.of("Verify the carrier's ETA with the operations team."), true, null);
 			return new MaritimeAiClientResult("cdg262-context-derived-stub", "offline-evaluation", "cdg262.context-evaluation.v1",
@@ -320,12 +517,33 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		void clear() { inputs.clear(); }
 
 		private static MaritimeAiClaim.RiskReview reviewFor(MaritimeAiConnectionRiskContext risk) {
-			MaritimeAiClaim.RiskReview.SelectedWindowState state = switch (risk.plannedWindow().state()) {
-				case AVAILABLE -> MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE;
-				case INVALID -> MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID;
-				case INCOMPLETE -> MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
-			};
+			MaritimeAiClaim.RiskReview.SelectedWindowState state;
+			if (risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE) {
+				state = risk.remainingWindow() != null && "AVAILABLE".equals(risk.remainingWindow().status())
+						? MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE
+						: MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW;
+			} else {
+				state = switch (risk.plannedWindow().state()) {
+					case AVAILABLE -> MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE;
+					case INVALID -> MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID;
+					case INCOMPLETE -> MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
+				};
+			}
 			return new MaritimeAiClaim.RiskReview(risk.riskLevel(), risk.riskBasis(), state, risk.arrivalEstimate().state());
+		}
+
+		private static String unavailableComparisonText(MaritimeAiBusinessContext business) {
+			if (business.deadline().state() == MaritimeAiBusinessContext.DeadlineState.NOT_RECORDED)
+				return "No transshipment-arrival deadline is recorded; the documented MPA arrival revision warrants review while the comparison is unavailable.";
+			if (Boolean.FALSE.equals(business.deadline().applicableToCurrentPort()))
+				return "The transshipment-arrival deadline recorded for a different port is not applicable to the current port; the documented MPA arrival revision warrants review and the comparison is unavailable.";
+			String reason = switch (business.comparison().unavailableReason()) {
+				case STALE_PREDICTION -> "the estimate is stale";
+				case MISSING_PREDICTION -> "no AIS estimate is available";
+				case MISSING_CONSTRAINT -> "no transshipment-arrival deadline is recorded";
+				case INCOMPATIBLE_MILESTONE -> "the recorded port does not apply";
+			};
+			return "The documented MPA arrival revision warrants review alongside the applicable transshipment-arrival deadline; comparison is unavailable because " + reason + ".";
 		}
 	}
 }

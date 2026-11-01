@@ -6,11 +6,16 @@ import com.drift.backend.shipment.ShipmentRisk;
 /** Backend-owned facts rendered beside, never overridden by, an AI interpretation. */
 public record MaritimeAiDeterministicSummary(String summaryVersion, String label,
 		List<Fact> shipmentScheduleFacts, List<Fact> evidenceFacts, List<String> limitations,
-		RiskSnapshot connectionRisk) {
+		RiskSnapshot connectionRisk, BusinessSnapshot businessContext) {
 	/** Historical summaries created before CDG-259 continue to deserialize without a risk snapshot. */
 	public MaritimeAiDeterministicSummary(String summaryVersion, String label, List<Fact> shipmentScheduleFacts,
 			List<Fact> evidenceFacts, List<String> limitations) {
-		this(summaryVersion, label, shipmentScheduleFacts, evidenceFacts, limitations, null);
+		this(summaryVersion, label, shipmentScheduleFacts, evidenceFacts, limitations, null, null);
+	}
+	/** Historical risk snapshots created before CDG-258 continue to deserialize without business context. */
+	public MaritimeAiDeterministicSummary(String summaryVersion, String label, List<Fact> shipmentScheduleFacts,
+			List<Fact> evidenceFacts, List<String> limitations, RiskSnapshot connectionRisk) {
+		this(summaryVersion, label, shipmentScheduleFacts, evidenceFacts, limitations, connectionRisk, null);
 	}
 	public record RiskSnapshot(boolean assessed, ShipmentRisk.Level severity,
 			MaritimeAiConnectionRiskContext.RiskBasis selectedWindowBasis, SelectedWindowState selectedWindowState,
@@ -47,6 +52,14 @@ public record MaritimeAiDeterministicSummary(String summaryVersion, String label
 					risk.arrivalEstimate() == null ? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state(),
 					risk.arrivalEstimate() == null ? null : risk.arrivalEstimate().unavailableReason(), risk.unavailableReason(),
 					risk.assumptions(), factReferences);
+		}
+	}
+	public record BusinessSnapshot(MaritimeAiBusinessContext context, List<String> canonicalFactReferences) {
+		public BusinessSnapshot {
+			canonicalFactReferences = canonicalFactReferences == null ? List.of() : List.copyOf(canonicalFactReferences);
+		}
+		static BusinessSnapshot from(MaritimeAiBusinessContext context, List<String> factReferences) {
+			return context == null ? null : new BusinessSnapshot(context, factReferences);
 		}
 	}
 	public record Fact(String factReference, String factType, String subject, String eventType, String timestamp,
