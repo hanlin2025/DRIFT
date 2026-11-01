@@ -246,7 +246,6 @@ export type Shipment = {
   delayComparison?: DelayComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
-  recommendation?: ShipmentRecommendation | null;
   recommendationDecision?: RecommendationDecision | null;
   recommendationDecisionHistory?: RecommendationDecisionHistoryEntry[];
 };
