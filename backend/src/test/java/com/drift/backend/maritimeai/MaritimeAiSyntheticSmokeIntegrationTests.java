@@ -126,7 +126,8 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 								List.of("Synthetic fixture only."), List.of(), true, null), null);
 			}
 			return captureInterpretation ? new MaritimeAiSyntheticMultiSourceIntegrationTests.SyntheticInterpretationCaptureClient(delegate, json,
-					capturePath(capturePath), Set.of("synthetic-smoke-001"), "cdg255.synthetic-smoke.capture.v1") : delegate;
+					capturePath(capturePath), Set.of("synthetic-smoke-001"), Set.of("SYNTHETIC_DEMONSTRATION"),
+					"cdg255.synthetic-smoke.capture.v2") : delegate;
 		}
 
 		static Path capturePath(String configured) {

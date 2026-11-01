@@ -52,7 +52,7 @@ import com.jayway.jsonpath.JsonPath;
 @ActiveProfiles("test")
 @Import(MaritimeAiSyntheticMultiSourceIntegrationTests.MultiSourceConfiguration.class)
 @Transactional
-class MaritimeAiSyntheticMultiSourceIntegrationTests {
+public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	private static final String HISTORICAL_CAPTURE_FILE = "cdg247-synthetic-multisource-interpretation-original-real-response.json";
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
@@ -324,7 +324,7 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	}
 
 	/** Test-scope capture: never a Spring runtime component and disabled unless its JVM property is true. */
-	static final class SyntheticInterpretationCaptureClient implements MaritimeAiClient {
+	public static final class SyntheticInterpretationCaptureClient implements MaritimeAiClient {
 		private static final Set<String> EXPECTED_IDS = Set.of(SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID,
 				SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID, SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID);
 		private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
@@ -332,24 +332,27 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 		private final tools.jackson.databind.ObjectMapper json;
 		private final Path output;
 		private final Set<String> expectedIds;
+		private final Set<String> expectedSourceModes;
 		private final String captureFormatVersion;
 
-		SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output) {
-			this(delegate, json, output, EXPECTED_IDS, "cdg247.synthetic-multisource.capture.v2.role-grounding");
+		public SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output) {
+			this(delegate, json, output, EXPECTED_IDS, Set.of("SYNTHETIC_DEMONSTRATION"), "cdg247.synthetic-multisource.capture.v3.bounded-grounding");
 		}
 
-		SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output,
-				Set<String> expectedIds, String captureFormatVersion) {
+		public SyntheticInterpretationCaptureClient(MaritimeAiClient delegate, tools.jackson.databind.ObjectMapper json, Path output,
+				Set<String> expectedIds, Set<String> expectedSourceModes, String captureFormatVersion) {
 			if (HISTORICAL_CAPTURE_FILE.equals(output.getFileName().toString())) {
 				throw new IllegalArgumentException("Refusing to overwrite the protected historical capture destination.");
 			}
-			if (expectedIds == null || expectedIds.isEmpty() || captureFormatVersion == null || captureFormatVersion.isBlank()) {
+			if (expectedIds == null || expectedIds.isEmpty() || expectedSourceModes == null || expectedSourceModes.isEmpty()
+					|| captureFormatVersion == null || captureFormatVersion.isBlank()) {
 				throw new IllegalArgumentException("Synthetic interpretation capture requires an expected synthetic fixture and format version.");
 			}
 			this.delegate = delegate;
 			this.json = json;
 			this.output = output;
 			this.expectedIds = Set.copyOf(expectedIds);
+			this.expectedSourceModes = Set.copyOf(expectedSourceModes);
 			this.captureFormatVersion = captureFormatVersion;
 		}
 
@@ -362,7 +365,7 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 
 		private void verifySyntheticFixtureOnly(MaritimeAiEvidencePackage evidence) {
 			Set<String> ids = evidence.evidence().stream().map(item -> item.evidenceId()).collect(Collectors.toSet());
-			if (!expectedIds.equals(ids) || evidence.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
+			if (!expectedIds.equals(ids) || evidence.evidence().stream().anyMatch(item -> !expectedSourceModes.contains(item.sourceMode()))) {
 				throw new IllegalArgumentException("Synthetic interpretation capture accepts only its fixed synthetic fixture.");
 			}
 		}
@@ -374,8 +377,10 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				List<String> citationIds = result.interpretation() == null || result.interpretation().claims() == null ? List.of()
 						: result.interpretation().claims().stream().filter(java.util.Objects::nonNull)
 								.filter(claim -> claim.evidenceIds() != null).flatMap(claim -> claim.evidenceIds().stream()).distinct().toList();
+				List<String> limitations = evidence.evidence().stream().map(com.drift.backend.maritimecontext.MaritimeEvidence::limitation)
+						.filter(java.util.Objects::nonNull).distinct().toList();
 				var capture = new SyntheticInterpretationCapture(captureFormatVersion, result.provider(), result.model(),
-						result.promptVersion(), validationStatus, citationIds, result.interpretation());
+						result.promptVersion(), validationStatus, citationIds, limitations, result.interpretation());
 				Files.createDirectories(output.getParent());
 				Path temporary = Files.createTempFile(output.getParent(), ".cdg247-synthetic-", ".json");
 				try {
@@ -405,7 +410,7 @@ class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	}
 
 	private record SyntheticInterpretationCapture(String captureFormatVersion, String provider, String model, String promptVersion,
-			String validationStatus, List<String> citationIds, MaritimeAiInterpretation interpretation) { }
+			String validationStatus, List<String> citationIds, List<String> limitations, MaritimeAiInterpretation interpretation) { }
 
 	static final class CapturingSyntheticClient implements MaritimeAiClient {
 		private MaritimeAiEvidencePackage received;

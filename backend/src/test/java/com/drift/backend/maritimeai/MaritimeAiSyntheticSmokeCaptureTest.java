@@ -26,7 +26,8 @@ class MaritimeAiSyntheticSmokeCaptureTest {
 											"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
 							List.of(), List.of(), true, null), null);
 			new MaritimeAiSyntheticMultiSourceIntegrationTests.SyntheticInterpretationCaptureClient(rejectingDelegate,
-					new tools.jackson.databind.ObjectMapper(), output, Set.of("synthetic-smoke-001"), "cdg255.synthetic-smoke.capture.v1")
+					new tools.jackson.databind.ObjectMapper(), output, Set.of("synthetic-smoke-001"), Set.of("SYNTHETIC_DEMONSTRATION"),
+					"cdg255.synthetic-smoke.capture.v2")
 					.interpret(smokePackage());
 
 			var capture = new tools.jackson.databind.ObjectMapper().readTree(Files.readString(output));
