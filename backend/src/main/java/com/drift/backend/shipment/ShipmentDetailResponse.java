@@ -74,16 +74,25 @@ public record ShipmentDetailResponse(
 		ShipmentStatus status,
 		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
 				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
-		RecommendationDecisionResponse recommendationDecision) {
+		RecommendationDecisionResponse recommendationDecision,
+		@Schema(description = "Accepted recommendation decisions for this shipment, newest decidedAt first and then highest id. Empty when no decision has been stored. Each entry keeps the recommendation snapshot, the decision-time actor name, and the server time.")
+		java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
-		return from(shipment, connection, transshipmentArrivalDeadline, null);
+		return from(shipment, connection, transshipmentArrivalDeadline, null, java.util.List.of());
 	}
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 			RecommendationDecisionResponse recommendationDecision) {
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision, java.util.List.of());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -110,7 +119,8 @@ public record ShipmentDetailResponse(
 				arrivalComparison,
 				transshipmentArrivalDeadline,
 				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
-				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision);
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision,
+				recommendationDecisionHistory == null ? java.util.List.of() : recommendationDecisionHistory);
 	}
 
 }

@@ -1,7 +1,11 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -109,7 +113,8 @@ class RecommendationDecisionApiIntegrationTests {
 
 		detail(shipmentId)
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(0)));
 
 		for (String body : new String[] {
 				"{\"outcome\":\"APPROVED\"}",
@@ -121,8 +126,11 @@ class RecommendationDecisionApiIntegrationTests {
 					.andExpect(jsonPath("$.message").value(RecommendationDecisionRejectedException.UNAVAILABLE));
 		}
 
-		detail(shipmentId).andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
+		detail(shipmentId)
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(0)));
 		assertThat(decisionCount(shipmentId)).isZero();
+		assertThat(decisionHistoryCount(shipmentId)).isZero();
 		assertThat(shipmentRow(shipmentId)).isEqualTo(before);
 		assertThat(historyCount(shipmentId)).isEqualTo(history);
 		assertThat(riskCount(shipmentId)).isEqualTo(risks);
@@ -165,6 +173,7 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
 
 		assertThat(decisionCount(shipmentId)).isZero();
+		assertThat(decisionHistoryCount(shipmentId)).isZero();
 	}
 
 	@Test
@@ -229,9 +238,18 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("DISMISSED"))
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
 				.andExpect(jsonPath("$.recommendationDecision.selectedResponseName").value(nullValue()))
-				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Decision User"));
+				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Decision User"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(3)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].outcome").value("DISMISSED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].selectedResponseName").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].outcome").value("MODIFIED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].selectedResponseName").value("Monitor"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].recommendationName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[2].outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[2].decidedByName").value("Decision User"));
 
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(3);
 		assertThat(shipmentRow(shipmentId)).isEqualTo(before);
 		assertThat(historyCount(shipmentId)).isEqualTo(history);
 		assertThat(riskCount(shipmentId)).isEqualTo(risks);
@@ -257,8 +275,11 @@ class RecommendationDecisionApiIntegrationTests {
 		detail(shipmentId)
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
-				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(1)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].outcome").value("APPROVED"));
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(1);
 		assertThat(shipmentRow(shipmentId)).isEqualTo(before);
 		assertThat(mailCount(shipmentId)).isZero();
 	}
@@ -277,13 +298,18 @@ class RecommendationDecisionApiIntegrationTests {
 				passwords.encode("Example123"), forwarder, other));
 		String otherToken = tokenFor("decision-other-company@example.test");
 
+		String reference = jdbc.queryForObject("SELECT shipment_reference FROM shipments WHERE id = ?", String.class,
+				shipmentId);
 		decide(otherToken, shipmentId, "{\"outcome\":\"DISMISSED\"}")
 				.andExpect(status().isForbidden())
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
 		detail(otherToken, shipmentId)
 				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE));
+				.andExpect(jsonPath("$.message").value(ShipmentDetailForbiddenException.MESSAGE))
+				.andExpect(content().string(not(containsString(reference))))
+				.andExpect(content().string(not(containsString("recommendationDecisionHistory"))));
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(1);
 		decide(otherToken, 9_999_999_999L, "{\"outcome\":\"APPROVED\"}")
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ShipmentNotFoundException.MESSAGE));
@@ -331,8 +357,18 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
 		detail(importerToken, shipmentId)
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.recommendationDecision.outcome").value("DISMISSED"));
+				.andExpect(jsonPath("$.recommendationDecision.outcome").value("DISMISSED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(2)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].outcome").value("DISMISSED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].decidedByName").value("Linked Importer"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].decidedByName").value("Decision User"));
+		String ownerDetail = detail(shipmentId).andReturn().getResponse().getContentAsString();
+		String importerDetail = detail(importerToken, shipmentId).andReturn().getResponse().getContentAsString();
+		assertThat((Object) JsonPath.read(ownerDetail, "$.recommendationDecisionHistory"))
+				.isEqualTo(JsonPath.read(importerDetail, "$.recommendationDecisionHistory"));
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(2);
 		assertThat(mailCount(shipmentId)).isZero();
 	}
 
@@ -348,7 +384,10 @@ class RecommendationDecisionApiIntegrationTests {
 		detail(shipmentId)
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
-				.andExpect(jsonPath("$.recommendationDecision.selectedResponseName").value(nullValue()));
+				.andExpect(jsonPath("$.recommendationDecision.selectedResponseName").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(1)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].outcome").value("APPROVED"));
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(1);
 
 		impacts.use(ShipmentRecommendationImpact.unavailable("The berth is closed."));
 		decide(shipmentId, "{\"outcome\":\"DISMISSED\"}")
@@ -356,7 +395,9 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.message").value(RecommendationDecisionRejectedException.UNAVAILABLE));
 		detail(shipmentId)
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
-				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"));
+				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(1)));
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(1);
 
 		impacts.use(ShipmentRecommendationImpact.affectsConstraints());
 		decide(shipmentId, "{\"outcome\":\"APPROVED\"}")
@@ -377,9 +418,43 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("MODIFIED"))
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("Monitor"))
 				.andExpect(jsonPath("$.recommendationDecision.selectedResponseName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(3)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].outcome").value("MODIFIED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].selectedResponseName").value("No action"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[1].recommendationName").value("Monitor"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[2].outcome").value("APPROVED"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[2].recommendationName").value("No action"))
 				.andExpect(jsonPath("$.risk.level").value("LOW"));
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
+		assertThat(decisionHistoryCount(shipmentId)).isEqualTo(3);
 		assertThat(mailCount(shipmentId)).isZero();
+	}
+
+	@Test
+	void aProfileRenameLeavesTheHistoryNameAndThePersistedTime() throws Exception {
+		impacts.use(ShipmentRecommendationImpact.noPredictedImpact());
+		long shipmentId = createShipment();
+		MvcResult recorded = decide(shipmentId, "{\"outcome\":\"APPROVED\",\"decidedAt\":\"1999-01-01T00:00:00Z\"}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.decidedAt", not(containsString("1999"))))
+				.andExpect(jsonPath("$.recommendationWording").value(NO_ACTION))
+				.andReturn();
+		String decidedAt = JsonPath.read(recorded.getResponse().getContentAsString(), "$.decidedAt");
+
+		UserAccount renamed = users.findById(userId).orElseThrow();
+		renamed.rename("Renamed User");
+		users.saveAndFlush(renamed);
+
+		detail(shipmentId)
+				.andExpect(jsonPath("$.recommendationDecision.decidedByName").value("Renamed User"))
+				.andExpect(jsonPath("$.recommendationDecision.decidedAt").value(decidedAt))
+				.andExpect(jsonPath("$.recommendationDecision.recommendationWording").value(NO_ACTION))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(1)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].decidedByName").value("Decision User"))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].decidedByUserId").value(userId))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].decidedAt").value(decidedAt))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].recommendationWording").value(NO_ACTION));
 	}
 
 	@Test
@@ -419,8 +494,10 @@ class RecommendationDecisionApiIntegrationTests {
 
 		detail(shipmentId)
 				.andExpect(jsonPath("$.status").value("ARCHIVED"))
-				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(0)));
 		assertThat(decisionCount(shipmentId)).isZero();
+		assertThat(decisionHistoryCount(shipmentId)).isZero();
 		assertThat(mailCount(shipmentId)).isZero();
 	}
 
@@ -434,8 +511,7 @@ class RecommendationDecisionApiIntegrationTests {
 				""")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.recommendationWording").value(NO_ACTION))
-				.andExpect(jsonPath("$.decidedAt").value(org.hamcrest.Matchers.not(
-						org.hamcrest.Matchers.containsString("1999"))));
+				.andExpect(jsonPath("$.decidedAt").value(not(containsString("1999"))));
 
 		String reference = jdbc.queryForObject("SELECT shipment_reference FROM shipments WHERE id = ?", String.class,
 				shipmentId);
@@ -458,11 +534,17 @@ class RecommendationDecisionApiIntegrationTests {
 						""".formatted(reference, version)))
 				.andExpect(status().isOk());
 
-		detail(shipmentId)
+		String stored = detail(shipmentId)
 				.andExpect(jsonPath("$.risk.level").value("HIGH"))
 				.andExpect(jsonPath("$.recommendationDecision.outcome").value("APPROVED"))
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("No action"))
-				.andExpect(jsonPath("$.recommendationDecision.recommendationWording").value(NO_ACTION));
+				.andExpect(jsonPath("$.recommendationDecision.recommendationWording").value(NO_ACTION))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(1)))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].recommendationWording").value(NO_ACTION))
+				.andExpect(jsonPath("$.recommendationDecisionHistory[0].decidedAt", not(containsString("1999"))))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(JsonPath.<String>read(stored, "$.recommendationDecision.decidedAt"))
+				.isEqualTo(JsonPath.<String>read(stored, "$.recommendationDecisionHistory[0].decidedAt"));
 
 		Long importerId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, "STRAITS_FRESH_DEMO");
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
@@ -505,7 +587,8 @@ class RecommendationDecisionApiIntegrationTests {
 				.andExpect(jsonPath("$.recommendationDecision.recommendationName").value("Watch the connection"))
 				.andExpect(jsonPath("$.recommendationDecision.recommendationWording").value(watch));
 		detail(otherShipmentId)
-				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()));
+				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
+				.andExpect(jsonPath("$.recommendationDecisionHistory", hasSize(0)));
 		mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[?(@.id == " + shipmentId + ")].recommendationDecision").doesNotExist());
@@ -577,6 +660,10 @@ class RecommendationDecisionApiIntegrationTests {
 
 	private int decisionCount(long shipmentId) {
 		return countWhere("recommendation_decisions", shipmentId);
+	}
+
+	private int decisionHistoryCount(long shipmentId) {
+		return countWhere("recommendation_decision_history", shipmentId);
 	}
 
 	private int historyCount(long shipmentId) {

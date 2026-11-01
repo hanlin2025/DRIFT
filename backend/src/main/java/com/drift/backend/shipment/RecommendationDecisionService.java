@@ -2,11 +2,14 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import jakarta.persistence.EntityManager;
 
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
@@ -20,30 +23,36 @@ import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 /**
- * Stores the viewer's current decision against the recommendation from this read.
- * An unavailable recommendation and an archived shipment store nothing. A later decision
- * replaces the current row. The shipment, its risk, and its alerts are left unchanged.
+ * Stores the viewer's current decision against the recommendation from this read and appends
+ * that accepted decision to the history. An unavailable recommendation and an archived shipment
+ * store nothing. A later decision replaces the current row. The shipment, its risk, and its alerts
+ * are left unchanged.
  */
 @Service
 class RecommendationDecisionService {
 
 	private final ShipmentRepository shipments;
 	private final RecommendationDecisionRepository decisions;
+	private final RecommendationDecisionHistoryRepository history;
 	private final ShipmentConnectionRisk connectionRisk;
 	private final ShipmentRecommendationImpactSource impacts;
 	private final UserAccountRepository users;
 	private final ShipmentAccessPolicy access;
+	private final EntityManager entityManager;
 	private final Clock clock;
 
 	RecommendationDecisionService(ShipmentRepository shipments, RecommendationDecisionRepository decisions,
-			ShipmentConnectionRisk connectionRisk, ShipmentRecommendationImpactSource impacts,
-			UserAccountRepository users, ShipmentAccessPolicy access, ObjectProvider<Clock> clocks) {
+			RecommendationDecisionHistoryRepository history, ShipmentConnectionRisk connectionRisk,
+			ShipmentRecommendationImpactSource impacts, UserAccountRepository users, ShipmentAccessPolicy access,
+			EntityManager entityManager, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.decisions = decisions;
+		this.history = history;
 		this.connectionRisk = connectionRisk;
 		this.impacts = impacts;
 		this.users = users;
 		this.access = access;
+		this.entityManager = entityManager;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
@@ -66,28 +75,35 @@ class RecommendationDecisionService {
 		if (company == null || !company.isActive()) {
 			throw new ShipmentAccessForbiddenException();
 		}
-		Shipment shipment = shipments.findById(shipmentId).orElseThrow(ShipmentNotFoundException::new);
+		Shipment shipment = shipments.findByIdForUpdate(shipmentId).orElseThrow(ShipmentNotFoundException::new);
 		if (!access.canDecide(company, shipment)) {
 			throw new ShipmentDetailForbiddenException();
 		}
-		Instant decidedAt = clock.instant();
 		RecommendationDecision decision = switch (request.outcome()) {
 			case APPROVED -> {
 				rejectSelection(request);
-				yield approve(shipment, actor, decidedAt);
+				yield approve(shipment, actor, null);
 			}
 			case DISMISSED -> {
 				rejectSelection(request);
-				yield dismiss(shipment, actor, decidedAt);
+				yield dismiss(shipment, actor, null);
 			}
-			case MODIFIED -> modifySelection(shipment, actor, decidedAt, request);
+			case MODIFIED -> modifySelection(shipment, actor, null, request);
 		};
+		entityManager.refresh(decision);
 		return RecommendationDecisionResponse.from(decision);
 	}
 
 	@Transactional(readOnly = true)
 	public RecommendationDecisionResponse current(Long shipmentId) {
 		return decisions.findById(shipmentId).map(RecommendationDecisionResponse::from).orElse(null);
+	}
+
+	@Transactional(readOnly = true)
+	public List<RecommendationDecisionHistoryResponse> history(Long shipmentId) {
+		return history.findForShipmentNewestFirst(shipmentId).stream()
+				.map(RecommendationDecisionHistoryResponse::from)
+				.toList();
 	}
 
 	@Transactional
@@ -130,13 +146,21 @@ class RecommendationDecisionService {
 		if (shipment == null || shipment.getId() == null) {
 			throw new ShipmentNotFoundException();
 		}
-		Shipment current = shipments.findById(shipment.getId()).orElseThrow(ShipmentNotFoundException::new);
+		Shipment current = shipments.findByIdForUpdate(shipment.getId()).orElseThrow(ShipmentNotFoundException::new);
 		if (current.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new RecommendationDecisionRejectedException(RecommendationDecisionRejectedException.ARCHIVED);
 		}
 		ShipmentRecommendation recommendation = ShipmentRecommendation.of(connectionRisk.assess(current).risk(), impact);
 		if (!recommendation.available()) {
 			throw new RecommendationDecisionRejectedException(RecommendationDecisionRejectedException.UNAVAILABLE);
+		}
+		Instant recordedAt = decidedAt != null ? decidedAt : clock.instant();
+		if (actor == null || actor.getId() == null) {
+			throw new IllegalArgumentException("Actor is required");
+		}
+		UserAccount recordedActor = entityManager.find(UserAccount.class, actor.getId());
+		if (recordedActor == null) {
+			throw new IllegalArgumentException("Actor is required");
 		}
 		String name = recommendation.response().label();
 		String wording = recommendation.response().wording();
@@ -154,12 +178,14 @@ class RecommendationDecisionService {
 		} else if (selected != null) {
 			throw new IllegalArgumentException("A selected response is stored only for a modification");
 		}
+		history.insert(RecommendationDecisionHistory.record(current, outcome, name, wording, selectedName,
+				selectedWording, recordedActor, recordedActor.getFullName(), recordedAt));
 		RecommendationDecision existing = decisions.findById(current.getId()).orElse(null);
 		if (existing == null) {
-			return decisions.saveAndFlush(create(current, outcome, name, wording, selectedName, selectedWording, actor,
-					decidedAt));
+			return decisions.saveAndFlush(create(current, outcome, name, wording, selectedName, selectedWording,
+					recordedActor, recordedAt));
 		}
-		existing.replace(outcome, name, wording, selectedName, selectedWording, actor, decidedAt);
+		existing.replace(outcome, name, wording, selectedName, selectedWording, recordedActor, recordedAt);
 		return decisions.saveAndFlush(existing);
 	}
 

@@ -34,6 +34,7 @@ class RecommendationDecisionServiceIntegrationTests {
 	@Autowired CompanyRepository companies;
 	@Autowired RecommendationDecisionService decisions;
 	@Autowired RecommendationDecisionRepository storedDecisions;
+	@Autowired RecommendationDecisionHistoryRepository history;
 	@Autowired JdbcTemplate jdbc;
 
 	private Shipment shipment;
@@ -93,6 +94,13 @@ class RecommendationDecisionServiceIntegrationTests {
 		assertThat(stored.getSelectedResponseWording()).isNull();
 		assertThat(stored.getDecidedBy().getId()).isEqualTo(actor.getId());
 		assertThat(stored.getDecidedAt()).isEqualTo(decidedAt);
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).singleElement()
+				.satisfies(row -> {
+					assertThat(row.getDecidedByName()).isEqualTo("Decision Actor");
+					assertThat(row.getDecidedBy().getId()).isEqualTo(actor.getId());
+					assertThat(row.getDecidedAt()).isEqualTo(decidedAt);
+					assertThat(row.getOutcome()).isEqualTo(RecommendationDecisionOutcome.APPROVED);
+				});
 		assertShipmentUnchanged(before);
 		assertNoRiskOrMailRows();
 	}
@@ -141,6 +149,49 @@ class RecommendationDecisionServiceIntegrationTests {
 		assertThat(stored.getDecidedBy().getId()).isEqualTo(laterActor.getId());
 		assertThat(stored.getDecidedAt()).isEqualTo(later);
 		assertThat(decisionCount()).isEqualTo(1);
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).hasSize(2);
+	}
+
+	@Test
+	void anEarlierTimestampDoesNotOvertakeTheLastAcceptedWrite() {
+		Instant earlier = Instant.parse("2026-10-20T01:00:00Z");
+		Instant later = Instant.parse("2026-10-20T03:00:00Z");
+		decisions.approve(shipment, actor, later, ShipmentRecommendationImpact.noPredictedImpact());
+		decisions.dismiss(shipment, laterActor, earlier, ShipmentRecommendationImpact.noPredictedImpact());
+		entityManager.clear();
+
+		RecommendationDecision current = storedDecisions.findById(shipment.getId()).orElseThrow();
+		assertThat(current.getOutcome()).isEqualTo(RecommendationDecisionOutcome.DISMISSED);
+		assertThat(current.getDecidedAt()).isEqualTo(earlier);
+		assertThat(current.getDecidedBy().getId()).isEqualTo(laterActor.getId());
+		assertThat(history.findForShipmentNewestFirst(shipment.getId()))
+				.extracting(RecommendationDecisionHistory::getDecidedAt)
+				.containsExactly(later, earlier);
+	}
+
+	@Test
+	void equalTimestampsAreOrderedByHistoryIdAndKeepTheDecisionTimeName() {
+		decisions.approve(shipment, actor, decidedAt, ShipmentRecommendationImpact.noPredictedImpact());
+		decisions.modify(shipment, laterActor, decidedAt, Code.MONITOR_CONSTRAINTS,
+				ShipmentRecommendationImpact.noPredictedImpact());
+		entityManager.clear();
+		jdbc.update("UPDATE users SET full_name = ? WHERE id = ?", "Changed Name", actor.getId());
+		entityManager.clear();
+
+		RecommendationDecision current = storedDecisions.findById(shipment.getId()).orElseThrow();
+		var rows = history.findForShipmentNewestFirst(shipment.getId());
+		assertThat(rows).hasSize(2);
+		assertThat(rows.get(0).getId()).isGreaterThan(rows.get(1).getId());
+		assertThat(rows.get(0).getOutcome()).isEqualTo(RecommendationDecisionOutcome.MODIFIED);
+		assertThat(rows.get(0).getSelectedResponseName()).isEqualTo("Monitor");
+		assertThat(rows.get(0).getDecidedByName()).isEqualTo("Later Actor");
+		assertThat(rows.get(1).getDecidedByName()).isEqualTo("Decision Actor");
+		assertThat(rows).allSatisfy(row -> assertThat(row.getDecidedAt()).isEqualTo(decidedAt));
+		assertThat(current.getOutcome()).isEqualTo(rows.get(0).getOutcome());
+		assertThat(current.getDecidedAt()).isEqualTo(rows.get(0).getDecidedAt());
+		assertThat(current.getDecidedBy().getId()).isEqualTo(rows.get(0).getDecidedBy().getId());
+		assertThat(decisions.current(shipment.getId()).decidedByName()).isEqualTo("Later Actor");
+		assertThat(entityManager.find(UserAccount.class, actor.getId()).getFullName()).isEqualTo("Changed Name");
 	}
 
 	@Test
@@ -158,6 +209,9 @@ class RecommendationDecisionServiceIntegrationTests {
 		assertThat(stored.getRecommendationName()).isEqualTo("No action");
 		assertThat(stored.getDecidedBy().getId()).isEqualTo(actor.getId());
 		assertThat(decisionCount()).isEqualTo(1);
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).singleElement()
+				.extracting(RecommendationDecisionHistory::getOutcome)
+				.isEqualTo(RecommendationDecisionOutcome.APPROVED);
 	}
 
 	@Test
@@ -179,6 +233,9 @@ class RecommendationDecisionServiceIntegrationTests {
 		assertThat(stored.getOutcome()).isEqualTo(RecommendationDecisionOutcome.APPROVED);
 		assertThat(stored.getDecidedBy().getId()).isEqualTo(actor.getId());
 		assertThat(decisionCount()).isEqualTo(1);
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).singleElement()
+				.extracting(RecommendationDecisionHistory::getOutcome)
+				.isEqualTo(RecommendationDecisionOutcome.APPROVED);
 		assertShipmentUnchanged(before);
 	}
 
@@ -214,6 +271,7 @@ class RecommendationDecisionServiceIntegrationTests {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("A modification needs the selected response");
 		assertThat(decisionCount()).isZero();
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).isEmpty();
 
 		entityManager.find(Shipment.class, shipment.getId()).archive();
 		entityManager.flush();
@@ -246,6 +304,7 @@ class RecommendationDecisionServiceIntegrationTests {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("A modification selects a different response");
 		assertThat(decisionCount()).isZero();
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).isEmpty();
 	}
 
 	private Shipment snapshot() {
@@ -258,6 +317,7 @@ class RecommendationDecisionServiceIntegrationTests {
 		entityManager.clear();
 		assertThat(storedDecisions.findById(shipment.getId())).isEmpty();
 		assertThat(decisionCount()).isZero();
+		assertThat(history.findForShipmentNewestFirst(shipment.getId())).isEmpty();
 		assertShipmentUnchanged(before);
 		assertNoRiskOrMailRows();
 	}
