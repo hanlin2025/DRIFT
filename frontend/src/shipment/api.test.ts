@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
+import { archiveShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listMaritimeAiAssessments, listShipments, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
+import type { MaritimeAiAssessment } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -258,6 +259,15 @@ describe('CDG-246 maritime-context API', () => {
     expect(fetch).toHaveBeenCalledWith('/api/shipments/9/maritime-context', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }));
   });
 
+  it('accepts a clearly labelled retrospective-analysis bundle', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RETROSPECTIVE_ANALYSIS', assessmentCutoffUtc: '2026-10-28T00:00:00Z',
+      shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Historical replay only.', evidence: [{ ...evidence, sourceMode: 'RETROSPECTIVE_ANALYSIS', timeCompatibility: 'UNKNOWN' }], notices: [], aiExplanation: null, suggestedActions: null,
+    })));
+
+    await expect(getMaritimeContext('token', '9')).resolves.toMatchObject({ sourceMode: 'RETROSPECTIVE_ANALYSIS' });
+  });
+
   it('rejects a context bundle that omits its assessment cutoff', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ enabled: true, sourceMode: 'RECORDED_REPLAY', evidence: [], notices: [], aiExplanation: null, suggestedActions: null })));
     await expect(getMaritimeContext('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
@@ -362,6 +372,63 @@ describe('restoreShipment', () => {
   ] as const)('returns the server message for status %s', async (status, message) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
     await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status, message });
+  });
+});
+
+describe('maritime AI assessment API', () => {
+  const businessAssessment: MaritimeAiAssessment = {
+    assessmentId: 'assessment-business-1', state: 'GENERATED', validationStatus: 'VALID',
+    bundleVersion: 'cdg246.maritime-evidence-bundle.v1', bundleHash: 'b'.repeat(64),
+    assessmentCutoffUtc: '2026-11-01T09:00:00Z', provider: 'controlled-context-stub', model: 'offline',
+    promptVersion: 'cdg252.business-context.v1', generatedAtUtc: '2026-11-01T09:00:01Z',
+    interpretation: { summary: 'Synthetic comparison.', claims: [{
+      statement: 'The predicted arrival exceeds the saved transshipment-arrival deadline.', evidenceIds: ['mpa-approved'],
+      applicability: 'CONTEXTUAL', factReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+      relationshipType: 'DELAY_COMPARISON_REVIEW',
+    }], uncertainties: [], followUpConsiderations: [], evidenceSufficient: true, formalRecommendationCode: null },
+    limitation: null,
+    deterministicSummary: {
+      summaryVersion: 'cdg247.deterministic-facts.v4.business-risk-snapshots', label: 'Backend-owned snapshot.',
+      shipmentScheduleFacts: [], evidenceFacts: [], limitations: [],
+      businessContext: {
+        context: {
+          deadline: { state: 'RECORDED', instant: '2026-11-01T10:00:00Z', recordedTransshipmentPort: 'Singapore', applicableToCurrentPort: true },
+          comparison: { state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null, estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: '2026-11-01T10:00:00Z', recordedTransshipmentPort: 'Singapore' },
+        },
+        canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY', 'comparison:DELAY_OUTCOME'],
+      },
+    },
+  };
+
+  it('preserves typed business context from assessment history and generation responses', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json([businessAssessment]))
+      .mockResolvedValueOnce(json(businessAssessment)));
+
+    const [listed] = await listMaritimeAiAssessments('token', '9');
+    const generated = await generateMaritimeAiAssessment('token', '9');
+
+    expect(listed.deterministicSummary?.businessContext).toEqual(businessAssessment.deterministicSummary?.businessContext);
+    expect(generated.deterministicSummary?.businessContext?.context?.comparison).toMatchObject({
+      state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null,
+    });
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/shipments/9/maritime-ai-assessments', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/shipments/9/maritime-ai-assessments', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('keeps historical assessment payloads without a business snapshot readable', async () => {
+    const legacySummary = { ...businessAssessment.deterministicSummary! };
+    delete legacySummary.businessContext;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{
+      ...businessAssessment,
+      interpretation: { ...businessAssessment.interpretation!, claims: businessAssessment.interpretation!.claims.filter(claim => claim.relationshipType !== 'DELAY_COMPARISON_REVIEW') },
+      deterministicSummary: legacySummary,
+    }])));
+
+    const [legacy] = await listMaritimeAiAssessments('token', '9');
+    expect(legacy.deterministicSummary?.businessContext).toBeUndefined();
   });
 });
 
