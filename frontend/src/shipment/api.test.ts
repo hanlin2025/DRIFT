@@ -838,6 +838,10 @@ describe('delay comparison API client', () => {
       delayComparison({ deadline: null }),
       delayComparison({ recordedTransshipmentPort: ' ' }),
       delayComparison({ estimatedArrivalAt: 1 }),
+      delayComparison({ estimatedArrivalAt: 'not-a-date' }),
+      delayComparison({ deadline: 'not-a-date' }),
+      delayComparison({ outcome: null, reason: 'MISSING_PREDICTION', estimatedArrivalAt: 'not-a-date' }),
+      delayComparison({ outcome: null, reason: 'STALE_PREDICTION', deadline: '2026-13-40T99:99:99Z' }),
       delayComparison({ outcome: null, reason: 'STALE_PREDICTION', deadline: 1 }),
     ];
     for (const comparison of rejected) {
