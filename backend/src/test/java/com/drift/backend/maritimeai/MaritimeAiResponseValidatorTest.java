@@ -166,6 +166,26 @@ class MaritimeAiResponseValidatorTest {
 		var correctPlannedWindow = riskClaim("The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.",
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), plannedRisk);
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(correctPlannedWindow), plannedInput)).isNull();
+		var unavailableEstimateClaimedFresh = riskClaim("The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is fresh.",
+				correctPlannedWindow.factReferences(), plannedRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(unavailableEstimateClaimedFresh), plannedInput))
+				.isEqualTo("RISK_REVIEW_FRESHNESS_MISMATCH");
+		var wrongPlannedSeverity = new MaritimeAiClaim(correctPlannedWindow.statement(), correctPlannedWindow.evidenceIds(),
+				correctPlannedWindow.applicability(), correctPlannedWindow.vesselRole(), correctPlannedWindow.observationType(),
+				correctPlannedWindow.associationScope(), correctPlannedWindow.factReferences(), correctPlannedWindow.relationshipType(),
+				new MaritimeAiClaim.RiskReview(com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+						correctPlannedWindow.riskReview().selectedWindowBasis(), correctPlannedWindow.riskReview().selectedWindowState(),
+						correctPlannedWindow.riskReview().estimateFreshness()));
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongPlannedSeverity), plannedInput))
+				.isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
+		var wrongPlannedBasis = new MaritimeAiClaim(correctPlannedWindow.statement(), correctPlannedWindow.evidenceIds(),
+				correctPlannedWindow.applicability(), correctPlannedWindow.vesselRole(), correctPlannedWindow.observationType(),
+				correctPlannedWindow.associationScope(), correctPlannedWindow.factReferences(), correctPlannedWindow.relationshipType(),
+				new MaritimeAiClaim.RiskReview(correctPlannedWindow.riskReview().severity(),
+						MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
+						correctPlannedWindow.riskReview().selectedWindowState(), correctPlannedWindow.riskReview().estimateFreshness()));
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongPlannedBasis), plannedInput))
+				.isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
 		var wrongPlannedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
 				valid.vesselRole(), valid.observationType(), valid.associationScope(),
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:REMAINING_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", correctPlannedWindow.riskReview());
@@ -191,6 +211,10 @@ class MaritimeAiResponseValidatorTest {
 				new MaritimeAiClaim.RiskReview(staleClaim.riskReview().severity(), staleClaim.riskReview().selectedWindowBasis(),
 						staleClaim.riskReview().selectedWindowState(), MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE));
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongFreshness), staleInput)).isEqualTo("RISK_REVIEW_CONTEXT_MISMATCH");
+		var staleEstimateClaimedFresh = riskClaim("The documented arrival revision warrants review alongside the backend MEDIUM planned connection window; the AIS estimate is available.",
+				staleClaim.factReferences(), staleRisk);
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(staleEstimateClaimedFresh), staleInput))
+				.isEqualTo("RISK_REVIEW_FRESHNESS_MISMATCH");
 
 		var missingFreshnessReference = new MaritimeAiClaim(staleClaim.statement(), staleClaim.evidenceIds(), staleClaim.applicability(), staleClaim.vesselRole(),
 				staleClaim.observationType(), staleClaim.associationScope(), List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED"),
@@ -227,6 +251,38 @@ class MaritimeAiResponseValidatorTest {
 		var cautiousEvidenceLimit = new MaritimeAiInterpretation("The evidence does not establish that the shipment will be delayed.", List.of(claim), List.of(),
 				List.of("Have a human compare the current evidence with the stored schedule."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(cautiousEvidenceLimit, input)).isNull();
+	}
+
+	@Test void rejectsFabricatedShipmentConstraintsProbabilitiesAndOperationalOutcomes() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+		var followUp = List.of("Verify the carrier's ETA with the operations team.");
+
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("This shipment is urgent.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("A final delivery deadline is approaching.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("A cautious review may be useful.", List.of(claim),
+				List.of("The final delivery deadline is tomorrow."), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("A cautious review may be useful.", List.of(claim), List.of(),
+				List.of("Verify the urgent shipment's delivery deadline."), true, null), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("No delivery deadline or urgency is recorded in the supplied shipment context.", List.of(claim), List.of(), followUp, true, null), input))
+				.isNull();
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The probability of a missed connection is high.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("A 70% chance of a missed connection is expected.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The shipment has lost revenue.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("The feeder connection was missed.", List.of(claim), List.of(), followUp, true, null), input))
+				.isEqualTo("UNSUPPORTED_MISSED_CONNECTION");
 	}
 
 	@Test void humanVerificationCanBeIdentifiedByAnOperationsTeamAndSystemOnlyChecksDoNotQualify() {

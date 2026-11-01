@@ -40,6 +40,8 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern RISK_OUTCOME_UNSUPPORTED_BEFORE = Pattern.compile("(?i)\\b(?:no\\s+(?:clear\\s+)?(?:evidence|indication|basis|support|confirmation|proof)|not enough\\s+(?:evidence|information)|(?:does not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|prove|predict|forecast|demonstrate))\\b[^.!?;,]{0,60}$");
 	private static final Pattern RISK_OUTCOME_UNCERTAINTY_AFTER = Pattern.compile("(?i)\\b(?:(?:[\\p{L}\\p{M}'’-]+\\s+){0,5})(?:(?:is|are|was|were|remain(?:s)?|has been|have been)\\s+)?(?:unknown|uncertain|unclear|unavailable|unsupported|unestablished|uncalibrated|not\\s+(?:known|established|supported|available|calibrated|estimated|provided|confirmed|determined)|cannot\\s+be\\s+(?:known|established|supported|calibrated|estimated|determined))\\b");
 	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
+	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
+	private static final Pattern BUSINESS_CONSTRAINT_UNCERTAINTY = Pattern.compile("(?i)\\b(?:no|unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified)|not\\s+yet\\s+(?:known|provided|recorded|specified))\\b");
 	private static final Pattern HUMAN_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\b(?:human|person|people|operator|operations\\s+(?:team|staff)|agent|coordinator|planner|dispatcher|staff|team)\\b");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
@@ -54,6 +56,8 @@ final class MaritimeAiResponseValidator {
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
 		List<String> authoredText = authoredText(output);
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCargoAsFact)) return "UNSUPPORTED_CARGO_ASSERTION";
+		if (businessConstraintAssertions(output).stream().anyMatch(MaritimeAiResponseValidator::claimsUnavailableBusinessConstraint))
+			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsMissedConnection)) return "UNSUPPORTED_MISSED_CONNECTION";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCausation)) return "UNSUPPORTED_CAUSAL_CLAIM";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsOperationalAction))
@@ -259,6 +263,15 @@ final class MaritimeAiResponseValidator {
 		if (output.followUpConsiderations() != null) output.followUpConsiderations().stream()
 				.filter(java.util.Objects::nonNull).forEach(text::add);
 		return text;
+	}
+	private static List<String> businessConstraintAssertions(MaritimeAiInterpretation output) {
+		return authoredText(output);
+	}
+	private static boolean claimsUnavailableBusinessConstraint(String text) {
+		if (text == null) return false;
+		return java.util.Arrays.stream(text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and)\\b"))
+				.anyMatch(clause -> BUSINESS_CONSTRAINT_ASSERTION.matcher(clause).find()
+						&& !BUSINESS_CONSTRAINT_UNCERTAINTY.matcher(clause).find());
 	}
 	private static boolean claimsRiskOutcome(String text) {
 		if (text == null) return false;

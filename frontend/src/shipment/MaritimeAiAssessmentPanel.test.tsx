@@ -67,6 +67,51 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(within(risk).getByText(/does not describe the shipment's current operational state/)).toBeInTheDocument();
   });
 
+  it('shows distinct saved risk snapshots for two assessments with the same maritime evidence', () => {
+    const lowAssessment: MaritimeAiAssessment = {
+      ...assessment,
+      assessmentId: 'shared-evidence-low-window',
+      generatedAtUtc: '2026-11-01T10:00:00Z',
+      interpretation: {
+        ...assessment.interpretation!,
+        claims: [
+          assessment.interpretation!.claims[0],
+          {
+            ...assessment.interpretation!.claims[1],
+            statement: 'The documented arrival revision warrants review alongside the backend LOW planned connection window; the AIS estimate is unavailable.',
+            riskReview: { severity: 'LOW', selectedWindowBasis: 'PLANNED_SHIPMENT_SCHEDULE', selectedWindowState: 'AVAILABLE', estimateFreshness: 'UNAVAILABLE' },
+          },
+        ],
+      },
+      deterministicSummary: {
+        ...assessment.deterministicSummary!,
+        connectionRisk: { ...availablePlannedRisk, severity: 'LOW', windowSeconds: 108_000 },
+      },
+    };
+
+    render(<>
+      <MaritimeAiAssessmentPanel assessments={[assessment]} unavailable={false} generating={false} onGenerate={vi.fn()} />
+      <MaritimeAiAssessmentPanel assessments={[lowAssessment]} unavailable={false} generating={false} onGenerate={vi.fn()} />
+    </>);
+
+    const panels = screen.getAllByRole('region', { name: 'AI maritime interpretation' });
+    expect(panels).toHaveLength(2);
+    const highRisk = within(panels[0]).getByRole('region', { name: 'Assessment-time connection risk' });
+    const lowRisk = within(panels[1]).getByRole('region', { name: 'Assessment-time connection risk' });
+    expect(within(highRisk).getByText('High')).toBeInTheDocument();
+    expect(within(highRisk).getByText('8 hours')).toBeInTheDocument();
+    expect(within(lowRisk).getByText('Low')).toBeInTheDocument();
+    expect(within(lowRisk).getByText('1 day 6 hours')).toBeInTheDocument();
+    expect(within(highRisk).getByText(/2026-11-01T09:00:00Z/)).toBeInTheDocument();
+    expect(within(lowRisk).getByText(/2026-11-01T10:00:00Z/)).toBeInTheDocument();
+    expect(within(panels[0]).getByText('2026-10-29T01:00:00+08:00 → 2026-10-29T02:00:00+08:00').textContent)
+      .toEqual(within(panels[1]).getByText('2026-10-29T01:00:00+08:00 → 2026-10-29T02:00:00+08:00').textContent);
+    expect(within(panels[0]).getByText(/Citation: approved MPA citation/).textContent)
+      .toEqual(within(panels[1]).getByText(/Citation: approved MPA citation/).textContent);
+    expect(within(panels[0]).getByText(/This snapshot does not describe the shipment's current operational state/)).toBeInTheDocument();
+    expect(within(panels[1]).getByText(/This snapshot does not describe the shipment's current operational state/)).toBeInTheDocument();
+  });
+
   it('distinguishes an AIS-based non-positive remaining window without saying a connection was missed', () => {
     const aisAssessment: MaritimeAiAssessment = {
       ...assessment,
