@@ -343,7 +343,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Mother-vessel arrival deadline', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();
@@ -357,7 +357,9 @@ describe('workspace shipment retrieval', () => {
     vi.mocked(getShipment).mockResolvedValue({ ...newer, transshipmentPort: '  ' });
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
     const details = await screen.findByRole('article', { name: 'Shipment HBL-NEWER' });
-    expect(within(details).getByText('Not recorded')).toHaveClass('is-missing');
+    const port = within(details).getByText('Transshipment port').closest('div');
+    expect(port).not.toBeNull();
+    expect(within(port as HTMLElement).getByText('Not recorded')).toHaveClass('is-missing');
     expect(screen.getByText('TRANSSHIPMENT Not recorded')).toBeInTheDocument();
   });
 
