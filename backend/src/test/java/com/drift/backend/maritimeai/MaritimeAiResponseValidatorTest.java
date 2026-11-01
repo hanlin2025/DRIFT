@@ -207,6 +207,46 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(MaritimeAiResponseValidator.validate(action, staleInput)).isEqualTo("UNSUPPORTED_OPERATIONAL_DECISION");
 	}
 
+	@Test void riskOutcomeNegationMustApplyToTheOutcomeClause() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.STALE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants review alongside the backend MEDIUM planned connection window; the AIS estimate is stale.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+
+		var assertedOutcome = new MaritimeAiInterpretation("The evidence is not conclusive, but the shipment will be delayed.", List.of(claim), List.of(),
+				List.of("Have a human compare the current evidence with the stored schedule."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(assertedOutcome, input)).isEqualTo("UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM");
+
+		var cautiousUnknown = new MaritimeAiInterpretation("The probability of a missed connection is not established.", List.of(claim), List.of(),
+				List.of("Have a human compare the current evidence with the stored schedule."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(cautiousUnknown, input)).isNull();
+
+		var cautiousEvidenceLimit = new MaritimeAiInterpretation("The evidence does not establish that the shipment will be delayed.", List.of(claim), List.of(),
+				List.of("Have a human compare the current evidence with the stored schedule."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(cautiousEvidenceLimit, input)).isNull();
+	}
+
+	@Test void humanVerificationCanBeIdentifiedByAnOperationsTeamAndSystemOnlyChecksDoNotQualify() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.STALE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants review alongside the backend MEDIUM planned connection window; the AIS estimate is stale.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+
+		var operationsTeamFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(operationsTeamFollowUp, input)).isNull();
+
+		var systemOnlyFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
+				List.of("Verify the carrier's ETA with the automated system."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(systemOnlyFollowUp, input)).isEqualTo("MISSING_HUMAN_RISK_FOLLOW_UP");
+	}
+
 	@Test void aNonPositiveAisWindowIsNamedAsComputedBufferStateNotAnObservedMiss() {
 		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.CRITICAL,

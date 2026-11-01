@@ -35,7 +35,12 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern REVISION_DELAY_DIRECTION = Pattern.compile("(?i)\\bdelay(?:ed)?\\b");
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
 	private static final Pattern RISK_OUTCOME_CLAIM = Pattern.compile("(?i)\\b(?:confirmed|actual|will|would|has|had|is|was|might|may)\\s+(?:be\\s+)?(?:delay(?:ed)?|late|miss(?:ed|es)?|lost)\\b|\\b(?:shipment|vessel|arrival)\\s+(?:is|was|will be|has been)\\s+(?:delay(?:ed)?|late)\\b|\\b(?:business|financial)\\s+loss\\b|\\blost\\s+revenue\\b|\\b(?:penalt(?:y|ies)|demurrage|compensation|delivery outcome|cargo outcome)\\b|\\b(?:probabilit(?:y|ies)|chance|odds)\\s+(?:of|that)\\b|\\b(?:predict|forecast|expect)\\b[^.!?]{0,60}\\b(?:delay|late|miss(?:ed|es)?)\\b");
+	private static final Pattern RISK_OUTCOME_CLAUSE_BREAK = Pattern.compile("(?i)[,;.!?]|\\b(?:but|however|yet|nevertheless|and|although|though|whereas|so)\\b");
+	private static final Pattern RISK_OUTCOME_NEGATION_BEFORE = Pattern.compile("(?i)\\b(?:no|not|never|cannot|can't|does not|doesn't|without|unconfirmed|unverified)\\b(?:\\s+[\\p{L}\\p{M}'’-]+){0,2}\\s*$");
+	private static final Pattern RISK_OUTCOME_UNSUPPORTED_BEFORE = Pattern.compile("(?i)\\b(?:no\\s+(?:clear\\s+)?(?:evidence|indication|basis|support|confirmation|proof)|not enough\\s+(?:evidence|information)|(?:does not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|prove|predict|forecast|demonstrate))\\b[^.!?;,]{0,60}$");
+	private static final Pattern RISK_OUTCOME_UNCERTAINTY_AFTER = Pattern.compile("(?i)\\b(?:(?:[\\p{L}\\p{M}'’-]+\\s+){0,5})(?:(?:is|are|was|were|remain(?:s)?|has been|have been)\\s+)?(?:unknown|uncertain|unclear|unavailable|unsupported|unestablished|uncalibrated|not\\s+(?:known|established|supported|available|calibrated|estimated|provided|confirmed|determined)|cannot\\s+be\\s+(?:known|established|supported|calibrated|estimated|determined))\\b");
 	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
+	private static final Pattern HUMAN_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\b(?:human|person|people|operator|operations\\s+(?:team|staff)|agent|coordinator|planner|dispatcher|staff|team)\\b");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
 			Map.entry("four", 4L), Map.entry("five", 5L), Map.entry("six", 6L), Map.entry("seven", 7L), Map.entry("eight", 8L),
@@ -259,17 +264,25 @@ final class MaritimeAiResponseValidator {
 		if (text == null) return false;
 		Matcher matcher = RISK_OUTCOME_CLAIM.matcher(text);
 		while (matcher.find()) {
-			int sentenceStart = Math.max(text.lastIndexOf('.', matcher.start()),
-					Math.max(text.lastIndexOf('!', matcher.start()), text.lastIndexOf('?', matcher.start()))) + 1;
-			String leadIn = text.substring(sentenceStart, matcher.start()).toLowerCase(Locale.ROOT);
-			if (!Pattern.compile("\\b(?:not|no|never|cannot|can't|does not|doesn't|without|unconfirmed|unverified)\\b").matcher(leadIn).find()) return true;
+			int clauseStart = 0;
+			Matcher breaksBefore = RISK_OUTCOME_CLAUSE_BREAK.matcher(text);
+			while (breaksBefore.find() && breaksBefore.start() < matcher.start()) clauseStart = breaksBefore.end();
+			int clauseEnd = text.length();
+			Matcher breaksAfter = RISK_OUTCOME_CLAUSE_BREAK.matcher(text);
+			if (breaksAfter.find(matcher.end())) clauseEnd = breaksAfter.start();
+			String clausePrefix = text.substring(clauseStart, matcher.start());
+			String clauseSuffix = text.substring(matcher.end(), clauseEnd);
+			if (!RISK_OUTCOME_NEGATION_BEFORE.matcher(clausePrefix).find()
+					&& !RISK_OUTCOME_UNSUPPORTED_BEFORE.matcher(clausePrefix).find()
+					&& !RISK_OUTCOME_UNCERTAINTY_AFTER.matcher(clauseSuffix).find()) return true;
 		}
 		return false;
 	}
 	private static boolean containsOperationalAction(String text) { return text != null && OPERATIONAL_ACTION.matcher(text).find(); }
 	private static boolean isHumanVerificationFollowUp(String text) {
 		String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
-		return lower.contains("human") && containsAny(lower, "review", "check", "verify", "compare", "confirm", "reconcile");
+		return HUMAN_REVIEW_PARTICIPANT.matcher(lower).find()
+				&& containsAny(lower, "review", "check", "verify", "compare", "confirm", "reconcile");
 	}
 	private static boolean hasMotherExpectedArrival(List<MaritimeEvidence> cited) {
 		return cited.stream().anyMatch(item -> "MOTHER".equals(item.vesselRole())
