@@ -232,11 +232,13 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(within(details).getByText('Recorded')).toBeInTheDocument();
     expect(within(details).getAllByText(recordedDeadline)).toHaveLength(2);
     expect(within(details).getAllByText('Singapore')).toHaveLength(2);
+    expect(within(details).getByText('Importer-confirmed transshipment port')).toBeInTheDocument();
     expect(within(details).getByText('Applies to this shipment’s transshipment port')).toBeInTheDocument();
     expect(within(details).getByText('Exceeds Deadline')).toBeInTheDocument();
     expect(within(details).getByText('2026-11-01T11:00:00Z')).toBeInTheDocument();
     expect(within(details).getByText(/business:TRANSSHIPMENT_ARRIVAL_DEADLINE/)).toBeInTheDocument();
     expect(within(details).getByText(/comparison:DELAY_OUTCOME/)).toBeInTheDocument();
+    expect(within(details).getByText(/the shipment’s current deadline is not substituted/)).toBeInTheDocument();
   });
 
   it('displays NO_PREDICTED_IMPACT only when the saved comparison is available with that outcome', () => {

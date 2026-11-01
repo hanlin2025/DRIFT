@@ -214,7 +214,7 @@ function BusinessContextDetails({ snapshot }: { snapshot: MaritimeAiBusinessSnap
     <dl>
       <div><dt>Deadline state</dt><dd>{deadlineStateLabel(deadline?.state)}</dd></div>
       <div><dt>Transshipment-arrival deadline at assessment time</dt><dd>{deadlineInstantLabel(deadline?.state, deadline?.instant)}</dd></div>
-      <div><dt>Port recorded with deadline</dt><dd>{deadline?.recordedTransshipmentPort || 'Not recorded'}</dd></div>
+      <div><dt>Importer-confirmed transshipment port</dt><dd>{deadline?.recordedTransshipmentPort || 'Not recorded'}</dd></div>
       <div><dt>Deadline applicability</dt><dd>{deadlineApplicabilityLabel(deadline?.applicableToCurrentPort)}</dd></div>
       <div><dt>Comparison state</dt><dd>{comparison ? humanizeCode(comparison.state) : 'Unknown'}</dd></div>
       {comparison?.state === 'AVAILABLE' && <div><dt>Comparison outcome</dt><dd>{comparison.outcome ? humanizeCode(comparison.outcome) : 'Outcome not recorded'}</dd></div>}
@@ -225,6 +225,7 @@ function BusinessContextDetails({ snapshot }: { snapshot: MaritimeAiBusinessSnap
       {comparison?.recordedTransshipmentPort && <div><dt>Comparison transshipment port</dt><dd>{comparison.recordedTransshipmentPort}</dd></div>}
     </dl>
     <p><strong>Canonical business references:</strong> {snapshot.canonicalFactReferences.length ? snapshot.canonicalFactReferences.join(', ') : 'none recorded'}.</p>
+    <p className="maritime-ai-note">These are the facts saved with this assessment; the shipment’s current deadline is not substituted here.</p>
   </section>;
 }
 
