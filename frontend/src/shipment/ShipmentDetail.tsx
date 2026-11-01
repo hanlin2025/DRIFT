@@ -54,6 +54,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
+  const decisionSeq = useRef(0);
   const refreshNonce = useRef(0);
   const contextKey = `${shipmentId}:${viewerCompanyId ?? ''}:${token}`;
   const [context, setContext] = useState(contextKey);
@@ -258,7 +259,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   void reloadHistory();
                   setRefreshCount(value => value + 1);
                 }}
-                onDecision={recorded => setShipment(current => current ? { ...current, recommendationDecision: recorded } : current)}
+                onDecision={recorded => {
+                  const seq = ++decisionSeq.current;
+                  setShipment(current => current ? { ...current, recommendationDecision: recorded } : current);
+                  void getShipment(token, shipmentId).then(fresh => {
+                    if (seq !== decisionSeq.current) return;
+                    setShipment(current => current && current.id === fresh.id
+                      ? { ...fresh, recommendationDecision: recorded }
+                      : current);
+                  }).catch((reason: unknown) => {
+                    if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
+                  });
+                }}
                 onSessionEnded={onSessionEnded}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
@@ -417,7 +429,8 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
         </dl>
       </article>
       <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
-        decision={shipment.recommendationDecision} archived={shipment.status === 'ARCHIVED'}
+        decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
+        archived={shipment.status === 'ARCHIVED'}
         onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       {changeHistory}
     </>

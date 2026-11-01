@@ -347,6 +347,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .track-toggle { width: 100%; }
   .track-toggle button { flex: 1; }
   .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
+  .recommendation-modify select,
+  .recommendation-modify .secondary-button { max-width: none; width: 100%; }
 }
 .recommendation-decision { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
 .recommendation-decision .eyebrow { margin: 0; }
@@ -370,6 +372,12 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .recommendation-modify label { font-size: 12px; font-weight: 650; }
 .recommendation-modify select { width: 100%; max-width: 360px; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 10px 12px; color: var(--ink); font: inherit; font-size: 12px; min-height: 40px; }
 .recommendation-modify .secondary-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; justify-self: start; }
+.decision-history { margin: 14px 0 0; }
+.decision-history h3 { margin: 0; font-size: 14px; }
+.decision-history-list { margin: 10px 0 0; padding: 0; list-style: none; }
+.decision-history-list li { margin: 0 0 10px; }
+.decision-history-list li:last-child { margin-bottom: 0; }
+.decision-history-list .current-decision { margin: 0; }
 .recommendation-decision .error-notice { margin: 12px 0 0; }
 .change-history { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
 .change-history h3 { margin: 0; font-size: 14px; color: var(--ink); }

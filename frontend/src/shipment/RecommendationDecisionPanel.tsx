@@ -1,16 +1,17 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../signup/api';
-import { recordRecommendationDecision, type RecommendationDecision, type RecommendationDecisionOutcome, type RecommendationImpact, type ShipmentRecommendation } from './api';
+import { recordRecommendationDecision, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type RecommendationDecisionOutcome, type RecommendationImpact, type ShipmentRecommendation } from './api';
 import { IMPACT_NOT_RETURNED, RECOMMENDATION_CODES, RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 import { formatWhen } from './ShipmentForm';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
-export function RecommendationDecisionPanel({ token, shipmentId, recommendation, decision, archived, onSessionEnded, onRecorded }: {
+export function RecommendationDecisionPanel({ token, shipmentId, recommendation, decision, history, archived, onSessionEnded, onRecorded }: {
   token: string;
   shipmentId: number;
   recommendation: ShipmentRecommendation | null | undefined;
   decision: RecommendationDecision | null | undefined;
+  history?: readonly RecommendationDecisionHistoryEntry[] | null;
   archived: boolean;
   onSessionEnded: () => void;
   onRecorded: (decision: RecommendationDecision) => void;
@@ -101,6 +102,22 @@ export function RecommendationDecisionPanel({ token, shipmentId, recommendation,
           </div>
         )
         : null}
+      {history && history.length > 0
+        ? (
+          <section className="decision-history" aria-label="Decision history">
+            <h3>Decision history</h3>
+            <ol className="decision-history-list">
+              {history.map(entry => (
+                <li key={entry.id}>
+                  <div className="current-decision">
+                    <DecisionFacts decision={entry} />
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )
+        : null}
       {error ? <p className="error-notice" role="alert">{error}</p> : null}
     </article>
   );
@@ -109,6 +126,14 @@ export function RecommendationDecisionPanel({ token, shipmentId, recommendation,
 function CurrentDecision({ decision }: { decision: RecommendationDecision }) {
   return (
     <section className="current-decision" aria-label="Current decision">
+      <DecisionFacts decision={decision} />
+    </section>
+  );
+}
+
+function DecisionFacts({ decision }: { decision: RecommendationDecision }) {
+  return (
+    <>
       <p className="current-decision-outcome">{outcomeCopy(decision.outcome)}</p>
       <dl>
         <div>
@@ -135,7 +160,7 @@ function CurrentDecision({ decision }: { decision: RecommendationDecision }) {
           <dd><time dateTime={decision.decidedAt}>{formatWhen(decision.decidedAt)}</time></dd>
         </div>
       </dl>
-    </section>
+    </>
   );
 }
 
