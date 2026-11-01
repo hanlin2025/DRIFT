@@ -102,7 +102,7 @@ final class MaritimeAiResponseValidator {
 			String relationshipGrounding = validateRelationship(claim, cited, input);
 			if (relationshipGrounding != null) return relationshipGrounding;
 		}
-		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsRiskOutcome)) return "UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM";
+		if (claimsUnsupportedRiskOutcome(output, input)) return "UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM";
 		return null;
 	}
 
@@ -238,10 +238,10 @@ final class MaritimeAiResponseValidator {
 	}
 	private static boolean describesFreshness(String statement, MaritimeAiConnectionRiskContext.EstimateState state) {
 		return switch (state) {
-			case AVAILABLE -> containsAny(statement, "fresh", "available");
-			case STALE -> containsAny(statement, "stale", "outdated");
-			case UNAVAILABLE -> containsAny(statement, "unavailable", "not available");
-			case UNKNOWN -> containsAny(statement, "unknown", "not known");
+			case AVAILABLE -> containsPositiveWord(statement, "fresh") || containsPositiveWord(statement, "available");
+			case STALE -> containsWord(statement, "stale") || containsWord(statement, "outdated");
+			case UNAVAILABLE -> containsWord(statement, "unavailable") || containsWholePhrase(statement, "not available");
+			case UNKNOWN -> containsWord(statement, "unknown") || containsWholePhrase(statement, "not known");
 		};
 	}
 	private static boolean statesSeverity(String statement, com.drift.backend.shipment.ShipmentRisk.Level severity) {
@@ -256,6 +256,22 @@ final class MaritimeAiResponseValidator {
 	}
 	private static boolean containsWord(String text, String word) {
 		return Pattern.compile("(?i)\\b" + Pattern.quote(word) + "\\b").matcher(text).find();
+	}
+	private static boolean containsPositiveWord(String text, String word) {
+		Matcher matches = Pattern.compile("(?i)\\b" + Pattern.quote(word) + "\\b").matcher(text);
+		Pattern negated = Pattern.compile("(?i)\\b(?:not|never|no|without)\\b(?:\\s+[\\p{L}\\p{M}'’-]+){0,2}\\s*$");
+		Pattern clauseBreak = Pattern.compile("(?i)[,;.!?]|\\b(?:but|however|yet|nevertheless|although|though|whereas)\\b");
+		while (matches.find()) {
+			int clauseStart = 0;
+			Matcher breaks = clauseBreak.matcher(text);
+			while (breaks.find() && breaks.end() <= matches.start()) clauseStart = breaks.end();
+			if (!negated.matcher(text.substring(clauseStart, matches.start())).find()) return true;
+		}
+		return false;
+	}
+	private static boolean containsWholePhrase(String text, String phrase) {
+		String pattern = Pattern.quote(phrase).replace("\\E \\Q", "\\E\\s+\\Q");
+		return Pattern.compile("(?i)\\b" + pattern + "\\b").matcher(text).find();
 	}
 	private static List<String> authoredText(MaritimeAiInterpretation output) {
 		List<String> text = new java.util.ArrayList<>();
@@ -329,6 +345,19 @@ final class MaritimeAiResponseValidator {
 			if (!RISK_OUTCOME_NEGATION_BEFORE.matcher(clausePrefix).find()
 					&& !RISK_OUTCOME_UNSUPPORTED_BEFORE.matcher(clausePrefix).find()
 					&& !RISK_OUTCOME_UNCERTAINTY_AFTER.matcher(clauseSuffix).find()) return true;
+		}
+		return false;
+	}
+	private static boolean claimsUnsupportedRiskOutcome(MaritimeAiInterpretation output, MaritimeAiEvidencePackage input) {
+		if (claimsRiskOutcome(output.summary())) return true;
+		if (output.uncertainties().stream().filter(java.util.Objects::nonNull).anyMatch(MaritimeAiResponseValidator::claimsRiskOutcome)) return true;
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull).anyMatch(MaritimeAiResponseValidator::claimsRiskOutcome)) return true;
+		for (MaritimeAiClaim claim : output.claims()) {
+			if (claim == null || !claimsRiskOutcome(claim.statement())) continue;
+			List<MaritimeEvidence> cited = input.evidence().stream()
+					.filter(item -> claim.evidenceIds().contains(item.evidenceId())).toList();
+			if (!isExactSupportedRevisionDuration(claim.statement(), claim, cited)
+					|| claimsRiskOutcome(REVISION_DURATION.matcher(claim.statement()).replaceFirst(""))) return true;
 		}
 		return false;
 	}
