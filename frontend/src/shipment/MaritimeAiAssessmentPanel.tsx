@@ -135,7 +135,8 @@ function sourceValue(fact: MaritimeAiFact) {
 }
 
 function isVerifiedCaptureReplay(assessment: MaritimeAiAssessment) {
-  return assessment.provider === 'openai-responses (verified capture replay)';
+  return assessment.state === 'GENERATED' && assessment.validationStatus === 'VALID'
+    && assessment.provider === 'openai-responses (verified capture replay)';
 }
 
 function isControlledStub(assessment: MaritimeAiAssessment) {

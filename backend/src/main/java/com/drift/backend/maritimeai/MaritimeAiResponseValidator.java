@@ -45,9 +45,11 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
+	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_SUFFIX = Pattern.compile("(?i)^\\s+(?:exists?|does\\s+not\\s+exist|doesn['’]t\\s+exist|is\\s+(?:recorded|provided|specified|available|known|unknown|unavailable|unspecified|unrecorded|absent|missing|applicable|not\\s+(?:known|available|provided|recorded|specified|applicable))|has\\s+been\\s+(?:recorded|provided|specified)|has\\s+not\\s+been\\s+(?:recorded|provided|specified)|remains\\s+applicable|applies|does\\s+not\\s+apply|doesn['’]t\\s+apply)(?:\\s+(?:with\\s+(?:the\\s+)?(?:operations\\s+)?team|in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment|to\\s+(?:the\\s+)?current\\s+(?:shipment\\s+)?port))?\\s*$");
+	private static final Pattern BUSINESS_TEMPORAL_DETAIL = Pattern.compile("(?i)\\b(?:\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}:\\d{2}|today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d+\\s+(?:minutes?|hours?|days?|weeks?|months?|years?))\\b|\\b(?:next|last|this)\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year)\\b|\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_PREFIX = Pattern.compile("(?i)\\bno\\s+(?:(?:final|commercial|delivery|transshipment(?:[- ]arrival)?|shipment|recorded)\\s+){0,3}$");
-	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)\\b");
-	private static final Pattern BUSINESS_CONSTRAINT_UNKNOWN_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified))\\b");
+	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
+	private static final Pattern BUSINESS_CONSTRAINT_UNKNOWN_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified)|absent|missing)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
 	private static final Pattern HUMAN_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\b(?:human|person|people|operator|operations\\s+(?:team|staff)|agent|coordinator|planner|dispatcher|staff|team)\\b");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
@@ -213,12 +215,18 @@ final class MaritimeAiResponseValidator {
 				? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state()))
 			return "RISK_REVIEW_FRESHNESS_MISMATCH";
 		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = expectedRiskReview(risk).selectedWindowState();
-		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW
-				&& !containsAny(statement, "no positive buffer", "no remaining window", "no available buffer"))
+		boolean saysNoWindow = containsAny(statement, "no positive buffer", "no remaining window", "no available buffer");
+		boolean saysInvalidWindow = containsPositiveWord(statement, "invalid") || containsWholePhrase(statement, "not valid");
+		boolean saysIncompleteWindow = containsPositiveWord(statement, "incomplete") || containsWholePhrase(statement, "not established");
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE
+				&& (saysNoWindow || saysInvalidWindow || saysIncompleteWindow))
 			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
-		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID && !containsAny(statement, "invalid", "not valid"))
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.NO_REMAINING_WINDOW && !saysNoWindow)
 			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
-		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE && !containsAny(statement, "incomplete", "not established", "unknown"))
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INVALID && !saysInvalidWindow)
+			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
+		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE
+				&& !(saysIncompleteWindow || containsPositiveWord(statement, "unknown")))
 			return "RISK_REVIEW_WINDOW_STATE_MISMATCH";
 		return null;
 	}
@@ -325,11 +333,30 @@ final class MaritimeAiResponseValidator {
 				risk.arrivalEstimate() == null ? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state());
 	}
 	private static boolean describesFreshness(String statement, MaritimeAiConnectionRiskContext.EstimateState state) {
+		List<String> estimateClauses = java.util.Arrays.stream(statement.split("(?i)[;.!?]"))
+				.filter(clause -> containsWord(clause, "estimate"))
+				.map(clause -> clause.replaceAll("(?i),?\\s*(?:and|but)?\\s*(?:the\\s+)?(?:delay\\s+)?comparison\\s+(?:(?:is|remains)\\s+)?(?:unavailable|available|unknown|not\\s+available|not\\s+known|stale|outdated)\\b", ""))
+				.toList();
+		return !estimateClauses.isEmpty() && estimateClauses.stream().allMatch(clause -> matchesEstimateFreshness(clause, state));
+	}
+	private static boolean matchesEstimateFreshness(String statement, MaritimeAiConnectionRiskContext.EstimateState state) {
 		return switch (state) {
-			case AVAILABLE -> containsPositiveWord(statement, "fresh") || containsPositiveWord(statement, "available");
-			case STALE -> containsWord(statement, "stale") || containsWord(statement, "outdated");
-			case UNAVAILABLE -> containsWord(statement, "unavailable") || containsWholePhrase(statement, "not available");
-			case UNKNOWN -> containsWord(statement, "unknown") || containsWholePhrase(statement, "not known");
+			case AVAILABLE -> (containsPositiveWord(statement, "fresh") || containsPositiveWord(statement, "available"))
+					&& !containsPositiveWord(statement, "stale") && !containsPositiveWord(statement, "outdated")
+					&& !containsPositiveWord(statement, "unavailable") && !containsPositiveWord(statement, "unknown")
+					&& !containsWholePhrase(statement, "not fresh") && !containsWholePhrase(statement, "not available");
+			case STALE -> (containsPositiveWord(statement, "stale") || containsPositiveWord(statement, "outdated"))
+					&& !containsPositiveWord(statement, "fresh") && !containsPositiveWord(statement, "available")
+					&& !containsPositiveWord(statement, "unavailable") && !containsPositiveWord(statement, "unknown")
+					&& !containsWholePhrase(statement, "not stale") && !containsWholePhrase(statement, "not outdated");
+			case UNAVAILABLE -> (containsPositiveWord(statement, "unavailable") || containsWholePhrase(statement, "not available"))
+					&& !containsPositiveWord(statement, "fresh") && !containsPositiveWord(statement, "available")
+					&& !containsPositiveWord(statement, "stale") && !containsPositiveWord(statement, "outdated")
+					&& !containsPositiveWord(statement, "unknown") && !containsWholePhrase(statement, "not unavailable");
+			case UNKNOWN -> (containsPositiveWord(statement, "unknown") || containsWholePhrase(statement, "not known"))
+					&& !containsPositiveWord(statement, "fresh") && !containsPositiveWord(statement, "available")
+					&& !containsPositiveWord(statement, "stale") && !containsPositiveWord(statement, "outdated")
+					&& !containsPositiveWord(statement, "unavailable") && !containsWholePhrase(statement, "not unknown");
 		};
 	}
 	private static boolean statesSeverity(String statement, com.drift.backend.shipment.ShipmentRisk.Level severity) {
@@ -396,7 +423,7 @@ final class MaritimeAiResponseValidator {
 			Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
 			while (assertion.find()) {
 				String constraint = assertion.group();
-				if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertion.start())).find()) continue;
+				if (isSafeBusinessConstraintVerification(clause, assertion.start(), assertion.end())) continue;
 				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) {
 					if (missingContextContradictsOrLacksReference(clause, claimReferences, allowedFactReferences, businessContext)) return true;
 					continue;
@@ -406,6 +433,13 @@ final class MaritimeAiResponseValidator {
 			}
 		}
 		return false;
+	}
+	private static boolean isSafeBusinessConstraintVerification(String clause, int assertionStart, int assertionEnd) {
+		String prefix = clause.substring(0, assertionStart);
+		String suffix = clause.substring(assertionEnd);
+		return BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(prefix).find()
+				&& BUSINESS_CONSTRAINT_VERIFICATION_SUFFIX.matcher(suffix).matches()
+				&& !BUSINESS_TEMPORAL_DETAIL.matcher(clause).find();
 	}
 	private static boolean missingContextContradictsOrLacksReference(String clause, List<String> claimReferences,
 			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
@@ -421,10 +455,11 @@ final class MaritimeAiResponseValidator {
 	}
 	private static boolean hasExplicitlyMissingContext(String clause, int assertionStart, int assertionEnd) {
 		String prefix = clause.substring(Math.max(0, assertionStart - 48), assertionStart);
-		String suffix = clause.substring(assertionEnd, Math.min(clause.length(), assertionEnd + 48));
-		return BUSINESS_CONSTRAINT_UNKNOWN_STATUS.matcher(suffix).find()
+		String suffix = clause.substring(assertionEnd);
+		if (BUSINESS_TEMPORAL_DETAIL.matcher(clause).find()) return false;
+		return BUSINESS_CONSTRAINT_UNKNOWN_STATUS.matcher(suffix).matches()
 				|| (BUSINESS_CONSTRAINT_MISSING_PREFIX.matcher(prefix).find()
-						&& BUSINESS_CONSTRAINT_MISSING_STATUS.matcher(suffix).find());
+						&& BUSINESS_CONSTRAINT_MISSING_STATUS.matcher(suffix).matches());
 	}
 	/** An assertion can be grounded once an authorized typed business fact is supplied and cited. */
 	private static boolean hasAuthorizedBusinessReference(String clause, String constraint, List<String> claimReferences,

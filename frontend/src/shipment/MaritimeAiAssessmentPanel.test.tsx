@@ -371,6 +371,11 @@ describe('MaritimeAiAssessmentPanel', () => {
     rerender(<MaritimeAiAssessmentPanel assessments={[stub]} unavailable={false} generating={false} onGenerate={vi.fn()} />);
     expect(screen.getByText(/Controlled synthetic stub assessment/)).toBeInTheDocument();
     expect(screen.queryByText(/Provider-generated assessment from/)).not.toBeInTheDocument();
+
+    const failedReplay = { ...assessment, state: 'FAILED' as const, validationStatus: 'FORMAL_RECOMMENDATION_NOT_OWNED_BY_CDG247' };
+    rerender(<MaritimeAiAssessmentPanel assessments={[failedReplay]} unavailable={false} generating={false} onGenerate={vi.fn()} />);
+    expect(screen.queryByText(/Verified OpenAI provider-capture replay/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Provider-generated assessment from/)).not.toBeInTheDocument();
   });
 
   it('never displays failed or abstained claims as validated reasoning', () => {
