@@ -160,6 +160,17 @@ public class ShipmentService {
 						: new ShipmentNotFoundException());
 	}
 
+	/** Checks the same shipment visibility as {@link #get} without calculating live connection risk. */
+	@Transactional(readOnly = true)
+	public void authorizeView(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		shipments.findByIdVisibleToCompanyId(shipmentId, company.getId())
+				.filter(shipment -> accessPolicy.canView(company, shipment))
+				.orElseThrow(() -> shipments.existsById(shipmentId)
+						? new ShipmentDetailForbiddenException()
+						: new ShipmentNotFoundException());
+	}
+
 	@Transactional(readOnly = true)
 	public ShipmentTrackingResponse tracking(AuthenticatedUser principal, Long shipmentId) {
 		Shipment shipment = visibleShipment(principal, shipmentId);
