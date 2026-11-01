@@ -38,20 +38,35 @@ public class ShipmentOperationalStates {
 	 * The request scope supplies this service, so those responses stay on the same observation.
 	 */
 	static OperationalState forShipmentVessel(String vesselName, String transshipmentPort) {
+		return observed(vesselName, transshipmentPort).state();
+	}
+
+	/**
+	 * The latest retained observation and the operational state derived from it.
+	 * One lookup, so the port-condition comparison uses that same report.
+	 */
+	static ObservedVessel observed(String vesselName, String transshipmentPort) {
 		ShipmentOperationalStates current = CURRENT.get();
 		if (current == null) {
-			return new OperationalStateService().derive(null, null, null, null, transshipmentPort);
+			return new ObservedVessel(null, new OperationalStateService().derive(null, null, null, null, transshipmentPort));
 		}
-		return current.forVessel(vesselName, transshipmentPort);
+		return current.observe(vesselName, transshipmentPort);
 	}
 
 	public OperationalState forVessel(String vesselName, String transshipmentPort) {
+		return observe(vesselName, transshipmentPort).state();
+	}
+
+	private ObservedVessel observe(String vesselName, String transshipmentPort) {
 		AisPosition position = find(vesselName).orElse(null);
 		if (position == null) {
-			return states.derive(null, null, null, null, transshipmentPort);
+			return new ObservedVessel(null, states.derive(null, null, null, null, transshipmentPort));
 		}
-		return states.derive(position.navigationalStatus(), position.speedOverGroundKnots(), position.latitude(),
-				position.longitude(), transshipmentPort, position.ingestedAt());
+		return new ObservedVessel(position, states.derive(position.navigationalStatus(), position.speedOverGroundKnots(),
+				position.latitude(), position.longitude(), transshipmentPort, position.ingestedAt()));
+	}
+
+	record ObservedVessel(AisPosition position, OperationalState state) {
 	}
 
 	private Optional<AisPosition> find(String vesselName) {

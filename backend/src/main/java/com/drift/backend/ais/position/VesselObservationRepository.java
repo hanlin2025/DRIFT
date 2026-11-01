@@ -79,4 +79,20 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 			@Param("to") Instant to, @Param("limit") int limit);
 
 	Optional<VesselObservation> findFirstBySourceOrderByIngestedAtDescIdDesc(AisPositionSource source);
+
+	/**
+	 * Retained reports for one MMSI strictly before {@code before}, newest first.
+	 * A report at the same instant is not earlier. Invalid positions are left out.
+	 */
+	@Query(value = """
+			SELECT *
+			FROM vessel_observations
+			WHERE mmsi = :mmsi
+				AND ingested_at < :before
+				AND position_valid IS NOT FALSE
+			ORDER BY ingested_at DESC, id DESC
+			LIMIT :limit
+			""", nativeQuery = true)
+	List<VesselObservation> findEarlierValid(@Param("mmsi") String mmsi, @Param("before") Instant before,
+			@Param("limit") int limit);
 }

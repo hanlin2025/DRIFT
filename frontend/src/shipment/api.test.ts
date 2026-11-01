@@ -510,6 +510,83 @@ describe('arrival comparison parsing', () => {
     await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 
+  it('keeps a port-condition comparison that agrees with the same report and rejects one that does not', async () => {
+    const position = {
+      mmsi: '563000111',
+      vesselName: 'EVER STEADY',
+      latitude: 1.264,
+      longitude: 103.84,
+      speedOverGroundKnots: 8,
+      courseOverGroundDegrees: null,
+      trueHeadingDegrees: null,
+      ingestedAt: '2026-11-01T00:00:00Z',
+      source: 'AIS_STREAM' as const,
+    };
+    const state = {
+      label: 'Under way',
+      description: 'Under way near Singapore',
+      unreliable: false,
+      ingestedAt: '2026-11-01T00:00:00Z',
+    };
+    const match = {
+      outcome: 'MATCHES_NORMAL' as const,
+      reason: null,
+      message: 'The mother vessel\'s movement matches its own retained reports near this port. This is not a measured congestion index.',
+      vessel: 'MOTHER' as const,
+      vesselName: 'MV Ever Steady',
+      transshipmentPort: 'Singapore',
+      knownPort: 'Singapore' as const,
+      latitude: 1.264,
+      longitude: 103.84,
+      speedOverGroundKnots: 8,
+      navigationalStatus: 0,
+      ingestedAt: '2026-11-01T00:00:00Z',
+      source: 'AIS_STREAM' as const,
+      earlierReportCount: 1,
+      slowestOwnSpeedKnots: 4,
+    };
+    const detail = {
+      ...shipment,
+      motherVesselPosition: position,
+      motherOperationalState: state,
+      portConditionComparison: match,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(detail)));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ portConditionComparison: match });
+
+    const unavailable = {
+      ...match,
+      outcome: null,
+      reason: 'NO_BASELINE' as const,
+      message: 'This vessel has no earlier report near this port, so normal conditions are not defined.',
+      earlierReportCount: 0,
+      slowestOwnSpeedKnots: null,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...detail, portConditionComparison: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ portConditionComparison: unavailable });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ portConditionComparison: null }]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      portConditionComparison: { ...match, message: 'The port is congested.' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      portConditionComparison: { ...match, speedOverGroundKnots: 3, slowestOwnSpeedKnots: 4 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      motherOperationalState: { ...state, unreliable: true },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('reads an explicit null comparison on a list item', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, arrivalComparison: null }])));
     const listed = await listShipments('token');

@@ -106,6 +106,11 @@ public class ShipmentController {
 			+ "The impact assessment is not returned here, so the recommendation is unavailable and names that reason. "
 			+ "It is not stored. Reading it does not send an alert and does not perform the response. "
 			+ "An archived shipment the viewer can open receives the same recommendation. "
+			+ "The same read returns the port-condition comparison for the mother vessel at the transshipment port, using that vessel's latest retained report and its own earlier reports near that port. "
+			+ "It is calculated when the shipment is read and is not stored. It is not a measured congestion index, and it does not replace the operational state or the AIS feed status. "
+			+ "A movement that matches those reports stays distinct from an unavailable comparison, which names the reason. "
+			+ "A position more than six hours old is not used. A position that is exactly six hours old can be used. The feed status does not by itself make the comparison unavailable. "
+			+ "Reading it does not send an alert and does not start a reassessment. An archived shipment the viewer can open receives the same comparison. "
 			+ "A shipment of another company is forbidden, and an unknown id is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({

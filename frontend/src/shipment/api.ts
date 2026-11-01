@@ -194,6 +194,38 @@ export type DelayComparison = {
   recordedTransshipmentPort: string | null;
 };
 
+export type PortConditionOutcome = 'MATCHES_NORMAL' | 'SLOWER_THAN_OWN_REPORTS';
+
+export type PortConditionReason =
+  | 'NO_REPORT'
+  | 'MISSING_PORT'
+  | 'PORT_NOT_DEFINED'
+  | 'UNUSABLE_POSITION'
+  | 'NOT_NEAR_PORT'
+  | 'UNRELIABLE_REPORT'
+  | 'POSITION_TOO_OLD'
+  | 'MISSING_SPEED'
+  | 'NO_BASELINE'
+  | 'BASELINE_TRUNCATED';
+
+export type PortConditionComparison = {
+  outcome: PortConditionOutcome | null;
+  reason: PortConditionReason | null;
+  message: string;
+  vessel: 'MOTHER';
+  vesselName: string | null;
+  transshipmentPort: string | null;
+  knownPort: 'Singapore' | 'Tanjung Pelepas' | null;
+  latitude: number | null;
+  longitude: number | null;
+  speedOverGroundKnots: number | null;
+  navigationalStatus: number | null;
+  ingestedAt: string | null;
+  source: 'AIS_STREAM' | 'SEEDED' | null;
+  earlierReportCount: number;
+  slowestOwnSpeedKnots: number | null;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -230,6 +262,7 @@ export type Shipment = {
   arrivalComparison: ArrivalComparison | null;
   transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
   delayComparison?: DelayComparison | null;
+  portConditionComparison?: PortConditionComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
 };
@@ -948,6 +981,8 @@ function asShipment(value: unknown): Shipment | null {
   if (transshipmentArrivalDeadline === undefined) return null;
   const delayComparison = delayComparisonOf(value);
   if (delayComparison === undefined) return null;
+  const portConditionComparison = portConditionOf(value, motherVesselPosition ?? null, motherOperationalState ?? null, risk ?? null);
+  if (portConditionComparison === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -987,6 +1022,7 @@ function asShipment(value: unknown): Shipment | null {
     arrivalComparison,
     transshipmentArrivalDeadline,
     delayComparison,
+    portConditionComparison,
     updatedAt,
     updatedByName,
   };
@@ -994,6 +1030,132 @@ function asShipment(value: unknown): Shipment | null {
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
 const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+const PORT_OUTCOMES: readonly PortConditionOutcome[] = ['MATCHES_NORMAL', 'SLOWER_THAN_OWN_REPORTS'];
+const PORT_REASONS: readonly PortConditionReason[] = [
+  'NO_REPORT', 'MISSING_PORT', 'PORT_NOT_DEFINED', 'UNUSABLE_POSITION', 'NOT_NEAR_PORT',
+  'UNRELIABLE_REPORT', 'POSITION_TOO_OLD', 'MISSING_SPEED', 'NO_BASELINE', 'BASELINE_TRUNCATED',
+];
+const PORT_KNOWN = ['Singapore', 'Tanjung Pelepas'] as const;
+const PORT_MESSAGES = {
+  MATCHES_NORMAL: 'The mother vessel\'s movement matches its own retained reports near this port. This is not a measured congestion index.',
+  SLOWER_THAN_OWN_REPORTS: 'The mother vessel is moving slower than its own retained reports near this port. This is not a measured congestion index.',
+  NO_REPORT: 'The mother vessel has no retained AIS report.',
+  MISSING_PORT: 'The transshipment port is missing.',
+  PORT_NOT_DEFINED: 'Normal conditions are not defined for this port.',
+  UNUSABLE_POSITION: 'The mother vessel\'s coordinates cannot be used.',
+  NOT_NEAR_PORT: 'The mother vessel is not within 25 nautical miles of the transshipment port, so current port conditions are not observed.',
+  UNRELIABLE_REPORT: 'The latest report is unreliable because a stopped status was reported above 1 knot.',
+  POSITION_TOO_OLD: 'The mother vessel\'s position is more than six hours old.',
+  MISSING_SPEED: 'The mother vessel\'s speed is missing, so it cannot be compared with its own reports.',
+  NO_BASELINE: 'This vessel has no earlier report near this port, so normal conditions are not defined.',
+  BASELINE_TRUNCATED: 'This vessel has more retained reports than this comparison reads, so normal conditions are not defined from a partial history.',
+} as const;
+
+function portConditionOf(
+  value: Record<string, unknown>,
+  position: VesselPosition | null,
+  state: OperationalState | null,
+  risk: ShipmentRisk | null,
+): PortConditionComparison | null | undefined {
+  if (!('portConditionComparison' in value) || value.portConditionComparison == null) return null;
+  const comparison = parsePortCondition(value.portConditionComparison);
+  if (!comparison || !portConditionAgrees(comparison, position, state, risk)) return undefined;
+  return comparison;
+}
+
+function parsePortCondition(value: unknown): PortConditionComparison | undefined {
+  if (!isRecord(value) || value.vessel !== 'MOTHER') return undefined;
+  const fields = ['outcome', 'reason', 'message', 'vesselName', 'transshipmentPort', 'knownPort', 'latitude',
+    'longitude', 'speedOverGroundKnots', 'navigationalStatus', 'ingestedAt', 'source', 'earlierReportCount',
+    'slowestOwnSpeedKnots'] as const;
+  if (!fields.every(field => field in value)) return undefined;
+  const vesselName = optionalPort(value.vesselName);
+  const transshipmentPort = optionalPort(value.transshipmentPort);
+  if (vesselName === undefined || transshipmentPort === undefined) return undefined;
+  if (value.knownPort != null && !PORT_KNOWN.some(port => port === value.knownPort)) return undefined;
+  const knownPort = value.knownPort == null ? null : value.knownPort as 'Singapore' | 'Tanjung Pelepas';
+  if (!isOptionalFiniteNumber(value.latitude) || !isOptionalFiniteNumber(value.longitude)) return undefined;
+  if ((value.latitude == null) !== (value.longitude == null)) return undefined;
+  if (!isOptionalFiniteNumber(value.speedOverGroundKnots) || !isOptionalFiniteNumber(value.slowestOwnSpeedKnots)) return undefined;
+  if (!isOptionalStatus(value.navigationalStatus)) return undefined;
+  const ingestedAt = optionalInstant(value.ingestedAt);
+  if (ingestedAt === undefined) return undefined;
+  if (value.source != null && value.source !== 'AIS_STREAM' && value.source !== 'SEEDED') return undefined;
+  if (!isWholeCount(value.earlierReportCount)) return undefined;
+  const latitude = value.latitude ?? null;
+  const longitude = value.longitude ?? null;
+  const speedOverGroundKnots = value.speedOverGroundKnots ?? null;
+  const slowestOwnSpeedKnots = value.slowestOwnSpeedKnots ?? null;
+  const source = value.source == null ? null : value.source;
+  if (latitude != null && source == null) return undefined;
+  if (isPortOutcome(value.outcome) && value.reason == null) {
+    if (value.message !== PORT_MESSAGES[value.outcome]) return undefined;
+    if (value.earlierReportCount < 1 || slowestOwnSpeedKnots == null || speedOverGroundKnots == null
+      || ingestedAt == null || knownPort == null || latitude == null || source == null) return undefined;
+    if (value.outcome === 'MATCHES_NORMAL' && speedOverGroundKnots < slowestOwnSpeedKnots) return undefined;
+    if (value.outcome === 'SLOWER_THAN_OWN_REPORTS' && speedOverGroundKnots >= slowestOwnSpeedKnots) return undefined;
+    return {
+      outcome: value.outcome, reason: null, message: value.message, vessel: 'MOTHER', vesselName, transshipmentPort,
+      knownPort, latitude, longitude, speedOverGroundKnots, navigationalStatus: value.navigationalStatus ?? null,
+      ingestedAt, source, earlierReportCount: value.earlierReportCount, slowestOwnSpeedKnots,
+    };
+  }
+  if (value.outcome != null || !isPortReason(value.reason) || value.message !== PORT_MESSAGES[value.reason]) return undefined;
+  if (value.earlierReportCount !== 0 || slowestOwnSpeedKnots != null) return undefined;
+  return {
+    outcome: null, reason: value.reason, message: value.message, vessel: 'MOTHER', vesselName, transshipmentPort,
+    knownPort, latitude, longitude, speedOverGroundKnots, navigationalStatus: value.navigationalStatus ?? null,
+    ingestedAt, source, earlierReportCount: 0, slowestOwnSpeedKnots: null,
+  };
+}
+
+function portConditionAgrees(
+  comparison: PortConditionComparison,
+  position: VesselPosition | null,
+  state: OperationalState | null,
+  risk: ShipmentRisk | null,
+): boolean {
+  if (risk != null && comparison.message === risk.explanation) return false;
+  if (position == null) {
+    if (comparison.latitude != null) return false;
+  } else if (comparison.latitude == null || comparison.longitude == null) {
+    return false;
+  } else if (comparison.latitude !== position.latitude || comparison.longitude !== position.longitude
+    || comparison.speedOverGroundKnots !== position.speedOverGroundKnots
+    || comparison.ingestedAt !== position.ingestedAt || comparison.source !== (position.source ?? null)) {
+    return false;
+  }
+  if (state == null) return comparison.ingestedAt == null;
+  if (comparison.ingestedAt !== state.ingestedAt) return false;
+  if (comparison.message === state.description || comparison.message === state.label) return false;
+  if (comparison.outcome != null) {
+    return !state.unreliable && state.description.endsWith(` near ${comparison.knownPort}`);
+  }
+  if (comparison.reason === 'UNRELIABLE_REPORT') return state.unreliable;
+  if (comparison.reason === 'NOT_NEAR_PORT') return !state.unreliable && state.description.endsWith(', far from port');
+  if (comparison.reason === 'NO_REPORT' || comparison.reason === 'MISSING_PORT'
+    || comparison.reason === 'PORT_NOT_DEFINED' || comparison.reason === 'UNUSABLE_POSITION') {
+    return state.description === state.label;
+  }
+  return !state.unreliable && comparison.knownPort != null && state.description.endsWith(` near ${comparison.knownPort}`);
+}
+
+function isPortOutcome(value: unknown): value is PortConditionOutcome {
+  return PORT_OUTCOMES.some(outcome => outcome === value);
+}
+
+function isPortReason(value: unknown): value is PortConditionReason {
+  return PORT_REASONS.some(reason => reason === value);
+}
+
+function isOptionalStatus(value: unknown): value is number | null {
+  return value == null || (typeof value === 'number' && Number.isInteger(value));
+}
+
+function isWholeCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
 
 const DELAY_OUTCOMES: readonly DelayComparisonOutcome[] = ['NO_PREDICTED_IMPACT', 'EXCEEDS_DEADLINE'];
 const DELAY_REASONS: readonly DelayComparisonReason[] = [
