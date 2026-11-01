@@ -1182,7 +1182,8 @@ function delayComparisonOf(value: Record<string, unknown>): DelayComparison | nu
 
 function optionalInstant(value: unknown): string | null | undefined {
   if (value == null) return null;
-  return isPresentText(value) && Number.isFinite(Date.parse(value)) ? value : undefined;
+  if (!isPresentText(value) || !Number.isFinite(Date.parse(value))) return undefined;
+  return value;
 }
 
 function optionalPort(value: unknown): string | null | undefined {
