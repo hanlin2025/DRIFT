@@ -93,6 +93,15 @@ public record ShipmentDetailResponse(
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 			RecommendationDecisionResponse recommendationDecision,
 			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
+				recommendationDecisionHistory, ShipmentRecommendationImpact.notReturned());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
+			ShipmentRecommendationImpact impact) {
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -110,7 +119,7 @@ public record ShipmentDetailResponse(
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
-				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
+				ShipmentRecommendation.of(risk, impact == null ? ShipmentRecommendationImpact.notReturned() : impact),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),

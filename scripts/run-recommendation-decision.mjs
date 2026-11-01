@@ -22,6 +22,24 @@ const useDocker = dockerCompose();
 
 function psql(database, statement) {
   const common = ['-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement];
+  const host = process.env.DRIFT_E2E_PGHOST ?? '';
+  const port = process.env.DRIFT_E2E_PGPORT ?? '';
+  const container = process.env.DRIFT_E2E_PGCONTAINER ?? '';
+  if (port === '5432') throw new Error('Refusing the shared database port.');
+  if (container === 'drift-postgres') throw new Error('Refusing the shared database container.');
+  if (container) {
+    return execFileSync('docker', ['exec', '-i', container, 'psql', ...common], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+  }
+  if (host && port) {
+    return execFileSync('psql', ['-h', host, '-p', port, ...common], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' },
+    });
+  }
   if (useDocker) {
     return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', ...common],
       { cwd: root, encoding: 'utf8' });
@@ -95,20 +113,34 @@ function processCwd(pid) {
   return output.split('\n').find(line => line.startsWith('n'))?.slice(1) ?? '';
 }
 
+function webPort() {
+  return process.env.DRIFT_E2E_WEB_PORT || '5173';
+}
+
 function assertPortsAvailable() {
   const backend = listeners(8080);
   if (backend.length) {
     throw new Error(`Port 8080 is already in use by pid ${backend.join(', ')}. This runner will not use or stop that process.`);
   }
-  for (const pid of listeners(5173)) {
+  const port = webPort();
+  for (const pid of listeners(port)) {
     if (processCwd(pid) !== frontendDir) {
-      throw new Error(`Port 5173 is already in use by pid ${pid} outside this frontend. This runner will not stop it.`);
+      throw new Error(`Port ${port} is already in use by pid ${pid} outside this frontend. This runner will not stop it.`);
     }
   }
 }
 
+function databaseUrl(owned) {
+  const host = process.env.DRIFT_E2E_PGHOST || 'localhost';
+  const port = process.env.DRIFT_E2E_PGPORT || '5432';
+  if (port === '5432' && process.env.DRIFT_E2E_PGHOST) {
+    throw new Error('Refusing the shared database port.');
+  }
+  return `jdbc:postgresql://${host}:${port}/${owned.name}`;
+}
+
 function backendEnv(owned, impactOutcome) {
-  const url = `jdbc:postgresql://localhost:5432/${owned.name}`;
+  const url = databaseUrl(owned);
   return {
     ...process.env,
     JWT_SECRET: randomBytes(48).toString('base64url'),
@@ -131,7 +163,7 @@ function defaultSpawnBackend(env) {
 }
 
 function waitForBackend(child, owned) {
-  const url = `jdbc:postgresql://localhost:5432/${owned.name}`;
+  const url = databaseUrl(owned);
   let log = '';
   const append = chunk => { log += chunk.toString(); };
   child.stdout?.on('data', append);
@@ -235,10 +267,13 @@ async function stopProcessGroup(child) {
   throw new Error('A process this runner started did not exit after it was signalled.');
 }
 
-const passes = [
-  { outcome: 'NO_PREDICTED_IMPACT', grep: '@completed-impact' },
-  { outcome: 'NOT_RETURNED', grep: '@impact-not-returned' },
-];
+const passes = (process.env.DRIFT_E2E_IMPACT_OUTCOMES ?? 'NO_PREDICTED_IMPACT,NOT_RETURNED')
+	.split(',')
+	.filter(Boolean)
+	.map(outcome => ({
+		outcome,
+		grep: outcome === 'NOT_RETURNED' ? '@impact-not-returned' : '@completed-impact',
+	}));
 
 async function runPass(owned, pass, options) {
   if (listeners(8080).length) {
@@ -250,7 +285,7 @@ async function runPass(owned, pass, options) {
     await waitForBackend(activeBackend, owned);
     if (!options.spawnBackend) assertListenerIsOurs(activeBackend);
     const args = options.playwrightArgs ?? [
-      'playwright', 'test', 'e2e/recommendation-decision.spec.ts', '--project=desktop', '--grep', pass.grep,
+      'playwright', 'test', 'e2e/recommendation-decision.spec.ts', '--project=desktop', '--max-failures=1', '--grep', pass.grep,
     ];
     testCode = await runPlaywright(owned, args);
   } finally {
@@ -275,7 +310,7 @@ export async function runRecommendationDecision(options = {}) {
   } catch (error) {
     failure = error;
   } finally {
-    if (owned && createdByThisProcess.has(owned.name)) {
+    if (owned && createdByThisProcess.has(owned.name) && process.env.DRIFT_E2E_RETAIN_DATABASE !== 'true') {
       try {
         await dropOwnedDatabase(owned.name);
       } catch (error) {
