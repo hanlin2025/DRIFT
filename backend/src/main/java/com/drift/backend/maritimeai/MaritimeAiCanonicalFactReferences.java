@@ -1,6 +1,7 @@
 package com.drift.backend.maritimeai;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -39,6 +40,12 @@ final class MaritimeAiCanonicalFactReferences {
 		input.evidence().forEach(item -> refs.add("evidence:" + item.evidenceId()));
 		if (hasVerifiedPortOverlap(input)) refs.add(PORT_OVERLAP_REFERENCE);
 		return Set.copyOf(refs);
+	}
+	static List<String> riskReferences(MaritimeAiEvidencePackage input) {
+		Set<String> allowed = allowed(input);
+		return List.of("risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW",
+				"risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_NOT_USED")
+			.stream().filter(allowed::contains).toList();
 	}
 	private static boolean hasVerifiedPortOverlap(MaritimeAiEvidencePackage input) {
 		return revisedExpectedArrival(input).map(arrival -> input.evidence().stream()

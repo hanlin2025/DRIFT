@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import jakarta.persistence.EntityManager;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +47,7 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired PasswordEncoder passwords;
+	@Autowired EntityManager entityManager;
 
 	private String token;
 	private Long shipmentId;
@@ -68,7 +71,7 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 	}
 
 	@Test
-	void generatesPersistsAndReadsASyntheticOnlyAssessmentWithoutChangingShipmentSchedule() throws Exception {
+	void persistsTheRiskSnapshotUsedForGenerationAfterShipmentRiskChanges() throws Exception {
 		String beforeArrival = jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
 		String beforeDeparture = jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
 
@@ -77,16 +80,39 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				.andExpect(jsonPath("$.state").value("GENERATED"))
 				.andExpect(jsonPath("$.validationStatus").value("VALID"))
 				.andExpect(jsonPath("$.provider").isNotEmpty())
-				.andExpect(jsonPath("$.interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"));
+				.andExpect(jsonPath("$.interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.assessed").value(true))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.severity").value("HIGH"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.selectedWindowState").value("AVAILABLE"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.windowSeconds").value(28800))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.estimateFreshness").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[0]").value("risk:CONNECTION_SEVERITY"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[1]").value("risk:PLANNED_CONNECTION_WINDOW"))
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[2]").value("risk:ARRIVAL_ESTIMATE_NOT_USED"));
+		assertThat(jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeArrival);
+		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
+
+		jdbc.update("UPDATE shipments SET planned_feeder_departure_at = planned_feeder_departure_at + interval '4 days' WHERE id = ?", shipmentId);
+		entityManager.clear();
+		mvc.perform(get("/api/shipments/" + shipmentId).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.risk.level").value("LOW"));
 
 		mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$[0].state").value("GENERATED"))
-				.andExpect(jsonPath("$[0].interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"));
+				.andExpect(jsonPath("$[0].interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.severity").value("HIGH"))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.selectedWindowState").value("AVAILABLE"))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.windowSeconds").value(28800))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.estimateFreshness").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.calculationLimitations").isArray())
+				.andExpect(jsonPath("$[0].deterministicSummary.connectionRisk.canonicalFactReferences[1]").value("risk:PLANNED_CONNECTION_WINDOW"));
 
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE shipment_id = ?", Long.class, shipmentId)).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeArrival);
-		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
+		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isNotEqualTo(beforeDeparture);
 	}
 
 	private static String shipmentJson() {

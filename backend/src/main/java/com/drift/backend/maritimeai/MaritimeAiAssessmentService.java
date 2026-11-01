@@ -136,7 +136,7 @@ public class MaritimeAiAssessmentService {
 
 	@Transactional(readOnly = true)
 	public List<MaritimeAiAssessmentResponse> list(AuthenticatedUser user, Long shipmentId) {
-		shipments.get(user, shipmentId); // do not expose assessments across company/importer visibility boundaries
+		shipments.authorizeView(user, shipmentId); // preserve visibility without recalculating live risk for historical assessments
 		return assessments.findByShipmentIdOrderByCreatedAtDesc(shipmentId).stream().map(this::response).toList();
 	}
 
@@ -174,8 +174,10 @@ public class MaritimeAiAssessmentService {
 						item.previousValue(), item.currentValue(), item.evidenceId(), item.sourceType(), item.sourceMode(), item.associationScope(), item.citation(),
 						item.observedAt(), item.retrievedAtUtc())).toList();
 		List<String> limitations = input.evidence().stream().map(MaritimeEvidence::limitation).filter(java.util.Objects::nonNull).distinct().toList();
-		return new MaritimeAiDeterministicSummary("cdg247.deterministic-facts.v2.canonical-references", "Backend-owned evidence and shipment-schedule facts; not AI reasoning.",
-				List.copyOf(schedule), evidence, limitations);
+		MaritimeAiConnectionRiskContext risk = input.shipmentContext() == null ? null : input.shipmentContext().connectionRisk();
+		return new MaritimeAiDeterministicSummary("cdg247.deterministic-facts.v3.risk-snapshot", "Backend-owned evidence, shipment-schedule, and risk facts; not AI reasoning.",
+				List.copyOf(schedule), evidence, limitations,
+				MaritimeAiDeterministicSummary.RiskSnapshot.from(risk, MaritimeAiCanonicalFactReferences.riskReferences(input)));
 	}
 	private static void addScheduleFact(List<MaritimeAiDeterministicSummary.Fact> schedule, MaritimeAiShipmentContext.Vessel vessel) {
 		if (vessel == null || vessel.plannedTime() == null) return;

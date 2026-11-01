@@ -75,7 +75,7 @@ final class MaritimeAiResponseValidator {
 			}
 			String structuredGrounding = validateStructuredGrounding(claim, cited, input);
 			if (structuredGrounding != null) return structuredGrounding;
-			String relationshipGrounding = validateRelationship(claim, cited);
+			String relationshipGrounding = validateRelationship(claim, cited, input);
 			if (relationshipGrounding != null) return relationshipGrounding;
 		}
 		return null;
@@ -120,9 +120,9 @@ final class MaritimeAiResponseValidator {
 
 	/** v5 validates the model's asserted relationship from typed references, rather than trying to
 	 * infer which noun a free-form sentence belongs to. Null remains readable for legacy records. */
-	private static String validateRelationship(MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
+	private static String validateRelationship(MaritimeAiClaim claim, List<MaritimeEvidence> cited, MaritimeAiEvidencePackage input) {
 		if (claim.relationshipType() == null || claim.relationshipType().isBlank()) return null;
-		Set<String> refs = Set.copyOf(claim.factReferences());
+		Set<String> refs = claim.factReferences() == null ? Set.of() : Set.copyOf(claim.factReferences());
 		if (refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE)
 				&& !"PORT_TIME_OVERLAP_REVIEW".equals(claim.relationshipType())) return "RELATIONSHIP_TYPE_MISMATCH";
 		return switch (claim.relationshipType()) {
@@ -135,12 +135,18 @@ final class MaritimeAiResponseValidator {
 					&& refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE) ? null : "UNSUPPORTED_PORT_TIME_OVERLAP";
 			case "REGIONAL_WEATHER_CONTEXT" -> cited.stream().anyMatch(item -> "REGIONAL_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_REGIONAL_WEATHER_RELATIONSHIP";
-			case "RISK_BUFFER_REVIEW" -> refs.contains("risk:CONNECTION_SEVERITY")
-					&& (refs.contains("risk:PLANNED_CONNECTION_WINDOW")
-							|| refs.contains("risk:REMAINING_CONNECTION_WINDOW"))
-					? null : "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+			case "RISK_BUFFER_REVIEW" -> validateRiskRelationship(refs, input);
 			default -> "UNKNOWN_RELATIONSHIP_TYPE";
 		};
+	}
+	private static String validateRiskRelationship(Set<String> refs, MaritimeAiEvidencePackage input) {
+		MaritimeAiConnectionRiskContext risk = input.shipmentContext() == null ? null : input.shipmentContext().connectionRisk();
+		if (risk == null || !risk.assessed() || risk.riskLevel() == null || risk.riskBasis() == null
+				|| !refs.contains("risk:CONNECTION_SEVERITY"))
+			return "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
+		String selected = risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
+				? "risk:REMAINING_CONNECTION_WINDOW" : "risk:PLANNED_CONNECTION_WINDOW";
+		return refs.contains(selected) ? null : "UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP";
 	}
 	private static boolean hasMotherExpectedArrival(List<MaritimeEvidence> cited) {
 		return cited.stream().anyMatch(item -> "MOTHER".equals(item.vesselRole())

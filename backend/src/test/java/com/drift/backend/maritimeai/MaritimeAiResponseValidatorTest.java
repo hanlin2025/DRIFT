@@ -152,6 +152,54 @@ class MaritimeAiResponseValidatorTest {
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY"), "RISK_BUFFER_REVIEW");
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingSelectedWindow), input))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+
+		var wrongAisWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
+				valid.vesselRole(), valid.observationType(), valid.associationScope(),
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongAisWindow), input))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+
+		var plannedRisk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.MEDIUM,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 64800L),
+				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 7200L, null),
+				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.STALE,
+						java.time.OffsetDateTime.parse("2026-10-01T06:00:00Z"), java.time.Instant.parse("2026-09-30T20:00:00Z"), null),
+				List.of("The stale estimate was not used."));
+		var plannedInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED",
+				new MaritimeAiShipmentContext("Synthetic port", schedule.motherVessel(), schedule.feederVessel(), plannedRisk), List.of(motherArrival));
+		var correctPlannedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
+				valid.vesselRole(), valid.observationType(), valid.associationScope(),
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(correctPlannedWindow), plannedInput)).isNull();
+		var wrongPlannedWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
+				valid.vesselRole(), valid.observationType(), valid.associationScope(),
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW"), "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongPlannedWindow), plannedInput))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+	}
+
+	@Test void riskBufferReviewRequiresAnAssessedRiskContext() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var claim = new MaritimeAiClaim("Review the backend risk context alongside the source evidence.", List.of("mother-arrival"),
+				"CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				List.of("evidence:mother-arrival"), "RISK_BUFFER_REVIEW");
+		var missingInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", null, List.of(motherArrival));
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(claim), missingInput))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+		var missingReferences = new MaritimeAiClaim(claim.statement(), claim.evidenceIds(), claim.applicability(),
+				claim.vesselRole(), claim.observationType(), claim.associationScope(), null, "RISK_BUFFER_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingReferences), missingInput))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+
+		var unassessedRisk = new MaritimeAiConnectionRiskContext(false,
+				"Connection risk is not assessed because the planned feeder-vessel departure is missing.", null, null,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.INCOMPLETE, null),
+				null, new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN, null, null, null), List.of());
+		var unassessedInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED",
+				new MaritimeAiShipmentContext("Synthetic port", null, null, unassessedRisk), List.of(motherArrival));
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(claim), unassessedInput))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
 	}
 
 	@Test void rejectsUnknownCanonicalFactReferenceAndNumericalRestatementForTheNewContract() {

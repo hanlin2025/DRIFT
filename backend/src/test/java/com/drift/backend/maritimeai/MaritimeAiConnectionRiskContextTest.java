@@ -47,6 +47,14 @@ class MaritimeAiConnectionRiskContextTest {
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input(context))).contains(
 				"risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW",
 				"risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL");
+		var snapshot = snapshot(context);
+		assertThat(snapshot.severity()).isEqualTo(ShipmentRisk.Level.HIGH);
+		assertThat(snapshot.selectedWindowBasis()).isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
+		assertThat(snapshot.selectedWindowState()).isEqualTo(MaritimeAiDeterministicSummary.RiskSnapshot.SelectedWindowState.AVAILABLE);
+		assertThat(snapshot.windowSeconds()).isEqualTo(7200L);
+		assertThat(snapshot.estimateFreshness()).isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		assertThat(snapshot.calculationLimitations()).contains("The estimated arrival was used.");
+		assertThat(snapshot.canonicalFactReferences()).contains("risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL");
 	}
 
 	@Test void anUnavailableEstimateFallsBackToThePlannedWindowWithoutInventingRemainingBuffer() {
@@ -68,6 +76,8 @@ class MaritimeAiConnectionRiskContextTest {
 		assertThat(context.arrivalEstimate().unavailableReason()).isEqualTo("NO_POSITION");
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input(context))).contains("risk:ARRIVAL_ESTIMATE_NOT_USED")
 				.doesNotContain("risk:AIS_ESTIMATED_ARRIVAL", "risk:REMAINING_CONNECTION_WINDOW");
+		assertThat(snapshot(context).estimateFreshness()).isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		assertThat(snapshot(context).estimateUnavailableCode()).isEqualTo("NO_POSITION");
 	}
 
 	@Test void aStaleEstimateIsPreservedButCannotBecomeTheRiskBasisOrRemainingBuffer() {
@@ -88,6 +98,7 @@ class MaritimeAiConnectionRiskContextTest {
 		assertThat(context.arrivalEstimate().positionReceivedAt()).isEqualTo(RECEIVED);
 		assertThat(context.remainingWindow()).isNull();
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input(context))).doesNotContain("risk:AIS_ESTIMATED_ARRIVAL");
+		assertThat(snapshot(context).estimateFreshness()).isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.STALE);
 	}
 
 	@Test void anInvalidPlannedWindowHasNoDurationAndAnAisBasedMissRetainsOnlyMissedSeconds() {
@@ -120,6 +131,8 @@ class MaritimeAiConnectionRiskContextTest {
 		assertThat(context.remainingWindow()).isEqualTo(new MaritimeAiConnectionRiskContext.RemainingWindow("MISSED", null, 0L));
 		assertThat(context.riskBasis()).isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input(context))).contains("risk:REMAINING_CONNECTION_WINDOW");
+		assertThat(snapshot(context).selectedWindowState()).isEqualTo(MaritimeAiDeterministicSummary.RiskSnapshot.SelectedWindowState.MISSED);
+		assertThat(snapshot(context).missedBySeconds()).isEqualTo(0L);
 	}
 
 	@Test void missingScheduleIsUnassessedAndHasNoSeverityOrWindowReference() {
@@ -132,6 +145,8 @@ class MaritimeAiConnectionRiskContextTest {
 		assertThat(context.riskBasis()).isNull();
 		assertThat(context.plannedWindow().state()).isEqualTo(MaritimeAiConnectionRiskContext.WindowState.INCOMPLETE);
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input(context))).isEmpty();
+		assertThat(snapshot(context).selectedWindowState()).isEqualTo(MaritimeAiDeterministicSummary.RiskSnapshot.SelectedWindowState.INCOMPLETE);
+		assertThat(snapshot(context).unavailableReason()).contains("planned feeder-vessel departure is missing");
 	}
 
 	@Test void historicalMpaEvidenceKeepsItsEvidenceReferenceAndCannotChangeRiskBasis() {
@@ -161,6 +176,34 @@ class MaritimeAiConnectionRiskContextTest {
 				MaritimeAiShipmentContext.class);
 		assertThat(context.connectionRisk()).isNull();
 		assertThat(new MaritimeAiShipmentContext("Singapore", null, null).connectionRisk()).isNull();
+		var oldSummary = new ObjectMapper().readValue("{\"summaryVersion\":\"cdg247.deterministic-facts.v2.canonical-references\",\"label\":\"old\",\"shipmentScheduleFacts\":[],\"evidenceFacts\":[],\"limitations\":[]}",
+				MaritimeAiDeterministicSummary.class);
+		assertThat(oldSummary.connectionRisk()).isNull();
+	}
+
+	@Test void riskSnapshotOmitsRawAisTimestampsAndMakesMissingContextExplicit() throws Exception {
+		var context = MaritimeAiConnectionRiskContext.from(detail(new ConnectionWindow("2 days", 172800),
+				new RemainingConnectionWindow(RemainingConnectionWindow.Status.AVAILABLE, "2 hours", 7200L, null, null),
+				new ShipmentRiskContributions(true, null, List.of(
+						contribution(ShipmentRiskContribution.Code.WINDOW_IN_USE, "Remaining connection window"),
+						contribution(ShipmentRiskContribution.Code.REMAINING_DURATION, "2 hours"))), freshEstimate(),
+				new ShipmentRisk(ShipmentRisk.Level.HIGH, "backend output"),
+				new AssessmentExplanation(List.of("Remaining connection window"), List.of("The estimate was used."), "Limited confidence.", null)));
+		String snapshotJson = new ObjectMapper().writeValueAsString(snapshot(context));
+		assertThat(snapshotJson).doesNotContain("estimatedArrivalAt", "positionReceivedAt", "2026-10-26T06:00:00Z", RECEIVED.toString());
+
+		var missing = MaritimeAiDeterministicSummary.RiskSnapshot.from(null, List.of());
+		assertThat(missing.assessed()).isFalse();
+		assertThat(missing.severity()).isNull();
+		assertThat(missing.selectedWindowBasis()).isNull();
+		assertThat(missing.selectedWindowState()).isEqualTo(MaritimeAiDeterministicSummary.RiskSnapshot.SelectedWindowState.INCOMPLETE);
+		assertThat(missing.estimateFreshness()).isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN);
+		assertThat(missing.unavailableReason()).isEqualTo("RISK_CONTEXT_UNAVAILABLE");
+	}
+
+	private static MaritimeAiDeterministicSummary.RiskSnapshot snapshot(MaritimeAiConnectionRiskContext context) {
+		return MaritimeAiDeterministicSummary.RiskSnapshot.from(context,
+				MaritimeAiCanonicalFactReferences.riskReferences(input(context)));
 	}
 
 	private static ShipmentRiskContribution contribution(ShipmentRiskContribution.Code code, String value) {
