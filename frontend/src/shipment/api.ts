@@ -1070,6 +1070,7 @@ function parsePortCondition(value: unknown): PortConditionComparison | undefined
     'longitude', 'speedOverGroundKnots', 'navigationalStatus', 'ingestedAt', 'source', 'earlierReportCount',
     'slowestOwnSpeedKnots'] as const;
   if (!fields.every(field => field in value)) return undefined;
+  if (typeof value.message !== 'string') return undefined;
   const vesselName = optionalPort(value.vesselName);
   const transshipmentPort = optionalPort(value.transshipmentPort);
   if (vesselName === undefined || transshipmentPort === undefined) return undefined;
