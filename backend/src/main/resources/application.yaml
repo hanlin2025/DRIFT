@@ -61,6 +61,7 @@ app:
       batch-size: ${RISK_ALERTS_BATCH_SIZE:50}
   ais:
     enabled: ${AIS_ENABLED:false}
+    capture-directory: ${AIS_CAPTURE_DIRECTORY:}
     stream-uri: wss://stream.aisstream.io/v0/stream
     api-key: ${AISSTREAM_API_KEY:}
     southwest-latitude: ${AIS_SOUTHWEST_LATITUDE:}

@@ -181,13 +181,14 @@ public class ShipmentController {
 			+ "The window is the last 6, 24 or 72 hours, 24 by default. Observations flagged as invalid positions are left out. "
 			+ "At most 500 points are returned; when the window holds more, the newest are kept and truncated is true. "
 			+ "Segments slower than slowdownThresholdKnots are slowdowns. "
-			+ "A vessel with no retained AIS report returns no points. "
+			+ "An optional cutoff retrieves only observations received at or before that instant. Cutoff retrieval without a captureId is limited to SEEDED rehearsal data; AIS_STREAM playback requires a verified CDG-285 capture manifest with approved replay permission and current retention. "
+			+ "Timestamps are DRIFT receipt times, not original AIS event times. No positions are interpolated. "
 			+ "A shipment of another company is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Track history for the vessel, possibly with no points", content = @Content(
 						mediaType = "application/json", schema = @Schema(implementation = VesselTrackResponse.class))),
-				@ApiResponse(responseCode = "400", description = "Unknown vessel or unsupported window", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Unknown vessel, unsupported window or cutoff, or rejected capture manifest", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"hours":"Window must be 6, 24 or 72 hours"}}
 								"""))),
@@ -207,12 +208,14 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long shipmentId,
 			@io.swagger.v3.oas.annotations.Parameter(description = "MOTHER or FEEDER; MOTHER by default", example = "MOTHER") @RequestParam(required = false) String vessel,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Window length in hours: 6, 24 or 72; 24 by default", example = "24") @RequestParam(required = false) String hours) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Window length in hours: 6, 24 or 72; 24 by default", example = "24") @RequestParam(required = false) String hours,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ISO-8601 cutoff with an offset. Uses DRIFT receipt time and cannot be in the future.", example = "2026-10-30T12:01:00Z") @RequestParam(required = false) String cutoff,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional CDG-285 capture UUID. Required to replay AIS_STREAM observations; omit for SEEDED rehearsal tracks.") @RequestParam(required = false) String captureId) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(vesselTracks.history(user, shipmentId, vessel, hours));
+				.body(vesselTracks.history(user, shipmentId, vessel, hours, cutoff, captureId));
 	}
 
 	@PostMapping("/api/shipments")

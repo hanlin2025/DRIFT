@@ -26,7 +26,7 @@ Complete a separate checklist for the mother and feeder candidates. Recheck near
 - [ ] **Source, retention, and replay permission:** Confirm the connected AIS provider/account terms allow the planned capture, local retention, and demonstration replay. Record a review reference and date, permitted purpose, and delete-by date. If capture/retention is unclear, do not export authentic reports. If replay is not explicitly permitted, do not use the authentic capture for playback; rehearse with the fictional fixture instead.
 - [ ] **Relationship boundary:** Record that these are independently selected vessel candidates. Do not claim a real booking, voyage leg, or mother-to-feeder transshipment unless separate authorized evidence establishes it.
 
-The script's `NO_REPORTS`, `FLAGS_PRESENT`, and `NO_AUTOMATED_FLAGS` values are summaries, not approval decisions. Every manifest leaves `operator_acceptance` as `PENDING`; the operator records the selection decision separately.
+The script's `NO_REPORTS`, `FLAGS_PRESENT`, and `NO_AUTOMATED_FLAGS` values are summaries, not approval decisions. Every manifest defaults to `operator_acceptance=PENDING`; the operator records acceptance only after the manual review.
 
 ## 2. Prepare the existing feed and database access
 
@@ -53,11 +53,12 @@ python3 tools/ais_capture/capture_export.py \
   --terms-reference 'provider terms review reference' \
   --terms-reviewed-at '2026-11-02T09:00:00+08:00' \
   --replay-permission UNKNOWN \
+  --operator-acceptance PENDING \
   --retain-until '2026-11-09' \
   --output 'local/ais-captures/<run-id>/mother.csv'
 ```
 
-Repeat with `--role feeder`, the feeder's own verified identity, and a separate output path. The script writes a CSV plus `<stem>.manifest.json`. The manifest records the selected identity evidence reference, provider-usage review, exact time bounds, export time, SHA-256, source attribution, quality counts, and retention date. It contains no provider key. Set replay permission to `APPROVED` only when the documented review explicitly permits it; otherwise record `NOT_APPROVED` or `UNKNOWN` and do not replay authentic data.
+Repeat with `--role feeder`, the feeder's own verified identity, and a separate output path. The script writes a CSV plus `<stem>.manifest.json`. The manifest records the selected identity evidence reference, provider-usage review, exact time bounds, export time, SHA-256, source attribution, quality counts, operator acceptance, and retention date. It contains no provider key. Set replay permission to `APPROVED` only when the documented review explicitly permits it; otherwise record `NOT_APPROVED` or `UNKNOWN` and do not replay authentic data. Set operator acceptance to `ACCEPTED` only after reviewing identity and quality; otherwise leave it `PENDING` or mark it `REJECTED`.
 
 The script requires a valid nine-digit MMSI and a valid seven-digit IMO checksum before querying. It filters the database to the exact MMSI, `AIS_STREAM`, and time window, and orders reports by receipt time and observation id. It does not query or export `SEEDED` rows. An empty result still produces a header-only CSV and a manifest with `NO_REPORTS`, then exits with status 3 so an operator can distinguish it from a successful non-empty export. A missing `psql` client or unavailable database returns a clear error and does not substitute fixture data.
 

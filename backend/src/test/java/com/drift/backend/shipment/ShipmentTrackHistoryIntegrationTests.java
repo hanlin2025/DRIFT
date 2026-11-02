@@ -8,8 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,6 +36,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
 
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
@@ -205,7 +210,92 @@ class ShipmentTrackHistoryIntegrationTests {
 		history(otherToken, shipmentId, "")
 				.andExpect(status().isNotFound())
 				.andExpect(content().json("{\"message\":\"" + ShipmentNotFoundException.MESSAGE + "\"}", true));
+		history(otherToken, shipmentId, "?cutoff=2026-10-30T12%3A01%3A00Z&captureId=00000000-0000-0000-0000-000000000001")
+				.andExpect(status().isNotFound());
 		mvc.perform(get("/api/shipments/" + shipmentId + "/track-history")).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void replaysTheFictionalFixtureAtAnInclusiveCutoffWithoutWritingLiveState() throws Exception {
+		String fixtureMmsi = "990285001";
+		Long shipmentId = create("HBL-CDG286-FIXTURE", fixtureMmsi, null);
+		loadFixture();
+		jdbc.update("""
+				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
+					position_valid, ingested_at, source)
+				VALUES (?, 'CDG285 FICTIONAL MOTHER', 1.206, 103.656, 8.3, TRUE, ?, 'SEEDED'),
+				       (?, 'CDG285 FICTIONAL MOTHER', 1.207, 103.657, 99, FALSE, ?, 'SEEDED')
+				""", "990285001", Timestamp.from(Instant.parse("2026-10-30T12:00:30Z")),
+				"990285001", Timestamp.from(Instant.parse("2026-10-30T12:00:30Z")));
+		Integer beforeCount = jdbc.queryForObject("SELECT count(*) FROM vessel_observations", Integer.class);
+		Integer beforeRiskCount = jdbc.queryForObject("SELECT count(*) FROM shipment_risk_states", Integer.class);
+		assertThat(positions.findByMmsi(fixtureMmsi)).isEmpty();
+
+		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12%3A00%3A30Z")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.context").value("SEEDED"))
+				.andExpect(jsonPath("$.status").value("OFFLINE"))
+				.andExpect(jsonPath("$.timestampSemantics").value("DRIFT_RECEIPT_TIME"))
+				.andExpect(jsonPath("$.cutoff").value("2026-10-30T12:00:30Z"))
+				.andExpect(jsonPath("$.points.length()").value(3))
+				.andExpect(jsonPath("$.points[0].source").value("SEEDED"))
+				.andExpect(jsonPath("$.points[1].ingestedAt").value("2026-10-30T12:00:30Z"))
+				.andExpect(jsonPath("$.points[2].ingestedAt").value("2026-10-30T12:00:30Z"))
+				.andExpect(jsonPath("$.points[1].speedOverGroundKnots").value(8.2))
+				.andExpect(jsonPath("$.points[2].speedOverGroundKnots").value(8.3));
+
+		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12%3A01%3A00Z")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.points.length()").value(4))
+				.andExpect(jsonPath("$.points[3].ingestedAt").value("2026-10-30T12:01:00Z"));
+
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM vessel_observations", Integer.class)).isEqualTo(beforeCount);
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM shipment_risk_states", Integer.class)).isEqualTo(beforeRiskCount);
+		assertThat(positions.findByMmsi(fixtureMmsi)).isEmpty();
+	}
+
+	@Test
+	void keepsUnknownPositionValidityAndReturnsAnEarlierLastKnownFallback() throws Exception {
+		String fixtureMmsi = "990285002";
+		Long shipmentId = create("HBL-CDG286-FALLBACK", null, fixtureMmsi);
+		loadFixture();
+		Instant earlier = Instant.parse("2026-10-29T19:00:00Z");
+		jdbc.update("""
+				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, position_valid, ingested_at, source)
+				VALUES (?, 'CDG285 FICTIONAL FEEDER', 1.25, 103.8, TRUE, ?, 'SEEDED')
+				""", fixtureMmsi, Timestamp.from(earlier));
+
+		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T12%3A01%3A10Z")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.context").value("SEEDED"))
+				.andExpect(jsonPath("$.points.length()").value(3))
+				.andExpect(jsonPath("$.points[2].positionValid").value(org.hamcrest.Matchers.nullValue()))
+				.andExpect(jsonPath("$.points[2].speedOverGroundKnots").value(org.hamcrest.Matchers.nullValue()));
+
+		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T02%3A00%3A00Z")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.points.length()").value(0))
+				.andExpect(jsonPath("$.fallbackUsed").value(true))
+				.andExpect(jsonPath("$.lastKnownPosition.ingestedAt").value("2026-10-29T19:00:00Z"));
+	}
+
+	@Test
+	void requiresAReviewedCaptureForAuthenticAisStreamPlaybackAndRejectsBadCutoffs() throws Exception {
+		Long shipmentId = create("HBL-CDG286-AUTHENTIC", motherMmsi, null);
+		jdbc.update("""
+				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, position_valid, ingested_at, source)
+				VALUES (?, ?, 1.264, 103.82, TRUE, ?, 'AIS_STREAM')
+				""", motherMmsi, motherName, Timestamp.from(Instant.parse("2026-10-30T12:00:00Z")));
+
+		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12%3A01%3A00Z")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.captureId").value(VesselTrackService.AUTHENTIC_CAPTURE_REQUIRED));
+		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12%3A01%3A00")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.cutoff").value(VesselTrackService.INVALID_CUTOFF));
+		history(forwarderToken, shipmentId, "?cutoff=2099-10-30T12%3A01%3A00Z")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.cutoff").value(VesselTrackService.INVALID_CUTOFF));
 	}
 
 	private Instant ago(int hours) {
@@ -227,6 +317,10 @@ class ShipmentTrackHistoryIntegrationTests {
 	}
 
 	private Long create(String reference) throws Exception {
+		return create(reference, null, null);
+	}
+
+	private Long create(String reference, String motherMmsi, String feederMmsi) throws Exception {
 		MvcResult result = mvc.perform(post("/api/shipments")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -239,12 +333,48 @@ class ShipmentTrackHistoryIntegrationTests {
 						  "motherVessel":"MV %s",
 						  "plannedMotherArrivalAt":"2026-10-10T09:30:00+08:00",
 						  "feederVessel":"MV %s",
-						  "plannedFeederDepartureAt":"2026-10-10T15:45:00+08:00"
+						  "plannedFeederDepartureAt":"2026-10-10T15:45:00+08:00",
+						  "motherVesselMmsi":%s,
+						  "feederVesselMmsi":%s
 						}
-						""".formatted(reference, motherName, feederName)))
+						""".formatted(reference, motherName, feederName, jsonString(motherMmsi), jsonString(feederMmsi))))
 				.andExpect(status().isCreated())
 				.andReturn();
 		return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
+	}
+
+	private static String jsonString(String value) {
+		return value == null ? "null" : "\"" + value + "\"";
+	}
+
+	private void loadFixture() throws Exception {
+		Path path = Path.of("").toAbsolutePath();
+		while (path != null && !Files.exists(path.resolve("fixtures/cdg285/fictional_ais_track.csv"))) {
+			path = path.getParent();
+		}
+		if (path == null) throw new IllegalStateException("CDG-285 offline fixture was not found from the test working directory.");
+		String csv = Files.readString(path.resolve("fixtures/cdg285/fictional_ais_track.csv"));
+		try (CSVParser parser = CSVParser.parse(csv, CSVFormat.RFC4180.builder().setHeader().setSkipHeaderRecord(true).get())) {
+			for (var row : parser) {
+				jdbc.update("""
+						INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
+						course_over_ground_degrees, true_heading_degrees, navigational_status, position_valid,
+						ais_utc_second, ingested_at, source)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						""", row.get("mmsi"), row.get("vessel_name"), decimal(row.get("latitude")), decimal(row.get("longitude")),
+						row.get("speed_over_ground_knots").isBlank() ? null : decimal(row.get("speed_over_ground_knots")),
+						row.get("course_over_ground_degrees").isBlank() ? null : decimal(row.get("course_over_ground_degrees")),
+						row.get("true_heading_degrees").isBlank() ? null : Integer.valueOf(row.get("true_heading_degrees")),
+						row.get("navigational_status").isBlank() ? null : Integer.valueOf(row.get("navigational_status")),
+						row.get("position_valid").isBlank() ? null : Boolean.valueOf(row.get("position_valid")),
+						row.get("ais_utc_second").isBlank() ? null : Integer.valueOf(row.get("ais_utc_second")),
+						Timestamp.from(Instant.parse(row.get("ingested_at_utc"))), row.get("source"));
+			}
+		}
+	}
+
+	private static BigDecimal decimal(String value) {
+		return new BigDecimal(value);
 	}
 
 	private String tokenFor(String email) throws Exception {

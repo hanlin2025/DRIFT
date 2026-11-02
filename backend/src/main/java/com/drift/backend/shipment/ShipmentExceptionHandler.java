@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import jakarta.servlet.http.HttpServletRequest;
 
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.capture.InvalidRecordedCaptureException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
@@ -61,6 +62,12 @@ public class ShipmentExceptionHandler {
 	public ResponseEntity<Map<String, Object>> handleInvalidShipmentRequest(InvalidShipmentRequestException ex) {
 		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 				.body(body(ex.getMessage(), ex.getErrors()));
+	}
+
+	@ExceptionHandler(InvalidRecordedCaptureException.class)
+	public ResponseEntity<Map<String, String>> handleInvalidRecordedCapture(InvalidRecordedCaptureException ex) {
+		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
 	}
 
 	@ExceptionHandler(DuplicateShipmentReferenceException.class)
