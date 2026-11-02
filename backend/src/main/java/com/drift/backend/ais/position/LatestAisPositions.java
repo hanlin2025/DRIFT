@@ -127,6 +127,19 @@ public class LatestAisPositions {
 				.toList();
 	}
 
+	/**
+	 * Valid stored reports for one MMSI ingested strictly before {@code before}, newest first, at most {@code limit}.
+	 * This is not the track window and it does not apply the track slowdown.
+	 */
+	public List<AisPosition> earlier(String mmsi, Instant before, int limit) {
+		if (mmsi == null || mmsi.isBlank() || before == null || limit < 1) {
+			return List.of();
+		}
+		return observations.findEarlierValid(mmsi.strip(), before, limit).stream()
+				.map(VesselObservation::toAisPosition)
+				.toList();
+	}
+
 	private boolean memoryHasCurrentFix(AisPosition stored) {
 		AisPosition current = byMmsi.get(stored.mmsi());
 		return current != null && !current.ingestedAt().isBefore(stored.ingestedAt());

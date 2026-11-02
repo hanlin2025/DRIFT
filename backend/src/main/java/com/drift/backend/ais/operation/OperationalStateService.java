@@ -35,6 +35,32 @@ public class OperationalStateService {
 				ingestedAt);
 	}
 
+	/** Singapore or Tanjung Pelepas, the only ports with near-port wording. Null for every other port. */
+	public String knownPortName(String transshipmentPort) {
+		KnownPort port = match(transshipmentPort);
+		return port == null ? null : port.name();
+	}
+
+	public boolean coordinatesUsable(BigDecimal latitude, BigDecimal longitude) {
+		return usable(latitude, longitude);
+	}
+
+	/** Same 25 nautical mile cutoff as {@link #derive}, including a position exactly 25 nautical miles out. */
+	public boolean nearKnownPort(BigDecimal latitude, BigDecimal longitude, String transshipmentPort) {
+		KnownPort port = match(transshipmentPort);
+		if (port == null || !usable(latitude, longitude)) {
+			return false;
+		}
+		double distance = nauticalMiles(latitude.doubleValue(), longitude.doubleValue(), port.latitude(),
+				port.longitude());
+		return distance <= NEAR_PORT_NAUTICAL_MILES + NEAR_PORT_TOLERANCE_NAUTICAL_MILES;
+	}
+
+	/** True when At anchor, Moored, or Aground is reported above 1 knot. Exactly 1 knot is not a conflict. */
+	public boolean reportedMovementConflict(Integer navigationalStatus, BigDecimal speedOverGroundKnots) {
+		return conflicts(navigationalStatus, speedOverGroundKnots);
+	}
+
 	private static String label(Integer navigationalStatus) {
 		if (navigationalStatus == null) {
 			return UNKNOWN;

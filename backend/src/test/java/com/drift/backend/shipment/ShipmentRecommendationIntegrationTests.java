@@ -161,7 +161,7 @@ class ShipmentRecommendationIntegrationTests {
 				.andReturn().getResponse().getContentAsString());
 		assertThat(listed).hasSize(1);
 		assertThat(listed.get(0).has("recommendation")).isFalse();
-		assertThat(listed.get(0).has("risk")).isFalse();
+		assertThat(listed.get(0).get("risk").get("level").asText()).isEqualTo("LOW");
 	}
 
 	private void assertAssessed(Duration remaining, String level, String explanation) throws Exception {
@@ -274,14 +274,16 @@ class ShipmentRecommendationIntegrationTests {
 		jdbc.execute("ALTER TABLE shipments ALTER COLUMN planned_feeder_departure_at DROP NOT NULL");
 	}
 
+	// Persisted human decisions are separate from the calculated recommendation output.
 	private int recommendationColumns() {
 		Integer columns = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM information_schema.columns
-				WHERE table_schema = 'public' AND column_name ILIKE '%recommend%'
+				WHERE table_schema = 'public' AND table_name = 'shipments' AND column_name ILIKE '%recommend%'
 				""", Integer.class);
 		Integer tables = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM information_schema.tables
 				WHERE table_schema = 'public' AND table_name ILIKE '%recommend%'
+					AND table_name <> 'recommendation_decisions'
 				""", Integer.class);
 		return columns + tables;
 	}

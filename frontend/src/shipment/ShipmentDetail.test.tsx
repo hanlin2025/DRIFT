@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeAiAssessment, type MaritimeContext, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -573,6 +573,10 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
     expect(screen.queryByText('Recommendation')).not.toBeInTheDocument();
     expect(screen.queryByText('No action')).not.toBeInTheDocument();
+    expect(screen.queryByText('Port conditions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(screen.queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Mother vessel AIS' })).not.toBeInTheDocument();
@@ -1534,5 +1538,132 @@ describe('recommendation on the shipment detail', () => {
     expect(within(record).queryByText('Recommendation')).not.toBeInTheDocument();
     expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
     expect(screen.queryByText(NO_ACTION_WORDING)).not.toBeInTheDocument();
+  });
+});
+
+const MATCHES_WORDING = "The mother vessel's movement matches its own retained reports near this port. This is not a measured congestion index.";
+const SLOWER_WORDING = 'The mother vessel is moving slower than its own retained reports near this port. This is not a measured congestion index.';
+const NO_REPORT_WORDING = 'The mother vessel has no retained AIS report.';
+
+function completedPort(outcome: NonNullable<PortConditionComparison['outcome']>): PortConditionComparison {
+  const slower = outcome === 'SLOWER_THAN_OWN_REPORTS';
+  return {
+    outcome,
+    reason: null,
+    message: slower ? SLOWER_WORDING : MATCHES_WORDING,
+    vessel: 'MOTHER',
+    vesselName: 'Ever Steady',
+    transshipmentPort: 'Singapore',
+    knownPort: 'Singapore',
+    latitude: 1.264,
+    longitude: 103.84,
+    speedOverGroundKnots: slower ? 3.9 : 8,
+    navigationalStatus: 0,
+    ingestedAt: '2026-10-05T03:00:00Z',
+    source: 'AIS_STREAM',
+    earlierReportCount: 2,
+    slowestOwnSpeedKnots: 4,
+  };
+}
+
+function unavailablePort(reason: PortConditionReason, message: string, extras: Partial<PortConditionComparison> = {}): PortConditionComparison {
+  return {
+    outcome: null,
+    reason,
+    message,
+    vessel: 'MOTHER',
+    vesselName: 'Ever Steady',
+    transshipmentPort: 'Singapore',
+    knownPort: 'Singapore',
+    latitude: null,
+    longitude: null,
+    speedOverGroundKnots: null,
+    navigationalStatus: null,
+    ingestedAt: null,
+    source: null,
+    earlierReportCount: 0,
+    slowestOwnSpeedKnots: null,
+    ...extras,
+  };
+}
+
+describe('port-condition comparison on the shipment detail', () => {
+  it('shows a match beside the mother operational state without calling it congestion', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'Under way using engine', description: 'Under way using engine near Singapore', unreliable: false, ingestedAt: '2026-10-05T03:00:00Z' },
+      portConditionComparison: completedPort('MATCHES_NORMAL'),
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const operation = within(record).getByText('Mother vessel operation', { exact: true, selector: 'dt' }).closest('div');
+    const comparison = within(record).getByText('Port conditions', { exact: true, selector: 'dt' }).closest('div');
+    expect(operation?.nextElementSibling).toBe(comparison);
+    expect(factValue(record, 'Mother vessel operation')).toHaveTextContent('Under way using engine near Singapore');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Matches own reports');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(MATCHES_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Mother · Ever Steady');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Singapore');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('8 knots');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('4 knots');
+    expect(factValue(record, 'Earlier reports')).toHaveTextContent('2');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Under way using engine near Singapore');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('High');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Low');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(createShipment).not.toHaveBeenCalled();
+    expect(updateShipment).not.toHaveBeenCalled();
+  });
+
+  it('shows a slower result without using the operational-state label or a risk badge', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'At anchor', description: 'At anchor near Singapore', unreliable: false, ingestedAt: '2026-10-05T03:00:00Z' },
+      portConditionComparison: completedPort('SLOWER_THAN_OWN_REPORTS'),
+    });
+    open(importer, '/importer/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Slower than own reports');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(SLOWER_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('3.9 knots');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('At anchor');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Matches own reports');
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(factValue(record, 'Mother vessel operation')).toHaveTextContent('At anchor near Singapore');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+  });
+
+  it('names why the comparison is unavailable and does not treat a missing report as a match', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherVesselPosition: null,
+      portConditionComparison: unavailablePort('NO_REPORT', NO_REPORT_WORDING),
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(NO_REPORT_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Mother · Ever Steady');
+    expect(within(record).queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Earlier reports')).not.toBeInTheDocument();
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+  });
+
+  it('hides the comparison when the shipment response does not include one', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, portConditionComparison: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText('Port conditions')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
   });
 });

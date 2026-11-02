@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
 import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
@@ -324,7 +324,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 24;
+const FACT_ROWS = 25;
 
 function ShipmentSkeleton() {
   return (
@@ -409,6 +409,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           {operationFact('Mother vessel operation', shipment.motherOperationalState)}
+          {portConditionFact(shipment.portConditionComparison)}
           <div>
             <dt>Planned arrival</dt>
             <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
@@ -457,6 +458,45 @@ const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', str
   AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
   NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
 };
+
+const PORT_OUTCOME_LABELS: Record<NonNullable<PortConditionComparison['outcome']>, string> = {
+  MATCHES_NORMAL: 'Matches own reports',
+  SLOWER_THAN_OWN_REPORTS: 'Slower than own reports',
+};
+
+function portConditionFact(comparison: Shipment['portConditionComparison']) {
+  if (!comparison) return null;
+  const heading = comparison.outcome ? PORT_OUTCOME_LABELS[comparison.outcome] : comparison.message;
+  const port = comparison.knownPort ?? comparison.transshipmentPort;
+  const vessel = comparison.vesselName?.trim();
+  return (
+    <div>
+      <dt>Port conditions</dt>
+      <dd>
+        {heading}
+        <dl className="arrival-comparison">
+          {comparison.outcome && <div><dt>Comparison</dt><dd>{comparison.message}</dd></div>}
+          <div><dt>Vessel</dt><dd>{vessel ? `Mother · ${vessel}` : 'Mother'}</dd></div>
+          {port ? <div><dt>Port</dt><dd>{port}</dd></div> : null}
+          {comparison.speedOverGroundKnots != null
+            ? <div><dt>Current speed</dt><dd>{comparison.speedOverGroundKnots} knots</dd></div>
+            : null}
+          {comparison.slowestOwnSpeedKnots != null
+            ? <div><dt>Slowest own reports</dt><dd>{comparison.slowestOwnSpeedKnots} knots</dd></div>
+            : null}
+          {comparison.outcome
+            ? <div><dt>Earlier reports</dt><dd>{comparison.earlierReportCount}</dd></div>
+            : null}
+          {comparison.latitude != null && comparison.longitude != null
+            ? <div><dt>Position used</dt><dd>{comparison.latitude}, {comparison.longitude}</dd></div>
+            : null}
+          {reportTime(comparison.ingestedAt)}
+          {comparison.source === 'SEEDED' ? <div><dt>Source</dt><dd>Seeded position</dd></div> : null}
+        </dl>
+      </dd>
+    </div>
+  );
+}
 
 function recommendationFact(recommendation: Shipment['recommendation']) {
   if (!recommendation) return null;
