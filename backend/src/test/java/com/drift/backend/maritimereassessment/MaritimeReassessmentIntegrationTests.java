@@ -81,7 +81,7 @@ class MaritimeReassessmentIntegrationTests {
 		assertThat(count("shipment_risk_transitions", shipmentId)).isEqualTo(transitions);
 		assertThat(deliveries(shipmentId)).isEqualTo(deliveries);
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.endsWith("28", "29", "30");
+				.endsWith("28", "29", "30", "31");
 	}
 
 	@Test
