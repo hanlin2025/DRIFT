@@ -53,7 +53,7 @@ describe('shipment importer API', () => {
       arrivalDate: '',
     status: '',
       sort: '',
-      atRisk: '',
+      atRisk: '', exceedsDeadline: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL-2026&customer=STRAITS', expect.anything());
@@ -69,7 +69,7 @@ describe('shipment importer API', () => {
       arrivalDate: '2026-10-12',
     status: '',
       sort: '',
-      atRisk: '',
+      atRisk: '', exceedsDeadline: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?reference=HBL+123&customer=A%26B+Logistics&arrivalDate=2026-10-12', expect.anything());
@@ -79,7 +79,7 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: 'ARCHIVED', sort: '', atRisk: '', exceedsDeadline: '',
     });
 
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
@@ -105,24 +105,44 @@ describe('shipment importer API', () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([shipment])));
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'risk', atRisk: 'true',
+      reference: '', vessel: '', customer: 'STRAITS', arrivalDate: '', status: '', sort: 'risk', atRisk: 'true', exceedsDeadline: '',
     });
     expect(fetch).toHaveBeenLastCalledWith('/api/shipments?customer=STRAITS&sort=risk&atRisk=true', expect.anything());
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '', exceedsDeadline: '',
     });
     expect(fetch).toHaveBeenLastCalledWith('/api/shipments?sort=risk', expect.anything());
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'false',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'false', exceedsDeadline: '',
     });
     expect(fetch).toHaveBeenLastCalledWith('/api/shipments', expect.anything());
 
     await listShipments('token', {
-      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe',
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: 'maybe', exceedsDeadline: '',
     });
     expect(fetch).toHaveBeenLastCalledWith('/api/shipments?atRisk=maybe', expect.anything());
+  });
+
+  it('sends the exceeds-deadline filter and reads the delay comparison on each list row', async () => {
+    const delayComparison = {
+      outcome: 'EXCEEDS_DEADLINE', reason: null,
+      message: 'The predicted arrival exceeds the recorded mother-vessel transshipment-arrival deadline.',
+      estimatedArrivalAt: '2026-10-04T06:00:00Z', deadline: '2026-10-04T04:00:00Z', recordedTransshipmentPort: 'Singapore',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json([{ ...shipment, delayComparison }])));
+
+    const [row] = await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: 'risk', atRisk: '', exceedsDeadline: 'true',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments?sort=risk&exceedsDeadline=true', expect.anything());
+    expect(row.delayComparison).toEqual(delayComparison);
+
+    await listShipments('token', {
+      reference: '', vessel: '', customer: '', arrivalDate: '', status: '', sort: '', atRisk: '', exceedsDeadline: 'false',
+    });
+    expect(fetch).toHaveBeenLastCalledWith('/api/shipments', expect.anything());
   });
 
   it('reads the importer on a shipment detail', async () => {
