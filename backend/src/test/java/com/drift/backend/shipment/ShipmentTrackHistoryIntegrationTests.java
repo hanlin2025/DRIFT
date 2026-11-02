@@ -231,7 +231,7 @@ class ShipmentTrackHistoryIntegrationTests {
 		Integer beforeRiskCount = jdbc.queryForObject("SELECT count(*) FROM shipment_risk_states", Integer.class);
 		assertThat(positions.findByMmsi(fixtureMmsi)).isEmpty();
 
-		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12%3A00%3A30Z")
+		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12:00:30Z")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.context").value("SEEDED"))
 				.andExpect(jsonPath("$.status").value("OFFLINE"))
@@ -244,7 +244,7 @@ class ShipmentTrackHistoryIntegrationTests {
 				.andExpect(jsonPath("$.points[1].speedOverGroundKnots").value(8.2))
 				.andExpect(jsonPath("$.points[2].speedOverGroundKnots").value(8.3));
 
-		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12%3A01%3A00Z")
+		history(forwarderToken, shipmentId, "?hours=6&cutoff=2026-10-30T12:01:00Z")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.points.length()").value(4))
 				.andExpect(jsonPath("$.points[3].ingestedAt").value("2026-10-30T12:01:00Z"));
@@ -265,14 +265,14 @@ class ShipmentTrackHistoryIntegrationTests {
 				VALUES (?, 'CDG285 FICTIONAL FEEDER', 1.25, 103.8, TRUE, ?, 'SEEDED')
 				""", fixtureMmsi, Timestamp.from(earlier));
 
-		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T12%3A01%3A10Z")
+		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T12:01:10Z")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.context").value("SEEDED"))
 				.andExpect(jsonPath("$.points.length()").value(3))
 				.andExpect(jsonPath("$.points[2].positionValid").value(org.hamcrest.Matchers.nullValue()))
 				.andExpect(jsonPath("$.points[2].speedOverGroundKnots").value(org.hamcrest.Matchers.nullValue()));
 
-		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T02%3A00%3A00Z")
+		history(forwarderToken, shipmentId, "?vessel=FEEDER&hours=6&cutoff=2026-10-30T02:00:00Z")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.points.length()").value(0))
 				.andExpect(jsonPath("$.fallbackUsed").value(true))
@@ -287,13 +287,13 @@ class ShipmentTrackHistoryIntegrationTests {
 				VALUES (?, ?, 1.264, 103.82, TRUE, ?, 'AIS_STREAM')
 				""", motherMmsi, motherName, Timestamp.from(Instant.parse("2026-10-30T12:00:00Z")));
 
-		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12%3A01%3A00Z")
+		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12:01:00Z")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.captureId").value(VesselTrackService.AUTHENTIC_CAPTURE_REQUIRED));
-		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12%3A01%3A00")
+		history(forwarderToken, shipmentId, "?cutoff=2026-10-30T12:01:00")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.cutoff").value(VesselTrackService.INVALID_CUTOFF));
-		history(forwarderToken, shipmentId, "?cutoff=2099-10-30T12%3A01%3A00Z")
+		history(forwarderToken, shipmentId, "?cutoff=2099-10-30T12:01:00Z")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.cutoff").value(VesselTrackService.INVALID_CUTOFF));
 	}

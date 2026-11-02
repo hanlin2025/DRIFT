@@ -235,7 +235,7 @@ public class RecordedAisCaptureReader {
 				Integer heading = integer(row.get("true_heading_degrees"));
 				Integer navStatus = integer(row.get("navigational_status"));
 				Integer aisSecond = integer(row.get("ais_utc_second"));
-				if (observedAt == null || observedAt.isBefore(from) || observedAt.isAfter(to) || observedAt.isAfter(cutoff)
+				if (observedAt == null || observedAt.isBefore(from) || observedAt.isAfter(to)
 						|| latitude.compareTo(BigDecimal.valueOf(-90)) < 0 || latitude.compareTo(BigDecimal.valueOf(90)) > 0
 						|| longitude.compareTo(BigDecimal.valueOf(-180)) < 0 || longitude.compareTo(BigDecimal.valueOf(180)) > 0
 						|| !inRange(speed, BigDecimal.ZERO, new BigDecimal("102.3"))
@@ -248,6 +248,9 @@ public class RecordedAisCaptureReader {
 				String validRaw = row.get("position_valid");
 				Boolean positionValid = validRaw.isBlank() ? null : parseBoolean(validRaw);
 				if (Boolean.FALSE.equals(positionValid)) {
+					continue;
+				}
+				if (observedAt.isAfter(cutoff)) {
 					continue;
 				}
 				points.add(new TrackPoint(id, latitude, longitude, speed, course, heading,
