@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -527,7 +527,7 @@ describe('connection window on the shipment detail', () => {
     });
     const portfolio = open(forwarder, '/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
-    expect(listShipments).toHaveBeenCalledWith('forwarder-token');
+    await waitFor(() => expect(listShipments).toHaveBeenCalledWith('forwarder-token'));
     expect(screen.queryByText('HL-1001')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
     portfolio.unmount();
