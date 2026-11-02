@@ -27,6 +27,7 @@ import com.drift.backend.shipment.Shipment;
 import com.drift.backend.shipment.ShipmentDetailResponse;
 import com.drift.backend.shipment.ShipmentRepository;
 import com.drift.backend.shipment.ShipmentService;
+import com.drift.backend.shipment.ShipmentViewAuthorization;
 import com.drift.backend.shipment.ShipmentStatus;
 
 import tools.jackson.databind.ObjectMapper;
@@ -83,6 +84,9 @@ class MaritimeAiAssessmentServiceTest {
 		ShipmentService shipments = new ShipmentService(null, null, null, null, null, null, new ObjectMapper(),
 				new DefaultListableBeanFactory().getBeanProvider(Clock.class), null, null, null, null) {
 			@Override public ShipmentDetailResponse get(AuthenticatedUser principal, Long shipmentId) { return detail; }
+			@Override public ShipmentViewAuthorization authorizeView(AuthenticatedUser principal, Long shipmentId) {
+				return new ShipmentViewAuthorization(44L, 44L, null);
+			}
 		};
 
 		MaritimeContextService context = contextWith(evidence);
@@ -92,6 +96,7 @@ class MaritimeAiAssessmentServiceTest {
 			return MaritimeAiClient.MaritimeAiClientResult.unavailable("The provider must not be called");
 		};
 		var service = new MaritimeAiAssessmentService(shipments, shipmentRepository, context, client, assessments,
+				new MaritimeAiAssessmentHistoryAccessPolicy(),
 				new ObjectMapper(), new DefaultListableBeanFactory().getBeanProvider(Clock.class), true, authenticApprovalEnabled,
 				"MPA_ETA_REVISION", "mpa-approved");
 

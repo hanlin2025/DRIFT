@@ -461,10 +461,21 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 
 	static final class ContextDerivedClient implements MaritimeAiClient {
 		private final List<MaritimeAiEvidencePackage> inputs = new ArrayList<>();
+		private String nextFailure;
 
 		@Override
 		public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
 			inputs.add(input);
+			if (nextFailure != null) {
+				String failure = nextFailure;
+				nextFailure = null;
+				MaritimeAiInterpretation rejected = new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+						List.of(new MaritimeAiClaim("The unsupported synthetic claim warrants review.", List.of("unapproved-evidence"),
+								"CONTEXTUAL", null, null, null, List.of("evidence:unapproved-evidence"), "SCHEDULE_REVIEW")),
+						List.of(), List.of("Have a human review the original evidence."), true, null);
+				return new MaritimeAiClientResult("synthetic-stub", "rejected-fixture", ConfiguredMaritimeAiClient.PROMPT_VERSION,
+						rejected, failure);
+			}
 			MaritimeAiConnectionRiskContext risk = input.shipmentContext().connectionRisk();
 			MaritimeEvidence mpa = input.evidence().stream().filter(item -> MPA_ID.equals(item.evidenceId())).findFirst().orElseThrow();
 			MaritimeEvidence nea = input.evidence().stream().filter(item -> NEA_ID.equals(item.evidenceId())).findFirst().orElseThrow();
@@ -514,7 +525,8 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		}
 
 		List<MaritimeAiEvidencePackage> inputs() { return List.copyOf(inputs); }
-		void clear() { inputs.clear(); }
+		void clear() { inputs.clear(); nextFailure = null; }
+		void failNext(String failure) { nextFailure = failure; }
 
 		private static MaritimeAiClaim.RiskReview reviewFor(MaritimeAiConnectionRiskContext risk) {
 			MaritimeAiClaim.RiskReview.SelectedWindowState state;
