@@ -367,6 +367,12 @@ public final class SyntheticDisruptionScenarioFixture {
 		public MaritimeContextService contextForStage(Stage stage) {
 			Stage canonical = stageByOrder(stage.order());
 			if (!canonical.equals(stage)) throw invalid("Context can only be created for a validated fixture stage.");
+			return contextForClock(Clock.fixed(stage.cutoff(), ZoneOffset.UTC));
+		}
+
+		/** Uses the same controlled test clock as shipment risk for an authenticated replay harness. */
+		public MaritimeContextService contextForClock(Clock replayClock) {
+			Objects.requireNonNull(replayClock, "replayClock");
 			MaritimeEvidenceSourceAdapter adapter = (shipment, cutoff) -> {
 				if (!matchesVisit(shipment)) return List.of();
 				return stages.stream().flatMap(item -> item.evidence().stream())
@@ -374,7 +380,7 @@ public final class SyntheticDisruptionScenarioFixture {
 						.filter(row -> row.observedAt() == null || !parseInstant(row.observedAt()).isAfter(cutoff))
 						.toList();
 			};
-			return new MaritimeContextService(true, List.of(adapter), Clock.fixed(stage.cutoff(), ZoneOffset.UTC));
+			return new MaritimeContextService(true, List.of(adapter), replayClock);
 		}
 
 		public StageLedger newLedger() { return new StageLedger(this); }
