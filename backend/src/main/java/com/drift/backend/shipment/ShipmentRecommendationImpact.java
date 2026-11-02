@@ -3,16 +3,15 @@ package com.drift.backend.shipment;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * The impact result read with the connection risk. This does not assess a delay.
- * A completed result has no detail. An unavailable result names why, including an assessment
- * that has not been returned.
+ * The impact result read with the connection risk, taken from the delay comparison on the same read.
+ * A completed result has no detail. An unavailable result names why the comparison could not be made.
  */
-@Schema(description = "Impact result read with the connection risk. AFFECTS_CONSTRAINTS and NO_PREDICTED_IMPACT are completed results and have no detail. UNAVAILABLE names the reason, including an assessment that has not been returned. This does not calculate a second impact.")
+@Schema(description = "Impact result read with the connection risk, taken from the delay comparison on the same read. AFFECTS_CONSTRAINTS is a predicted arrival after the importer's recorded deadline and NO_PREDICTED_IMPACT is one at or before it; both are completed results and have no detail. UNAVAILABLE carries the delay comparison's message as the reason. This does not calculate a second impact.")
 public record ShipmentRecommendationImpact(
 		@Schema(example = "UNAVAILABLE")
 		Outcome outcome,
 		@Schema(description = "Set only when the impact is unavailable.", nullable = true,
-				example = "The impact assessment has not been returned.")
+				example = "No mother-vessel transshipment-arrival deadline is recorded for the current importer.")
 		String detail) {
 
 	public enum Outcome {
@@ -20,8 +19,6 @@ public record ShipmentRecommendationImpact(
 		NO_PREDICTED_IMPACT,
 		UNAVAILABLE
 	}
-
-	static final String NOT_RETURNED = "The impact assessment has not been returned.";
 
 	public ShipmentRecommendationImpact {
 		if (outcome == null) {
@@ -36,8 +33,15 @@ public record ShipmentRecommendationImpact(
 		}
 	}
 
-	static ShipmentRecommendationImpact notReturned() {
-		return unavailable(NOT_RETURNED);
+	/** Exceeding the importer's deadline affects the constraints; a comparison that cannot be made is unavailable. */
+	static ShipmentRecommendationImpact from(DelayComparison comparison) {
+		if (comparison.outcome() == null) {
+			return unavailable(comparison.message());
+		}
+		return switch (comparison.outcome()) {
+			case EXCEEDS_DEADLINE -> affectsConstraints();
+			case NO_PREDICTED_IMPACT -> noPredictedImpact();
+		};
 	}
 
 	static ShipmentRecommendationImpact affectsConstraints() {

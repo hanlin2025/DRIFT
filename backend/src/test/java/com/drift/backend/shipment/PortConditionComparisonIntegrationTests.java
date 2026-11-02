@@ -91,7 +91,7 @@ class PortConditionComparisonIntegrationTests {
 		assertThat(match.get("portConditionComparison").get("message").asText())
 				.isNotEqualTo(match.get("risk").get("explanation").asText());
 		assertThat(match.get("recommendation").get("unavailable").asText())
-				.isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+				.isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + DelayComparison.MISSING_CONSTRAINT_MESSAGE);
 		assertThat(match.get("delayComparison").isNull()).isFalse();
 		assertThat(match.get("aisFeed").isNull()).isFalse();
 		assertThat(match.get("arrivalComparison").get("possiblyOutdated").asBoolean()).isFalse();

@@ -55,14 +55,16 @@ public class ShipmentController {
 			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
 			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
 			+ "(null when not assessed), the linked importer organisation (null when not linked), "
-			+ "and who last updated it and when. AIS positions for the whole list are read in one batch. "
-			+ "Optional filters are combined with AND, including atRisk. "
-			+ "Use sort=risk for CRITICAL first; shipments that are not assessed come last.",
+			+ "the delay comparison against the current importer's recorded deadline, "
+			+ "and who last updated it and when. AIS positions and deadlines for the whole list are read in one batch. "
+			+ "Optional filters are combined with AND, including atRisk and exceedsDeadline. "
+			+ "Use sort=risk for CRITICAL first; within a level, shipments predicted to exceed the importer's deadline come first, "
+			+ "and shipments that are not assessed come last.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk or exceedsDeadline", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
 								"""))),
@@ -82,14 +84,15 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed, with ties ordered by the soonest planned feeder departure. Omit for newest first.", schema = @Schema(allowableValues = { "risk" }), example = "risk") @RequestParam(required = false) String sort,
-			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed; within a level, shipments predicted to exceed the importer's deadline come first, then the soonest planned feeder departure. Omit for newest first.", schema = @Schema(allowableValues = { "risk" }), example = "risk") @RequestParam(required = false) String sort,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments whose predicted mother-vessel arrival exceeds the current importer's recorded deadline", example = "true") @RequestParam(required = false) Boolean exceedsDeadline) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(shipmentService.list(user,
-						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk),
+						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk, exceedsDeadline),
 						ShipmentSort.fromListParameter(sort)));
 	}
 
@@ -103,7 +106,7 @@ public class ShipmentController {
 			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
 			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
 			+ "The same read returns one recommendation from that connection risk and the impact on this read. "
-			+ "The impact assessment is not returned here, so the recommendation is unavailable and names that reason. "
+			+ "The impact comes from the delay comparison against the importer's recorded deadline; when that comparison cannot be made the recommendation is unavailable and names that reason. "
 			+ "It is not stored. Reading it does not send an alert and does not perform the response. "
 			+ "An archived shipment the viewer can open receives the same recommendation. "
 			+ "The same read returns the port-condition comparison for the mother vessel at the transshipment port, using that vessel's latest retained report and its own earlier reports near that port. "

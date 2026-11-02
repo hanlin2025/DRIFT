@@ -46,7 +46,7 @@ public record ShipmentDetailResponse(
 		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
-		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
+		@Schema(description = "Recommended response from the connection risk on this read and the impact result taken from delayComparison. An impact that cannot be assessed makes the recommendation unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
 		ShipmentRecommendation recommendation,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
@@ -81,6 +81,7 @@ public record ShipmentDetailResponse(
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
 		ShipmentRisk risk = connection.risk();
+		DelayComparison delayComparison = DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline);
 		VesselPosition motherVesselPosition = connection.motherVesselPosition();
 		VesselPosition feederVesselPosition = connection.feederVesselPosition();
 		ShipmentOperationalStates.ObservedVessel mother = ShipmentOperationalStates.observed(shipment.getMotherVessel(),
@@ -98,7 +99,7 @@ public record ShipmentDetailResponse(
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
-				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
+				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.from(delayComparison)),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				mother.state(),
@@ -108,7 +109,7 @@ public record ShipmentDetailResponse(
 						mother.position()),
 				arrivalComparison,
 				transshipmentArrivalDeadline,
-				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
+				delayComparison,
 				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
 	}
 

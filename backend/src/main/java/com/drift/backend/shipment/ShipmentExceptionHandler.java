@@ -138,7 +138,7 @@ public class ShipmentExceptionHandler {
 		if (Boolean.class.equals(exception.getRequiredType())) {
 			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 					.body(body("Shipment information is missing or invalid",
-							Map.of(exception.getName(), "atRisk must be true or false")));
+							Map.of(exception.getName(), exception.getName() + " must be true or false")));
 		}
 		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
 				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {

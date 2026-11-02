@@ -78,7 +78,7 @@ class ShipmentRecommendationIntegrationTests {
 	}
 
 	@Test
-	void eachAssessedRiskStaysUnavailableUntilTheImpactIsReturned() throws Exception {
+	void eachAssessedRiskStaysUnavailableWithoutAnImporterDeadline() throws Exception {
 		assertAssessed(Duration.ofHours(12).minusSeconds(1), "HIGH",
 				"Less than 12 hours remain to transfer cargo, based on the mother vessel's estimated arrival.");
 		assertAssessed(Duration.ofHours(12), "MEDIUM",
@@ -90,7 +90,7 @@ class ShipmentRecommendationIntegrationTests {
 		assertThat(missed.get("remainingConnectionWindow").get("missedBy").asText()).isEqualTo("0 seconds");
 		assertRisk(missed, "CRITICAL",
 				"The connection is expected to be missed. The mother vessel's estimated arrival is at the planned feeder departure.");
-		assertNotReturned(missed);
+		assertImpactUnavailable(missed, DelayComparison.MISSING_CONSTRAINT_MESSAGE);
 
 		long invalidId = create(NOW.minus(Duration.ofHours(2)), NOW.minus(Duration.ofHours(1)), "MV " + vesselName());
 		allowIncompleteSchedule();
@@ -107,7 +107,7 @@ class ShipmentRecommendationIntegrationTests {
 				"The feeder vessel is planned to depart at or before the mother vessel's arrival, leaving no time to transfer cargo. The planned connection window is being used.");
 		assertThat(invalid.get("risk").get("explanation").asText())
 				.isNotEqualTo(missed.get("risk").get("explanation").asText());
-		assertNotReturned(invalid);
+		assertImpactUnavailable(invalid, DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(invalid.get("arrivalComparison").get("unavailableReason").get("message").asText()).isEqualTo(NO_POSITION);
 	}
 
@@ -161,14 +161,14 @@ class ShipmentRecommendationIntegrationTests {
 				.andReturn().getResponse().getContentAsString());
 		assertThat(listed).hasSize(1);
 		assertThat(listed.get(0).has("recommendation")).isFalse();
-		assertThat(listed.get(0).has("risk")).isFalse();
+		assertThat(listed.get(0).get("risk")).isEqualTo(archived.get("risk"));
 	}
 
 	private void assertAssessed(Duration remaining, String level, String explanation) throws Exception {
 		JsonNode body = detail(NOW, NOW, NOW.plus(remaining), new BigDecimal("12"));
 		assertThat(body.get("remainingConnectionWindow").get("status").asText()).isEqualTo("AVAILABLE");
 		assertRisk(body, level, explanation);
-		assertNotReturned(body);
+		assertImpactUnavailable(body, DelayComparison.MISSING_CONSTRAINT_MESSAGE);
 		assertThat(body.get("riskContributions").get("assessed").asBoolean()).isTrue();
 	}
 
@@ -187,12 +187,13 @@ class ShipmentRecommendationIntegrationTests {
 		assertThat(body.get("remainingConnectionWindow").isNull()).isTrue();
 		JsonNode recommendation = body.get("recommendation");
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.BOTH_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.BOTH_UNAVAILABLE + DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").isNull()).isTrue();
 		assertThat(recommendation.get("riskExplanation").isNull()).isTrue();
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 		assertThat(body.get("riskContributions").get("assessed").asBoolean()).isFalse();
 		if (mother) {
@@ -207,15 +208,16 @@ class ShipmentRecommendationIntegrationTests {
 		assertThat(body.get("risk").get("explanation").asText()).isEqualTo(explanation);
 	}
 
-	private static void assertNotReturned(JsonNode body) {
+	private static void assertImpactUnavailable(JsonNode body, String reason) {
 		JsonNode recommendation = body.get("recommendation");
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + reason);
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").asText()).isEqualTo(body.get("risk").get("level").asText());
 		assertThat(recommendation.get("riskExplanation").asText()).isEqualTo(body.get("risk").get("explanation").asText());
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(reason);
+		assertThat(body.get("delayComparison").get("message").asText()).isEqualTo(reason);
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 	}
 
