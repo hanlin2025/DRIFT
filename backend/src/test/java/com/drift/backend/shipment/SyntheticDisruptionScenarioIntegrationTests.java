@@ -259,6 +259,71 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		verifyExistingCalculationBoundaries(identity, shipmentIds.get(0));
 	}
 
+	@Test
+	void controlledScenarioApiIsAuthenticatedIsolatedReadOnlyAndDoesNotCallTheAiClient() throws Exception {
+		Identity owner = createIdentity();
+		Identity otherTenant = createIdentity();
+		UUID sessionId = UUID.randomUUID();
+		UUID concurrentSessionId = UUID.randomUUID();
+		OFFLINE_CLIENT.clear();
+		String operationalBefore = scenarioOperationalSnapshot();
+		long positionsBefore = positionCount();
+		long assessmentsBefore = assessmentCount();
+
+		mvc.perform(put(scenarioSessionPath(sessionId))).andExpect(status().isUnauthorized());
+		JsonNode baseline = scenarioStart(sessionId, owner.managerToken());
+		assertThat(baseline.path("stage").asText()).isEqualTo("BASELINE");
+		assertThat(baseline.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T00:00:00Z");
+		assertThat(baseline.path("mapPlaybackCutoffUtc").asText()).isEqualTo(baseline.path("simulationCutoffUtc").asText());
+		assertThat(baseline.path("maritimeContext").path("evidence")).isEmpty();
+		assertThat(baseline.at("/shipments/0/risk/level").asText()).isEqualTo("LOW");
+		assertThat(baseline.at("/shipments/0/businessImpact/outcome").asText()).isEqualTo("NO_PREDICTED_IMPACT");
+		assertThat(baseline.at("/shipments/0/id").isMissingNode()).isTrue();
+		assertThat(baseline.at("/aisObservations/0/sourceMode").asText()).isEqualTo("SYNTHETIC_DEMONSTRATION");
+		assertThat(baseline.at("/aisObservations/0/position/source").asText()).isEqualTo("SEEDED");
+		assertThat(scenarioStart(sessionId, owner.managerToken()).path("snapshotId").asText())
+				.isEqualTo(baseline.path("snapshotId").asText());
+
+		JsonNode concurrentBaseline = scenarioStart(concurrentSessionId, owner.managerToken());
+		assertThat(concurrentBaseline.path("snapshotId").asText()).isNotEqualTo(baseline.path("snapshotId").asText());
+		JsonNode change = scenarioNext(sessionId, owner.managerToken(), baseline.path("snapshotId").asText(), 200);
+		assertThat(change.path("stage").asText()).isEqualTo("CHANGE");
+		assertThat(change.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T04:00:00Z");
+		assertThat(change.at("/shipments/0/risk/level").asText()).isEqualTo("MEDIUM");
+		assertThat(change.at("/shipments/0/businessImpact/outcome").asText()).isEqualTo("EXCEEDS_DEADLINE");
+		assertThat(change.path("maritimeContext").path("evidence")).hasSize(1);
+		assertThat(change.at("/maritimeContext/evidence/0/evidenceId").asText()).isEqualTo("cdg279-v1-revision-1");
+
+		// A retry of the same Next action has the old snapshotId and must remain at CHANGE.
+		JsonNode retry = scenarioNext(sessionId, owner.managerToken(), baseline.path("snapshotId").asText(), 200);
+		assertThat(retry.path("snapshotId").asText()).isEqualTo(change.path("snapshotId").asText());
+		assertThat(retry.path("stage").asText()).isEqualTo("CHANGE");
+		assertThat(scenarioGet(concurrentSessionId, owner.managerToken()).path("stage").asText()).isEqualTo("BASELINE");
+
+		JsonNode worsened = scenarioNext(sessionId, owner.managerToken(), change.path("snapshotId").asText(), 200);
+		assertThat(worsened.path("stage").asText()).isEqualTo("WORSENED");
+		assertThat(worsened.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T08:00:00Z");
+		assertThat(worsened.at("/shipments/0/risk/level").asText()).isEqualTo("HIGH");
+		assertThat(worsened.at("/shipments/1/risk/level").asText()).isEqualTo("HIGH");
+		assertThat(worsened.path("maritimeContext").path("assessmentCutoffUtc").asText())
+				.isEqualTo(worsened.path("simulationCutoffUtc").asText());
+		assertThat(scenarioNext(sessionId, owner.managerToken(), worsened.path("snapshotId").asText(), 409)
+				.path("code").asText()).isEqualTo("SCENARIO_COMPLETE");
+		mvc.perform(get(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + otherTenant.managerToken()))
+				.andExpect(status().isNotFound());
+
+		JsonNode reset = scenarioReset(sessionId, owner.managerToken());
+		assertThat(reset.path("stage").asText()).isEqualTo("BASELINE");
+		assertThat(reset.path("snapshotId").asText()).isEqualTo(baseline.path("snapshotId").asText());
+		assertThat(scenarioReset(sessionId, owner.managerToken()).path("snapshotId").asText())
+				.isEqualTo(baseline.path("snapshotId").asText());
+
+		assertThat(scenarioOperationalSnapshot()).isEqualTo(operationalBefore);
+		assertThat(positionCount()).isEqualTo(positionsBefore);
+		assertThat(assessmentCount()).isEqualTo(assessmentsBefore);
+		assertThat(OFFLINE_CLIENT.inputs()).isEmpty();
+	}
+
 	private void assertStageDetail(JsonNode detail, Stage stage, ExpectedStage expected, int shipmentIndex) {
 		assertThat(detail.at("/connectionWindow/totalSeconds").asLong()).isEqualTo(108_000L);
 		assertThat(detail.at("/arrivalComparison/estimatedArrivalAt").asText()).isEqualTo(expected.eta());
@@ -502,6 +567,33 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
+	private String scenarioSessionPath(UUID sessionId) {
+		return "/api/scenarios/cdg279/sessions/" + sessionId;
+	}
+
+	private JsonNode scenarioStart(UUID sessionId, String token) throws Exception {
+		return json.readTree(mvc.perform(put(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+	}
+
+	private JsonNode scenarioGet(UUID sessionId, String token) throws Exception {
+		return json.readTree(mvc.perform(get(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+	}
+
+	private JsonNode scenarioNext(UUID sessionId, String token, String expectedSnapshotId, int expectedStatus) throws Exception {
+		return json.readTree(mvc.perform(post(scenarioSessionPath(sessionId) + "/next")
+				.header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+				.content(json.writeValueAsString(Map.of("expectedSnapshotId", expectedSnapshotId))))
+				.andExpect(status().is(expectedStatus)).andReturn().getResponse().getContentAsString());
+	}
+
+	private JsonNode scenarioReset(UUID sessionId, String token) throws Exception {
+		return json.readTree(mvc.perform(post(scenarioSessionPath(sessionId) + "/reset")
+				.header("Authorization", "Bearer " + token)).andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString());
+	}
+
 	private JsonNode context(long shipmentId, String token) throws Exception {
 		return json.readTree(mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-context")
 				.header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
@@ -528,6 +620,19 @@ class SyntheticDisruptionScenarioIntegrationTests {
 						new Object[] { shipmentIds.get(0), shipmentIds.get(1), sentinelId })
 				+ jsonRows("SELECT to_jsonb(d)::text FROM recommendation_decisions d WHERE shipment_id IN (?, ?, ?) ORDER BY shipment_id",
 						new Object[] { shipmentIds.get(0), shipmentIds.get(1), sentinelId })
+				+ jsonRows("SELECT to_jsonb(a)::text FROM shipment_risk_alert_activation a ORDER BY id", new Object[0]);
+	}
+
+	private String scenarioOperationalSnapshot() {
+		return jsonRows("SELECT to_jsonb(s)::text FROM shipments s ORDER BY id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(c)::text FROM shipment_importer_constraints c ORDER BY shipment_id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(e)::text FROM shipment_change_events e ORDER BY id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(c)::text FROM shipment_field_changes c ORDER BY event_id, id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(a)::text FROM maritime_ai_assessments a ORDER BY id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(s)::text FROM shipment_risk_states s ORDER BY shipment_id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(s)::text FROM shipment_risk_transitions s ORDER BY id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(d)::text FROM shipment_risk_alert_deliveries d ORDER BY id", new Object[0])
+				+ jsonRows("SELECT to_jsonb(d)::text FROM recommendation_decisions d ORDER BY shipment_id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(a)::text FROM shipment_risk_alert_activation a ORDER BY id", new Object[0]);
 	}
 

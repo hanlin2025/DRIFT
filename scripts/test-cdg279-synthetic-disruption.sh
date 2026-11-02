@@ -51,4 +51,4 @@ export DRIFT_CDG279_DB_USERNAME=drift
 export DRIFT_CDG279_DB_PASSWORD=drift
 export DRIFT_CDG279_OWNERSHIP_TOKEN="$ownership_token"
 cd backend
-bash ./mvnw -Dtest=SyntheticDisruptionScenarioFixtureTest,SyntheticDisruptionScenarioIntegrationTests test
+bash ./mvnw -Dtest=ControlledScenarioSessionServiceTest,SyntheticDisruptionScenarioFixtureTest,SyntheticDisruptionScenarioIntegrationTests test

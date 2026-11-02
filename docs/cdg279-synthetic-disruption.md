@@ -2,6 +2,8 @@
 
 This runbook describes the test-scope backend scenario implemented for CDG-283 and CDG-284. It exercises DRIFT's authenticated shipment, retained AIS, connection-risk, importer deadline, maritime-context and assessment services. The scenario is fictional; its risk values are calculated by the existing application.
 
+> CDG-288 adds the authenticated runtime scenario clock and read-only snapshot API. For the current session, API, isolation, map-cutoff, and CDG-289/290 handoff contracts, see [the CDG-288 runbook](cdg288-three-stage-scenario-clock.md). The details below document the CDG-283/284 integration baseline.
+
 ## Verified implementation baseline
 
 - Integration baseline: `integration/cdg252-submission` at `4e5a559b53304deaf3efb7d2f6b1ddbcab692575`.
@@ -92,8 +94,8 @@ ConfiguredMaritimeAiClientTest
 
 Results: the new fixture/integration runner passed 8 tests (7 contract tests and 1 authenticated integration test) on two consecutive fresh databases, then passed again after the startup guard was tightened. The plan-listed regression classes passed 143 tests with 1 existing skipped test and 0 failures.
 
-## Frontend and persistent-demo status
+## Frontend and persistent-demo status before CDG-288
 
-The existing authenticated shipment detail page already has generic maritime-context and AI-assessment panels and calls the authorized context, assessment-generation, and assessment-history APIs. That does not expose this scenario: the contract, three-stage ledger, AIS/evidence adapter, and fictional port coordinates are test-scoped; the test database is dropped; production has no loader or persistent evidence source for these IDs; and the page has no control to advance these stages. This is not a completed frontend demonstration.
+At the CDG-284 baseline, the existing authenticated shipment detail page had generic maritime-context and AI-assessment panels but no way to access or advance this scenario. CDG-288 adds the runtime API but does not add frontend stage controls or map playback.
 
-The minimum additional work for a persistent demonstration is to provision an isolated demo dataset and stage state in a nonproduction environment, supply runtime coordinates for the fictional port (or change the scenario to an existing catalog port), and provide a runtime, cutoff-aware synthetic evidence adapter and stage-advance orchestration that reuses this normalized contract. The authenticated shipment detail view can then display the seeded shipments and generated assessments. If the fixed October timestamps are retained, the app also needs a scenario-scoped controlled clock; otherwise the persistent seed must rebase its schedule and observation times to the demonstration run. A frontend stage selector can be added in CDG-281 after the persistent backend source and authorization shape are agreed.
+The remaining frontend work is tracked by CDG-289 and CDG-290. CDG-288 uses the validated fixture directly and keeps session state in process memory; this API is not a persisted demo dataset and sessions do not survive process restarts or move between application nodes.

@@ -15,10 +15,11 @@ import java.util.Set;
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.shipment.CreateShipmentRequest;
+import com.drift.backend.shipment.PortCatalog;
 import com.drift.backend.shipment.ShipmentDetailResponse;
 
 /**
- * Normalized, test-only inputs for the CDG-279 synthetic disruption scenario.
+ * Normalized, synthetic-only inputs for the CDG-279 controlled disruption scenario.
  *
  * <p>This fixture wraps the application's existing shipment, AIS, and maritime-evidence DTOs.
  * It carries no ETA, risk, window, impact, or generated-assessment result. The visit association
@@ -27,6 +28,7 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 public final class SyntheticDisruptionScenarioFixture {
 	public static final String CONTRACT_VERSION = "cdg279.synthetic-disruption.v1";
 	public static final String PORT = "Synthetic Multi-source Port";
+	public static final PortCatalog.Coordinates PORT_COORDINATES = new PortCatalog.Coordinates(103.82, 1.26);
 	public static final String MOTHER_MMSI = "990279001";
 	public static final String FEEDER_MMSI = "990279002";
 	public static final Instant PLANNED_MOTHER_ARRIVAL = Instant.parse("2026-10-01T06:00:00Z");
@@ -383,6 +385,16 @@ public final class SyntheticDisruptionScenarioFixture {
 			return new MaritimeContextService(true, List.of(adapter), replayClock);
 		}
 
+		/** Returns only evidence whose observation and retrieval times are eligible at this snapshot cutoff. */
+		public List<MaritimeEvidence> eligibleEvidenceFor(ShipmentInput input, Instant cutoff) {
+			Objects.requireNonNull(cutoff, "cutoff");
+			if (!matchesVisit(input)) return List.of();
+			return stages.stream().flatMap(item -> item.evidence().stream())
+					.filter(row -> !parseInstant(row.retrievedAtUtc()).isAfter(cutoff))
+					.filter(row -> row.observedAt() == null || !parseInstant(row.observedAt()).isAfter(cutoff))
+					.toList();
+		}
+
 		public StageLedger newLedger() { return new StageLedger(this); }
 
 		private Stage stageByOrder(int order) {
@@ -395,6 +407,19 @@ public final class SyntheticDisruptionScenarioFixture {
 			return Objects.equals(transshipmentPort, shipment.transshipmentPort())
 					&& Objects.equals(motherVessel, shipment.motherVessel()) && Objects.equals(motherMmsi, shipment.motherVesselMmsi())
 					&& Objects.equals(feederVessel, shipment.feederVessel()) && Objects.equals(feederMmsi, shipment.feederVesselMmsi())
+					&& Objects.equals(plannedMotherArrivalAt, shipment.plannedMotherArrivalAt())
+					&& Objects.equals(plannedFeederDepartureAt, shipment.plannedFeederDepartureAt());
+		}
+
+		private boolean matchesVisit(ShipmentInput input) {
+			if (input == null || input.shipment() == null || shipments.stream().noneMatch(candidate ->
+					candidate.shipment().shipmentReference().equals(input.shipment().shipmentReference()))) return false;
+			CreateShipmentRequest shipment = input.shipment();
+			return Objects.equals(transshipmentPort, shipment.transshipmentPort())
+					&& Objects.equals(motherVessel, shipment.motherVessel())
+					&& Objects.equals(motherMmsi, shipment.motherVesselMmsi())
+					&& Objects.equals(feederVessel, shipment.feederVessel())
+					&& Objects.equals(feederMmsi, shipment.feederVesselMmsi())
 					&& Objects.equals(plannedMotherArrivalAt, shipment.plannedMotherArrivalAt())
 					&& Objects.equals(plannedFeederDepartureAt, shipment.plannedFeederDepartureAt());
 		}
