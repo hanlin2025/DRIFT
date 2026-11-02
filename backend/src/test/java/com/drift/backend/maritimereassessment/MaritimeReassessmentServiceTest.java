@@ -9,9 +9,8 @@ import static org.mockito.Mockito.when;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -129,27 +128,29 @@ class MaritimeReassessmentServiceTest {
 	}
 
 	private static final class MemoryStore implements MaritimeReassessmentStore {
-		private final ConcurrentHashMap<String, StoredMaritimeReassessment> rows = new ConcurrentHashMap<>();
+		private final List<StoredMaritimeReassessment> rows = new ArrayList<>();
 		private final AtomicInteger ids = new AtomicInteger();
 
 		@Override
 		public <T> T exclusively(long shipmentId, String bundleHash, Supplier<T> work) { return work.get(); }
 
 		@Override
-		public Optional<StoredMaritimeReassessment> find(long shipmentId, String bundleHash) {
-			return Optional.ofNullable(rows.get(shipmentId + ":" + bundleHash));
+		public List<StoredMaritimeReassessment> forBundle(long shipmentId, String bundleHash) {
+			return rows.stream()
+					.filter(row -> row.shipmentId() == shipmentId && bundleHash.equals(row.bundleHash()))
+					.toList();
 		}
 
 		@Override
 		public StoredMaritimeReassessment insert(MaritimeReassessmentAttempt attempt) {
 			StoredMaritimeReassessment stored = attempt.storedWithId(ids.incrementAndGet());
-			rows.put(stored.shipmentId() + ":" + stored.bundleHash(), stored);
+			rows.add(stored);
 			return stored;
 		}
 
 		@Override
 		public List<StoredMaritimeReassessment> history(long shipmentId) {
-			return rows.values().stream().filter(row -> row.shipmentId() == shipmentId).toList();
+			return rows.stream().filter(row -> row.shipmentId() == shipmentId).toList();
 		}
 	}
 }

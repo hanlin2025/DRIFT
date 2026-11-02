@@ -308,18 +308,19 @@ class ShipmentConstraintIntegrationTests {
 				.andExpect(status().isOk());
 		assertThat(jdbc.queryForObject("SELECT transshipment_port FROM shipments WHERE id = ?", String.class,
 				fixture.shipmentId())).isEqualTo("Singapore");
-		// Fresh installation only: main's V28 and V29, then this constraint table as V30.
+		// Fresh installation only: main's V28 and V29, the constraint table as V30, then snapshot observations as V31.
 		// A database that already applied the constraint script as V28 is outside this assertion.
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-				String.class)).endsWith("28", "29", "30");
+				String.class)).endsWith("28", "29", "30", "31");
 		assertThat(jdbc.queryForList("""
 				SELECT script FROM flyway_schema_history
-				WHERE success AND version IN ('28', '29', '30')
+				WHERE success AND version IN ('28', '29', '30', '31')
 				ORDER BY installed_rank
 				""", String.class)).containsExactly(
 				"V28__create_maritime_ai_assessments.sql",
 				"V29__create_recommendation_decisions.sql",
-				"V30__create_shipment_importer_constraints.sql");
+				"V30__create_shipment_importer_constraints.sql",
+				"V31__create_maritime_snapshot_observations.sql");
 	}
 
 	@Test
