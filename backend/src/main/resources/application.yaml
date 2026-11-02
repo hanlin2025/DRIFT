@@ -77,6 +77,16 @@ app:
     # Local/staging-only fictional replay; stage changes require an application restart.
     controlled-replay-enabled: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED:false}
     controlled-replay-stage: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_STAGE:BASELINE}
+  controlled-scenario:
+    # Keep the session API absent from usable deployments unless explicitly configured for an isolated demo.
+    enabled: ${CONTROLLED_SCENARIO_ENABLED:false}
+    demo-company-id: ${CONTROLLED_SCENARIO_DEMO_COMPANY_ID:}
+    allowed-user-ids: ${CONTROLLED_SCENARIO_ALLOWED_USER_IDS:}
+    shipment-a-id: ${CONTROLLED_SCENARIO_SHIPMENT_A_ID:}
+    shipment-b-id: ${CONTROLLED_SCENARIO_SHIPMENT_B_ID:}
+    session-ttl: ${CONTROLLED_SCENARIO_SESSION_TTL:4h}
+    max-sessions: ${CONTROLLED_SCENARIO_MAX_SESSIONS:100}
+    max-commands-per-session: ${CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION:64}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
     # Offline-only client for the controlled fictional replay. Never sends a provider request.

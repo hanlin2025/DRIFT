@@ -1,5 +1,7 @@
 package com.drift.backend.shipment;
 
+import java.util.UUID;
+
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -8,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.drift.backend.account.authentication.AuthenticatedUser;
@@ -23,9 +26,10 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
-/** Minimal authenticated control API for the CDG-279 synthetic scenario. */
+/** Version 1 authenticated control API for the gated CDG-279 synthetic scenario. */
 @RestController
-@Tag(name = "Controlled Scenario", description = "Manually control an isolated synthetic disruption replay.")
+@Tag(name = "Controlled Scenario v1", description = "Manually control an isolated synthetic disruption replay.")
+@SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class ControlledScenarioSessionController {
 	private final ControlledScenarioSessionService sessions;
 
@@ -33,52 +37,65 @@ public class ControlledScenarioSessionController {
 		this.sessions = sessions;
 	}
 
-	@PutMapping("/api/scenarios/cdg279/sessions/{sessionId}")
-	@Operation(summary = "Start or read a controlled scenario session",
-			description = "Creates the caller-owned session at BASELINE, or returns its current stage when repeated. "
-					+ "The response contains one snapshotId and cutoff for shipment risk, impact, AIS provenance, maritime evidence, and optional map playback.",
-			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@PutMapping("/api/scenarios/v1/sessions/{sessionId}")
+	@Operation(summary = "Create or read an unstarted controlled scenario session",
+			description = "The anchorShipmentId selects one configured A/B demo shipment. The server independently checks the configured bindings and caller authorization. Repeating the same request is idempotent.")
 	@ApiResponses({
-			@ApiResponse(responseCode = "200", description = "Current session snapshot", content = @Content(schema = @Schema(implementation = ControlledScenarioSnapshot.class))),
+			@ApiResponse(responseCode = "200", description = "Unstarted or existing session", content = @Content(schema = @Schema(implementation = ControlledScenarioSessionResponse.class))),
+			@ApiResponse(responseCode = "400", description = "Invalid request"),
 			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token"),
-			@ApiResponse(responseCode = "403", description = "Authenticated user has no active company") })
-	public ResponseEntity<ControlledScenarioSnapshot> start(
-			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable java.util.UUID sessionId) {
+			@ApiResponse(responseCode = "403", description = "User or company is not configured for the demonstration"),
+			@ApiResponse(responseCode = "404", description = "Scenario disabled or session/shipment not found"),
+			@ApiResponse(responseCode = "503", description = "Scenario configuration or capacity unavailable") })
+	public ResponseEntity<ControlledScenarioSessionResponse> create(
+			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId,
+			@Valid @RequestBody ControlledScenarioSessionCreateRequest request) {
 		if (user == null) throw new SessionEndedException();
-		return snapshot(sessions.start(user, sessionId));
+		return response(sessions.create(user, sessionId, request.anchorShipmentId()));
 	}
 
-	@GetMapping("/api/scenarios/cdg279/sessions/{sessionId}")
-	@Operation(summary = "Read the current controlled scenario snapshot",
-			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
-	public ResponseEntity<ControlledScenarioSnapshot> get(
-			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable java.util.UUID sessionId) {
+	@GetMapping("/api/scenarios/v1/sessions/{sessionId}")
+	@Operation(summary = "Read the current controlled scenario session and snapshot")
+	public ResponseEntity<ControlledScenarioSessionResponse> get(
+			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId) {
 		if (user == null) throw new SessionEndedException();
-		return snapshot(sessions.get(user, sessionId));
+		return response(sessions.get(user, sessionId));
 	}
 
-	@PostMapping("/api/scenarios/cdg279/sessions/{sessionId}/next")
-	@Operation(summary = "Advance exactly one scenario stage",
-			description = "Requires the current snapshotId. A retry with an older snapshotId is idempotent and returns the current state; advancing beyond WORSENED is a conflict.",
-			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
-	public ResponseEntity<ControlledScenarioSnapshot> next(
-			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable java.util.UUID sessionId,
-			@Valid @RequestBody ControlledScenarioNextRequest request) {
+	@PostMapping("/api/scenarios/v1/sessions/{sessionId}/start")
+	@Operation(summary = "Start an unstarted session at BASELINE",
+			description = "Requires the current epoch and revision and an Idempotency-Key. A repeated key with identical parameters replays its original outcome.")
+	public ResponseEntity<ControlledScenarioSessionResponse> start(
+			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId,
+			@RequestHeader(value = "Idempotency-Key", required = false) String commandKey,
+			@Valid @RequestBody ControlledScenarioCommandRequest request) {
 		if (user == null) throw new SessionEndedException();
-		return snapshot(sessions.next(user, sessionId, request.expectedSnapshotId()));
+		return response(sessions.start(user, sessionId, request, commandKey));
 	}
 
-	@PostMapping("/api/scenarios/cdg279/sessions/{sessionId}/reset")
-	@Operation(summary = "Reset this scenario session to BASELINE",
-			description = "Reset is idempotent and returns the same baseline snapshot identity each time for this session.",
-			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
-	public ResponseEntity<ControlledScenarioSnapshot> reset(
-			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable java.util.UUID sessionId) {
+	@PostMapping("/api/scenarios/v1/sessions/{sessionId}/next")
+	@Operation(summary = "Advance exactly one stage",
+			description = "Requires the current epoch and revision. Concurrent distinct commands against one revision cannot both advance.")
+	public ResponseEntity<ControlledScenarioSessionResponse> next(
+			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId,
+			@RequestHeader(value = "Idempotency-Key", required = false) String commandKey,
+			@Valid @RequestBody ControlledScenarioCommandRequest request) {
 		if (user == null) throw new SessionEndedException();
-		return snapshot(sessions.reset(user, sessionId));
+		return response(sessions.next(user, sessionId, request, commandKey));
 	}
 
-	private static ResponseEntity<ControlledScenarioSnapshot> snapshot(ControlledScenarioSnapshot snapshot) {
-		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(snapshot);
+	@PostMapping("/api/scenarios/v1/sessions/{sessionId}/reset")
+	@Operation(summary = "Reset a run to UNSTARTED in a fresh epoch",
+			description = "Reset invalidates the active snapshot. Reset while already UNSTARTED is a no-op and does not create another epoch.")
+	public ResponseEntity<ControlledScenarioSessionResponse> reset(
+			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId,
+			@RequestHeader(value = "Idempotency-Key", required = false) String commandKey,
+			@Valid @RequestBody ControlledScenarioCommandRequest request) {
+		if (user == null) throw new SessionEndedException();
+		return response(sessions.reset(user, sessionId, request, commandKey));
+	}
+
+	private static ResponseEntity<ControlledScenarioSessionResponse> response(ControlledScenarioSessionResponse session) {
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
 	}
 }

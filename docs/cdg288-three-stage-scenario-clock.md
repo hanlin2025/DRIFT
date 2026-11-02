@@ -1,135 +1,174 @@
 # CDG-288 controlled three-stage scenario clock
 
-This runbook describes the authenticated, manually controlled runtime projection of the CDG-279 synthetic-disruption fixture. The scenario is fictional and read-only. Shipment ETA, connection risk, and business impact are calculated on every snapshot through DRIFT's existing calculation code.
+This runbook describes the authenticated runtime projection of the CDG-279 fictional disruption. It is read-only with respect to ordinary shipment and operational state. Each committed stage is calculated from the versioned fixture with DRIFT's existing arrival, connection-risk, deadline-impact and maritime-context services.
 
 ## Audited CDG-282/283/284 contracts
 
 | Contract | Existing shape or service | CDG-288 use |
 | --- | --- | --- |
-| CDG-282 normalized inputs | `CreateShipmentRequest`, `AisPosition`, `MaritimeEvidence`, explicit fixture visit association | Reuses the versioned fixture and preserves fixture provenance and assumptions. |
-| CDG-283 fixture | `cdg279.synthetic-disruption.v1`, two shipment contexts, three ordered raw AIS/evidence stages; calculated outputs are absent from input | Promotes the same validated fixture into runtime source code; expected ETA/risk/impact remain test assertions. |
-| CDG-284 risk integration | `ArrivalEstimateCalculator`, `ConnectionWindowService`, `ShipmentRisk.of` | Adds a package-scoped immutable-position/controlled-clock seam; it does not read from or write to `LatestAisPositions`. |
-| CDG-284 business impact | `DelayComparison.of` with the recorded transshipment-arrival deadline | Recalculates impact from the estimate and each shipment's fixture deadline for every stage read. |
-| CDG-284 maritime context | `MaritimeContextService` evidence bundle and cutoff-based provenance | Uses its existing bundle/provenance mapping after the fixture filters rows by observed and retrieved time. |
-| Fictional port gap | The fixture port and its coordinates were test-only because the name is absent from the shared route catalog | Passes the fixture-owned coordinates only through the controlled scenario calculation seam; normal shipment reads still use the shared catalog. |
+| CDG-282 normalized inputs | `CreateShipmentRequest`, `AisPosition`, `MaritimeEvidence`, explicit fixture visit association | Keeps source facts and provenance in the validated fixture. |
+| CDG-283 fixture | `cdg279.synthetic-disruption.v1`, two shipment contexts, three ordered raw AIS/evidence stages; calculated outputs are absent from input | Uses the same fixture; ETA, risk and impact are recalculated, never returned from hardcoded expected outputs. |
+| CDG-284 risk integration | `ArrivalEstimateCalculator`, `ConnectionWindowService`, `ShipmentRisk.of` | Uses the controlled immutable-position calculation seam without reading or writing `LatestAisPositions`. |
+| CDG-284 business impact | `DelayComparison.of` with each shipment's recorded transshipment-arrival deadline | Recalculates impact at the stage commit from the existing calculation result. |
+| CDG-284 maritime context | `MaritimeContextService` evidence bundle and cutoff-based provenance | Filters fixture rows at the same stage cutoff and returns original evidence timestamps/source metadata. |
+| Fictional port gap | Fixture-owned name and coordinates absent from the shared route catalog | Uses those coordinates only for controlled scenario calculations; ordinary shipment reads keep the shared catalog. |
 
-The CDG-284 integration harness recorded stage AIS into the test database to exercise ordinary APIs. CDG-288 intentionally avoids that write path because it would make simultaneous scenario sessions share global AIS state and could affect live reads.
+The CDG-284 integration harness writes fixture positions to test storage to exercise ordinary endpoints. The CDG-288 runtime does not do that: concurrent runs therefore do not share synthetic AIS state and cannot affect live reads.
 
-## Stage and snapshot contract
+## Snapshot contract
 
-The public stages map to the validated fixture's three ordered inputs:
+Public stages map to the three fixture inputs:
 
-| Stage | Fixture stage | Simulation cutoff (UTC) | Mother position / speed | Calculated ETA | Remaining window | Risk |
+| Stage | Fixture stage | Simulation and map cutoff (UTC) | Mother latitude / speed | Calculated ETA | Remaining window | Calculated risk |
 | --- | --- | --- | --- | --- | ---: | --- |
 | `BASELINE` | `baseline` | 2026-10-01 00:00 | 2.26 N / 10 kn | Oct 1 06:00 | 30 h | LOW |
 | `CHANGE` | `material-slowdown` | 2026-10-01 04:00 | 1.86 N / 3 kn | Oct 1 16:00 | 20 h | MEDIUM |
 | `WORSENED` | `worsened-connection` | 2026-10-01 08:00 | 1.66 N / 1 kn | Oct 2 08:00 | 4 h | HIGH |
 
-The two fixture shipments share a fictional mother-to-feeder visit and 30-hour planned window. Their recorded deadlines remain distinct: shipment A is Oct 1 12:00Z and shipment B is Oct 2 10:00Z. `DelayComparison` calculates the impact for each read. Fixture inputs contain no ETA, risk category, or impact output.
+The two fixture shipments share a fictional mother-to-feeder visit and 30-hour planned window. Their recorded deadlines remain distinct: A is Oct 1 12:00Z and B is Oct 2 10:00Z. `DelayComparison` calculates their impacts independently. The fixture contains no ETA, risk category or impact output.
 
-Each response has one `snapshotId`, `simulationCutoffUtc`, and `mapPlaybackCutoffUtc`. Risk freshness, both shipment reads, maritime evidence eligibility, and the optional map clock all use that same stage cutoff. AIS `observedAtUtc`, `receivedAtUtc`, `AisPosition.ingestedAt`, `sourceMode`, and `source` remain separately available as source provenance; the simulated clock does not rewrite them.
+Every committed snapshot has one `snapshotId`, `epochId`, `revision`, `simulationCutoffUtc` and `mapPlaybackCutoffUtc`. Both shipment calculations, AIS observations, risk freshness, maritime evidence and optional map playback use the same fixture stage and cutoff. The snapshot is materialized once when the stage is committed; GET returns that stored snapshot unchanged until a command commits another stage or Reset clears the active epoch.
 
-## API
+Source provenance remains separate from simulation time: AIS `observedAtUtc`, `receivedAtUtc`, `AisPosition.ingestedAt`, source mode/source and evidence observed/retrieved timestamps are not rewritten. Rows with a future observed or retrieved timestamp are excluded from earlier stage context.
 
-All endpoints require a bearer token for an active company. The client creates a UUID for each open scenario session. Sessions are scoped to `(authenticated user, active company, session UUID)`, so separate tabs use separate IDs. A different user or tenant receives `404` for a session they do not own.
+## API v1
 
-### Start or read
+The authoritative wire definition is [`docs/openapi/controlled-scenario-v1.yaml`](openapi/controlled-scenario-v1.yaml). All requests require the normal bearer token. Responses use `Cache-Control: no-store`.
 
-```http
-PUT /api/scenarios/cdg279/sessions/{sessionId}
-Authorization: Bearer <token>
-```
+The session UUID is generated by the client and is an identifier, never authorization. A session is scoped to its authorized user and active company. `PUT` with the same UUID and the same anchor is idempotent; a different anchor for that UUID is rejected. `anchorShipmentId` must be one of the two operator-configured demo shipments, and the server repeats its normal shipment authorization check. An authorized demo user who is not the session owner gets a concealed `404`; a user outside the configured demo allowlist gets `403`.
 
-Creates the session at `BASELINE`. Repeating Start for an existing session returns its current snapshot without resetting or advancing it.
-
-### Read current snapshot
+### Create or recover a session
 
 ```http
-GET /api/scenarios/cdg279/sessions/{sessionId}
-Authorization: Bearer <token>
-```
-
-The response contains:
-
-- `sessionId`, `scenarioId`, `contractVersion`, `stage`, `stageOrder`, and `fixtureStageId`;
-- the session-scoped `snapshotId` and shared simulation/map cutoffs;
-- the two synthetic `shipments`, with planned window, calculated arrival, remaining window, backend-derived `risk`, and `businessImpact`;
-- stage AIS observations with original timestamps and provenance; and
-- one shared `maritimeContext` bundle filtered at the same cutoff.
-
-The response does not include real shipment database IDs, production recommendations, AI assessments, or decision records.
-
-### Advance
-
-```http
-POST /api/scenarios/cdg279/sessions/{sessionId}/next
+PUT /api/scenarios/v1/sessions/{sessionId}
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{"expectedSnapshotId":"<snapshotId from the current response>"}
+{"anchorShipmentId":142}
 ```
 
-`BASELINE` advances to `CHANGE`; `CHANGE` advances to `WORSENED`. Next is guarded by the snapshot the caller saw. If a request is retried with an older snapshot ID from the same session, it returns the current state without advancing again. An unknown or future snapshot ID returns `409 STALE_SNAPSHOT`. Advancing from `WORSENED` returns `409 SCENARIO_COMPLETE` and leaves the session unchanged.
+The response is `state: UNSTARTED`, `revision: 0`, and `snapshot: null`. It contains configured A/B bindings with both the persistent authorized `shipmentId` and ordinary `shipmentReference`, distinct from each fictional `scenarioShipmentReference`. GET the same URL to recover the current committed state when the client retains its session UUID. Unknown, expired and other-user sessions are concealed as `404`.
+
+### Start at BASELINE
+
+```http
+POST /api/scenarios/v1/sessions/{sessionId}/start
+Authorization: Bearer <token>
+Idempotency-Key: start-<unique-command-id>
+Content-Type: application/json
+
+{"expectedEpochId":"74dab1c6-1d4b-4889-8dde-0b31986fed28","expectedRevision":0}
+```
+
+Start commits `BASELINE`, changes the state to `ACTIVE`, increments revision to 1, and returns the calculated snapshot. A repeated key and identical command returns the original response. A new Start key against the current revision after Start is a no-op returning current state.
+
+### Advance one stage
+
+```http
+POST /api/scenarios/v1/sessions/{sessionId}/next
+Authorization: Bearer <token>
+Idempotency-Key: next-<unique-command-id>
+Content-Type: application/json
+
+{"expectedEpochId":"74dab1c6-1d4b-4889-8dde-0b31986fed28","expectedRevision":1}
+```
+
+Next advances exactly one stage and increments revision. The response's `snapshot` is authoritative; the browser must not calculate ETA, risk or impact. `WORSENED` changes state to `COMPLETE`. A new command with stale epoch/revision gets `409` and does not advance. Two distinct commands against the same revision serialize; at most one commits.
 
 ### Reset
 
 ```http
-POST /api/scenarios/cdg279/sessions/{sessionId}/reset
+POST /api/scenarios/v1/sessions/{sessionId}/reset
 Authorization: Bearer <token>
+Idempotency-Key: reset-<unique-command-id>
+Content-Type: application/json
+
+{"expectedEpochId":"74dab1c6-1d4b-4889-8dde-0b31986fed28","expectedRevision":3}
 ```
 
-Reset returns to `BASELINE`. Repeated resets return the same baseline snapshot identity for that session.
+An effective Reset returns `UNSTARTED`, clears the active snapshot, generates a new `epochId` and sets revision to 0. The next Start generates a new `snapshotId`, different from the old run. Reset while already `UNSTARTED` is a no-op. Replaying the same key returns the original outcome. Reusing a command key with different action/epoch/revision gets `409 IDEMPOTENCY_KEY_REUSED`.
 
-Unknown sessions return `404`; unauthenticated requests return `401`; authenticated users without an active company receive `403`; invalid request bodies return `400`.
+The frontend must fence every asynchronous response by session and epoch. If a replayed command returns an older epoch, it must not replace the current view; fetch GET and reconcile. After a timeout with an unknown outcome, retry with the same key and exact body. After a received conflict and state refresh, use a new key for the new expected revision.
 
-## Isolation and operation
+### Response shape
 
-Session state is a process-local concurrent map containing only the stage index and owner IDs. Updates to one session are serialized, while separate session IDs do not share transition state. Session state is intentionally not written to shipments, AIS observations, importer constraints, alerts, recommendations, decisions, or AI assessment history. A process restart clears sessions; the frontend should create a new session ID and call Start again. Do not depend on a session surviving an application restart or being available on another application node.
+The top-level envelope contains `apiVersion`, `sessionId`, `scenarioId`, `scenarioContractVersion`, lifecycle `state`, `epochId`, `revision`, `capabilities`, A/B `shipments`, and nullable `snapshot`. The `snapshot` has its own `snapshotId`, epoch/revision, `stage`, `stageOrder`, fixture stage, both cutoffs, two calculated shipment reads, two AIS observations and the cutoff-filtered maritime context.
 
-The fixture's synthetic port coordinates are passed only to the controlled-snapshot calculation seam. Normal shipment reads still use the shared port catalog. Snapshot calculations use the same `ArrivalEstimateCalculator`, `ConnectionWindowService`, `ShipmentRisk.of`, and `DelayComparison.of` used by shipment reads. The scenario API has no dependency on the maritime AI assessment service or an external model client. Advancing does not submit paid-provider requests.
+In v1, state is `UNSTARTED`, `ACTIVE` or `COMPLETE`; current stage is `snapshot.stage` (`BASELINE`, `CHANGE`, `WORSENED`). `capabilities.canGenerateAssessment` is always false. Advancing the clock never submits an AI or paid-provider request.
 
-Maritime evidence is selected only when both `retrievedAtUtc` and any known `observedAt` are at or before the snapshot cutoff. The baseline contains no evidence, `CHANGE` contains only the first synthetic ETA revision, and `WORSENED` adds the stage-two context and its negative controls. No future-stage row is returned early.
+Errors use `{ "code", "message", "retryable" }` (validation may also include `fieldErrors`). The stable codes are:
+
+| HTTP | Code | Meaning |
+| ---: | --- | --- |
+| 400 | `INVALID_REQUEST` | Invalid/missing body fields or idempotency key |
+| 401 | `UNAUTHENTICATED` | Missing, expired or invalid login |
+| 403 | `SCENARIO_ACCESS_DENIED` | Authenticated user/company is outside configured demo access |
+| 404 | `SCENARIO_DISABLED`, `SCENARIO_NOT_FOUND` | Feature off, unknown/expired session, or anchor not in configured A/B |
+| 409 | `STALE_EPOCH`, `STALE_REVISION`, `SCENARIO_NOT_STARTED`, `SCENARIO_COMPLETE`, `SESSION_ID_REUSED`, `IDEMPOTENCY_KEY_REUSED` | Stale command, invalid transition or conflicting identity/key reuse |
+| 429 | `SESSION_COMMAND_LIMIT` | Per-session idempotency ledger reached its configured bound |
+| 503 | `SCENARIO_NOT_CONFIGURED`, `SESSION_CAPACITY` | Operator configuration incomplete or in-process capacity exhausted |
+
+## Demo access and A/B provisioning
+
+The runtime is disabled unless `CONTROLLED_SCENARIO_ENABLED=true`. The isolated demonstration deployment must also set:
+
+```text
+CONTROLLED_SCENARIO_DEMO_COMPANY_ID=<isolated demo company database id>
+CONTROLLED_SCENARIO_ALLOWED_USER_IDS=<comma-separated authorized account ids>
+CONTROLLED_SCENARIO_SHIPMENT_A_ID=<ordinary A shipment id>
+CONTROLLED_SCENARIO_SHIPMENT_B_ID=<ordinary B shipment id>
+CONTROLLED_SCENARIO_SESSION_TTL=4h                 # optional
+CONTROLLED_SCENARIO_MAX_SESSIONS=100               # optional
+CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION=64    # optional
+```
+
+Provision A and B through the ordinary authorized shipment flow in that isolated demo tenant. They must be active, distinct rows in the configured company. The server checks the signed-in account is active and allowlisted, the active company matches, and `ShipmentService.authorizeView` succeeds for both configured shipment IDs. Client-supplied IDs only select one of these bindings; they grant no authority. Keep the fixture references separate from the ordinary shipment IDs/references.
+
+The fixture calculates the scenario snapshot from its immutable fictional inputs. The bound ordinary shipment is a portfolio/Shipment Details navigation anchor only. CDG-290 may use the existing page route but must substitute scenario-owned facts from one returned snapshot in controlled mode, preserve ordinary shipment identity/authorization, and not let normal polling overwrite those values. No shipment schedule, AIS, importer constraint, recommendation, decision or alert is updated. Do not enable this gate on a production tenant.
+
+## Runtime isolation and recovery
+
+Sessions, snapshots and command outcomes are held in a bounded process-local concurrent map, keyed by client session UUID and checked against user/company ownership. Per-session commands are synchronized; sessions remain independent. Expired sessions are removed on access and during session creation. A process restart or another application node has no copy of the session; clients must handle `404`, clear stale UI state and create a new session. This v1 runtime does not provide cross-node durability or a session-list/discovery endpoint.
+
+There are no writes to shipments, retained AIS, importer constraints, operational recommendations/decisions, risk transitions, alerts or AI assessment history. There is no AI service dependency in the clock service. Risk/impact are calculated through the same `ArrivalEstimateCalculator`, `ConnectionWindowService`, `ShipmentRisk.of` and `DelayComparison.of` paths used by normal shipment calculations.
 
 ## CDG-286 map playback coordination
 
-`mapPlaybackCutoffUtc` is the agreed stage clock for optional playback. CDG-286 exposes recorded track history through `/api/shipments/{id}/track-history` with optional `cutoff` and `captureId`. This CDG-279 fixture has no persisted shipment IDs and its seeded AIS points are not in `vessel_observations` or a reviewed capture. CDG-290 must not treat `shipmentReference` as a shipment ID or pass the fictional MMSIs as though they identified a captured real-vessel track. It may render the two point observations already present in this snapshot, clearly labelled `SYNTHETIC_DEMONSTRATION` / `SEEDED`, or use CDG-286 only after a matching authorized shipment and reviewed capture are available.
+`mapPlaybackCutoffUtc` is the snapshot's shared playback cutoff. This fixture has no persisted capture identity or authentic vessel track binding. CDG-290 may show the two AIS points already in the synthetic snapshot with their `SYNTHETIC_DEMONSTRATION` / `SEEDED` provenance. It must not pass the fictional MMSIs or synthetic references to CDG-286 as if they identified an authorized captured track. Authentic capture selection and map UI are outside CDG-288.
 
-No map UI or track-history API changes are part of CDG-288.
+## Handoffs
 
-## Handoff to CDG-289
+### CDG-290 `scenarioApi.ts`
 
-1. Generate and retain one UUID per open tab or scenario instance.
-2. Call the Start `PUT`, then render the returned `stage`, `shipments`, `maritimeContext`, and cutoff values.
-3. On Next, send the current `snapshotId` as `expectedSnapshotId` and replace the whole view from the returned snapshot. Do not locally calculate risk or impact.
-4. Disable Next when `nextAvailable` is false. A final-stage conflict is safe to display as an already-complete scenario.
-5. Reset by calling the reset endpoint and replacing the view from its response. Do not reuse one session UUID across tabs.
+Use only `/api/scenarios/v1/sessions/{sessionId}` and its `/start`, `/next`, `/reset` commands. The session UUID is generated once per tab/session and retained as a nonsecret hint; GET is authoritative after reload while that session exists. Create returns `UNSTARTED`. Start and Next/Reset use `{expectedEpochId, expectedRevision}` plus a unique `Idempotency-Key`; retry an unknown outcome with the exact same key/body. Compare response `sessionId`/`epochId` before applying asynchronous results; refetch GET on conflicts. Branch on `capabilities`, not inferred stages. The `shipments` mapping links A/B keys to authorized ordinary shipment IDs; match the current Shipment Details route ID against it, and display only scenario facts from the single `snapshot` object. Do not mix independent “latest” shipment/context calls into the scenario facts view.
 
-Use `shipmentReference` as the stable synthetic row key. These values are not production shipment IDs.
+The session API has no lookup-by-shipment operation. The adapter should retain its session UUID hint for re-entry; if the hint is absent/expired, create a new UUID and PUT using the current shipment ID. A 404 for an unconfigured anchor means this shipment is not a controlled scenario member.
 
-## Handoff to CDG-290
+### CDG-289 assessment linkage
 
-Read `mapPlaybackCutoffUtc` from the same snapshot and use it as the time label/cutoff for any optional visualization. Keep map position provenance separate from scenario time. The API returns one stage position per vessel, not a historical polyline; a route animation needs a separately reviewed capture that CDG-286 can authorize. Do not infer cargo carriage from the fixture's shared visit assumption.
+The clock never requests an assessment and exposes `canGenerateAssessment: false`. For an explicitly requested assessment, CDG-289 should bind the request and saved result to the exact tuple `(sessionId, epochId, snapshotId, sourceShipmentId, scenarioShipmentKey)` and the snapshot/evidence version/hash. The backend must reauthorize the shipment/session and verify that the snapshot still belongs to that session epoch. Retrieval must remain run- and shipment-scoped so an assessment from an earlier epoch cannot appear as the current run's result. That AI request, validation, persistence and history API are CDG-289 responsibilities; the current clock API does not implement them.
 
 ## Verification
 
-The guarded runner creates a fresh, empty `drift_cdg279_*` PostgreSQL database, checks its ownership marker before Spring starts, and drops only that marked database on exit:
+The guarded runner creates a fresh, empty, ownership-marked PostgreSQL database and drops only that marked database on exit:
 
 ```sh
 scripts/test-cdg279-synthetic-disruption.sh
 ```
 
-The runner covers the session service tests, fixture integrity, and authenticated database integration tests. Its PostgreSQL container must be reachable; if it is unavailable, unit tests can still run directly:
+The PostgreSQL service must be reachable. Focused fixture/risk/service tests can also run directly:
 
 ```sh
 cd backend
-./mvnw -Dtest=ControlledScenarioSessionServiceTest,SyntheticDisruptionScenarioFixtureTest test
+./mvnw -Dtest=ControlledScenarioSessionServiceTest,SyntheticDisruptionScenarioFixtureTest,ArrivalEstimateTest,ConnectionWindowServiceTest,ShipmentRiskTest,DelayComparisonTest test
 ```
 
-## CDG-288 test results
+## CDG-288 verification record
 
-- `./mvnw -Dtest=ControlledScenarioSessionServiceTest,SyntheticDisruptionScenarioFixtureTest,ArrivalEstimateTest,ConnectionWindowServiceTest,ShipmentRiskTest,DelayComparisonTest test` — 45 passed, 0 failures/errors/skips.
-- `scripts/test-cdg279-synthetic-disruption.sh` — 13 passed, 0 failures/errors/skips against a fresh ownership-marked PostgreSQL 16.15 database; the guarded runner dropped that database after the test.
 - `./mvnw -DskipTests compile` — passed.
+- `./mvnw -Dtest=ControlledScenarioSessionServiceTest,SyntheticDisruptionScenarioFixtureTest,ArrivalEstimateTest,ConnectionWindowServiceTest,ShipmentRiskTest,DelayComparisonTest test` — 49 passed, 0 failures/errors/skips.
+- `scripts/test-cdg279-synthetic-disruption.sh` — 17 passed, 0 failures/errors/skips against a fresh ownership-marked PostgreSQL 16.15 database (7 fixture, 2 authenticated integration, 8 service tests).
+- `python3 -c 'import yaml; yaml.safe_load(open("docs/openapi/controlled-scenario-v1.yaml"))'` — OpenAPI YAML parsed successfully.
 - `git diff --check` — passed.
 
-The isolated PostgreSQL service was available; there was no database infrastructure blocker.
+The database guard confirmed an empty database before migrations. The runner completed successfully and cleaned up its owned test database. No database infrastructure blocker occurred.

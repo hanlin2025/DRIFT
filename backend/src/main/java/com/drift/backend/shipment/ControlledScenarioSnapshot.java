@@ -10,17 +10,15 @@ import com.drift.backend.maritimecontext.MaritimeContextResponse;
 
 /** One immutable stage read with one identity and cutoff shared by risk, impact, evidence, and map playback. */
 public record ControlledScenarioSnapshot(
-		UUID sessionId,
-		String scenarioId,
-		String contractVersion,
+		UUID snapshotId,
+		UUID epochId,
+		long revision,
 		ControlledScenarioStage stage,
 		int stageOrder,
+		int stageCount,
 		String fixtureStageId,
-		String snapshotId,
 		Instant simulationCutoffUtc,
 		Instant mapPlaybackCutoffUtc,
-		boolean nextAvailable,
-		boolean resetAvailable,
 		List<ShipmentRead> shipments,
 		List<AisObservationRead> aisObservations,
 		MaritimeContextResponse maritimeContext) {
@@ -30,9 +28,11 @@ public record ControlledScenarioSnapshot(
 		aisObservations = List.copyOf(aisObservations);
 	}
 
-	/** Computed on read by the same estimator, connection-window risk, and deadline comparison as shipment detail. */
+	/** Calculated once at stage commit by the existing estimator, risk, and deadline comparison services. */
 	public record ShipmentRead(
-			String shipmentReference,
+			String scenarioShipmentKey,
+			Long sourceShipmentId,
+			String scenarioShipmentReference,
 			String transshipmentPort,
 			OffsetDateTime plannedMotherArrivalAt,
 			OffsetDateTime plannedFeederDepartureAt,

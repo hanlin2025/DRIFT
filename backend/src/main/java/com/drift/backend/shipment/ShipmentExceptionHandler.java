@@ -20,8 +20,6 @@ import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.InvalidShipmentIdException;
-import com.drift.backend.shipment.exception.ScenarioSessionNotFoundException;
-import com.drift.backend.shipment.exception.ScenarioTransitionConflictException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentConstraintEditForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentConstraintPortConflictException;
@@ -35,8 +33,7 @@ import com.drift.backend.shipment.exception.ShipmentNotEditableException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
-@RestControllerAdvice(assignableTypes = { ShipmentController.class, ShipmentConstraintController.class,
-		ControlledScenarioSessionController.class })
+@RestControllerAdvice(assignableTypes = { ShipmentController.class, ShipmentConstraintController.class })
 public class ShipmentExceptionHandler {
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
@@ -118,18 +115,6 @@ public class ShipmentExceptionHandler {
 	@ExceptionHandler(ShipmentNotFoundException.class)
 	public ResponseEntity<Map<String, String>> handleNotFound() {
 		return notFound();
-	}
-
-	@ExceptionHandler(ScenarioSessionNotFoundException.class)
-	public ResponseEntity<Map<String, String>> handleScenarioSessionNotFound(ScenarioSessionNotFoundException ex) {
-		return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore())
-				.body(Map.of("message", ex.getMessage()));
-	}
-
-	@ExceptionHandler(ScenarioTransitionConflictException.class)
-	public ResponseEntity<Map<String, String>> handleScenarioTransitionConflict(ScenarioTransitionConflictException ex) {
-		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
-				.body(Map.of("code", ex.getCode(), "message", ex.getMessage()));
 	}
 
 	private ResponseEntity<Map<String, String>> notFound() {

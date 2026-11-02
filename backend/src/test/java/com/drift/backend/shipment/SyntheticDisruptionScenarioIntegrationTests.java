@@ -16,10 +16,12 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -70,6 +72,7 @@ import tools.jackson.databind.ObjectMapper;
 		"app.risk-alerts.mail.enabled=false",
 		"app.risk-alerts.mail.dispatch-enabled=false",
 		"app.maritime-context.demo-enabled=false",
+		"app.controlled-scenario.enabled=false",
 		"app.maritime-ai.enabled=true",
 		"app.maritime-ai.controlled-replay-stub-enabled=false",
 		"app.maritime-ai.external-requests-approved=false",
@@ -105,6 +108,16 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	@Autowired PasswordEncoder passwords;
 	@Autowired ObjectMapper json;
 	@Autowired LatestAisPositions positions;
+	@Autowired ControlledScenarioProperties controlledScenarioProperties;
+
+	@AfterEach
+	void disableControlledScenarioAfterTest() {
+		controlledScenarioProperties.setEnabled(false);
+		controlledScenarioProperties.setDemoCompanyId(null);
+		controlledScenarioProperties.setAllowedUserIds(Set.of());
+		controlledScenarioProperties.setShipmentAId(null);
+		controlledScenarioProperties.setShipmentBId(null);
+	}
 
 	@Test
 	void authenticatedThreeStageReplayCalculatesRiskImpactAndGroundedAssessmentsWithoutOperationalMutation() throws Exception {
@@ -263,60 +276,122 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	void controlledScenarioApiIsAuthenticatedIsolatedReadOnlyAndDoesNotCallTheAiClient() throws Exception {
 		Identity owner = createIdentity();
 		Identity otherTenant = createIdentity();
+		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(owner);
+		long sentinelId = createShipment(owner.managerToken(), new CreateShipmentRequest("CDG279-SCENARIO-SENTINEL-" + shortId(),
+				"Manila, PH", "Surabaya, ID", "Singapore", "CDG279 SCENARIO SENTINEL MOTHER", at("2026-10-01T06:00:00Z"),
+				"CDG279 SCENARIO SENTINEL FEEDER", at("2026-10-02T12:00:00Z"), null, null, null, null, null, null));
 		UUID sessionId = UUID.randomUUID();
 		UUID concurrentSessionId = UUID.randomUUID();
 		OFFLINE_CLIENT.clear();
 		String operationalBefore = scenarioOperationalSnapshot();
 		long positionsBefore = positionCount();
 		long assessmentsBefore = assessmentCount();
+		String path = scenarioSessionPath(sessionId);
+		String createBody = json.writeValueAsString(Map.of("anchorShipmentId", shipmentIds.get(0)));
 
-		mvc.perform(put(scenarioSessionPath(sessionId))).andExpect(status().isUnauthorized());
-		JsonNode baseline = scenarioStart(sessionId, owner.managerToken());
-		assertThat(baseline.path("stage").asText()).isEqualTo("BASELINE");
-		assertThat(baseline.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T00:00:00Z");
-		assertThat(baseline.path("mapPlaybackCutoffUtc").asText()).isEqualTo(baseline.path("simulationCutoffUtc").asText());
-		assertThat(baseline.path("maritimeContext").path("evidence")).isEmpty();
-		assertThat(baseline.at("/shipments/0/risk/level").asText()).isEqualTo("LOW");
-		assertThat(baseline.at("/shipments/0/businessImpact/outcome").asText()).isEqualTo("NO_PREDICTED_IMPACT");
-		assertThat(baseline.at("/shipments/0/id").isMissingNode()).isTrue();
-		assertThat(baseline.at("/aisObservations/0/sourceMode").asText()).isEqualTo("SYNTHETIC_DEMONSTRATION");
-		assertThat(baseline.at("/aisObservations/0/position/source").asText()).isEqualTo("SEEDED");
-		assertThat(scenarioStart(sessionId, owner.managerToken()).path("snapshotId").asText())
-				.isEqualTo(baseline.path("snapshotId").asText());
+		mvc.perform(put(path).contentType(MediaType.APPLICATION_JSON).content(createBody)).andExpect(status().isUnauthorized());
+		mvc.perform(put(path).header("Authorization", "Bearer " + owner.managerToken())
+				.contentType(MediaType.APPLICATION_JSON).content(createBody))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCENARIO_DISABLED"));
+		mvc.perform(put("/api/scenarios/cdg279/sessions/" + UUID.randomUUID())
+				.header("Authorization", "Bearer " + owner.managerToken())).andExpect(status().isNotFound());
 
-		JsonNode concurrentBaseline = scenarioStart(concurrentSessionId, owner.managerToken());
-		assertThat(concurrentBaseline.path("snapshotId").asText()).isNotEqualTo(baseline.path("snapshotId").asText());
-		JsonNode change = scenarioNext(sessionId, owner.managerToken(), baseline.path("snapshotId").asText(), 200);
-		assertThat(change.path("stage").asText()).isEqualTo("CHANGE");
-		assertThat(change.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T04:00:00Z");
-		assertThat(change.at("/shipments/0/risk/level").asText()).isEqualTo("MEDIUM");
-		assertThat(change.at("/shipments/0/businessImpact/outcome").asText()).isEqualTo("EXCEEDS_DEADLINE");
-		assertThat(change.path("maritimeContext").path("evidence")).hasSize(1);
-		assertThat(change.at("/maritimeContext/evidence/0/evidenceId").asText()).isEqualTo("cdg279-v1-revision-1");
-
-		// A retry of the same Next action has the old snapshotId and must remain at CHANGE.
-		JsonNode retry = scenarioNext(sessionId, owner.managerToken(), baseline.path("snapshotId").asText(), 200);
-		assertThat(retry.path("snapshotId").asText()).isEqualTo(change.path("snapshotId").asText());
-		assertThat(retry.path("stage").asText()).isEqualTo("CHANGE");
-		assertThat(scenarioGet(concurrentSessionId, owner.managerToken()).path("stage").asText()).isEqualTo("BASELINE");
-
-		JsonNode worsened = scenarioNext(sessionId, owner.managerToken(), change.path("snapshotId").asText(), 200);
-		assertThat(worsened.path("stage").asText()).isEqualTo("WORSENED");
-		assertThat(worsened.path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T08:00:00Z");
-		assertThat(worsened.at("/shipments/0/risk/level").asText()).isEqualTo("HIGH");
-		assertThat(worsened.at("/shipments/1/risk/level").asText()).isEqualTo("HIGH");
-		assertThat(worsened.path("maritimeContext").path("assessmentCutoffUtc").asText())
-				.isEqualTo(worsened.path("simulationCutoffUtc").asText());
-		assertThat(scenarioNext(sessionId, owner.managerToken(), worsened.path("snapshotId").asText(), 409)
-				.path("code").asText()).isEqualTo("SCENARIO_COMPLETE");
-		mvc.perform(get(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + otherTenant.managerToken()))
+		configureControlledScenario(owner, shipmentIds);
+		mvc.perform(put("/api/scenarios/cdg279/sessions/" + UUID.randomUUID())
+				.header("Authorization", "Bearer " + owner.managerToken()))
 				.andExpect(status().isNotFound());
+		mvc.perform(put(path).header("Authorization", "Bearer " + otherTenant.managerToken())
+				.contentType(MediaType.APPLICATION_JSON).content(createBody))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SCENARIO_ACCESS_DENIED"));
+		JsonNode created = scenarioCreate(sessionId, owner.managerToken(), shipmentIds.get(0));
+		assertThat(created.path("apiVersion").asText()).isEqualTo("1");
+		assertThat(created.path("state").asText()).isEqualTo("UNSTARTED");
+		assertThat(created.path("revision").asLong()).isZero();
+		assertThat(created.path("snapshot").isNull()).isTrue();
+		assertThat(created.at("/shipments/0/scenarioShipmentKey").asText()).isEqualTo("A");
+		assertThat(created.at("/shipments/0/shipmentId").asLong()).isEqualTo(shipmentIds.get(0));
+		assertThat(created.at("/shipments/1/scenarioShipmentKey").asText()).isEqualTo("B");
+		assertThat(scenarioCreate(sessionId, owner.managerToken(), shipmentIds.get(0))).isEqualTo(created);
+		Map<String, Object> startBody = Map.of("expectedEpochId", created.path("epochId").asText(),
+				"expectedRevision", created.path("revision").asLong());
+		mvc.perform(post(path + "/start").header("Authorization", "Bearer " + owner.managerToken())
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(startBody)))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		mvc.perform(post(path + "/start").header("Authorization", "Bearer " + owner.managerToken())
+				.header("Idempotency-Key", "missing-revision")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(json.writeValueAsString(Map.of("expectedEpochId", created.path("epochId").asText()))))
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", created, "next-before-start", 409)
+				.path("code").asText()).isEqualTo("SCENARIO_NOT_STARTED");
+		mvc.perform(put(scenarioSessionPath(UUID.randomUUID())).header("Authorization", "Bearer " + owner.managerToken())
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("anchorShipmentId", sentinelId))))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCENARIO_NOT_FOUND"));
 
-		JsonNode reset = scenarioReset(sessionId, owner.managerToken());
-		assertThat(reset.path("stage").asText()).isEqualTo("BASELINE");
-		assertThat(reset.path("snapshotId").asText()).isEqualTo(baseline.path("snapshotId").asText());
-		assertThat(scenarioReset(sessionId, owner.managerToken()).path("snapshotId").asText())
-				.isEqualTo(baseline.path("snapshotId").asText());
+		JsonNode baseline = scenarioCommand(sessionId, owner.managerToken(), "start", created, "start-key", 200);
+		assertThat(baseline.path("state").asText()).isEqualTo("ACTIVE");
+		assertThat(baseline.path("snapshot").path("stage").asText()).isEqualTo("BASELINE");
+		assertThat(baseline.path("snapshot").path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T00:00:00Z");
+		assertThat(baseline.path("snapshot").path("mapPlaybackCutoffUtc").asText())
+				.isEqualTo(baseline.path("snapshot").path("simulationCutoffUtc").asText());
+		assertThat(baseline.at("/snapshot/maritimeContext/evidence")).isEmpty();
+		assertThat(baseline.at("/snapshot/shipments/0/risk/level").asText()).isEqualTo("LOW");
+		assertThat(baseline.at("/snapshot/shipments/0/businessImpact/outcome").asText()).isEqualTo("NO_PREDICTED_IMPACT");
+		assertThat(baseline.at("/snapshot/shipments/0/id").isMissingNode()).isTrue();
+		assertThat(baseline.at("/snapshot/aisObservations/0/sourceMode").asText()).isEqualTo("SYNTHETIC_DEMONSTRATION");
+		assertThat(baseline.at("/snapshot/aisObservations/0/position/source").asText()).isEqualTo("SEEDED");
+		assertThat(scenarioGet(sessionId, owner.managerToken())).isEqualTo(baseline);
+
+		JsonNode concurrentUnstarted = scenarioCreate(concurrentSessionId, owner.managerToken(), shipmentIds.get(1));
+		assertThat(concurrentUnstarted.path("epochId").asText()).isNotEqualTo(baseline.path("epochId").asText());
+		assertThat(scenarioGet(concurrentSessionId, owner.managerToken()).path("state").asText()).isEqualTo("UNSTARTED");
+
+		JsonNode change = scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "next-1", 200);
+		assertThat(change.path("snapshot").path("stage").asText()).isEqualTo("CHANGE");
+		assertThat(change.path("snapshot").path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T04:00:00Z");
+		assertThat(change.at("/snapshot/shipments/0/risk/level").asText()).isEqualTo("MEDIUM");
+		assertThat(change.at("/snapshot/shipments/0/businessImpact/outcome").asText()).isEqualTo("EXCEEDS_DEADLINE");
+		assertThat(change.at("/snapshot/maritimeContext/evidence")).hasSize(1);
+		assertThat(change.at("/snapshot/maritimeContext/evidence/0/evidenceId").asText()).isEqualTo("cdg279-v1-revision-1");
+		assertThat(change.at("/snapshot/maritimeContext/evidence").toString())
+				.doesNotContain("cdg279-v1-notice-2", "cdg279-v1-weather-2", "negative-2");
+		assertThat(scenarioGet(sessionId, owner.managerToken())).isEqualTo(change);
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "next-1", 200)).isEqualTo(change);
+
+		JsonNode worsened = scenarioCommand(sessionId, owner.managerToken(), "next", change, "next-2", 200);
+		assertThat(worsened.path("state").asText()).isEqualTo("COMPLETE");
+		assertThat(worsened.path("snapshot").path("stage").asText()).isEqualTo("WORSENED");
+		assertThat(worsened.path("snapshot").path("simulationCutoffUtc").asText()).isEqualTo("2026-10-01T08:00:00Z");
+		assertThat(worsened.at("/snapshot/shipments/0/risk/level").asText()).isEqualTo("HIGH");
+		assertThat(worsened.at("/snapshot/shipments/1/risk/level").asText()).isEqualTo("HIGH");
+		assertThat(worsened.at("/snapshot/maritimeContext/assessmentCutoffUtc").asText())
+				.isEqualTo(worsened.at("/snapshot/simulationCutoffUtc").asText());
+		JsonNode worsenedEvidence = worsened.at("/snapshot/maritimeContext/evidence");
+		assertThat(worsenedEvidence).hasSize(6);
+		assertThat(worsenedEvidence.findValues("evidenceId").stream().map(JsonNode::asText).toList())
+				.containsExactly("cdg279-v1-revision-1", "cdg279-v1-notice-2", "cdg279-v1-weather-2",
+						"cdg279-v1-notice-other-area-2", "cdg279-v1-stale-negative-2", "cdg279-v1-unknown-negative-2");
+		assertThat(worsenedEvidence.get(3).path("compatibilityState").asText()).isEqualTo("INCOMPATIBLE");
+		assertThat(worsenedEvidence.get(4).path("freshness").asText()).isEqualTo("STALE");
+		assertThat(worsenedEvidence.get(5).path("freshness").asText()).isEqualTo("UNKNOWN");
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", worsened, "next-final", 409)
+				.path("code").asText()).isEqualTo("SCENARIO_COMPLETE");
+		mvc.perform(get(path).header("Authorization", "Bearer " + otherTenant.managerToken()))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SCENARIO_ACCESS_DENIED"));
+
+		JsonNode reset = scenarioCommand(sessionId, owner.managerToken(), "reset", worsened, "reset-key", 200);
+		assertThat(reset.path("state").asText()).isEqualTo("UNSTARTED");
+		assertThat(reset.path("snapshot").isNull()).isTrue();
+		assertThat(reset.path("epochId").asText()).isNotEqualTo(worsened.path("epochId").asText());
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "next-1", 200)).isEqualTo(change);
+		assertThat(scenarioGet(sessionId, owner.managerToken())).isEqualTo(reset);
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "old-epoch-new-key", 409)
+				.path("code").asText()).isEqualTo("STALE_EPOCH");
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "reset", worsened, "reset-key", 200)).isEqualTo(reset);
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "reset", reset, "reset-again", 200)).isEqualTo(reset);
+		JsonNode newBaseline = scenarioCommand(sessionId, owner.managerToken(), "start", reset, "start-after-reset", 200);
+		assertThat(newBaseline.at("/snapshot/snapshotId").asText())
+				.isNotEqualTo(baseline.at("/snapshot/snapshotId").asText());
 
 		assertThat(scenarioOperationalSnapshot()).isEqualTo(operationalBefore);
 		assertThat(positionCount()).isEqualTo(positionsBefore);
@@ -568,11 +643,20 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	}
 
 	private String scenarioSessionPath(UUID sessionId) {
-		return "/api/scenarios/cdg279/sessions/" + sessionId;
+		return "/api/scenarios/v1/sessions/" + sessionId;
 	}
 
-	private JsonNode scenarioStart(UUID sessionId, String token) throws Exception {
-		return json.readTree(mvc.perform(put(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + token))
+	private void configureControlledScenario(Identity identity, List<Long> shipmentIds) {
+		controlledScenarioProperties.setEnabled(true);
+		controlledScenarioProperties.setDemoCompanyId(identity.forwarderCompanyId());
+		controlledScenarioProperties.setAllowedUserIds(Set.of(identity.managerUserId()));
+		controlledScenarioProperties.setShipmentAId(shipmentIds.get(0));
+		controlledScenarioProperties.setShipmentBId(shipmentIds.get(1));
+	}
+
+	private JsonNode scenarioCreate(UUID sessionId, String token, long anchorShipmentId) throws Exception {
+		return json.readTree(mvc.perform(put(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("anchorShipmentId", anchorShipmentId))))
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
@@ -581,17 +665,14 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
-	private JsonNode scenarioNext(UUID sessionId, String token, String expectedSnapshotId, int expectedStatus) throws Exception {
-		return json.readTree(mvc.perform(post(scenarioSessionPath(sessionId) + "/next")
-				.header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
-				.content(json.writeValueAsString(Map.of("expectedSnapshotId", expectedSnapshotId))))
+	private JsonNode scenarioCommand(UUID sessionId, String token, String action, JsonNode expected,
+			String idempotencyKey, int expectedStatus) throws Exception {
+		Map<String, Object> body = Map.of("expectedEpochId", expected.path("epochId").asText(),
+				"expectedRevision", expected.path("revision").asLong());
+		return json.readTree(mvc.perform(post(scenarioSessionPath(sessionId) + "/" + action)
+				.header("Authorization", "Bearer " + token).header("Idempotency-Key", idempotencyKey)
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
 				.andExpect(status().is(expectedStatus)).andReturn().getResponse().getContentAsString());
-	}
-
-	private JsonNode scenarioReset(UUID sessionId, String token) throws Exception {
-		return json.readTree(mvc.perform(post(scenarioSessionPath(sessionId) + "/reset")
-				.header("Authorization", "Bearer " + token)).andExpect(status().isOk())
-				.andReturn().getResponse().getContentAsString());
 	}
 
 	private JsonNode context(long shipmentId, String token) throws Exception {
