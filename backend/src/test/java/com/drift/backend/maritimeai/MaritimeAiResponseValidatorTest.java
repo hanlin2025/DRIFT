@@ -53,6 +53,32 @@ class MaritimeAiResponseValidatorTest {
 		}
 	}
 
+	@Test void rejectsPreviouslyExemptCargoNegationsAndUncertainty() {
+		var claim = new MaritimeAiClaim("The recorded evidence is available.", List.of("mpa-1"), "UNCERTAIN");
+		for (String cargoText : List.of("No cargo is recorded.", "Cargo association is unknown.", "Cargo is not known.")) {
+			var output = new MaritimeAiInterpretation("The interpretation remains cautious.", List.of(claim),
+					List.of(cargoText), List.of(), true, null);
+			assertThat(validate(output)).as("previously exempt authored text: %s", cargoText)
+					.isEqualTo("UNSUPPORTED_CARGO_ASSERTION");
+		}
+	}
+
+	@Test void cargoInEvidenceMetadataDoesNotCountAsAiAuthoredText() {
+		MaritimeEvidence cargoMetadata = new MaritimeEvidence(MPA.sourceType(), MPA.sourceMode(), MPA.evidenceId(),
+				"Cargo reference in source metadata", MPA.sourceIdentifier(), MPA.sourceUrl(), MPA.citation(),
+				MPA.sourceEventAt(), MPA.observedAt(), MPA.retrievedAtUtc(), MPA.freshness(), MPA.previousValue(),
+				MPA.currentValue(), MPA.changeMagnitude(), MPA.activityCompatibility(), MPA.locationCompatibility(),
+				MPA.timeCompatibility(), MPA.compatibilityState(), MPA.evidenceSufficient(), MPA.humanReviewRequired(),
+				MPA.shipmentAssociationConfidence(), MPA.limitation(), MPA.vesselIdentity(), MPA.vesselRole(),
+				MPA.observationType(), MPA.associationScope());
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null,
+				List.of(cargoMetadata));
+		var output = new MaritimeAiInterpretation("Review the source record cautiously.",
+				List.of(new MaritimeAiClaim("The recorded evidence is available.", List.of("mpa-1"), "UNCERTAIN")),
+				List.of(), List.of(), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(output, input)).isNull();
+	}
+
 	@Test void rejectsIncompatibleStaleAndInsufficientEvidence() {
 		assertThat(validateWith(new MaritimeEvidence("NOTICE", "RECORDED_REPLAY", "bad", "Notice", "PMN", "", "page 1", "", "", "", "STALE", "", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", "INCOMPATIBLE", true, true, "UNVERIFIED_IMO_ONLY", ""), "bad"))
 				.isEqualTo("INELIGIBLE_CITED_EVIDENCE");
@@ -220,6 +246,48 @@ class MaritimeAiResponseValidatorTest {
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:REMAINING_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", correctPlannedWindow.riskReview());
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(wrongPlannedWindow), plannedInput))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+	}
+
+	@Test void rejectsUnambiguousNoConnectionWindowStatementsWhenTheSelectedPlannedWindowIsAvailable() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 7200L, null),
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		List<String> wrongWindowClaims = List.of(
+				"The documented arrival revision warrants human review alongside the backend HIGH planned connection window, but no remaining connection window is available; the AIS estimate is unavailable.",
+				"The documented arrival revision warrants human review alongside the backend HIGH planned connection window, but there are no remaining connection windows; the AIS estimate is unavailable.",
+				"The documented arrival revision warrants human review alongside the backend HIGH planned connection window, but the connection window is exhausted; the AIS estimate is unavailable.",
+				"The documented arrival revision warrants human review alongside the backend HIGH planned connection window, but the connection buffer has run out; the AIS estimate is unavailable.");
+		for (String statement : wrongWindowClaims) {
+			var claim = riskClaim(statement,
+					List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW",
+							"risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+			assertThat(MaritimeAiResponseValidator.validate(interpretation(claim), input))
+					.as("contradictory selected-window statement: %s", statement)
+					.isEqualTo("RISK_REVIEW_WINDOW_STATE_MISMATCH");
+		}
+	}
+
+	@Test void rejectsAlternativePlanRecommendationsButPreservesCarrierEtaVerification() {
+		MaritimeEvidence motherArrival = structuredEvidence("mother-arrival", "MPA_ETA_REVISION", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		var risk = riskContext(com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", shipmentContext(risk), List.of(motherArrival));
+		var claim = riskClaim("The documented arrival revision warrants human review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.",
+				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW",
+						"risk:ARRIVAL_ESTIMATE_NOT_USED", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), risk);
+		String verification = "Ask the carrier's operations team to verify the vessel's updated ETA against the stored schedule.";
+		String recordCheck = "Check the carrier's recorded alternative shipment plan with the operations team to verify its ETA.";
+		var valid = new MaritimeAiInterpretation("Review the grounded interpretation and limitations.", List.of(claim),
+				List.of(), List.of(verification, recordCheck), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(valid, input)).isNull();
+
+		var mixed = new MaritimeAiInterpretation(valid.summary(), valid.claims(), valid.uncertainties(),
+				List.of(verification, "Evaluate alternative shipment plans."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(mixed, input)).isEqualTo("UNSUPPORTED_OPERATIONAL_DECISION");
 	}
 
 	@Test void rejectsMissingRiskEvidenceCitationAndUnavailableToUnknownSubstitutionButAcceptsGroundedExample() {

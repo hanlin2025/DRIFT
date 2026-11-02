@@ -41,6 +41,8 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern RISK_OUTCOME_UNSUPPORTED_BEFORE = Pattern.compile("(?i)\\b(?:no\\s+(?:clear\\s+)?(?:evidence|indication|basis|support|confirmation|proof)|not enough\\s+(?:evidence|information)|(?:does not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|prove|predict|forecast|demonstrate))\\b[^.!?;,]{0,60}$");
 	private static final Pattern RISK_OUTCOME_UNCERTAINTY_AFTER = Pattern.compile("(?i)\\b(?:(?:[\\p{L}\\p{M}'’-]+\\s+){0,5})(?:(?:is|are|was|were|remain(?:s)?|has been|have been)\\s+)?(?:unknown|uncertain|unclear|unavailable|unsupported|unestablished|uncalibrated|not\\s+(?:known|established|supported|available|calibrated|estimated|provided|confirmed|determined)|cannot\\s+be\\s+(?:known|established|supported|calibrated|estimated|determined))\\b");
 	private static final Pattern OPERATIONAL_ACTION = Pattern.compile("(?i)\\b(?:re-?route|divert|cancel|hold|release|reschedule|switch|reassign|expedite|dispatch|approve|reject|book)\\b");
+	private static final Pattern UNSUPPORTED_ALTERNATIVE_PLAN_FOLLOW_UP = Pattern.compile("(?i)\\b(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b[^.!?;]{0,80}\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b|\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b[^.!?;]{0,80}\\b(?:should|could|may|need(?:s)? to|can)\\s+(?:be\\s+)?(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b");
+	private static final Pattern NO_WINDOW_ASSERTION = Pattern.compile("(?i)\\b(?:(?:no|zero)\\s+(?:(?:positive|remaining|available)\\s+)?(?:connection\\s+)?(?:windows?|buffers?)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:(?:is|has(?:\\s+been)?)\\s+)?(?:exhausted|unavailable|zero|ended|expired|gone|depleted|consumed|run\\s+out|not\\s+available|used\\s+up)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:has\\s+)?no\\s+positive\\s+buffer)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
 	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
@@ -63,13 +65,16 @@ final class MaritimeAiResponseValidator {
 				|| output.uncertainties() == null || output.followUpConsiderations() == null
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
 		List<String> authoredText = authoredText(output);
-		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCargoAsFact)) return "UNSUPPORTED_CARGO_ASSERTION";
+		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsCargoReference)) return "UNSUPPORTED_CARGO_ASSERTION";
 		if (claimsUnsupportedBusinessConstraint(output, input))
 			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
 		if (claimsUnsupportedDelayConclusion(output, input)) return "UNSUPPORTED_DELAY_COMPARISON";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsMissedConnection)) return "UNSUPPORTED_MISSED_CONNECTION";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::claimsCausation)) return "UNSUPPORTED_CAUSAL_CLAIM";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsOperationalAction))
+			return "UNSUPPORTED_OPERATIONAL_DECISION";
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+				.anyMatch(MaritimeAiResponseValidator::recommendsAlternativeOperationalPlan))
 			return "UNSUPPORTED_OPERATIONAL_DECISION";
 		if (!"VERIFIED".equals(input.shipmentAssociationConfidence()) && referencesShipmentAsFact(output.summary(), "")) {
 			return "UNVERIFIED_SHIPMENT_ASSOCIATION";
@@ -215,7 +220,7 @@ final class MaritimeAiResponseValidator {
 				? MaritimeAiConnectionRiskContext.EstimateState.UNKNOWN : risk.arrivalEstimate().state()))
 			return "RISK_REVIEW_FRESHNESS_MISMATCH";
 		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = expectedRiskReview(risk).selectedWindowState();
-		boolean saysNoWindow = containsAny(statement, "no positive buffer", "no remaining window", "no available buffer");
+		boolean saysNoWindow = NO_WINDOW_ASSERTION.matcher(statement).find();
 		boolean saysInvalidWindow = containsPositiveWord(statement, "invalid") || containsWholePhrase(statement, "not valid");
 		boolean saysIncompleteWindow = containsPositiveWord(statement, "incomplete") || containsWholePhrase(statement, "not established");
 		if (windowState == MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE
@@ -553,6 +558,9 @@ final class MaritimeAiResponseValidator {
 		return false;
 	}
 	private static boolean containsOperationalAction(String text) { return text != null && OPERATIONAL_ACTION.matcher(text).find(); }
+	private static boolean recommendsAlternativeOperationalPlan(String text) {
+		return text != null && UNSUPPORTED_ALTERNATIVE_PLAN_FOLLOW_UP.matcher(text).find();
+	}
 	private static boolean isHumanVerificationFollowUp(String text) {
 		String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
 		return HUMAN_REVIEW_PARTICIPANT.matcher(lower).find()
@@ -736,9 +744,7 @@ final class MaritimeAiResponseValidator {
 		return statement.contains(" caused ") || statement.contains("caused by");
 	}
 
-	private static boolean claimsCargoAsFact(String text) {
-		String statement = text == null ? "" : text.toLowerCase();
-		return statement.contains("cargo") && !statement.contains("no cargo")
-				&& !statement.contains("cargo association") && !statement.contains("cargo is not");
+	private static boolean containsCargoReference(String text) {
+		return text != null && text.toLowerCase(Locale.ROOT).contains("cargo");
 	}
 }

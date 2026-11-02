@@ -172,8 +172,9 @@ The five captured defects and their V14 prompt context are:
 
 Offline regressions cover the prompt/version contract, unsupported negated and uncertain cargo
 wording, missing evidence references, risk-window/freshness grounding, an accepted grounded
-planned-window interpretation, and the named human/team verification requirement. Production
-validator behavior and the response schema were not changed, and no migration was added.
+planned-window interpretation, and the named human/team verification requirement. At the V15 prompt
+commit, production validator behavior and the response schema were not changed, and no migration was
+added.
 
 Verification on 2026-11-02: backend compilation passed; focused client, validator, evidence
 eligibility, multi-source grounding, and connection-risk-context tests passed (57 tests, 0 failures,
@@ -198,7 +199,29 @@ found natural-language validation gaps that were not changed in this prompt-only
   separate valid human verification follow-up can satisfy the risk-review follow-up requirement,
   leaving that additional planning suggestion unchecked.
 
-These are validator behavior findings, not reasons to weaken any existing gate. They need a focused
-validator correction and regression review before a real-provider result can be treated as safely
-validated. The existing V14 paid call remains `FAILED`; authorized retrieval, valid assessment
-persisted state, and human factual approval have not been demonstrated.
+These are validator behavior findings, not reasons to weaken any existing gate. They require a
+focused validator correction before a real-provider result can be treated as safely validated; see
+the follow-up below. The existing V14 paid call remains `FAILED`; authorized retrieval, valid
+assessment persisted state, and human factual approval have not been demonstrated.
+
+## V15 validator hardening follow-up — 2026-11-02
+
+The follow-up keeps the V15 prompt and applies three narrow checks in
+`MaritimeAiResponseValidator`:
+
+- Any `cargo` mention in AI-authored summaries, claim statements, uncertainties, or follow-ups is
+  rejected. Source evidence metadata is outside the authored-text scan and remains unaffected.
+- Explicit no-window statements now include forms such as `no remaining connection window`, an
+  exhausted connection window, and a connection buffer that has run out. Existing available,
+  invalid, incomplete, and no-remaining-window state checks remain in place.
+- Follow-ups proposing evaluation or selection of alternative shipment plans, routes, or mitigations
+  are rejected as `UNSUPPORTED_OPERATIONAL_DECISION`, even when a separate valid human verification
+  follow-up is present. Carrier ETA verification and checks of recorded plan data remain accepted.
+
+The new regressions first reproduced the defects: 3 failures in 41 validator tests (the targeted
+phrases returned `null` instead of rejection). After the changes, backend compilation passed and the
+focused client, validator, evidence eligibility, multi-source grounding, and risk-context batch
+passed (61 tests, 0 failures, 0 errors, 1 optional capture-fixture test skipped). The authentic
+multi-source integration method passed with its offline capturing stub on a fresh disposable
+PostgreSQL database; Flyway validated and applied 26 migrations through V31. External-provider
+approval and real-client selection were disabled. No API key or OpenAI request was used.
