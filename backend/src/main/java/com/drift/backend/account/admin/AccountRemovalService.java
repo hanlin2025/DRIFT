@@ -11,6 +11,7 @@ import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.admin.exception.AccountAlreadyActiveException;
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
@@ -65,6 +66,31 @@ public class AccountRemovalService {
 		}
 		audits.saveAndFlush(new AccountStatusAudit(operator, target, operatorCompany, AccountStatus.ACTIVE,
 				AccountStatus.REMOVED, Instant.now()));
+		return AdminUserResponse.from(target);
+	}
+
+	@Transactional
+	public AdminUserResponse reactivate(AuthenticatedUser principal, Long userId) {
+		UserAccount operator = requireAdmin(principal);
+		Company operatorCompany = operator.getCompany();
+		if (operatorCompany == null || !operatorCompany.isActive()) {
+			throw new InvalidRemovalException(InvalidRemovalException.ORGANISATION);
+		}
+		UserAccount target = users.findById(userId).orElseThrow(AssignedUserNotFoundException::new);
+		if (target.getCompany() == null || !operatorCompany.getId().equals(target.getCompany().getId())) {
+			throw new AssignedUserNotFoundException();
+		}
+		if (target.getStatus() != AccountStatus.REMOVED) {
+			throw new AccountAlreadyActiveException();
+		}
+		target.reactivate();
+		try {
+			users.saveAndFlush(target);
+		} catch (OptimisticLockingFailureException ex) {
+			throw new StaleAccountVersionException();
+		}
+		audits.saveAndFlush(new AccountStatusAudit(operator, target, operatorCompany, AccountStatus.REMOVED,
+				AccountStatus.ACTIVE, Instant.now()));
 		return AdminUserResponse.from(target);
 	}
 
