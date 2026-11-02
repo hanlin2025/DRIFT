@@ -63,10 +63,13 @@ an authorized source, explicit unavailable states, importer-reassignment
 isolation, minimized provider input, immutable history, and offline regression
 coverage before the model can interpret those facts.
 
-The current sequence is V29 recommendation decisions, V30 importer constraints,
-and V31 maritime AI validation-status widening. The separate CDG-272 PR #203
-uses V32; it must not be merged or deployed before #202's V31 is merged and
-applied.
+The coordinated migration sequence preserves main's V31 snapshot-observation
+schema, applies CDG-252's maritime AI validation-status widening as V32, then
+applies CDG-272's recommendation-decision history as V33. Merge and deploy #202
+before #203: with Flyway `outOfOrder=false`, a database that records V33 before
+V32 exists cannot apply V32 later as an ordinary upgrade. The legacy #203 test
+database that recorded the prior decision-history migration as V32 is not a
+supported upgrade target; validation uses newly created disposable databases.
 
 ## Consolidated branch validation on 2026-11-02
 

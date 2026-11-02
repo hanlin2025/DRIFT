@@ -25,7 +25,7 @@ function verifyIntegratedBackend() {
   const comparison = path.join(backendDir, 'src/main/java/com/drift/backend/shipment/DelayComparison.java');
   const migration = path.join(backendDir, 'src/main/resources/db/migration/V30__create_shipment_importer_constraints.sql');
   if (!git(root, ['ls-files', '--error-unmatch', 'backend/src/main/java/com/drift/backend/shipment/DelayComparison.java'])
-      || !git(root, ['ls-files', '--error-unmatch', 'backend/src/main/resources/db/migration/V31__widen_maritime_ai_validation_status.sql'])) {
+      || !git(root, ['ls-files', '--error-unmatch', 'backend/src/main/resources/db/migration/V32__widen_maritime_ai_validation_status.sql'])) {
     throw new Error(`Refusing this checkout because the integrated deadline and AI migration contracts are missing (${comparison}, ${migration}).`);
   }
   const head = git(root, ['rev-parse', 'HEAD']);
