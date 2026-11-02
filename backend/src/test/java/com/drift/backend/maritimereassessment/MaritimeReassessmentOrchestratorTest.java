@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
@@ -251,6 +252,48 @@ class MaritimeReassessmentOrchestratorTest {
 	}
 
 	@Test
+	void aLaterFailureStaysBehindTheLatestValidatedAssessment() {
+		MutableClock clock = new MutableClock(CUTOFF);
+		MemoryStore store = new MemoryStore();
+		AtomicReference<MaritimeProviderReply> reply = new AtomicReference<>(reply("UNVERIFIED_IMO_ONLY"));
+		CountingProvider provider = new CountingProvider(request -> reply.get());
+		MaritimeReassessmentOrchestrator orchestrator = new MaritimeReassessmentOrchestrator(store, provider, open(), clock);
+
+		orchestrator.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+		clock.instant = clock.instant.plusSeconds(60);
+		orchestrator.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "after", "MPA_ETA_REVISION", "eta-2")));
+		clock.instant = clock.instant.plusSeconds(60);
+		reply.set(null);
+		provider.failure = new IllegalStateException("down");
+		orchestrator.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "later", "MPA_ETA_REVISION", "eta-3")));
+
+		MaritimeReassessmentHistory history = MaritimeReassessmentHistory.of(8L, store.history(8L));
+		assertThat(history.versions()).hasSize(3);
+		assertThat(history.latestAttempt().validationStatus()).isEqualTo("PROVIDER_FAILED");
+		assertThat(history.latestValidated().snapshotIds()).containsExactly("eta-2");
+		assertThat(history.latestValidated().validationStatus()).isEqualTo("VALID");
+		assertThat(history.versions()).extracting(MaritimeReassessmentVersion::validationStatus)
+				.contains("VALID", "PROVIDER_FAILED");
+		assertThat(history.latestValidated().assessmentId()).isNotEqualTo(history.latestAttempt().assessmentId());
+	}
+
+	@Test
+	void aForeignOutputRemainsReadableWithoutBeingTreatedAsOurInterpretation() {
+		StoredMaritimeReassessment foreign = new StoredMaritimeReassessment(4L, 8L, 3L, "assessment", "other", "a".repeat(64),
+				CUTOFF, "other-provider", "other-model", "other-prompt", "GENERATED", "VALID",
+				"{\"explanation\":\"keep me\"}", null, CUTOFF.plusSeconds(5));
+
+		MaritimeReassessmentVersion version = MaritimeReassessmentVersion.from(foreign);
+
+		assertThat(version.outputJson()).contains("keep me");
+		assertThat(version.interpretation()).isNull();
+		assertThat(version.snapshotIds()).isEmpty();
+		assertThat(version.sourceFreshness()).isEqualTo("UNKNOWN");
+		assertThat(version.provider()).isEqualTo("other-provider");
+		assertThat(version.validated()).isTrue();
+	}
+
+	@Test
 	void anEarlierClosedReviewDoesNotBlockALaterApprovedCall() {
 		CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
 		MemoryStore store = new MemoryStore();
@@ -403,7 +446,11 @@ class MaritimeReassessmentOrchestratorTest {
 	}
 
 	@Test
-	void theDefaultGateIsClosed() {
+	void theHistoryEndpointDoesNotStartAReassessment() {
+		assertThat(MaritimeReassessmentController.class.getDeclaredMethods())
+				.noneMatch(method -> method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class) != null
+						|| method.getAnnotation(org.springframework.web.bind.annotation.PutMapping.class) != null
+						|| method.getAnnotation(org.springframework.web.bind.annotation.PatchMapping.class) != null);
 		assertThat(new MaritimeReassessmentProperties().toLimits().externalProcessingEnabled()).isFalse();
 		assertThat(new MaritimeReassessmentProperties().toLimits().approvedDatasets()).isEmpty();
 		assertThat(new MaritimeReassessmentProperties().toLimits().approvedSourceTypes()).isEmpty();

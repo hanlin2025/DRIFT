@@ -96,6 +96,36 @@ class MaritimeReassessmentIntegrationTests {
 		assertThat(first.version().interpretation()).isNull();
 	}
 
+	@Test
+	void historyKeepsTheValidatedAssessmentAfterALaterFailureAndHidesItFromAnotherCompany() {
+		Long shipmentId = create("CDG267-HISTORY");
+		MutableProvider provider = new MutableProvider();
+		MaritimeReassessmentOrchestrator orchestrator = new MaritimeReassessmentOrchestrator(store, provider, approved(),
+				new MoveableClock());
+		orchestrator.review(shipmentId, ownerId, bundle("eta-1", "before"));
+		provider.fail = true;
+		orchestrator.review(shipmentId, ownerId, bundle("eta-2", "after"));
+
+		MaritimeReassessmentHistory history = reassessments.history(forwarder, shipmentId);
+		assertThat(history.versions()).hasSize(2);
+		assertThat(history.latestAttempt().validationStatus()).isEqualTo("PROVIDER_FAILED");
+		assertThat(history.latestValidated().snapshotIds()).containsExactly("eta-1");
+		assertThat(history.latestValidated().outputJson()).contains("cdg267.reassessment-linkage.v1");
+		assertThat(history.versions()).extracting(MaritimeReassessmentVersion::assessmentCutoffUtc)
+				.containsOnly(CUTOFF);
+
+		links.link(forwarder, shipmentId, importerId);
+		assertThat(reassessments.history(importer, shipmentId).latestValidated().assessmentId())
+				.isEqualTo(history.latestValidated().assessmentId());
+		assertThatThrownBy(() -> reassessments.history(outsider, shipmentId))
+				.isInstanceOf(ShipmentDetailForbiddenException.class);
+		assertThatThrownBy(() -> reassessments.history(forwarder, 999_999_999L))
+				.isInstanceOf(ShipmentNotFoundException.class);
+
+		shipments.archive(account("manager", Role.LOGISTICS_MANAGER, ownerId), shipmentId);
+		assertThat(reassessments.history(forwarder, shipmentId).versions()).hasSize(2);
+	}
+
 	private MaritimeEvidenceBundle bundle() {
 		return bundle("eta-1", "before");
 	}
