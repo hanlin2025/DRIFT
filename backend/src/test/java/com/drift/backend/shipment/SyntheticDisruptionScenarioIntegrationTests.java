@@ -159,7 +159,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				} else {
 					assertThat(assessment.path("state").asText()).isEqualTo("GENERATED");
 					assertThat(assessment.path("validationStatus").asText()).isEqualTo("VALID");
-					assertThat(assessment.path("provider").asText()).isEqualTo("offline-synthetic-context-test");
+					assertThat(assessment.path("provider").asText()).isEqualTo("offline-synthetic-context-stub");
 					assertThat(assessment.path("interpretation").path("claims").isArray()).isTrue();
 					assertThat(assessment.path("interpretation").toString()).doesNotContain("cargo", "caused by", "reroute", "cancel");
 				}

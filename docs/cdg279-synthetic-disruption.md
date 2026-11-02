@@ -6,7 +6,7 @@ This runbook describes the test-scope backend scenario implemented for CDG-283 a
 
 - Integration baseline: `integration/cdg252-submission` at `4e5a559b53304deaf3efb7d2f6b1ddbcab692575`.
 - CDG-283 fixture commit: `cfe01524a58a56e17400755af16c4c8b5c7b5c5b`.
-- CDG-284 replay and acceptance implementation commit: `a02c75468ede616e95d0f7b8f1a2944d7b684026`.
+- Initial CDG-284 replay and acceptance implementation commit: `a02c75468ede616e95d0f7b8f1a2944d7b684026`.
 - No production Java, frontend, migration, or CDG-252/CDG-257 files are changed by these implementation commits.
 
 The repository branch was checked through GitHub as well as the isolated local checkout. The fixture branch is based on the verified integration SHA above. CDG-284 is stacked on CDG-283 until the fixture PR is merged.
@@ -54,7 +54,7 @@ Every source is explicitly `SYNTHETIC_DEMONSTRATION`, has a fictional citation a
 
 The integration scenario creates its forwarder/importer identities and both shipments through the normal authenticated endpoints, links the importer, saves its deadlines through the importer deadline endpoint, and records AIS using `LatestAisPositions.record` with `AisPositionSource.SEEDED`. It does not insert calculated risk or impact rows.
 
-Stage 0's two assessment requests return `ABSTAINED` / `INSUFFICIENT_EVIDENCE`; the offline client is not called. Stages 1 and 2 return four generated assessments in total, all `VALID`. The test-only `SyntheticDisruptionAiClient` reads typed backend facts and eligible source rows and runs through the unchanged production `MaritimeAiResponseValidator`. No OpenAI request is made. The two shipment histories each retain the three stage snapshots, and history retrieval confirms their saved risk, deadline, comparison, and evidence facts after later stages and a deadline edit.
+Stage 0's two assessment requests return `ABSTAINED` / `INSUFFICIENT_EVIDENCE`; the offline client is not called. Stages 1 and 2 return four generated assessments in total, all `VALID`. The test-only `SyntheticDisruptionAiClient` reads typed backend facts and eligible source rows and runs through the unchanged production `MaritimeAiResponseValidator`. Its provider label is `offline-synthetic-context-stub`, which the existing frontend panel classifies as a controlled synthetic stub rather than a provider-generated interpretation if this assessment shape is reused later. No OpenAI request is made. The two shipment histories each retain the three stage snapshots, and history retrieval confirms their saved risk, deadline, comparison, and evidence facts after later stages and a deadline edit.
 
 The test also generates one additional successor-owned assessment after reassignment. Existing assessment history is shipment-scoped, however: a newly linked importer can read prior snapshots containing the previous importer's deadline. The current assessment schema has no importer-visibility boundary. Former importer access to current shipment detail, context, generation, and history is denied, and only the current importer can edit the deadline, but old assessment business snapshots remain visible to a successor. Fixing that requires an authorization/schema change and is outside this test-scope implementation.
 

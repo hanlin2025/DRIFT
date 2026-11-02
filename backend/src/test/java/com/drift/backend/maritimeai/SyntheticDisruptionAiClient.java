@@ -62,7 +62,7 @@ public final class SyntheticDisruptionAiClient implements MaritimeAiClient {
 				List.copyOf(claims), List.of("The synthetic records do not verify an actual vessel arrival."),
 				List.of("Ask the operations team to verify the synthetic revision against its fictional source citation."),
 				true, null);
-		return new MaritimeAiClientResult("offline-synthetic-context-test", "typed-context-formatter",
+		return new MaritimeAiClientResult("offline-synthetic-context-stub", "typed-context-formatter",
 				"cdg279.synthetic-offline.v1", interpretation, null);
 	}
 
