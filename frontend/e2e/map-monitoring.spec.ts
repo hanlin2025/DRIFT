@@ -72,7 +72,7 @@ async function registerAccount(request: APIRequestContext, role: 'FREIGHT_FORWAR
   return { email, token: body.token };
 }
 
-async function createShipment(request: APIRequestContext, token: string, motherVessel: string) {
+async function createShipment(request: APIRequestContext, token: string, motherVessel: string, motherMmsi?: string) {
   const shipmentReference = `CDG106-${randomBytes(4).toString('hex')}`;
   const response = await request.post('/api/shipments', {
     headers: { Authorization: `Bearer ${token}` },
@@ -85,6 +85,7 @@ async function createShipment(request: APIRequestContext, token: string, motherV
       plannedMotherArrivalAt: '2026-10-15T08:00:00+08:00',
       feederVessel: 'Straits Feeder',
       plannedFeederDepartureAt: '2026-10-16T12:00:00+08:00',
+      ...(motherMmsi ? { motherVesselMmsi: motherMmsi } : {}),
     },
   });
   expect(response.status(), await response.text()).toBe(201);
@@ -117,7 +118,15 @@ function seedTrack(vessel: string, identifier: string, fixes: { hoursAgo: number
 
 function cleanup(emails: string[], identifiers: string[]) {
   for (const email of emails) {
-    sql(`DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
+    sql(`DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN (
+        SELECT id FROM shipment_risk_transitions WHERE shipment_id IN (
+          SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+        )
+      );
+      DELETE FROM shipment_risk_transitions WHERE shipment_id IN (
+        SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+      );
+      DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM invitations WHERE email = :'email';
       DELETE FROM users WHERE email = :'email';`, { email });
   }
@@ -146,7 +155,7 @@ test.beforeAll(() => {
   assertOwnedDatabase();
 });
 
-test('an authorised freight forwarder sees the live vessel marker', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+test('an authorised freight forwarder sees the seeded vessel marker with accurate provenance', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'The map is covered once on desktop.');
   test.setTimeout(90_000);
   const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
@@ -158,8 +167,8 @@ test('an authorised freight forwarder sees the live vessel marker', { tag: '@dis
     await signIn(page, owner.email);
     await openMap(page, shipment.id);
     const marker = page.locator('.globe-pin.live.mother');
-    await expect(marker).toHaveAttribute('title', new RegExp(`MOTHER LIVE ${vessel}\\. Last updated`));
-    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel} · 1.264, 103.82 · 12.4 kn · Last updated`);
+    await expect(marker).toHaveAttribute('title', new RegExp(`MOTHER SEEDED ${vessel}\\. Last updated`));
+    await expect(page.locator('.route-live')).toContainText(`MOTHER SEEDED ${vessel} · 1.264, 103.82 · 12.4 kn · Last updated`);
     await expect(page.locator('.route-warning')).toHaveCount(0);
     const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
     await expect(panel).toContainText(vessel);
@@ -176,7 +185,7 @@ test('an authorised freight forwarder sees the live vessel marker', { tag: '@dis
   }
 });
 
-test('a stale fix stays on the map as the last known position', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+test('a stale seeded fix stays on the map as the last known position', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'The map is covered once on desktop.');
   test.setTimeout(90_000);
   const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
@@ -189,7 +198,7 @@ test('a stale fix stays on the map as the last known position', { tag: '@disposa
     await openMap(page, shipment.id);
     await expect(page.locator('.route-warning')).toHaveText(LAST_KNOWN);
     await expect(page.getByRole('figure', { name: 'Planned route' }).getByRole('status')).toHaveText(LAST_KNOWN);
-    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel}`);
+    await expect(page.locator('.route-live')).toContainText(`MOTHER SEEDED ${vessel}`);
     await expect(page.locator('.route-live')).toContainText('Last updated');
     await expect(page.locator('.globe-pin.live.mother .globe-dot')).toBeVisible();
     const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
@@ -253,7 +262,7 @@ test('another company cannot load the map or the tracking API', { tag: '@disposa
 
     await signIn(page, outsider.email);
     await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
-    await expect(page.getByRole('alert')).toHaveText(NO_ACCESS);
+    await expect(page.getByRole('alert')).toContainText(NO_ACCESS);
     await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
     await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toHaveCount(0);
     await expect(page.locator('figure.route-chart')).toHaveCount(0);
@@ -373,7 +382,7 @@ test('a freight forwarder reads the recent track with slowdowns and preset windo
     { hoursAgo: 20, speed: 12, valid: true, longitude: 103.3 },
     { hoursAgo: 10, speed: 9, valid: false, longitude: 110.0 },
     { hoursAgo: 4, speed: 2.1, valid: true, longitude: 103.5 },
-    { hoursAgo: 2, speed: 0.4, valid: true, longitude: 103.6 },
+    { hoursAgo: 3.25, speed: 0.4, valid: true, longitude: 103.6 },
   ]);
   try {
     const api = await request.get(`/api/shipments/${shipment.id}/track-history?hours=24`, {
@@ -389,8 +398,13 @@ test('a freight forwarder reads the recent track with slowdowns and preset windo
     expect(await hidden.json()).toEqual({ message: NOT_FOUND });
 
     await signIn(page, owner.email);
-    await openMap(page, shipment.id);
+    await page.route('https://tiles.openfreemap.org/**', route => route.abort());
+    const tracking = page.waitForResponse(response =>
+      response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${shipment.id}/tracking`);
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    expect((await tracking).status()).toBe(200);
     const history = page.getByRole('region', { name: 'Track history' });
+    await expect(page.locator('.route-map-fallback')).toBeVisible();
     await expect(history.getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
     await expect(history).toContainText('3 positions in the last 24 hours · 1 slowdown segment');
 
@@ -404,8 +418,105 @@ test('a freight forwarder reads the recent track with slowdowns and preset windo
     await expect(history.getByLabel('Selected track point')).toContainText('91° (E)');
 
     await history.getByRole('button', { name: 'Feeder vessel' }).click();
-    await expect(history).toContainText('Insufficient history to draw a track for this window.');
+    await expect(history).toContainText('Track unavailable');
+    await expect(history).toContainText('No positions were received in this window.');
   } finally {
     cleanup([owner.email, other.email], [identifier]);
+  }
+});
+
+test('recorded playback works with AIS offline and preserves readable state without the basemap', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The offline rehearsal runs once on desktop.');
+  test.setTimeout(90_000);
+  const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  const outsider = await registerAccount(request, 'FREIGHT_FORWARDER', 'STRAITS_FRESH_DEMO');
+  const vessel = `Ever Steady ${randomBytes(3).toString('hex')}`;
+  const identifier = mmsi();
+  const tracked = await createShipment(request, owner.token, vessel, identifier);
+  const empty = await createShipment(request, owner.token, `Straits Feeder ${randomBytes(3).toString('hex')}`);
+  seedTrack(vessel, identifier, [
+    { hoursAgo: 2, speed: 12, valid: true, longitude: 103.6 },
+    { hoursAgo: 1, speed: 7, valid: true, longitude: 103.7 },
+    { hoursAgo: 0, speed: 0.8, valid: true, longitude: 103.8 },
+  ]);
+  const requests: string[] = [];
+  page.on('request', requestEvent => requests.push(requestEvent.url()));
+  await page.route('https://tiles.openfreemap.org/**', route => route.abort());
+
+  try {
+    await signIn(page, owner.email);
+    const tracking = page.waitForResponse(response =>
+      response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${tracked.id}/tracking`);
+    await page.goto(`/freight-forwarder/shipments/${tracked.id}`);
+    expect((await tracking).status()).toBe(200);
+    const history = page.getByRole('region', { name: 'Track history' });
+    await expect(history).toContainText('3 positions in the last 24 hours');
+    await expect(page.locator('.route-map-fallback')).toContainText('AIS track availability is separate');
+    await expect(page.locator('.route-live')).toContainText('103.8');
+    await expect(history.getByText('Track source details')).toBeVisible();
+
+    const recordedResponse = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === `/api/shipments/${tracked.id}/track-history`
+        && url.searchParams.has('cutoff');
+    });
+    await history.getByRole('button', { name: 'Recorded AIS' }).click();
+    const recorded = await recordedResponse;
+    expect(recorded.status()).toBe(200);
+    const firstSnapshot = await recorded.json();
+    expect(firstSnapshot.context).toBe('SEEDED');
+    expect(firstSnapshot.feedStatus).toBe('OFFLINE');
+    expect(firstSnapshot.timestampSemantics).toBe('DRIFT_RECEIPT_TIME');
+    expect(firstSnapshot.points).toHaveLength(3);
+
+    const playbackRequestIndex = requests.length;
+    const first = firstSnapshot.points[0];
+    const firstStep = page.waitForResponse(response =>
+      new URL(response.url()).searchParams.get('cutoff') === first.ingestedAt);
+    await history.getByRole('button', { name: 'Next position' }).click();
+    expect((await firstStep).status()).toBe(200);
+    await expect(history.getByLabel('Selected track point').locator('time'))
+      .toHaveAttribute('dateTime', first.ingestedAt);
+
+    const second = firstSnapshot.points[1];
+    const secondStep = page.waitForResponse(response =>
+      new URL(response.url()).searchParams.get('cutoff') === second.ingestedAt);
+    await history.getByRole('button', { name: 'Next position' }).click();
+    expect((await secondStep).status()).toBe(200);
+    await expect(history.getByLabel('Selected track point').locator('time'))
+      .toHaveAttribute('dateTime', second.ingestedAt);
+    expect(requests.slice(playbackRequestIndex).some(url =>
+      new URL(url).pathname === `/api/shipments/${tracked.id}/tracking`)).toBe(false);
+
+    const emptyTracking = page.waitForResponse(response =>
+      response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${empty.id}/tracking`);
+    await page.goto(`/freight-forwarder/shipments/${empty.id}`);
+    expect((await emptyTracking).status()).toBe(200);
+    const emptyHistory = page.getByRole('region', { name: 'Track history' });
+    await expect(emptyHistory).toContainText('No positions were received in this window.');
+    await expect(page.locator('.route-live')).toHaveCount(0);
+
+    const noPositionRecorded = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === `/api/shipments/${empty.id}/track-history`
+        && url.searchParams.has('cutoff');
+    });
+    await emptyHistory.getByRole('button', { name: 'Recorded AIS' }).click();
+    expect((await noPositionRecorded).status()).toBe(200);
+    await expect(emptyHistory).toContainText('No positions were received in this window.');
+
+    const hidden = await request.get(`/api/shipments/${tracked.id}/track-history?vessel=MOTHER&hours=24&cutoff=${encodeURIComponent(first.ingestedAt)}`, {
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(hidden.status()).toBe(404);
+    expect(await hidden.json()).toMatchObject({ message: NOT_FOUND });
+    const denied = await request.get(`/api/shipments/${tracked.id}`, {
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(denied.status()).toBe(403);
+  } finally {
+    cleanup([owner.email, outsider.email], [identifier]);
   }
 });
