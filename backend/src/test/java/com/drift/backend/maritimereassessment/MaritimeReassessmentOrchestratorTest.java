@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -18,7 +17,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
@@ -253,6 +251,146 @@ class MaritimeReassessmentOrchestratorTest {
 	}
 
 	@Test
+	void anEarlierClosedReviewDoesNotBlockALaterApprovedCall() {
+		CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+		MemoryStore store = new MemoryStore();
+		MaritimeEvidence evidence = evidence("RECORDED_REPLAY", "HISTORICAL", "before");
+
+		MaritimeReassessmentResult blocked = orchestrator(store, provider, MaritimeReassessmentLimits.closed())
+				.review(8L, 3L, bundle("recorded-mpa", evidence));
+		MaritimeReassessmentResult approved = orchestrator(store, provider, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence));
+		MaritimeReassessmentResult repeat = orchestrator(store, provider, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence));
+
+		assertThat(blocked.version().validationStatus()).isEqualTo("PENDING_REVIEW");
+		assertThat(approved.alreadyRecorded()).isFalse();
+		assertThat(approved.version().generationState()).isEqualTo("GENERATED");
+		assertThat(approved.version().validationStatus()).isEqualTo("VALID");
+		assertThat(repeat.alreadyRecorded()).isTrue();
+		assertThat(repeat.version().assessmentId()).isEqualTo(approved.version().assessmentId());
+		assertThat(provider.calls.get()).isEqualTo(1);
+		assertThat(store.history(8L)).extracting(StoredMaritimeReassessment::validationStatus)
+				.containsExactly("VALID", "PENDING_REVIEW");
+	}
+
+	@Test
+	void anUnavailableProviderDoesNotBlockALaterConfiguredCall() {
+		MemoryStore store = new MemoryStore();
+		MaritimeEvidence evidence = evidence("RECORDED_REPLAY", "HISTORICAL", "before");
+		NoNetworkMaritimeReassessmentProvider offline = new NoNetworkMaritimeReassessmentProvider();
+		CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+
+		MaritimeReassessmentResult blocked = orchestrator(store, offline, open()).review(8L, 3L, bundle("recorded-mpa", evidence));
+		MaritimeReassessmentResult sent = orchestrator(store, provider, open()).review(8L, 3L, bundle("recorded-mpa", evidence));
+
+		assertThat(offline.wasCalled()).isFalse();
+		assertThat(blocked.version().validationStatus()).isEqualTo("PROVIDER_UNAVAILABLE");
+		assertThat(sent.alreadyRecorded()).isFalse();
+		assertThat(sent.version().validationStatus()).isEqualTo("VALID");
+		assertThat(provider.calls.get()).isEqualTo(1);
+		assertThat(store.history(8L)).hasSize(2);
+	}
+
+	@Test
+	void aRateLimitedBundleIsSentWhenALaterReviewIsAllowed() {
+		CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+		MemoryStore store = new MemoryStore();
+		MaritimeReassessmentLimits limits = open(2, 1, 2, 1);
+		MaritimeReassessmentOrchestrator limited = orchestrator(store, provider, limits);
+
+		limited.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+		MaritimeReassessmentResult blocked = limited.review(8L, 3L, bundle("recorded-mpa",
+				evidence("RECORDED_REPLAY", "HISTORICAL", "after", "MPA_ETA_REVISION", "eta-2")));
+		MaritimeReassessmentResult sent = orchestrator(store, provider, limits).review(8L, 3L, bundle("recorded-mpa",
+				evidence("RECORDED_REPLAY", "HISTORICAL", "after", "MPA_ETA_REVISION", "eta-2")));
+
+		assertThat(blocked.version().validationStatus()).isEqualTo("RATE_LIMITED");
+		assertThat(sent.alreadyRecorded()).isFalse();
+		assertThat(sent.version().validationStatus()).isEqualTo("VALID");
+		assertThat(provider.calls.get()).isEqualTo(2);
+		assertThat(store.history(8L)).extracting(StoredMaritimeReassessment::validationStatus)
+				.contains("RATE_LIMITED", "VALID");
+	}
+
+	@Test
+	void aCostLimitedBundleIsSentWhenTheLimitAllowsIt() {
+		CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+		MemoryStore store = new MemoryStore();
+		MaritimeEvidence evidence = evidence("RECORDED_REPLAY", "HISTORICAL", "before");
+
+		MaritimeReassessmentResult blocked = orchestrator(store, provider, open(0, 4, 2, 1))
+				.review(8L, 3L, bundle("recorded-mpa", evidence));
+		MaritimeReassessmentResult sent = orchestrator(store, provider, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence));
+
+		assertThat(blocked.version().validationStatus()).isEqualTo("COST_LIMITED");
+		assertThat(provider.calls.get()).isEqualTo(1);
+		assertThat(sent.alreadyRecorded()).isFalse();
+		assertThat(sent.version().validationStatus()).isEqualTo("VALID");
+		assertThat(store.history(8L)).hasSize(2);
+	}
+
+	@Test
+	void aConcurrencyLimitedBundleIsSentWhenAPermitIsFree() throws Exception {
+		BlockingProvider blocking = new BlockingProvider();
+		MemoryStore store = new MemoryStore();
+		MaritimeReassessmentOrchestrator orchestrator = orchestrator(store, blocking, open());
+		ExecutorService pool = Executors.newSingleThreadExecutor();
+		try {
+			Future<MaritimeReassessmentResult> first = pool.submit(() -> orchestrator.review(8L, 3L,
+					bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before"))));
+			assertThat(blocking.started.await(2, TimeUnit.SECONDS)).isTrue();
+			MaritimeReassessmentResult blocked = orchestrator.review(8L, 3L, bundle("recorded-mpa",
+					evidence("RECORDED_REPLAY", "HISTORICAL", "after", "MPA_ETA_REVISION", "eta-2")));
+			blocking.release.countDown();
+			assertThat(first.get(2, TimeUnit.SECONDS).version().validationStatus()).isEqualTo("VALID");
+			assertThat(blocked.version().validationStatus()).isEqualTo("CONCURRENCY_LIMITED");
+
+			CountingProvider provider = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+			MaritimeReassessmentResult sent = orchestrator(store, provider, open()).review(8L, 3L, bundle("recorded-mpa",
+					evidence("RECORDED_REPLAY", "HISTORICAL", "after", "MPA_ETA_REVISION", "eta-2")));
+
+			assertThat(sent.version().validationStatus()).isEqualTo("VALID");
+			assertThat(provider.calls.get()).isEqualTo(1);
+			assertThat(store.history(8L)).extracting(StoredMaritimeReassessment::validationStatus)
+					.contains("CONCURRENCY_LIMITED", "VALID");
+		} finally {
+			blocking.release.countDown();
+			pool.shutdownNow();
+		}
+	}
+
+	@Test
+	void aFailedOrRejectedBundleIsNotSentAgain() {
+		MemoryStore failedStore = new MemoryStore();
+		orchestrator(failedStore, new CountingProvider(new IllegalStateException("rejected")), open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+		CountingProvider recovered = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+		MaritimeReassessmentResult failedAgain = orchestrator(failedStore, recovered, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+
+		assertThat(recovered.calls.get()).isZero();
+		assertThat(failedAgain.alreadyRecorded()).isTrue();
+		assertThat(failedAgain.version().generationState()).isEqualTo("FAILED");
+		assertThat(failedStore.history(8L)).hasSize(1);
+
+		MemoryStore rejectedStore = new MemoryStore();
+		CountingProvider upgrading = new CountingProvider(reply("VERIFIED_ASSOCIATION"));
+		orchestrator(rejectedStore, upgrading, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+		CountingProvider corrected = new CountingProvider(reply("UNVERIFIED_IMO_ONLY"));
+		MaritimeReassessmentResult rejectedAgain = orchestrator(rejectedStore, corrected, open())
+				.review(8L, 3L, bundle("recorded-mpa", evidence("RECORDED_REPLAY", "HISTORICAL", "before")));
+
+		assertThat(upgrading.calls.get()).isEqualTo(1);
+		assertThat(corrected.calls.get()).isZero();
+		assertThat(rejectedAgain.alreadyRecorded()).isTrue();
+		assertThat(rejectedAgain.version().validationStatus()).isEqualTo("INVALID");
+		assertThat(rejectedAgain.version().interpretation()).isNull();
+	}
+
+	@Test
 	void aMalformedBundleIsRejected() {
 		MaritimeReassessmentOrchestrator orchestrator = orchestrator(new MemoryStore(), new CountingProvider(reply("UNVERIFIED_IMO_ONLY")), open());
 		assertThatThrownBy(() -> orchestrator.review(8L, 3L, null)).isInstanceOf(IllegalArgumentException.class);
@@ -410,7 +548,7 @@ class MaritimeReassessmentOrchestratorTest {
 	}
 
 	private static final class MemoryStore implements MaritimeReassessmentStore {
-		private final ConcurrentHashMap<String, StoredMaritimeReassessment> rows = new ConcurrentHashMap<>();
+		private final List<StoredMaritimeReassessment> rows = new ArrayList<>();
 		private final ConcurrentHashMap<String, Object> locks = new ConcurrentHashMap<>();
 		private final AtomicInteger ids = new AtomicInteger();
 
@@ -422,25 +560,33 @@ class MaritimeReassessmentOrchestratorTest {
 		}
 
 		@Override
-		public Optional<StoredMaritimeReassessment> find(long shipmentId, String bundleHash) {
-			return Optional.ofNullable(rows.get(shipmentId + ":" + bundleHash));
+		public List<StoredMaritimeReassessment> forBundle(long shipmentId, String bundleHash) {
+			synchronized (rows) {
+				return rows.stream()
+						.filter(row -> row.shipmentId() == shipmentId && bundleHash.equals(row.bundleHash()))
+						.toList();
+			}
 		}
 
 		@Override
 		public StoredMaritimeReassessment insert(MaritimeReassessmentAttempt attempt) {
 			StoredMaritimeReassessment stored = attempt.storedWithId(ids.incrementAndGet());
-			rows.put(stored.shipmentId() + ":" + stored.bundleHash(), stored);
+			synchronized (rows) {
+				rows.add(stored);
+			}
 			return stored;
 		}
 
 		@Override
 		public List<StoredMaritimeReassessment> history(long shipmentId) {
-			return rows.values().stream().filter(row -> row.shipmentId() == shipmentId)
-					.sorted((left, right) -> {
-						int byTime = right.createdAt().compareTo(left.createdAt());
-						return byTime != 0 ? byTime : Long.compare(right.id(), left.id());
-					})
-					.toList();
+			synchronized (rows) {
+				return rows.stream().filter(row -> row.shipmentId() == shipmentId)
+						.sorted((left, right) -> {
+							int byTime = right.createdAt().compareTo(left.createdAt());
+							return byTime != 0 ? byTime : Long.compare(right.id(), left.id());
+						})
+						.toList();
+			}
 		}
 	}
 }

@@ -1,14 +1,13 @@
 package com.drift.backend.maritimereassessment;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Supplier;
 
 interface MaritimeReassessmentStore {
 
 	<T> T exclusively(long shipmentId, String bundleHash, Supplier<T> work);
 
-	Optional<StoredMaritimeReassessment> find(long shipmentId, String bundleHash);
+	List<StoredMaritimeReassessment> forBundle(long shipmentId, String bundleHash);
 
 	StoredMaritimeReassessment insert(MaritimeReassessmentAttempt attempt);
 

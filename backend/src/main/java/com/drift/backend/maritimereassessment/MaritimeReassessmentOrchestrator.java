@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -18,7 +19,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * Records one outcome for a shipment and an unchanged evidence bundle.
+ * Records a shipment's reassessment for one evidence bundle.
+ * A generated, failed, or rejected attempt is kept and not sent again.
+ * A review that never left the process is checked again, and a later approved call is stored beside it.
  * External processing stays off unless the global gate, the dataset, and every source type are approved.
  * A call does not change the shipment, its schedule, risk, alerts, recommendations, or decisions.
  */
@@ -60,10 +63,27 @@ public class MaritimeReassessmentOrchestrator {
 
 	private MaritimeReassessmentResult reviewLocked(long shipmentId, long owningCompanyId, Instant cutoff,
 			MaritimeReassessmentBundle bundle) {
-		return store.find(shipmentId, bundle.hash())
-				.map(stored -> new MaritimeReassessmentResult(true, MaritimeReassessmentVersion.from(stored)))
-				.orElseGet(() -> new MaritimeReassessmentResult(false,
-						MaritimeReassessmentVersion.from(store.insert(attempt(shipmentId, owningCompanyId, cutoff, bundle)))));
+		List<StoredMaritimeReassessment> prior = store.forBundle(shipmentId, bundle.hash());
+		for (int i = prior.size() - 1; i >= 0; i--) {
+			if (settled(prior.get(i))) {
+				return new MaritimeReassessmentResult(true, MaritimeReassessmentVersion.from(prior.get(i)));
+			}
+		}
+		MaritimeReassessmentAttempt next = attempt(shipmentId, owningCompanyId, cutoff, bundle);
+		if (!prior.isEmpty() && !recordsACall(next.storedWithId(0))) {
+			return new MaritimeReassessmentResult(true, MaritimeReassessmentVersion.from(prior.get(prior.size() - 1)));
+		}
+		return new MaritimeReassessmentResult(false, MaritimeReassessmentVersion.from(store.insert(next)));
+	}
+
+	private static boolean settled(StoredMaritimeReassessment stored) {
+		return recordsACall(stored) || "INSUFFICIENT_EVIDENCE".equals(stored.validationStatus());
+	}
+
+	private static boolean recordsACall(StoredMaritimeReassessment stored) {
+		return "GENERATED".equals(stored.generationState())
+				|| "FAILED".equals(stored.generationState())
+				|| "INVALID".equals(stored.validationStatus());
 	}
 
 	private MaritimeReassessmentAttempt attempt(long shipmentId, long owningCompanyId, Instant cutoff,

@@ -2,7 +2,6 @@ package com.drift.backend.maritimereassessment;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -32,7 +31,7 @@ class JpaMaritimeReassessmentStore implements MaritimeReassessmentStore {
 	}
 
 	@Override
-	public Optional<StoredMaritimeReassessment> find(long shipmentId, String bundleHash) {
+	public List<StoredMaritimeReassessment> forBundle(long shipmentId, String bundleHash) {
 		return entityManager.createQuery("""
 				SELECT attempt FROM MaritimeReassessmentAttempt attempt
 				WHERE attempt.shipmentId = :shipmentId AND attempt.bundleHash = :bundleHash
@@ -40,10 +39,10 @@ class JpaMaritimeReassessmentStore implements MaritimeReassessmentStore {
 				""", MaritimeReassessmentAttempt.class)
 				.setParameter("shipmentId", shipmentId)
 				.setParameter("bundleHash", bundleHash)
-				.setMaxResults(1)
-				.getResultStream()
-				.findFirst()
-				.map(MaritimeReassessmentAttempt::stored);
+				.getResultList()
+				.stream()
+				.map(MaritimeReassessmentAttempt::stored)
+				.toList();
 	}
 
 	@Override
