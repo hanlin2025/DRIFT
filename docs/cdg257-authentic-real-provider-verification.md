@@ -138,11 +138,67 @@ MPA/NEA fields and supplied planning/risk facts.
   must not be committed. No API key or raw provider response body is included in the capture.
 
 The exact first validator rejection is caused by cargo wording in the authored uncertainty text;
-`MaritimeAiResponseValidator` rejects cargo assertions across summaries, claims, uncertainties, and
-follow-ups. The captured output also contains risk-reference/window/freshness mismatches that the
-validator did not reach because validation stops at the first failure. Do not weaken the validator.
-The smallest legitimate follow-up is to strengthen a newly versioned prompt to prohibit cargo
-references even when framed as uncertainty, require each risk-review claim to cite its MPA evidence
-reference, copy the backend risk state exactly, and limit follow-ups to human verification rather than
-plan evaluation. Add offline regressions for these cases before any new paid evaluation. A second
-provider call requires fresh authorization.
+`MaritimeAiResponseValidator` rejected this captured wording. The captured output also contains
+risk-reference/window/freshness mismatches that validation did not reach because it stops at the
+first failure. Do not weaken the validator. A second provider call requires fresh authorization.
+
+## V15 prompt correction — offline only
+
+The V14 identifier and evaluation above remain historical. The configured prompt now reports
+`cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1`; no provider request has been
+made with V15.
+
+The five captured defects and their V14 prompt context are:
+
+1. V14 prohibited inventing cargo sensitivity and outcomes, but did not ban cargo mentions in every
+   authored field. The model used cargo in an uncertainty despite no cargo facts being supplied.
+   V15 prohibits cargo wording in summaries, claims, uncertainties, and follow-ups, including
+   negated or uncertain wording.
+2. V14 already required eligible evidence and risk references, but the captured model output
+   returned only risk references for its risk claim. That output violated the prompt and the
+   validator's citation contract. V15 makes the exact `evidence:<id>` requirement explicit for
+   every evidence-dependent claim, says risk references do not replace evidence citations, and
+   tells the model to omit the claim or abstain if evidence is insufficient.
+3. V14 already required exact `riskReview` state copying, but the captured claim's prose said no
+   remaining connection window while the selected planned window was available. V15 explicitly
+   binds the prose window status to the selected planned or AIS window and prohibits that
+   contradiction.
+4. V14 already required exact `riskReview` copying, but the captured `estimateFreshness` changed the
+   backend's `UNAVAILABLE` state to `UNKNOWN`. V15 repeats the requirement with an explicit mapping
+   and says those states are not interchangeable.
+5. V14 prohibited operational decisions but did not prohibit evaluating alternative shipment
+   plans. V15 limits follow-ups to named human/team verification with a concrete activity and
+   explicitly disallows evaluating alternative plans, routes, or mitigations.
+
+Offline regressions cover the prompt/version contract, unsupported negated and uncertain cargo
+wording, missing evidence references, risk-window/freshness grounding, an accepted grounded
+planned-window interpretation, and the named human/team verification requirement. Production
+validator behavior and the response schema were not changed, and no migration was added.
+
+Verification on 2026-11-02: backend compilation passed; focused client, validator, evidence
+eligibility, multi-source grounding, and connection-risk-context tests passed (57 tests, 0 failures,
+0 errors, 1 optional capture-fixture test skipped). The exact authentic integration method passed
+with its capturing stub against a fresh disposable PostgreSQL database; Flyway validated and applied
+26 migrations through V31. Real-client selection and external-request approval were explicitly
+disabled. No OpenAI request was made.
+
+### Separate validator finding
+
+The V15 prompt addresses the captured wrong-window and alternative-plan wording, but offline review
+found natural-language validation gaps that were not changed in this prompt-only correction:
+
+- `claimsCargoAsFact` exempts text containing `no cargo`, `cargo is not`, or `cargo association`.
+  Those broad exceptions can allow unsupported negated or uncertain cargo assertions despite the
+  absence of cargo facts.
+- The risk-state validator detects phrases such as `no remaining window`, but the captured wording
+  `no remaining connection window` is not matched and can pass when the planned window is available.
+  An exploratory regression assertion using that exact wording expected
+  `RISK_REVIEW_WINDOW_STATE_MISMATCH` but observed `null`.
+- The operational-action pattern does not recognize `evaluate alternative shipment plans`. A
+  separate valid human verification follow-up can satisfy the risk-review follow-up requirement,
+  leaving that additional planning suggestion unchecked.
+
+These are validator behavior findings, not reasons to weaken any existing gate. They need a focused
+validator correction and regression review before a real-provider result can be treated as safely
+validated. The existing V14 paid call remains `FAILED`; authorized retrieval, valid assessment
+persisted state, and human factual approval have not been demonstrated.

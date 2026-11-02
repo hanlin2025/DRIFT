@@ -27,7 +27,11 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation()).isNotNull();
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
-			assertThat(result.promptVersion()).isEqualTo("cdg247.evidence.v14.cdg252-abstract-revision-business-context.1");
+			assertThat(result.promptVersion())
+					.isEqualTo("cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1")
+					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
+			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v14.cdg252-abstract-revision-business-context.1");
 			assertThat(result.interpretation().claims().get(0).vesselRole()).isNull();
 			assertThat(result.interpretation().claims().get(0).observationType()).isNull();
 			assertThat(result.interpretation().claims().get(0).associationScope()).isNull();
@@ -55,11 +59,23 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("Historical MPA revisions and NEA context are never risk-engine inputs")
 					.contains("No miss probability is supplied here")
 					.contains("Do not infer one or state a probability")
-					.contains("Risk severity is the backend's existing threshold-based output");
-		assertThat(requestBody.get()).contains("Use relationshipType RISK_BUFFER_REVIEW only when a claim cites eligible maritime evidence")
+					.contains("Risk severity is the backend's existing threshold-based output")
+					.contains("including negated, hypothetical, or uncertain statements; no cargo facts are supplied")
+					.contains("Every evidence-dependent claim, including every RISK_BUFFER_REVIEW claim")
+					.contains("exact evidence:<id> canonical factReference")
+					.contains("Risk references do not replace evidence citations")
+					.contains("If evidence does not support why review is warranted, omit that claim or abstain")
+					.contains("PLANNED_SHIPMENT_SCHEDULE uses the backend planned-window state; AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE uses the backend remaining-window state")
+					.contains("Never infer NO_REMAINING_WINDOW from a missing, stale, unavailable, or unknown AIS estimate")
+					.contains("Never describe an AVAILABLE selected window as having no remaining window or no positive buffer")
+					.contains("UNAVAILABLE must remain unavailable, and UNKNOWN must remain unknown")
+					.contains("do not assert it or invent a citation; express uncertainty about the limitation, omit the claim, or abstain");
+		assertThat(requestBody.get()).contains("For RISK_BUFFER_REVIEW, include the cited eligible observation together with risk:CONNECTION_SEVERITY")
 				.contains("A RISK_BUFFER_REVIEW statement must explain why human review is warranted")
 				.contains("at least one follow-up must name a human participant or team")
-				.contains("verifying the current vessel position with the carrier or operations team")
+				.contains("asking the carrier or operations team to verify the current vessel position")
+				.contains("a concrete verification activity")
+				.contains("Do not recommend evaluating alternative shipment plans, routes, or mitigations")
 				.contains("shipmentContext.businessContext is a minimized authorized projection")
 				.contains("never describe an unavailable comparison as NO_PREDICTED_IMPACT")
 				.contains("DELAY_COMPARISON_REVIEW")
