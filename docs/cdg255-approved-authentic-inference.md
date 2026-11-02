@@ -1,49 +1,44 @@
 # CDG-255 approved authentic-evidence inference boundary
 
-CDG-255 keeps external inference disabled by default. An authentic retrospective record can
-reach the configured OpenAI Responses client only when all technical controls are set:
+CDG-255 keeps external inference disabled by default. An authentic retrospective record can reach
+the configured OpenAI Responses client only when all technical controls are set:
 
 1. `MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true`;
 2. `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED=true`;
 3. its exact source type is listed in `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED`; and
 4. its immutable curated ID is listed in `MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED`.
 
-When global authentic-retrospective approval is disabled, any sufficient, compatible authentic
-retrospective record is blocked before a provider call, even if its source type and curated ID are
-listed. When global approval is enabled, a sufficient, compatible bundle that mixes an approved
-record with an unapproved record also abstains before calling a provider. DRIFT does not silently
-trim either bundle and send a potentially misleading partial context. Recorded replay, live,
+When global authentic-retrospective approval is disabled, an otherwise sufficient compatible record
+is blocked before a provider call. When enabled, a bundle that mixes approved and unapproved records
+also abstains before calling a provider; DRIFT does not silently trim it. Recorded replay, live,
 unknown, stale, incompatible, and insufficient evidence remain ineligible.
 
-The OpenAI Responses request sends the bounded `MaritimeAiEvidencePackage` and canonical fact
-references only. It contains no credentials, raw collector/PDF bodies, database access, company,
-customer, cargo, shipment reference, origin, destination, user identity, or provider key. The
-minimal schedule context is retained because the V14 `SCHEDULE_REVIEW` contract requires its
-canonical references. Requests explicitly set `store:false`; DRIFT does not add retries.
+The OpenAI Responses request sends only the bounded `MaritimeAiEvidencePackage` and canonical fact
+references. It contains no credentials, raw collector/PDF bodies, database access, company or
+customer identifiers, cargo descriptions, shipment reference, origin, destination, or user identity.
+The test's minimized planning context is synthetic fixture data required by the typed schedule/risk
+contract. Requests explicitly set `store:false`; DRIFT does not retry provider requests. Missing
+configuration or approval remains deny-by-default.
 
-## Approval still required
+## Project-scope owner confirmation
 
-No source-owner authorization for authentic MPA OCEANS-X arrival records or NEA data.gov.sg
-weather records is committed. On 2026-11-01, the DRIFT team confirmed that project-scope
-transmission of the two curated IDs below to OpenAI is permitted:
+The DRIFT project owner has confirmed approval for project-scope processing through OpenAI of the
+two curated historical MPA/NEA records below for this evaluation:
 
-- `mpa-expected-revision-9351048-20261026T154603`
-- `nea-rainfall-20261027T153306`
+- `mpa-expected-revision-9351048-20261026T154603` (`MPA_ETA_REVISION`)
+- `nea-rainfall-20261027T153306` (`NEA_WEATHER`)
 
-The confirmation is limited to relevant retrospective observations, the bounded payload, the
-OpenAI Responses provider, explicit `store:false`, and the exact type/ID gates above. It does not
-authorize other MPA, NEA, notice, collector, private-shipment, or raw-source data. Before a real
-request, DRIFT must still retain the responsible source-owner/organizational approval record with
-source terms, permitted processor and fields, attribution, retention/deletion conditions,
-approver, and date. An environment flag is a technical control, not that approval record.
+This records the project-owner confirmation provided for this work. It does not assert a separate
+source-owner approval document, legal finding, or approval for other MPA/NEA records, notices,
+collector data, private shipment data, or raw-source content. The technical source-type and exact-ID
+allowlists remain required even with project-scope approval. Only the bounded fields and limitations
+in the curated records, plus minimized planning context, may be sent. The Responses request must
+continue to use `store:false`.
 
-## Real-provider readiness
+## Real-provider verification status
 
-The retained prior real-response captures used earlier contracts and include validator rejections;
-they are not evidence of an assessment valid under the current V14 prompt. The previously requested
-V9-valid capture remains unverified, and no reviewed V14-valid synthetic provider capture has been
-produced. Do not relax the current prompt or validator to make a model response pass. The existing
-separately approved synthetic-only smoke-test path can be used for one reproducible provider check
-after explicit authorization. Do not use that path with MPA or NEA evidence. A provider response is
-`VALID` only after schema parsing, canonical-reference membership, typed role/scope checks, and
-grounded-claim validation succeed.
+The current real-provider result, prompt version, validation status, persistence/retrieval result,
+and human factual review are recorded in
+[`cdg257-authentic-real-provider-verification.md`](cdg257-authentic-real-provider-verification.md).
+A response is valid only after JSON-schema parsing, citation membership, typed role/scope checks,
+and grounded-claim validation all succeed. Do not weaken the prompt or validator to force acceptance.
