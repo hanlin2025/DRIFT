@@ -11,7 +11,7 @@ import com.drift.backend.maritimecontext.MaritimeContextService;
 import com.drift.backend.shipment.ShipmentDetailResponse;
 import com.drift.backend.shipment.ShipmentService;
 
-/** Authorizes a viewer, then records one reassessment. Reading the shipment does not start one. */
+/** Authorizes a viewer, then records or reads reassessments. Reading does not start a reassessment. */
 @Service
 public class MaritimeReassessmentService {
 
@@ -41,6 +41,12 @@ public class MaritimeReassessmentService {
 		Instant cutoff = Instant.parse(current.assessmentCutoffUtc());
 		return orchestrator.review(shipment.id(), shipment.companyId(),
 				new MaritimeEvidenceBundle(datasetId, cutoff, current.evidence(), List.of()));
+	}
+
+	@Transactional(readOnly = true)
+	public MaritimeReassessmentHistory history(AuthenticatedUser viewer, long shipmentId) {
+		ShipmentDetailResponse shipment = visible(viewer, shipmentId);
+		return MaritimeReassessmentHistory.of(shipment.id(), store.history(shipment.id()));
 	}
 
 	private ShipmentDetailResponse visible(AuthenticatedUser viewer, long shipmentId) {

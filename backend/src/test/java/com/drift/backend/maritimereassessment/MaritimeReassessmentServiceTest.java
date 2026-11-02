@@ -74,12 +74,14 @@ class MaritimeReassessmentServiceTest {
 	}
 
 	@Test
-	void aHiddenShipmentIsNotReassessed() {
+	void aHiddenShipmentIsNotReadOrReassessed() {
 		AuthenticatedUser outsider = viewer(9L, Role.FREIGHT_FORWARDER);
 		when(shipments.get(outsider, 8L)).thenThrow(new ShipmentDetailForbiddenException());
 		Harness harness = new Harness();
+		MaritimeReassessmentService reassessments = service(harness);
 
-		assertThatThrownBy(() -> service(harness).review(outsider, 8L, new MaritimeEvidenceBundle("recorded-mpa",
+		assertThatThrownBy(() -> reassessments.history(outsider, 8L)).isInstanceOf(ShipmentDetailForbiddenException.class);
+		assertThatThrownBy(() -> reassessments.review(outsider, 8L, new MaritimeEvidenceBundle("recorded-mpa",
 				Instant.parse("2026-10-28T00:00:00Z"), List.of(), List.of()))).isInstanceOf(ShipmentDetailForbiddenException.class);
 		assertThat(harness.store.history(8L)).isEmpty();
 	}
@@ -88,8 +90,7 @@ class MaritimeReassessmentServiceTest {
 	void anUnknownShipmentIsNotFound() {
 		AuthenticatedUser owner = viewer(4L, Role.FREIGHT_FORWARDER);
 		when(shipments.get(owner, 44L)).thenThrow(new ShipmentNotFoundException());
-		assertThatThrownBy(() -> service(new Harness()).review(owner, 44L, new MaritimeEvidenceBundle("recorded-mpa",
-				Instant.parse("2026-10-28T00:00:00Z"), List.of(), List.of()))).isInstanceOf(ShipmentNotFoundException.class);
+		assertThatThrownBy(() -> service(new Harness()).history(owner, 44L)).isInstanceOf(ShipmentNotFoundException.class);
 		verify(context, never()).forShipment(org.mockito.ArgumentMatchers.any());
 	}
 
