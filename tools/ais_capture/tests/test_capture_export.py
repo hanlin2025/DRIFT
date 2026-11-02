@@ -153,8 +153,18 @@ class CaptureExportTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["classification"], "AUTHENTIC_PROVIDER_CAPTURE")
             self.assertEqual(manifest["data_quality"]["automated_quality_status"], "NO_REPORTS")
+            self.assertEqual(manifest["data_quality"]["operator_acceptance"], "PENDING")
             self.assertEqual(manifest["provider_usage_review"]["replay_permission"], "UNKNOWN")
             self.assertNotIn("APIKey", manifest)
+
+            accepted_output = Path(directory) / "mother-reviewed.csv"
+            accepted_args = args[:-2] + ["--operator-acceptance", "ACCEPTED", "--output", str(accepted_output)]
+            with patch.object(capture, "query_rows", return_value=",".join(capture.CSV_FIELDS) + "\n"):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    accepted_status = capture.main(accepted_args)
+            self.assertEqual(accepted_status, 3)
+            accepted_manifest = json.loads((Path(directory) / "mother-reviewed.manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(accepted_manifest["data_quality"]["operator_acceptance"], "ACCEPTED")
 
 
 if __name__ == "__main__":

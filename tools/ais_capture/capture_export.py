@@ -240,6 +240,8 @@ def validate_export_rows(rows: list[dict[str, str]], mmsi: str, start: datetime,
 def manifest_for(args: argparse.Namespace, start: datetime, end: datetime,
                  identity_checked_at: datetime, retention_until: date,
                  csv_text: str, rows: list[dict[str, str]], exported_at: datetime) -> dict[str, object]:
+    quality = summarize(rows, args.vessel_name)
+    quality["operator_acceptance"] = args.operator_acceptance
     return {
         "format_version": 1,
         "capture_id": str(uuid.uuid4()),
@@ -269,7 +271,7 @@ def manifest_for(args: argparse.Namespace, start: datetime, end: datetime,
         },
         "csv_file": Path(args.output).name,
         "csv_sha256": hashlib.sha256(csv_text.encode("utf-8")).hexdigest(),
-        "data_quality": summarize(rows, args.vessel_name),
+        "data_quality": quality,
         "limitations": [
             "This export contains observations received by DRIFT, not a complete AIS history or guaranteed event timestamps.",
             "AIS vessel identity and position quality still require operator review against the cited identity source.",
@@ -293,6 +295,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--terms-reference", required=True, help="Provider usage/retention review reference")
     result.add_argument("--terms-reviewed-at", required=True, help="ISO-8601 timestamp with timezone")
     result.add_argument("--replay-permission", required=True, choices=("APPROVED", "NOT_APPROVED", "UNKNOWN"))
+    result.add_argument("--operator-acceptance", choices=("PENDING", "ACCEPTED", "REJECTED"), default="PENDING",
+                        help="Set ACCEPTED only after the vessel and capture review is complete")
     result.add_argument("--retain-until", required=True, help="ISO-8601 date (YYYY-MM-DD)")
     result.add_argument("--output", required=True, type=Path)
     result.add_argument("--manifest", type=Path, help="Defaults to <output stem>.manifest.json")
