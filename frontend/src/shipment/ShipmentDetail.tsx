@@ -34,7 +34,8 @@ export type ShipmentTrackBinding = {
 
 export type ShipmentTrackBindings = Partial<Record<TrackVessel, ShipmentTrackBinding>>;
 
-export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, viewerCompanyId = null, archive, trackBindings }: {
+export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, viewerCompanyId = null, archive, trackBindings,
+  controlledScenarioEnabled = false, onEnterControlledScenario }: {
   token: string;
   shipmentId: string;
   basePath: string;
@@ -44,6 +45,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   archive?: ShipmentArchive;
   /** Optional reviewed per-role source shipment/capture mapping. The backend still authorizes and validates each read. */
   trackBindings?: ShipmentTrackBindings;
+  /** Visibility only; scenario access is still decided by the authenticated backend. */
+  controlledScenarioEnabled?: boolean;
+  onEnterControlledScenario?: (authorizedAnchor: Shipment) => void;
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
@@ -414,6 +418,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   return (
     <section className="shipment-detail">
       <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
+      {controlledScenarioEnabled && viewerCompanyId !== null && shipment?.companyId === viewerCompanyId
+        && !problem && !editing && onEnterControlledScenario && (
+        <aside className="scenario-entry-callout" aria-label="Synthetic controlled scenario">
+          <div>
+            <p className="eyebrow">OPTIONAL SYNTHETIC DEMONSTRATION</p>
+            <p>Open a controlled, read-only three-stage scenario for this independently authorized shipment.</p>
+          </div>
+          <button type="button" className="secondary-button" onClick={() => onEnterControlledScenario(shipment)}>
+            Enter controlled scenario
+          </button>
+        </aside>
+      )}
       {problem
         ? problem.kind === 'failed'
           ? <div className="error-notice" role="alert">{problem.message}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
