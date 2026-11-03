@@ -42,7 +42,7 @@ import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 
 /** Manually controlled, bounded, process-local scenario sessions backed only by immutable fixture data. */
 @Service
-@Transactional(readOnly = true)
+@Transactional
 public class ControlledScenarioSessionService {
 	private static final String API_VERSION = "1";
 	private static final int SHIPMENT_A_INDEX = 0;
