@@ -63,6 +63,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 			@Param("shipmentId") Long shipmentId,
 			@Param("companyId") Long companyId);
 
+	/** Locks current company visibility while historical assessment rows are selected. */
+	@Lock(LockModeType.PESSIMISTIC_READ)
+	@Query("""
+			SELECT shipment FROM Shipment shipment
+			WHERE shipment.id = :shipmentId
+				AND (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)
+			""")
+	Optional<Shipment> findByIdVisibleToCompanyIdForAssessmentHistory(
+			@Param("shipmentId") Long shipmentId,
+			@Param("companyId") Long companyId);
+
 	@Query("""
 			SELECT COUNT(shipment) > 0
 			FROM Shipment shipment

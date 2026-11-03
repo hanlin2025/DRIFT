@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,13 +6,13 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn(), updateTransshipmentArrivalDeadline: vi.fn() }));
+vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), listMaritimeAiAssessments: vi.fn(), generateMaritimeAiAssessment: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn(), updateTransshipmentArrivalDeadline: vi.fn() }));
 
 const importer: Session = {
   token: 'importer-token',
@@ -138,13 +138,41 @@ beforeEach(() => {
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
+  vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
+  vi.mocked(generateMaritimeAiAssessment).mockResolvedValue({ assessmentId: 'assessment-1', state: 'ABSTAINED', validationStatus: 'FEATURE_DISABLED', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'Disabled.' });
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
 describe('connection window on the shipment detail', () => {
-  it('keeps shipment detail visible when additive evidence clients throw or return no response', async () => {
+
+  it('lets the viewer request an advisory without changing shipment detail state', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
+    expect(await screen.findByText('Disabled.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
+
+  it('shows a loading state and keeps shipment detail available when generation fails', async () => {
+    let resolveGeneration!: (value: MaritimeAiAssessment) => void;
+    vi.mocked(generateMaritimeAiAssessment).mockReturnValue(new Promise(resolve => { resolveGeneration = resolve; }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(screen.getByRole('button', { name: 'Generating advisory…' })).toBeDisabled();
+    await act(async () => resolveGeneration({ assessmentId: null, state: 'ABSTAINED', validationStatus: 'INSUFFICIENT_EVIDENCE', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'No sufficient evidence.' }));
+    expect(await screen.findByText('No sufficient evidence.')).toBeInTheDocument();
+
+    vi.mocked(generateMaritimeAiAssessment).mockRejectedValueOnce(new Error('provider unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Generate new interpretation' }));
+    expect(await screen.findByText('AI maritime interpretation is unavailable. Maritime evidence remains available.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
+  it('keeps shipment detail visible when additive maritime clients throw or return no response', async () => {
     vi.mocked(getCdg201ArrivalEvidence).mockImplementation((() => { throw new Error('replay unavailable'); }) as never);
     vi.mocked(getMaritimeContext).mockReturnValue(undefined as never);
+    vi.mocked(listMaritimeAiAssessments).mockImplementation((() => { throw new Error('assessment unavailable'); }) as never);
 
     open(forwarder, '/freight-forwarder/shipments/7');
 
@@ -183,6 +211,67 @@ describe('connection window on the shipment detail', () => {
     await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+  });
+
+  it('shows the current saved deadline and deterministic comparison beside the assessment-time AI business interpretation', async () => {
+    const currentDeadline = '2026-11-03T10:00:00Z';
+    const assessmentDeadline = '2026-11-01T10:00:00Z';
+    const businessShipment: Shipment = {
+      ...shipment,
+      importer: { id: 17, code: 'IMPORTER-17', name: 'Importer 17' },
+      transshipmentArrivalDeadline: { deadline: currentDeadline, transshipmentPort: 'Singapore', applicable: true },
+      delayComparison: {
+        outcome: 'NO_PREDICTED_IMPACT', reason: null,
+        message: 'No predicted impact on the recorded mother-vessel transshipment-arrival deadline.',
+        estimatedArrivalAt: '2026-11-02T12:00:00Z', deadline: currentDeadline, recordedTransshipmentPort: 'Singapore',
+      },
+    };
+    const businessClaim = 'The saved assessment comparison exceeded the importer-confirmed transshipment-arrival deadline.';
+    const assessment: MaritimeAiAssessment = {
+      assessmentId: 'assessment-business-1', state: 'GENERATED', validationStatus: 'VALID',
+      bundleVersion: 'cdg247.evidence.v1', bundleHash: 'business-hash', assessmentCutoffUtc: '2026-11-01T12:00:00Z',
+      provider: 'openai-responses', model: 'gpt-4.1-mini', promptVersion: 'cdg247.evidence.v13.cdg252-provisional-business-context.2',
+      generatedAtUtc: '2026-11-01T12:00:00Z', limitation: null,
+      interpretation: {
+        summary: 'Review the grounded interpretation and limitations.',
+        claims: [{ statement: businessClaim, evidenceIds: ['mpa-expected-revision-9351048-20261026T154603'],
+          applicability: 'UNCERTAIN', vesselRole: 'MOTHER', observationType: 'EXPECTED_ARRIVAL', associationScope: 'VESSEL_OBSERVATION',
+          factReferences: ['evidence:mpa-expected-revision-9351048-20261026T154603', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+          relationshipType: 'DELAY_COMPARISON_REVIEW', riskReview: null }],
+        uncertainties: [], followUpConsiderations: [], evidenceSufficient: true, formalRecommendationCode: null,
+      },
+      deterministicSummary: {
+        summaryVersion: 'cdg247.deterministic-facts.v4.business-risk-snapshots', label: 'Backend-owned facts.',
+        shipmentScheduleFacts: [], evidenceFacts: [], limitations: [],
+        businessContext: {
+          context: {
+            deadline: { state: 'RECORDED', instant: assessmentDeadline, recordedTransshipmentPort: 'Singapore', applicableToCurrentPort: true },
+            comparison: { state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null,
+              estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: assessmentDeadline, recordedTransshipmentPort: 'Singapore' },
+          },
+          canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+        },
+      },
+    };
+    vi.mocked(getShipment).mockResolvedValue(businessShipment);
+    vi.mocked(listMaritimeAiAssessments).mockResolvedValue([assessment]);
+
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(record.querySelector(`time[datetime="${currentDeadline}"]`)).toBeInTheDocument();
+    expect(within(record).getByText(/No predicted impact on the recorded mother-vessel transshipment-arrival deadline/)).toBeInTheDocument();
+
+    const business = screen.getByRole('region', { name: 'Business implications' });
+    expect(within(business).getByText(businessClaim)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Observed maritime evidence' })).not.toHaveTextContent(businessClaim);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getAllByText(assessmentDeadline)).toHaveLength(2);
+    expect(within(details).getByText('Exceeds Deadline')).toBeInTheDocument();
+    expect(within(details).getByText('2026-11-01T11:00:00Z')).toBeInTheDocument();
+    expect(within(details).queryByText(currentDeadline)).not.toBeInTheDocument();
   });
 
   it('shows when the shipment has no planned connection window', async () => {
@@ -438,7 +527,7 @@ describe('connection window on the shipment detail', () => {
     });
     const portfolio = open(forwarder, '/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
-    expect(listShipments).toHaveBeenCalledWith('forwarder-token');
+    await waitFor(() => expect(listShipments).toHaveBeenCalledWith('forwarder-token'));
     expect(screen.queryByText('HL-1001')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
     portfolio.unmount();

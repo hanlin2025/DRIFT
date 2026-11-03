@@ -308,19 +308,21 @@ class ShipmentConstraintIntegrationTests {
 				.andExpect(status().isOk());
 		assertThat(jdbc.queryForObject("SELECT transshipment_port FROM shipments WHERE id = ?", String.class,
 				fixture.shipmentId())).isEqualTo("Singapore");
-		// Fresh installation only: main's V28 and V29, the constraint table as V30, then snapshot observations as V31.
+		// Fresh install: main's V31 snapshot schema is followed by CDG-252's AI status widening as V32.
+		// CDG-272's separately owned V33 decision-history migration may follow after integration.
 		// A database that already applied the constraint script as V28 is outside this assertion.
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank",
-				String.class)).endsWith("28", "29", "30", "31");
+				String.class)).containsSubsequence("28", "29", "30", "31", "32");
 		assertThat(jdbc.queryForList("""
 				SELECT script FROM flyway_schema_history
-				WHERE success AND version IN ('28', '29', '30', '31')
+				WHERE success AND version IN ('28', '29', '30', '31', '32')
 				ORDER BY installed_rank
 				""", String.class)).containsExactly(
 				"V28__create_maritime_ai_assessments.sql",
 				"V29__create_recommendation_decisions.sql",
 				"V30__create_shipment_importer_constraints.sql",
-				"V31__create_maritime_snapshot_observations.sql");
+				"V31__create_maritime_snapshot_observations.sql",
+				"V32__widen_maritime_ai_validation_status.sql");
 	}
 
 	@Test

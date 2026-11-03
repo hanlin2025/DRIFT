@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import com.drift.backend.shipment.ShipmentDetailResponse;
 
@@ -14,9 +16,19 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 @Component
 class RecordedMpaRevisionEvidenceAdapter implements MaritimeEvidenceSourceAdapter {
 	private static final Instant RETRIEVED = Instant.parse("2026-10-26T15:46:03.213897Z");
+	private final boolean curatedSnapshotsEnabled;
+
+	RecordedMpaRevisionEvidenceAdapter() { this(false); }
+
+	@Autowired
+	RecordedMpaRevisionEvidenceAdapter(
+			@Value("${app.maritime-context.curated-snapshots-enabled:false}") boolean curatedSnapshotsEnabled) {
+		this.curatedSnapshotsEnabled = curatedSnapshotsEnabled;
+	}
 
 	@Override
 	public List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant cutoff) {
+		if (curatedSnapshotsEnabled) return List.of();
 		if (!"9351048".equals(shipment.motherVesselImo()) || RETRIEVED.isAfter(cutoff)) return List.of();
 		return List.of(new MaritimeEvidence(
 				"MPA_ETA_REVISION", "RECORDED_REPLAY", "cdg201-kota-laris-20261026-154603",

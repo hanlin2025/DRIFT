@@ -45,7 +45,7 @@ describe('MaritimeContextPanel', () => {
     expect(screen.getByRole('region', { name: 'Maritime Context' }).textContent).not.toMatch(/\b(GENERATED|VALID)\b/);
   });
 
-  it('shows updated evidence pending review without replacing a validated result', async () => {
+  it('shows updated evidence with operational context and preserves provenance and uncertainty in details', async () => {
     const user = userEvent.setup();
     render(<MaritimeContextPanel context={context([
       evidence(),
@@ -58,12 +58,14 @@ describe('MaritimeContextPanel', () => {
     showsNoSuccessfulAssessment();
     expect(screen.getByText('Updated evidence')).toBeInTheDocument();
     expect(screen.getByRole('time')).toHaveAttribute('dateTime', '2026-10-28T00:00:00Z');
+    expect(screen.getByText('What changed:')).toBeInTheDocument();
+    expect(screen.getByText(/Relevant vessel, port, and weather information/)).toBeInTheDocument();
     await user.click(screen.getByText('Source details'));
     expect(screen.getByRole('heading', { name: 'Recorded MPA expected-arrival revision' })).toBeInTheDocument();
     expect(screen.getByText(/An IMO match is not a verified visit/)).toBeInTheDocument();
-    expect(screen.getByText('This source failed. It is not a validated result.')).toBeInTheDocument();
-    expect(screen.getByText('Regional weather is not a demonstrated cause for this shipment.')).toBeInTheDocument();
-    expect(screen.getByText(/\+180 minutes/)).toBeInTheDocument();
+    expect(screen.getByText(/This source failed\. It is not a validated result\./)).toBeInTheDocument();
+    expect(screen.getByText(/Regional weather is not a demonstrated cause for this shipment/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\+180 minutes/)).toHaveLength(2);
   });
 
   it('shows pending review when evidence needs a person and has no recorded change', async () => {
