@@ -182,6 +182,15 @@ public class ShipmentService {
 				VesselNames.warning(shipment.getFeederVessel(), feederVessel, VesselNames.FEEDER_MISMATCH));
 	}
 
+	/** Returns vessel names and explicitly stored AIS identities after applying normal shipment visibility. */
+	@Transactional(readOnly = true)
+	public ShipmentTrackIdentity trackIdentity(AuthenticatedUser principal, Long shipmentId) {
+		Shipment shipment = visibleShipment(principal, shipmentId);
+		return new ShipmentTrackIdentity(shipment.getMotherVessel(), shipment.getMotherVesselImo(),
+				shipment.getMotherVesselMmsi(), shipment.getFeederVessel(), shipment.getFeederVesselImo(),
+				shipment.getFeederVesselMmsi());
+	}
+
 	@Transactional
 	public ShipmentResponse create(AuthenticatedUser principal, CreateShipmentRequest request) {
 		ShipmentDetails details = validatedDetails(request);

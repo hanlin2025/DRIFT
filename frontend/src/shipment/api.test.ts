@@ -798,6 +798,30 @@ describe('vessel track history API', () => {
     expect(found.slowdownThresholdKnots).toBe(3);
   });
 
+  it('sends an optional receipt-time cutoff and capture id and keeps provenance metadata', async () => {
+    const response = {
+      ...track,
+      cutoff: '2026-10-13T12:00:00Z',
+      timestampSemantics: 'DRIFT_RECEIPT_TIME',
+      context: 'RECORDED',
+      status: 'STALE',
+      feedStatus: 'OFFLINE',
+      fallbackUsed: false,
+      captureId: 'f2c37d87-b31e-4cbc-8f50-c8d548c9b9f9',
+      points: [{ ...track.points[0], source: 'AIS_STREAM', positionValid: true }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(response)));
+
+    const found = await getVesselTrack('token', '7', 'FEEDER', 6, {
+      cutoff: '2026-10-13T12:00:00Z',
+      captureId: 'f2c37d87-b31e-4cbc-8f50-c8d548c9b9f9',
+    });
+
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/7/track-history?vessel=FEEDER&hours=6&cutoff=2026-10-13T12%3A00%3A00Z&captureId=f2c37d87-b31e-4cbc-8f50-c8d548c9b9f9', expect.anything());
+    expect(found).toMatchObject({ context: 'RECORDED', status: 'STALE', feedStatus: 'OFFLINE', captureId: response.captureId });
+    expect(found.points[0]).toMatchObject({ source: 'AIS_STREAM', positionValid: true });
+  });
+
   it('accepts a vessel with no report', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...track, vessel: 'MOTHER', mmsi: null, points: [] })));
 

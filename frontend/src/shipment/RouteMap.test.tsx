@@ -10,18 +10,25 @@ const mapCalls = vi.hoisted(() => ({
   setData: vi.fn(),
   setFilter: vi.fn(),
   layerHandlers: new Map<string, (event: unknown) => void>(),
+  errorHandlers: [] as (() => void)[],
+  sources: new Map<string, { setData: (data: unknown) => void }>(),
+  mapInstances: 0,
 }));
 
 vi.mock('maplibre-gl', () => ({
   Map: class Map {
+    constructor() { mapCalls.mapInstances += 1; }
     on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
-      if (typeof layerOrCallback === 'function') layerOrCallback();
+      if (typeof layerOrCallback === 'function') {
+        if (event === 'load') layerOrCallback();
+        if (event === 'error') mapCalls.errorHandlers.push(layerOrCallback);
+      }
       else if (handler) mapCalls.layerHandlers.set(`${event}:${layerOrCallback}`, handler);
     }
     setProjection() {}
-    addSource() {}
+    addSource(id: string) { mapCalls.sources.set(id, { setData: (data: unknown) => mapCalls.setData(id, data) }); }
     addLayer(layer: unknown) { mapCalls.addLayer(layer); }
-    getSource(id: string) { return { setData: (data: unknown) => mapCalls.setData(id, data) }; }
+    getSource(id: string) { return mapCalls.sources.get(id); }
     setFilter(id: string, filter: unknown) { mapCalls.setFilter(id, filter); }
     getCanvas() { return { style: {} }; }
     loaded() { return false; }
@@ -32,9 +39,11 @@ vi.mock('maplibre-gl', () => ({
   },
   NavigationControl: class NavigationControl {},
   Marker: class Marker {
+    constructor(private readonly options: { element: HTMLElement }) {}
     setLngLat() { return this; }
     addTo() { return this; }
     remove() {}
+    getElement() { return this.options.element; }
   },
   LngLatBounds: class LngLatBounds {
     extend() { return this; }
@@ -92,6 +101,9 @@ describe('shipment route display', () => {
     mapCalls.setData.mockClear();
     mapCalls.setFilter.mockClear();
     mapCalls.layerHandlers.clear();
+    mapCalls.errorHandlers.length = 0;
+    mapCalls.sources.clear();
+    mapCalls.mapInstances = 0;
   });
 
   it('lists the stored route in connection order', () => {
@@ -165,50 +177,53 @@ describe('shipment route display', () => {
     expect(screen.queryByText(/MOTHER LIVE/)).not.toBeInTheDocument();
   });
 
-  it('centers the globe on a single live position when no port can be placed', async () => {
+  it('keeps the initial view when a live position arrives and no port can be placed', async () => {
     render(<RouteMap shipment={{
       ...shipment,
       origin: 'Not A Port',
       destination: 'Atlantis',
       transshipmentPort: 'Nowhere',
     }} tracking={loneTracking} />);
-    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
+    await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
+    expect(mapCalls.jumpTo).not.toHaveBeenCalled();
     expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
 
-  it('places a live marker that arrives after the map has loaded', async () => {
+  it('places a live marker after the map has loaded without reframing the camera', async () => {
     const quiet = { ...shipment, origin: 'Not A Port', destination: 'Atlantis', transshipmentPort: 'Nowhere' };
     const { rerender } = render(<RouteMap shipment={quiet} />);
-    await waitFor(() => expect(mapCalls.jumpTo).not.toHaveBeenCalled());
+    await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
     rerender(<RouteMap shipment={quiet} tracking={loneTracking} />);
-    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledWith({ center: [103.82, 1.264], zoom: 3.4 }));
+    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(mapCalls.jumpTo).not.toHaveBeenCalled();
+    expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
 
-  it('frames the first live position after the planned route, then keeps that view', async () => {
+  it('keeps the planned route framing across live refreshes', async () => {
     const { rerender } = render(<RouteMap shipment={shipment} />);
     await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1));
     rerender(<RouteMap shipment={shipment} tracking={loneTracking} />);
     await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/);
-    await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalledTimes(2));
+    expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
     rerender(<RouteMap shipment={shipment} tracking={{
       ...loneTracking,
       motherVessel: { ...loneTracking.motherVessel!, latitude: 8.5, longitude: 110 },
     }} />);
     await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 8.5, 110/);
-    expect(mapCalls.fitBounds).toHaveBeenCalledTimes(2);
+    expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
     expect(mapCalls.jumpTo).not.toHaveBeenCalled();
   });
 
   it('keeps the framed view when a later tracking update arrives', async () => {
     const quiet = { ...shipment, origin: 'Not A Port', destination: 'Atlantis', transshipmentPort: 'Nowhere' };
     const { rerender } = render(<RouteMap shipment={quiet} tracking={loneTracking} />);
-    await waitFor(() => expect(mapCalls.jumpTo).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
     rerender(<RouteMap shipment={quiet} tracking={{
       ...loneTracking,
       motherVessel: { ...loneTracking.motherVessel!, latitude: 8.5, longitude: 110 },
     }} />);
     await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 8.5, 110/);
-    expect(mapCalls.jumpTo).toHaveBeenCalledTimes(1);
+    expect(mapCalls.jumpTo).not.toHaveBeenCalled();
     expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
 
@@ -256,4 +271,37 @@ describe('shipment route display', () => {
     rerender(<RouteMap shipment={shipment} history={{ ...history, points: [] }} selectedId={null} onSelectPoint={onSelectPoint} />);
     await waitFor(() => expect(mapCalls.setData).toHaveBeenLastCalledWith('vessel-track-points', { type: 'FeatureCollection', features: [] }));
   });
+
+  it('preserves the map instance and camera for track, selection and snapshot updates', async () => {
+    const { rerender } = render(<RouteMap shipment={shipment} history={{ ...trackFixture() }} selectedId={null} />);
+    await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
+    expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
+
+    rerender(<RouteMap shipment={{ ...shipment, motherVessel: 'Renamed role' }} history={{ ...trackFixture(), to: '2026-10-05T13:00:00Z' }} selectedId={101} />);
+    expect(mapCalls.mapInstances).toBe(1);
+    expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
+
+    rerender(<RouteMap shipment={{ ...shipment, origin: 'Jakarta, ID' }} history={{ ...trackFixture(), to: '2026-10-05T13:00:00Z' }} selectedId={102} />);
+    await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalledTimes(2));
+    expect(mapCalls.mapInstances).toBe(1);
+  });
+
+  it('keeps track text available when basemap assets fail', async () => {
+    render(<RouteMap shipment={shipment} />);
+    await waitFor(() => expect(mapCalls.errorHandlers).toHaveLength(1));
+    mapCalls.errorHandlers[0]();
+    expect(await screen.findByText(/The basemap is unavailable/)).toBeInTheDocument();
+    expect(routeText()).toContain('DEPARTURE Shanghai, CN');
+  });
 });
+
+function trackFixture(): VesselTrack {
+  return {
+    vessel: 'MOTHER', vesselName: 'MV Pacific Horizon', mmsi: 'stored', windowHours: 24,
+    from: '2026-10-04T12:00:00Z', to: '2026-10-05T12:00:00Z', slowdownThresholdKnots: 3,
+    pointLimit: 500, truncated: false, points: [
+      { id: 101, latitude: 1.1, longitude: 103.6, speedOverGroundKnots: 11, courseOverGroundDegrees: 90, trueHeadingDegrees: 90, ingestedAt: '2026-10-05T01:00:00Z' },
+      { id: 102, latitude: 1.2, longitude: 103.7, speedOverGroundKnots: 1.5, courseOverGroundDegrees: 90, trueHeadingDegrees: 90, ingestedAt: '2026-10-05T02:00:00Z' },
+    ],
+  };
+}
