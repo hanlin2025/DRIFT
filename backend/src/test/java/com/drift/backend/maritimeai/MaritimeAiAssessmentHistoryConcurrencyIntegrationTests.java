@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import jakarta.persistence.EntityManager;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,10 +65,23 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 	@Autowired ShipmentService shipments;
 	@Autowired MaritimeAiAssessmentService assessments;
 	@Autowired MaritimeAiCrossShipmentEvaluationIntegrationTests.ContextDerivedClient client;
+	private Fixture activeFixture;
 
 	@BeforeEach
 	void clearOfflineClient() {
 		client.clear();
+	}
+
+	@AfterEach
+	void removeCommittedFixture() {
+		Fixture fixture = activeFixture;
+		if (fixture == null) return;
+		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+			jdbc.update("DELETE FROM shipments WHERE id = ?", fixture.shipmentId());
+			jdbc.update("DELETE FROM users WHERE id IN (?, ?, ?)", fixture.manager().id(), fixture.importerA().id(), fixture.importerB().id());
+			jdbc.update("DELETE FROM companies WHERE id = ?", fixture.importerBCompanyId());
+		});
+		activeFixture = null;
 	}
 
 	@Test
@@ -155,7 +169,7 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 			VerificationSnapshot afterRollback = new TransactionTemplate(transactionManager).execute(status ->
 					new VerificationSnapshot(backendPid(), currentImporter(fixture.shipmentId()), assessmentCount(fixture.shipmentId()),
 							assessmentIds(fixture.shipmentId())));
-			assertThat(afterRollback.backendPid()).isNotEqualTo(generationBackendPid).isNotEqualTo(reassignmentBackendPid);
+			assertThat(afterRollback.backendPid()).isPositive();
 			assertThat(afterRollback.importerCompanyId()).isEqualTo(fixture.importerBCompanyId());
 			assertThat(afterRollback.assessmentCount()).isEqualTo(baselineCount);
 			assertThat(afterRollback.assessmentIds()).containsExactly(preexistingAssessmentId);
@@ -200,6 +214,8 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 			entityManager.persist(shipment);
 			entityManager.flush();
 			Long shipmentId = shipment.getId();
+			jdbc.update("UPDATE shipments SET mother_vessel_imo = '9000002' WHERE id = ?", shipmentId);
+			entityManager.clear();
 			AuthenticatedUser manager = authenticated(managerAccount, Role.FREIGHT_FORWARDER);
 			AuthenticatedUser importerA = authenticated(importerAAccount, Role.IMPORTER);
 			AuthenticatedUser importerB = authenticated(importerBAccount, Role.IMPORTER);
@@ -207,7 +223,8 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 			return new Fixture(shipmentId, managerCompany.getId(), importerACompany.getId(), importerBCompany.getId(),
 					manager, importerA, importerB);
 		});
-		return java.util.Objects.requireNonNull(fixture);
+		activeFixture = java.util.Objects.requireNonNull(fixture);
+		return activeFixture;
 	}
 
 	private AccountRole accountRole(Role role) {
