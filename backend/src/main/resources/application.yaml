@@ -98,3 +98,13 @@ app:
     # remains disabled unless both this flag and provider configuration are set.
     timeout-seconds: ${MARITIME_AI_TIMEOUT_SECONDS:20}
     max-output-tokens: ${MARITIME_AI_MAX_OUTPUT_TOKENS:800}
+  maritime-reassessment:
+    # External processing stays off until a dataset, the global gate, and every source type are approved.
+    external-processing-enabled: false
+    approved-datasets: []
+    approved-source-types: []
+    max-concurrent-requests: 1
+    max-calls-per-minute: 2
+    max-estimated-cost-units: 1
+    call-timeout: 2s
+    max-attempts: 2

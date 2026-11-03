@@ -120,6 +120,24 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void refusesHiddenAiAssessmentAndReassessmentReadsUsingTheDetailRule() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+
+		for (String path : List.of("/api/shipments/8/maritime-ai-assessments",
+				"/api/shipments/8/maritime-reassessments")) {
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			filter.doFilter(request("GET", path), response, chain);
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).isEqualTo(
+					"{\"message\":\"" + ShipmentDetailForbiddenException.MESSAGE + "\"}");
+		}
+
+		verify(chain, never()).doFilter(any(), any());
+	}
+
+	@Test
 	void passesAMissingCdg201EvidenceShipmentToTheNotFoundHandler() throws Exception {
 		signIn();
 		when(shipments.find(8L)).thenReturn(Optional.empty());

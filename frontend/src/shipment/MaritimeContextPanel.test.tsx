@@ -1,28 +1,116 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { type MaritimeContext, type MaritimeEvidence } from './api';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
-import type { MaritimeContext } from './api';
 
-const context: MaritimeContext = {
-  contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'SYNTHETIC_DEMONSTRATION',
-  assessmentCutoffUtc: '2026-09-30T22:45:00Z', shipmentAssociationConfidence: 'VERIFIED', limitation: 'Fictional scenario.',
-  notices: [], aiExplanation: null, suggestedActions: null,
-  evidence: [
-    { sourceType: 'MPA_ETA_REVISION', sourceMode: 'SYNTHETIC_DEMONSTRATION', evidenceId: 'synthetic-mpa', title: 'Synthetic revision', sourceIdentifier: 'SYNTHETIC-MPA', sourceUrl: '', citation: 'Fictional.', sourceEventAt: null, observedAt: null, retrievedAtUtc: '2026-09-30T21:00:00Z', freshness: 'FRESH', previousValue: '2026-10-01T05:00:00+08:00', currentValue: '2026-10-01T06:00:00+08:00', changeMagnitude: '+60 minutes', activityCompatibility: 'COMPATIBLE', locationCompatibility: 'COMPATIBLE', timeCompatibility: 'COMPATIBLE', compatibilityState: 'COMPATIBLE', evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'VERIFIED', limitation: 'Fictional fixture only.' },
-    { sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceId: 'live-nea-unavailable', title: 'Live NEA weather context not ingested', sourceIdentifier: 'NEA', sourceUrl: '', citation: 'No live snapshot.', sourceEventAt: null, observedAt: null, retrievedAtUtc: null, freshness: 'UNAVAILABLE', previousValue: '', currentValue: '', changeMagnitude: '', activityCompatibility: 'UNKNOWN', locationCompatibility: 'UNKNOWN', timeCompatibility: 'UNKNOWN', compatibilityState: 'UNKNOWN', evidenceSufficient: false, humanReviewRequired: true, shipmentAssociationConfidence: 'UNAVAILABLE', limitation: 'Separate from synthetic weather.' },
-    { sourceType: 'MPA_OFFICIAL_NOTICE', sourceMode: 'SYNTHETIC_DEMONSTRATION', evidenceId: 'synthetic-incompatible', title: 'Different fictional area', sourceIdentifier: 'SYNTHETIC-PMN', sourceUrl: '', citation: 'Fictional.', sourceEventAt: null, observedAt: null, retrievedAtUtc: '2026-09-30T22:30:00Z', freshness: 'FRESH', previousValue: '', currentValue: '', changeMagnitude: '', activityCompatibility: 'INCOMPATIBLE', locationCompatibility: 'INCOMPATIBLE', timeCompatibility: 'COMPATIBLE', compatibilityState: 'INCOMPATIBLE', evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'VERIFIED', limitation: 'Fictional fixture only.' },
-  ],
-};
+function evidence(overrides: Partial<MaritimeEvidence> = {}): MaritimeEvidence {
+  return {
+    sourceType: 'MPA_ETA_REVISION', sourceMode: 'RECORDED_REPLAY', evidenceId: 'eta-1', title: 'Recorded MPA expected-arrival revision',
+    sourceIdentifier: 'MPA OCEANS-X Vessels Due to Arrive', sourceUrl: '', citation: 'Manifest citation',
+    sourceEventAt: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-26T15:46:03Z', retrievedAtUtc: '2026-10-26T15:46:03Z',
+    freshness: 'RECORDED_REPLAY', previousValue: '2026-10-28 23:00:00', currentValue: '2026-10-29 02:00:00', changeMagnitude: '+180 minutes',
+    activityCompatibility: 'UNKNOWN', locationCompatibility: 'UNKNOWN', timeCompatibility: 'UNKNOWN', compatibilityState: 'UNKNOWN',
+    evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY',
+    limitation: 'Recorded replay only.',
+    ...overrides,
+  };
+}
+
+function context(items: MaritimeEvidence[], overrides: Partial<MaritimeContext> = {}): MaritimeContext {
+  return {
+    contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RECORDED_REPLAY',
+    assessmentCutoffUtc: '2026-10-28T00:00:00Z', shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY',
+    limitation: 'Human review is required. This bundle does not change ETA, shipment, risk, alerts, or operational decisions.',
+    evidence: items, notices: [], aiExplanation: null, suggestedActions: null,
+    ...overrides,
+  };
+}
+
+function showsNoSuccessfulAssessment() {
+  const region = screen.getByRole('region', { name: 'Maritime Context' });
+  expect(region).toHaveTextContent('Validated result');
+  expect(region).toHaveTextContent('None');
+  expect(region).toHaveTextContent('Generation time');
+  expect(region).toHaveTextContent('Not recorded');
+  expect(region.textContent).not.toMatch(/\b(GENERATED|VALID)\b/);
+  expect(region).toHaveTextContent('This does not change the shipment, ETA, risk, alerts, recommendation, or decision.');
+}
 
 describe('MaritimeContextPanel', () => {
-  it('keeps operational information prominent while retaining source qualification in evidence details', () => {
-    render(<MaritimeContextPanel context={context} unavailable={false} />);
-    expect(screen.getByText('What changed')).toBeInTheDocument();
-    expect(screen.getAllByText('Why it matters').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Uncertainty').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Evidence details')).toHaveLength(3);
-    expect(screen.getAllByText(/fictional scenario evidence/i)).toHaveLength(2);
-    expect(screen.getByText(/source-availability status/)).toBeInTheDocument();
-    expect(screen.getByText(/excluded from the AI assessment/)).toBeInTheDocument();
+  it('shows a denied reassessment when maritime context is off', () => {
+    render(<MaritimeContextPanel context={context([], { enabled: false, sourceMode: 'DISABLED' })} unavailable={false} />);
+    expect(screen.getByText('Maritime context is not enabled for this environment.')).toBeInTheDocument();
+    expect(screen.getByText(/Maritime reassessment is off/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Maritime Context' }).textContent).not.toMatch(/\b(GENERATED|VALID)\b/);
+  });
+
+  it('shows updated evidence with operational context and preserves provenance and uncertainty in details', async () => {
+    const user = userEvent.setup();
+    render(<MaritimeContextPanel context={context([
+      evidence(),
+      evidence({
+        sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceId: 'weather-none', title: 'NEA weather context unavailable',
+        freshness: 'UNAVAILABLE', previousValue: '', currentValue: '', changeMagnitude: '', evidenceSufficient: false,
+        shipmentAssociationConfidence: 'UNAVAILABLE', limitation: 'No weather causation is claimed.',
+      }),
+    ])} unavailable={false} />);
+    showsNoSuccessfulAssessment();
+    expect(screen.getByText('Updated evidence')).toBeInTheDocument();
+    expect(screen.getByRole('time')).toHaveAttribute('dateTime', '2026-10-28T00:00:00Z');
+    expect(screen.getByText('What changed:')).toBeInTheDocument();
+    expect(screen.getByText(/Relevant vessel, port, and weather information/)).toBeInTheDocument();
+    await user.click(screen.getByText('Source details'));
+    expect(screen.getByRole('heading', { name: 'Recorded MPA expected-arrival revision' })).toBeInTheDocument();
+    expect(screen.getByText(/An IMO match is not a verified visit/)).toBeInTheDocument();
+    expect(screen.getByText(/This source failed\. It is not a validated result\./)).toBeInTheDocument();
+    expect(screen.getByText(/Regional weather is not a demonstrated cause for this shipment/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\+180 minutes/)).toHaveLength(2);
+  });
+
+  it('shows pending review when evidence needs a person and has no recorded change', async () => {
+    const user = userEvent.setup();
+    render(<MaritimeContextPanel context={context([evidence({
+      sourceType: 'MPA_OFFICIAL_NOTICE', sourceMode: 'SYNTHETIC_DEMONSTRATION', evidenceId: 'notice-1',
+      title: 'Demonstration maritime operational notice', freshness: 'SYNTHETIC_DEMONSTRATION',
+      previousValue: '', currentValue: '', changeMagnitude: '', evidenceSufficient: false,
+      sourceUrl: 'https://www.mpa.gov.sg/',
+    })])} unavailable={false} />);
+    expect(screen.getByText('Pending review')).toBeInTheDocument();
+    showsNoSuccessfulAssessment();
+    await user.click(screen.getByText('Source details'));
+    expect(screen.getByText('A general notice is not a specific berth event.')).toBeInTheDocument();
+  });
+
+  it('shows stale recorded evidence when nothing live or changed is present', () => {
+    render(<MaritimeContextPanel context={context([evidence({
+      humanReviewRequired: false, previousValue: '', currentValue: '', changeMagnitude: '',
+    })])} unavailable={false} />);
+    expect(screen.getByText('Stale recorded evidence')).toBeInTheDocument();
+    showsNoSuccessfulAssessment();
+  });
+
+  it('shows a source failure without displaying a successful assessment', () => {
+    render(<MaritimeContextPanel context={context([evidence({
+      sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceId: 'weather-none', title: 'NEA weather context unavailable',
+      freshness: 'UNAVAILABLE', previousValue: '', currentValue: '', changeMagnitude: '', evidenceSufficient: false,
+      shipmentAssociationConfidence: 'UNAVAILABLE',
+    })])} unavailable={false} />);
+    expect(screen.getByText('Source failed')).toBeInTheDocument();
+    showsNoSuccessfulAssessment();
+  });
+
+  it('shows live evidence as available to review and still records no validated result', () => {
+    render(<MaritimeContextPanel context={context([evidence({
+      sourceMode: 'LIVE', freshness: 'APPLICABLE', humanReviewRequired: false, changeMagnitude: '',
+      previousValue: '', currentValue: '', shipmentAssociationConfidence: 'UNKNOWN',
+    })])} unavailable={false} />);
+    expect(screen.getByText('Evidence available')).toBeInTheDocument();
+    showsNoSuccessfulAssessment();
+  });
+
+  it('keeps shipment details up to date when the context request fails', () => {
+    render(<MaritimeContextPanel context={null} unavailable />);
+    expect(screen.getByText('Maritime context is unavailable. Shipment details are still up to date.')).toBeInTheDocument();
   });
 });
