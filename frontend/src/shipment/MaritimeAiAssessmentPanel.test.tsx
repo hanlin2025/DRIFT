@@ -67,8 +67,8 @@ function withBusinessSnapshot(snapshot: MaritimeAiBusinessSnapshot = availableBu
   };
 }
 
-function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn()) {
-  return { ...render(<MaritimeAiAssessmentPanel assessments={[value]} unavailable={false} generating={false} onGenerate={onGenerate} />), onGenerate };
+function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn(), scenarioMode = false) {
+  return { ...render(<MaritimeAiAssessmentPanel assessments={[value]} unavailable={false} generating={false} onGenerate={onGenerate} scenarioMode={scenarioMode} />), onGenerate };
 }
 
 describe('MaritimeAiAssessmentPanel', () => {
@@ -239,6 +239,18 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(within(details).getByText(/business:TRANSSHIPMENT_ARRIVAL_DEADLINE/)).toBeInTheDocument();
     expect(within(details).getByText(/comparison:DELAY_OUTCOME/)).toBeInTheDocument();
     expect(within(details).getByText(/the shipment’s current deadline is not substituted/)).toBeInTheDocument();
+  });
+
+  it('labels a synthetic deadline as scenario-defined instead of importer-confirmed', () => {
+    renderPanel(withBusinessSnapshot(), vi.fn(), true);
+    const business = screen.getByRole('region', { name: 'Business implications' });
+    expect(within(business).getByText('Validated scenario deadline comparison')).toBeInTheDocument();
+    expect(within(business).getByText(/deadline defined for the selected synthetic scenario snapshot/)).toBeInTheDocument();
+    expect(within(business).queryByText('Validated importer deadline comparison')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Scenario business context' });
+    expect(within(details).getByText('Scenario-defined transshipment port')).toBeInTheDocument();
+    expect(within(details).queryByText('Importer-confirmed transshipment port')).not.toBeInTheDocument();
   });
 
   it('displays NO_PREDICTED_IMPACT only when the saved comparison is available with that outcome', () => {

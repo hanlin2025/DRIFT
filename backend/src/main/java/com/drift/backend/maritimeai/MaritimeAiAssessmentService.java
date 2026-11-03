@@ -104,6 +104,57 @@ public class MaritimeAiAssessmentService {
 				persist(detail, input, now, result, MaritimeAiGenerationState.GENERATED, "VALID", result.interpretation()));
 	}
 
+	/**
+	 * Generates a transient interpretation only for an explicitly enabled controlled-scenario
+	 * request. This path never calls the ordinary shipment reader and never persists a row.
+	 */
+	MaritimeAiAssessmentResponse generateScenarioTransient(MaritimeAiEvidencePackage input, boolean scenarioEnabled) {
+		if (!scenarioEnabled) return scenarioTransient(input, MaritimeAiGenerationState.ABSTAINED,
+				"SCENARIO_AI_DISABLED", null, "Scenario AI interpretation is disabled for this environment.");
+		if (!enabled) return scenarioTransient(input, MaritimeAiGenerationState.ABSTAINED,
+				"FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
+		if (!(client instanceof ConfiguredMaritimeAiClient)) return scenarioTransient(input,
+				MaritimeAiGenerationState.ABSTAINED, "REAL_PROVIDER_REQUIRED", null,
+				"A configured real inference provider is required for scenario interpretation.");
+		if (input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
+			return scenarioTransient(input, MaritimeAiGenerationState.ABSTAINED,
+					"SYNTHETIC_EVIDENCE_REQUIRED", null, "Only synthetic scenario evidence can be sent for this interpretation.");
+		}
+		List<MaritimeEvidence> eligible = eligibleForInference(input.evidence(), false, Set.of(), Set.of());
+		MaritimeAiEvidencePackage eligibleInput = new MaritimeAiEvidencePackage(input.bundleVersion(),
+				input.assessmentCutoffUtc(), input.shipmentAssociationConfidence(), input.shipmentContext(), eligible);
+		if (eligible.isEmpty()) return scenarioTransient(eligibleInput, MaritimeAiGenerationState.ABSTAINED,
+				"INSUFFICIENT_EVIDENCE", null, "No sufficient, current synthetic evidence is available for inference.");
+		MaritimeAiClient.MaritimeAiClientResult result;
+		try { result = client.interpret(eligibleInput); }
+		catch (RuntimeException ex) {
+			result = MaritimeAiClient.MaritimeAiClientResult.unavailable("Model client failure: " + ex.getClass().getSimpleName());
+		}
+		if (result.interpretation() == null) return scenarioTransient(eligibleInput,
+				MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", result,
+				result.failure() == null ? "The configured provider returned no interpretation." : result.failure());
+		String validation = MaritimeAiResponseValidator.validate(result.interpretation(), eligibleInput);
+		if (validation != null) return scenarioTransient(eligibleInput, MaritimeAiGenerationState.FAILED,
+				validation, result, "The provider response failed validation (" + validation + "). No interpretation is displayed.");
+		if (!result.interpretation().evidenceSufficient()) return scenarioTransient(eligibleInput,
+				MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_MODEL_EVIDENCE", result,
+				"The model reported that the supplied evidence was insufficient.");
+		return scenarioTransient(eligibleInput, MaritimeAiGenerationState.GENERATED, "VALID", result, null);
+	}
+
+	private MaritimeAiAssessmentResponse scenarioTransient(MaritimeAiEvidencePackage input,
+			MaritimeAiGenerationState state, String validation, MaritimeAiClient.MaritimeAiClientResult result,
+			String limitation) {
+		String provider = result == null || result.provider() == null ? "UNCONFIGURED" : result.provider();
+		String model = result == null || result.model() == null ? "" : result.model();
+		String prompt = result == null || result.promptVersion() == null
+				? ConfiguredMaritimeAiClient.PROMPT_VERSION : result.promptVersion();
+		MaritimeAiInterpretation output = state == MaritimeAiGenerationState.GENERATED ? result.interpretation() : null;
+		return new MaritimeAiAssessmentResponse(null, state.name(), validation, input.bundleVersion(), hash(input),
+				input.assessmentCutoffUtc(), provider, model, prompt, clock.instant().toString(), output,
+				limitation, deterministicSummary(input));
+	}
+
 	private MaritimeAiAssessmentResponse recheckShipmentAccess(AuthenticatedUser user, Long shipmentId,
 			MaritimeAiAssessmentResponse response) {
 		shipments.authorizeView(user, shipmentId);

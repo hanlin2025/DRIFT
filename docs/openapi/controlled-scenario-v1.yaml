@@ -5,7 +5,7 @@ info:
   description: >-
     Authenticated, read-only scenario clock for the CDG-279 fictional disruption.
     The API is available only when explicitly enabled and configured for an isolated
-    demonstration tenant. It never writes shipment or AIS records and never starts AI.
+    demonstration tenant. It never writes shipment or AIS records, and clock commands never start AI.
 servers:
   - url: /api/scenarios/v1
 security:
@@ -167,6 +167,43 @@ paths:
           $ref: "#/components/responses/CommandLimit"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /sessions/{sessionId}/shipments/{shipmentId}/interpretation:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - name: shipmentId
+        in: path
+        required: true
+        description: Persistent A/B navigation anchor; the server verifies it against the current session binding.
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      operationId: generateControlledScenarioInterpretation
+      summary: Generate a transient interpretation for one scenario snapshot
+      description: >-
+        User-triggered and separately gated from scenario clock commands. The server reauthorizes the session,
+        selected A/B anchor, epoch, revision, snapshot, exact simulation cutoff, backend risk/business context,
+        and synthetic evidence before calling the configured real provider. The response is not persisted to
+        ordinary shipment assessment history. Repeated requests for the same authorized snapshot are served from
+        a bounded in-memory cache to avoid duplicate paid requests. No mock or replay provider is accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScenarioInterpretationRequest" }
+      responses:
+        "200":
+          description: Transient result bound to its selected scenario snapshot and shipment.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioInterpretationResponse" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "404": { $ref: "#/components/responses/NotFoundOrDisabled" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/CommandLimit" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 components:
   securitySchemes:
     bearerAuth:
@@ -347,6 +384,47 @@ components:
           type: integer
           format: int64
           minimum: 0
+    ScenarioInterpretationRequest:
+      type: object
+      additionalProperties: false
+      required: [scenarioShipmentKey, expectedEpochId, expectedRevision, expectedSnapshotId, expectedSimulationCutoffUtc]
+      properties:
+        scenarioShipmentKey: { type: string, enum: [A, B] }
+        expectedEpochId: { type: string, format: uuid }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        expectedSnapshotId: { type: string, format: uuid }
+        expectedSimulationCutoffUtc: { type: string, format: date-time, description: Exact UTC string from the accepted snapshot. }
+    ScenarioInterpretationResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, epochId, snapshotId, revision, simulationCutoffUtc, scenarioShipmentKey, shipmentId, assessment]
+      properties:
+        sessionId: { type: string, format: uuid }
+        epochId: { type: string, format: uuid }
+        snapshotId: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 0 }
+        simulationCutoffUtc: { type: string, format: date-time }
+        scenarioShipmentKey: { type: string, enum: [A, B] }
+        shipmentId: { type: integer, format: int64 }
+        assessment:
+          type: object
+          description: Existing validated maritime AI response shape with assessmentId null; never persisted.
+          additionalProperties: true
+          required: [assessmentId, state, validationStatus, bundleVersion, bundleHash, assessmentCutoffUtc, provider, model, promptVersion, generatedAtUtc, interpretation, limitation, deterministicSummary]
+          properties:
+            assessmentId: { type: "null" }
+            state: { type: string, enum: [GENERATED, ABSTAINED, FAILED] }
+            validationStatus: { type: string }
+            bundleVersion: { type: string }
+            bundleHash: { type: string }
+            assessmentCutoffUtc: { type: string, format: date-time }
+            provider: { type: string }
+            model: { type: string }
+            promptVersion: { type: string }
+            generatedAtUtc: { type: string, format: date-time, nullable: true }
+            interpretation: { type: object, nullable: true }
+            limitation: { type: string, nullable: true }
+            deterministicSummary: { type: object, nullable: true }
     SessionEnvelope:
       type: object
       required:

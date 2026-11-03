@@ -90,6 +90,8 @@ app:
     max-commands-per-session: ${CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION:64}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
+    # Separate explicit UI-requested controlled-scenario inference gate; the provider approval gate still applies.
+    scenario-enabled: ${MARITIME_AI_SCENARIO_ENABLED:false}
     # Offline-only client for the controlled fictional replay. Never sends a provider request.
     controlled-replay-stub-enabled: ${MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED:false}
     provider: ${MARITIME_AI_PROVIDER:}

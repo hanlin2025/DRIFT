@@ -19,8 +19,9 @@ import com.drift.backend.shipment.exception.ControlledScenarioInvalidRequestExce
 import com.drift.backend.shipment.exception.ControlledScenarioUnavailableException;
 import com.drift.backend.shipment.exception.ScenarioSessionNotFoundException;
 import com.drift.backend.shipment.exception.ScenarioTransitionConflictException;
+import com.drift.backend.maritimeai.ScenarioMaritimeAiAssessmentController;
 
-@RestControllerAdvice(assignableTypes = ControlledScenarioSessionController.class)
+@RestControllerAdvice(assignableTypes = { ControlledScenarioSessionController.class, ScenarioMaritimeAiAssessmentController.class })
 public class ControlledScenarioExceptionHandler {
 	@ExceptionHandler(ScenarioSessionNotFoundException.class)
 	public ResponseEntity<ControlledScenarioApiError> notFound(ScenarioSessionNotFoundException exception) {
