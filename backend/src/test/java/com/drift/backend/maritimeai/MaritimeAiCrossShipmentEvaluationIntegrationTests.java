@@ -14,6 +14,9 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.persistence.EntityManager;
 
@@ -33,6 +36,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.drift.backend.maritimecontext.MaritimeContextService;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
@@ -455,16 +459,34 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 	@TestConfiguration
 	static class CrossShipmentConfiguration {
 		@Bean @Primary MaritimeContextService sharedEvidenceContext() { return SharedEvidenceShipmentPairFixture.context(); }
-		@Bean @Primary ContextDerivedClient contextDerivedClient() { return new ContextDerivedClient(); }
+		@Bean @Primary ContextDerivedClient contextDerivedClient(JdbcTemplate jdbc) { return new ContextDerivedClient(jdbc); }
 		@Bean @Primary Clock testClock() { return Clock.fixed(TEST_NOW, ZoneOffset.UTC); }
 	}
 
 	static final class ContextDerivedClient implements MaritimeAiClient {
 		private final List<MaritimeAiEvidencePackage> inputs = new ArrayList<>();
+		private final JdbcTemplate jdbc;
+		private final AtomicReference<GenerationGate> nextGate = new AtomicReference<>();
 		private String nextFailure;
+
+		ContextDerivedClient(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
 		@Override
 		public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
+			GenerationGate gate = nextGate.getAndSet(null);
+			if (gate != null) {
+				gate.backendPid = jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class);
+				gate.transactionActive = TransactionSynchronizationManager.isActualTransactionActive();
+				gate.entered.countDown();
+				try {
+					if (!gate.release.await(15, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("Timed out waiting for the generation concurrency test.");
+					}
+				} catch (InterruptedException ex) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Generation concurrency test was interrupted.", ex);
+				}
+			}
 			inputs.add(input);
 			if (nextFailure != null) {
 				String failure = nextFailure;
@@ -525,8 +547,25 @@ class MaritimeAiCrossShipmentEvaluationIntegrationTests {
 		}
 
 		List<MaritimeAiEvidencePackage> inputs() { return List.copyOf(inputs); }
-		void clear() { inputs.clear(); nextFailure = null; }
+		void clear() { inputs.clear(); nextFailure = null; nextGate.set(null); }
 		void failNext(String failure) { nextFailure = failure; }
+		GenerationGate blockNextGeneration() {
+			GenerationGate gate = new GenerationGate();
+			if (!nextGate.compareAndSet(null, gate)) throw new IllegalStateException("A generation gate is already armed.");
+			return gate;
+		}
+
+		static final class GenerationGate {
+			private final CountDownLatch entered = new CountDownLatch(1);
+			private final CountDownLatch release = new CountDownLatch(1);
+			private volatile Integer backendPid;
+			private volatile boolean transactionActive;
+
+			boolean awaitEntered(long timeout, TimeUnit unit) throws InterruptedException { return entered.await(timeout, unit); }
+			void release() { release.countDown(); }
+			Integer backendPid() { return backendPid; }
+			boolean transactionActive() { return transactionActive; }
+		}
 
 		private static MaritimeAiClaim.RiskReview reviewFor(MaritimeAiConnectionRiskContext risk) {
 			MaritimeAiClaim.RiskReview.SelectedWindowState state;

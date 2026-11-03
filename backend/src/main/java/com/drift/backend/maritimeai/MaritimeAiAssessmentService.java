@@ -190,14 +190,16 @@ public class MaritimeAiAssessmentService {
 		try {
 			JsonNode root = json.readTree(outputJson);
 			JsonNode scope = root == null ? null : root.get("historyScope");
-			if (scope == null || !scope.isObject() || !scope.path("version").canConvertToInt()) return null;
+			JsonNode version = scope == null ? null : scope.get("version");
+			if (scope == null || !scope.isObject() || version == null || !version.isIntegralNumber()
+					|| !version.canConvertToInt()) return null;
 			JsonNode importer = scope.get("importerCompanyId");
 			Long importerCompanyId = null;
 			if (importer != null && !importer.isNull()) {
-				if (!importer.canConvertToLong() || importer.longValue() < 1) return null;
+				if (!importer.isIntegralNumber() || !importer.canConvertToLong() || importer.longValue() < 1) return null;
 				importerCompanyId = importer.longValue();
 			}
-			return new MaritimeAiAssessmentHistoryScope(scope.path("version").intValue(), importerCompanyId);
+			return new MaritimeAiAssessmentHistoryScope(version.intValue(), importerCompanyId);
 		} catch (Exception ex) {
 			// Unknown, legacy, or malformed provenance is hidden from importers without altering row data.
 			return null;

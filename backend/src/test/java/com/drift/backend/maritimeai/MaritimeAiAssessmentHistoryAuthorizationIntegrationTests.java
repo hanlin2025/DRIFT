@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.EntityManager;
@@ -157,6 +158,102 @@ class MaritimeAiAssessmentHistoryAuthorizationIntegrationTests {
 		entityManager.clear();
 		MvcResult revokedUserDenied = history(successorImporterToken).andExpect(status().isUnauthorized()).andReturn();
 		assertDeniedBodyHasNoAssessmentContent(revokedUserDenied, successfulAssessmentId, PRIVATE_DEADLINE, PRIVATE_FAILURE_MARKER);
+	}
+
+	@Test
+	void importerHistoryFailsClosedForMissingMalformedUnsupportedAndFractionalProvenance() throws Exception {
+		MvcResult generated = generate(originalImporterToken)
+				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED")).andReturn();
+		String validAssessmentId = JsonPath.read(generated.getResponse().getContentAsString(), "$.assessmentId");
+		List<String> deniedRows = new java.util.ArrayList<>();
+		int row = 0;
+		deniedRows.add(copyAssessmentWithoutHistoryScope(validAssessmentId, row++));
+		List<String> malformedScopes = List.of(
+				"null",
+				"{}",
+				"{\"version\":\"one\",\"importerCompanyId\":" + originalImporterCompanyId + "}",
+				"{\"version\":2,\"importerCompanyId\":" + originalImporterCompanyId + "}",
+				"{\"version\":1,\"importerCompanyId\":null}",
+				"{\"version\":1,\"importerCompanyId\":0}",
+				"{\"version\":1,\"importerCompanyId\":" + successorImporterCompanyId + "}",
+				"{\"version\":1.5,\"importerCompanyId\":" + originalImporterCompanyId + "}",
+				"{\"version\":1,\"importerCompanyId\":" + originalImporterCompanyId + ".75}");
+		for (String scope : malformedScopes) {
+			deniedRows.add(copyAssessmentWithHistoryScope(validAssessmentId, scope, row++));
+		}
+
+		MvcResult importerHistory = history(originalImporterToken).andExpect(status().isOk()).andReturn();
+		String body = importerHistory.getResponse().getContentAsString();
+		assertThat(json.readTree(body).size()).isEqualTo(1);
+		assertThat(body).contains(validAssessmentId);
+		for (int index = 0; index < deniedRows.size(); index++) {
+			assertThat(body).doesNotContain(deniedRows.get(index), privateMarker(index));
+		}
+	}
+
+	@Test
+	void managingCompanyCannotReadAssessmentWhosePersistedOwnerDoesNotMatchShipmentOwner() throws Exception {
+		MvcResult generated = generate(originalImporterToken)
+				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED")).andReturn();
+		String validAssessmentId = JsonPath.read(generated.getResponse().getContentAsString(), "$.assessmentId");
+		String mismatchedOwnerAssessmentId = copyAssessmentWithDifferentOwner(validAssessmentId);
+
+		MvcResult managerHistory = history(managingToken).andExpect(status().isOk()).andReturn();
+		assertThat(json.readTree(managerHistory.getResponse().getContentAsString()).size()).isEqualTo(1);
+		assertThat(managerHistory.getResponse().getContentAsString())
+				.contains(validAssessmentId)
+				.doesNotContain(mismatchedOwnerAssessmentId, "OWNER_MISMATCH_PRIVATE_MARKER");
+
+		MvcResult importerHistory = history(originalImporterToken).andExpect(status().isOk()).andReturn();
+		assertThat(json.readTree(importerHistory.getResponse().getContentAsString()).size()).isEqualTo(1);
+		assertThat(importerHistory.getResponse().getContentAsString())
+				.contains(validAssessmentId)
+				.doesNotContain(mismatchedOwnerAssessmentId, "OWNER_MISMATCH_PRIVATE_MARKER");
+	}
+
+	private String copyAssessmentWithoutHistoryScope(String sourceAssessmentId, int markerIndex) {
+		String assessmentId = UUID.randomUUID().toString();
+		jdbc.update("""
+				INSERT INTO maritime_ai_assessments
+					(shipment_id, assessment_id, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+					 provider, model, prompt_version, generation_state, validation_status, output_json, failure_metadata, created_at)
+				SELECT shipment_id, ?, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+					provider, model, prompt_version, generation_state, validation_status,
+					(output_json::jsonb - 'historyScope')::text, ?, created_at
+				FROM maritime_ai_assessments WHERE assessment_id = ?
+				""", assessmentId, privateMarker(markerIndex), sourceAssessmentId);
+		return assessmentId;
+	}
+
+	private String copyAssessmentWithHistoryScope(String sourceAssessmentId, String scopeJson, int markerIndex) {
+		String assessmentId = UUID.randomUUID().toString();
+		jdbc.update("""
+				INSERT INTO maritime_ai_assessments
+					(shipment_id, assessment_id, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+					 provider, model, prompt_version, generation_state, validation_status, output_json, failure_metadata, created_at)
+				SELECT shipment_id, ?, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+					provider, model, prompt_version, generation_state, validation_status,
+					jsonb_set(output_json::jsonb, '{historyScope}', ?::jsonb, TRUE)::text, ?, created_at
+				FROM maritime_ai_assessments WHERE assessment_id = ?
+				""", assessmentId, scopeJson, privateMarker(markerIndex), sourceAssessmentId);
+		return assessmentId;
+	}
+
+	private String copyAssessmentWithDifferentOwner(String sourceAssessmentId) {
+		String assessmentId = UUID.randomUUID().toString();
+		jdbc.update("""
+				INSERT INTO maritime_ai_assessments
+					(shipment_id, assessment_id, owning_company_id, bundle_version, bundle_hash, assessment_cutoff_utc,
+					 provider, model, prompt_version, generation_state, validation_status, output_json, failure_metadata, created_at)
+				SELECT shipment_id, ?, ?, bundle_version, bundle_hash, assessment_cutoff_utc,
+					provider, model, prompt_version, generation_state, validation_status, output_json, ?, created_at
+				FROM maritime_ai_assessments WHERE assessment_id = ?
+				""", assessmentId, successorImporterCompanyId, "OWNER_MISMATCH_PRIVATE_MARKER", sourceAssessmentId);
+		return assessmentId;
+	}
+
+	private static String privateMarker(int index) {
+		return "MALFORMED_SCOPE_PRIVATE_MARKER_" + index;
 	}
 
 	private void assertDeniedBodyHasNoAssessmentContent(MvcResult result, String assessmentId, String... privateValues) throws Exception {
