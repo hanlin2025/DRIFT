@@ -46,7 +46,7 @@ public class ControlledScenarioSessionController {
 			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token"),
 			@ApiResponse(responseCode = "403", description = "User or company is not configured for the demonstration"),
 			@ApiResponse(responseCode = "404", description = "Scenario disabled or session/shipment not found"),
-			@ApiResponse(responseCode = "503", description = "Scenario configuration or capacity unavailable") })
+			@ApiResponse(responseCode = "503", description = "Scenario configuration, capacity, or authorization storage unavailable") })
 	public ResponseEntity<ControlledScenarioSessionResponse> create(
 			@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID sessionId,
 			@Valid @RequestBody ControlledScenarioSessionCreateRequest request) {
