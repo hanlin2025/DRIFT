@@ -161,7 +161,8 @@ public class ShipmentService {
 	}
 
 	/** Checks the same shipment visibility as {@link #get} without calculating live connection risk. */
-	@Transactional(readOnly = true)
+	// Pessimistic history visibility locking requires a writable PostgreSQL transaction.
+	@Transactional
 	public ShipmentViewAuthorization authorizeView(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
 		Shipment shipment = shipments.findByIdVisibleToCompanyIdForAssessmentHistory(shipmentId, company.getId())

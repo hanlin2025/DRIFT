@@ -152,7 +152,8 @@ public class MaritimeAiAssessmentService {
 						|| !approvedAuthenticEvidenceIds.contains(item.evidenceId()));
 	}
 
-	@Transactional(readOnly = true)
+	// History authorization takes a PostgreSQL row lock so importer reassignment serializes after the read.
+	@Transactional
 	public List<MaritimeAiAssessmentResponse> list(AuthenticatedUser user, Long shipmentId) {
 		ShipmentViewAuthorization authorization = shipments.authorizeView(user, shipmentId);
 		return assessments.findByShipmentIdOrderByCreatedAtDesc(shipmentId).stream()
