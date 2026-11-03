@@ -34,7 +34,7 @@ export type MaritimeEvidence = {
   sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
   evidenceId: string; title: string; sourceIdentifier: string; sourceUrl: string; citation: string;
   sourceEventAt: string | null; observedAt: string | null; retrievedAtUtc: string | null; freshness: string;
-  previousValue: string; currentValue: string; changeMagnitude: string;
+  previousValue: string | null; currentValue: string | null; changeMagnitude: string | null;
   activityCompatibility: string; locationCompatibility: string; timeCompatibility: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
   vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
@@ -492,12 +492,9 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
 
 export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
-  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'RETROSPECTIVE_ANALYSIS', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
-  const evidence = data.evidence as MaritimeEvidence[];
-  if (evidence.some(item => !isRecord(item) || !isPresentText(item.sourceType) || !isPresentText(item.sourceMode) || !isPresentText(item.evidenceId) || !isPresentText(item.title) || !isPresentText(item.shipmentAssociationConfidence) || !isPresentText(item.limitation))) throw new ApiError(UNEXPECTED, 502);
-  const notices = data.notices as MaritimeNoticeEvidence[];
-  const sourceMode = data.sourceMode as MaritimeContext['sourceMode'];
-  return { contractVersion: data.contractVersion, enabled: data.enabled, sourceMode, assessmentCutoffUtc: data.assessmentCutoffUtc, shipmentAssociationConfidence: data.shipmentAssociationConfidence, limitation: data.limitation, evidence, notices, aiExplanation: null, suggestedActions: null };
+  const context = decodeMaritimeContext(data);
+  if (!context) throw new ApiError(UNEXPECTED, 502);
+  return context;
 }
 
 export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
@@ -771,7 +768,7 @@ function asCdg201MpaLocationReference(value: unknown): Cdg201MpaLocationReferenc
   };
 }
 
-function isConnectionWindow(value: unknown): value is ConnectionWindow {
+export function isConnectionWindow(value: unknown): value is ConnectionWindow {
   return isRecord(value)
     && typeof value.duration === 'string'
     && value.duration.trim().length > 0
@@ -813,7 +810,7 @@ function isRiskLevel(value: unknown): value is RiskLevel {
   return typeof value === 'string' && (RISK_LEVELS as readonly string[]).includes(value);
 }
 
-function isRisk(value: unknown): value is ShipmentRisk {
+export function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
     && RISK_LEVELS.includes(value.level)
     && typeof value.explanation === 'string'
@@ -1014,7 +1011,7 @@ function operationalStateOf(value: Record<string, unknown>, key: string): Operat
   };
 }
 
-function isVesselPosition(value: unknown): value is VesselPosition {
+export function isVesselPosition(value: unknown): value is VesselPosition {
   return isRecord(value)
     && typeof value.mmsi === 'string'
     && value.mmsi.trim().length > 0
@@ -1571,4 +1568,103 @@ function asHistoryEntry(value: unknown): ShipmentHistoryEntry | null {
 
 function isFieldChange(value: unknown): value is ShipmentFieldChange {
   return isRecord(value) && typeof value.field === 'string' && isNullableText(value.previousValue) && isNullableText(value.newValue);
+}
+
+
+/** Strict, offset-qualified source instant, compared without losing nanosecond precision.
+ * Returns an epoch value for validation only; callers retain the original wire string. */
+export function apiInstantNanoseconds(value: unknown): bigint | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return undefined;
+  const [, year, month, day, hour, minute, second, fraction = '', zone, sign, offsetHour = '0', offsetMinute = '0'] = match;
+  const date = new Date(0);
+  date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+  date.setUTCHours(Number(hour), Number(minute), Number(second), 0);
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month)
+    || date.getUTCDate() !== Number(day) || Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59
+    || Number(offsetHour) > 23 || Number(offsetMinute) > 59) return undefined;
+  const offset = zone === 'Z' ? 0 : (sign === '+' ? 1 : -1) * (Number(offsetHour) * 60 + Number(offsetMinute));
+  return BigInt(date.getTime() - offset * 60000) * 1000000n + BigInt(fraction.padEnd(9, '0'));
+}
+
+/** Pure strict wrappers for scenario facts; ordinary optional-field parsing stays unchanged. */
+export function decodeRemainingConnectionWindow(value: unknown): RemainingConnectionWindow | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value) || !['status', 'duration', 'totalSeconds', 'missedBy', 'missedBySeconds'].every(key => key in value)) return undefined;
+  const result = remainingConnectionWindowOf({ remainingConnectionWindow: value });
+  if (!result || (result.status === 'AVAILABLE' ? !Number.isSafeInteger(result.totalSeconds) : !Number.isSafeInteger(result.missedBySeconds))) return undefined;
+  return result;
+}
+export function decodeArrivalComparison(value: unknown): ArrivalComparison | undefined {
+  const result = parseArrivalComparison(value);
+  if (!result) return undefined;
+  if (result.unavailableReason !== null) return result;
+  if (apiInstantNanoseconds(result.estimatedArrivalAt) === undefined || apiInstantNanoseconds(result.lastReceivedAt) === undefined
+    || result.speedOverGroundKnots < 0 || !Number.isSafeInteger(result.differenceSeconds)) return undefined;
+  return result;
+}
+export function decodeShipmentRisk(value: unknown): ShipmentRisk | undefined {
+  return isRisk(value) ? value : undefined;
+}
+export function decodeDelayComparison(value: unknown): DelayComparison | null | undefined {
+  if (value === undefined) return undefined;
+  const result = delayComparisonOf({ delayComparison: value });
+  if (result && (!isNullableApiInstant(result.estimatedArrivalAt) || !isNullableApiInstant(result.deadline))) return undefined;
+  return result;
+}
+
+function isNullableApiInstant(value: unknown): value is string | null {
+  return value === null || apiInstantNanoseconds(value) !== undefined;
+}
+function isCompatibility(value: unknown): value is 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN' {
+  return value === 'COMPATIBLE' || value === 'INCOMPATIBLE' || value === 'UNKNOWN';
+}
+function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {
+  return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
+    || value === 'SYNTHETIC_DEMONSTRATION' || value === 'UNAVAILABLE';
+}
+function isContextSourceMode(value: unknown): value is MaritimeContext['sourceMode'] {
+  return value === 'DISABLED' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
+    || value === 'SYNTHETIC_DEMONSTRATION' || value === 'UNAVAILABLE';
+}
+function isSourceUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value === '') return true;
+  try { return ['http:', 'https:'].includes(new URL(value).protocol); }
+  catch { return false; }
+}
+function isMaritimeEvidence(value: unknown): value is MaritimeEvidence {
+  if (!isRecord(value) || !['MPA_ETA_REVISION', 'MPA_OFFICIAL_NOTICE', 'NEA_WEATHER'].some(type => type === value.sourceType)
+    || !isEvidenceSourceMode(value.sourceMode) || !isCompatibility(value.compatibilityState)) return false;
+  if (!['evidenceId', 'title', 'sourceIdentifier', 'freshness', 'activityCompatibility', 'locationCompatibility',
+    'timeCompatibility', 'shipmentAssociationConfidence', 'limitation'].every(key => isPresentText(value[key]))) return false;
+  if (!isSourceUrl(value.sourceUrl) || typeof value.citation !== 'string'
+    || !['previousValue', 'currentValue', 'changeMagnitude'].every(key => isNullableText(value[key]))
+    || !['sourceEventAt', 'observedAt', 'retrievedAtUtc'].every(key => isNullableApiInstant(value[key]))
+    || typeof value.evidenceSufficient !== 'boolean' || typeof value.humanReviewRequired !== 'boolean') return false;
+  if (value.vesselRole !== undefined && value.vesselRole !== null && value.vesselRole !== 'MOTHER' && value.vesselRole !== 'FEEDER') return false;
+  return ['vesselIdentity', 'observationType', 'associationScope'].every(key => value[key] === undefined || value[key] === null || isPresentText(value[key]));
+}
+function isMaritimeNotice(value: unknown): value is MaritimeNoticeEvidence {
+  return isRecord(value) && ['noticeId', 'title', 'supersessionStatus', 'shipmentAssociationConfidence', 'limitation'].every(key => isPresentText(value[key]))
+    && isSourceUrl(value.officialSourceUrl) && typeof value.citation === 'string'
+    && ['publishedAt', 'observedAt', 'effectiveFrom', 'effectiveUntil'].every(key => isNullableApiInstant(value[key]))
+    && isCompatibility(value.compatibilityState) && typeof value.evidenceSufficient === 'boolean' && typeof value.humanReviewRequired === 'boolean'
+    && Array.isArray(value.activityEvidence) && value.activityEvidence.every(isPresentText)
+    && Array.isArray(value.locationEvidence) && value.locationEvidence.every(isPresentText);
+}
+
+/** Shared network-free parsing boundary. Retains all evidence, including exclusions.
+ * Timestamp eligibility and scenario association are validated by the scenario decoder. */
+export function decodeMaritimeContext(value: unknown): MaritimeContext | undefined {
+  if (!isRecord(value) || !isPresentText(value.contractVersion) || typeof value.enabled !== 'boolean'
+    || !isContextSourceMode(value.sourceMode) || typeof value.assessmentCutoffUtc !== 'string'
+    || apiInstantNanoseconds(value.assessmentCutoffUtc) === undefined || !isPresentText(value.shipmentAssociationConfidence)
+    || !isPresentText(value.limitation) || !Array.isArray(value.evidence) || !value.evidence.every(isMaritimeEvidence)
+    || !Array.isArray(value.notices) || !value.notices.every(isMaritimeNotice)
+    || value.aiExplanation !== null || value.suggestedActions !== null) return undefined;
+  return { contractVersion: value.contractVersion, enabled: value.enabled, sourceMode: value.sourceMode,
+    assessmentCutoffUtc: value.assessmentCutoffUtc, shipmentAssociationConfidence: value.shipmentAssociationConfidence,
+    limitation: value.limitation, evidence: value.evidence, notices: value.notices, aiExplanation: null, suggestedActions: null };
 }

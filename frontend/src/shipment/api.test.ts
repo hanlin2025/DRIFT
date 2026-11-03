@@ -1,3 +1,4 @@
+import { apiInstantNanoseconds, decodeArrivalComparison, decodeDelayComparison, decodeMaritimeContext, decodeRemainingConnectionWindow, decodeShipmentRisk } from './api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { archiveShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listMaritimeAiAssessments, listShipments, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
 import type { MaritimeAiAssessment } from './api';
@@ -247,6 +248,56 @@ describe('CDG-246 maritime-context API', () => {
     activityCompatibility: 'UNKNOWN', locationCompatibility: 'UNKNOWN', timeCompatibility: 'COMPATIBLE', compatibilityState: 'UNKNOWN',
     evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Replay only.',
   };
+
+  function contextWire() {
+    return { contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RECORDED_REPLAY',
+      assessmentCutoffUtc: '2026-10-28T00:00:00Z', shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Replay only.',
+      evidence: [{ ...evidence }], notices: [], aiExplanation: null, suggestedActions: null };
+  }
+  it('exposes the same pure context decoding boundary used by the ordinary GET', async () => {
+    const wire = { ...contextWire(), evidence: [{ ...evidence, previousValue: null, changeMagnitude: null }] };
+    const fetchMock = vi.fn().mockResolvedValue(json(wire));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(decodeMaritimeContext(wire)).toEqual(wire);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await getMaritimeContext('token', '9')).toEqual(wire);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  const badContextFields: [string, (wire: any) => void][] = [
+    ['unknown source', v => { v.evidence[0].sourceType = 'INVENTED_SOURCE'; }],
+    ['unknown mode', v => { v.evidence[0].sourceMode = 'AUTHENTIC'; }],
+    ['unknown compatibility', v => { v.evidence[0].compatibilityState = 'CONFIRMED'; }],
+    ['missing observedAt', v => { delete v.evidence[0].observedAt; }],
+    ['invalid source time', v => { v.evidence[0].sourceEventAt = 'yesterday'; }],
+    ['invalid boolean', v => { v.evidence[0].evidenceSufficient = 'true'; }],
+    ['invalid optional role', v => { v.evidence[0].vesselRole = 'CARGO'; }],
+    ['invalid change type', v => { v.evidence[0].changeMagnitude = 7; }],
+    ['unsafe URL', v => { v.evidence[0].sourceUrl = 'javascript:alert(1)'; }],
+    ['bad notice', v => { v.notices = [null]; }],
+    ['bad cutoff', v => { v.assessmentCutoffUtc = '2026-02-30T00:00:00Z'; }],
+    ['unexpected actions', v => { v.suggestedActions = []; }],
+  ];
+  it.each(badContextFields)('rejects nested %s through pure parsing and ordinary GET', async (_, change) => {
+    const wire = contextWire();
+    change(wire);
+    expect(decodeMaritimeContext(wire)).toBeUndefined();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(wire)));
+    await expect(getMaritimeContext('token', '9')).rejects.toMatchObject({ status: 502 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('validates actual notice fields, including nullable source/effective dates', () => {
+    const notice = { noticeId: 'notice-1', title: 'Notice', officialSourceUrl: 'https://example.invalid/notice', citation: '',
+      publishedAt: null, observedAt: '2026-10-27T00:00:00Z', effectiveFrom: null, effectiveUntil: '2026-10-30T00:00:00Z',
+      supersessionStatus: 'UNKNOWN', compatibilityState: 'UNKNOWN', evidenceSufficient: false, humanReviewRequired: true,
+      shipmentAssociationConfidence: 'UNAVAILABLE', activityEvidence: [], locationEvidence: ['UNKNOWN'], limitation: 'Context only.' };
+    expect(decodeMaritimeContext({ ...contextWire(), notices: [notice] })?.notices).toEqual([notice]);
+    expect(decodeMaritimeContext({ ...contextWire(), notices: [{ ...notice, publishedAt: 'invalid' }] })).toBeUndefined();
+    expect(decodeMaritimeContext({ ...contextWire(), notices: [{ ...notice, locationEvidence: [7] }] })).toBeUndefined();
+  });
+  it('preserves a legitimate disabled empty context', () => {
+    const value = { ...contextWire(), enabled: false, sourceMode: 'DISABLED', evidence: [], notices: [] };
+    expect(decodeMaritimeContext(value)).toEqual(value);
+  });
 
   it('preserves a multi-source bundle without treating unavailable weather as a live observation', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
@@ -1072,5 +1123,55 @@ describe('shipment change history API', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Unauthorized' }, 401)));
     await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+
+describe('pure scenario-compatible calculation parsers', () => {
+  const available = { estimatedArrivalAt: '2026-10-01T06:00:00Z', limitation: 'Approximate only.', speedOverGroundKnots: 10,
+    classification: 'ON_SCHEDULE', difference: 'On schedule', differenceSeconds: 0, differenceNanos: 0,
+    lastReceivedAt: '2026-10-01T00:00:00.123456789Z', possiblyOutdated: false, unavailableReason: null };
+  it('preserves available and unavailable arrival variants', () => {
+    expect(decodeArrivalComparison(available)).toEqual(available);
+    const unavailable = { estimatedArrivalAt: null, limitation: null, speedOverGroundKnots: null, classification: null,
+      difference: null, differenceSeconds: null, differenceNanos: null, lastReceivedAt: null, possiblyOutdated: null,
+      unavailableReason: { code: 'NO_POSITION', message: 'No AIS position.' } };
+    expect(decodeArrivalComparison(unavailable)).toEqual(unavailable);
+    expect(decodeArrivalComparison({ ...unavailable, possiblyOutdated: false })).toBeUndefined();
+    expect(decodeArrivalComparison({ ...available, lastReceivedAt: 'bad' })).toBeUndefined();
+    expect(decodeArrivalComparison({ ...available, differenceSeconds: Number.MAX_SAFE_INTEGER + 1 })).toBeUndefined();
+    expect(decodeArrivalComparison({ ...available, speedOverGroundKnots: Infinity })).toBeUndefined();
+  });
+  it('preserves remaining/missed/null variants without introducing durations', () => {
+    const remaining = { status: 'AVAILABLE', duration: 'less than 1 second', totalSeconds: 0, missedBy: null, missedBySeconds: null };
+    const missed = { status: 'MISSED', duration: null, totalSeconds: null, missedBy: '0 seconds', missedBySeconds: 0 };
+    expect(decodeRemainingConnectionWindow(remaining)).toEqual(remaining);
+    expect(decodeRemainingConnectionWindow(missed)).toEqual(missed);
+    expect(decodeRemainingConnectionWindow(null)).toBeNull();
+    expect(decodeRemainingConnectionWindow(undefined)).toBeUndefined();
+    expect(decodeRemainingConnectionWindow({ ...remaining, totalSeconds: 1.5 })).toBeUndefined();
+    expect(decodeRemainingConnectionWindow({ ...missed, duration: 'invented' })).toBeUndefined();
+  });
+  it('preserves risk wording and backend metadata without deriving severity', () => {
+    const risk = { level: 'LOW', explanation: 'Server-owned wording.', extraBackendMetadata: 'retained' };
+    expect(decodeShipmentRisk(risk)).toEqual(risk);
+    expect(decodeShipmentRisk({ ...risk, level: 'SAFE' })).toBeUndefined();
+    expect(decodeShipmentRisk({ ...risk, explanation: '' })).toBeUndefined();
+  });
+  it('preserves available and unavailable business comparison values', () => {
+    const impact = { outcome: 'EXCEEDS_DEADLINE', reason: null, message: 'Server outcome.', estimatedArrivalAt: '2026-10-01T16:00:00Z',
+      deadline: '2026-10-01T12:00:00Z', recordedTransshipmentPort: 'Scenario port' };
+    expect(decodeDelayComparison(impact)).toEqual(impact);
+    const unavailable = { ...impact, outcome: null, reason: 'MISSING_CONSTRAINT', deadline: null, recordedTransshipmentPort: null };
+    expect(decodeDelayComparison(unavailable)).toEqual(unavailable);
+    expect(decodeDelayComparison({ ...impact, deadline: 'not an instant' })).toBeUndefined();
+    expect(decodeDelayComparison(null)).toBeNull();
+  });
+  it('compares offset-qualified instants at full precision and rejects invalid calendar dates', () => {
+    expect(apiInstantNanoseconds('2026-10-01T08:00:00.000000001Z')! - apiInstantNanoseconds('2026-10-01T08:00:00Z')!).toBe(1n);
+    expect(apiInstantNanoseconds('2026-10-01T16:00:00+08:00')).toBe(apiInstantNanoseconds('2026-10-01T08:00:00Z'));
+    for (const value of ['2026-02-30T00:00:00Z', '2026-10-01T24:00:00Z', '2026-10-01T00:00:00', '2026-10-01T00:00:00+99:00']) {
+      expect(apiInstantNanoseconds(value)).toBeUndefined();
+    }
   });
 });
