@@ -161,14 +161,17 @@ public class ShipmentService {
 	}
 
 	/** Checks the same shipment visibility as {@link #get} without calculating live connection risk. */
-	@Transactional(readOnly = true)
-	public void authorizeView(AuthenticatedUser principal, Long shipmentId) {
+	// Pessimistic history visibility locking requires a writable PostgreSQL transaction.
+	@Transactional
+	public ShipmentViewAuthorization authorizeView(AuthenticatedUser principal, Long shipmentId) {
 		Company company = activeCompany(principal);
-		shipments.findByIdVisibleToCompanyId(shipmentId, company.getId())
-				.filter(shipment -> accessPolicy.canView(company, shipment))
+		Shipment shipment = shipments.findByIdVisibleToCompanyIdForAssessmentHistory(shipmentId, company.getId())
+				.filter(visible -> accessPolicy.canView(company, visible))
 				.orElseThrow(() -> shipments.existsById(shipmentId)
 						? new ShipmentDetailForbiddenException()
 						: new ShipmentNotFoundException());
+		Long importerCompanyId = shipment.getImporterCompany() == null ? null : shipment.getImporterCompany().getId();
+		return new ShipmentViewAuthorization(company.getId(), shipment.getCompany().getId(), importerCompanyId);
 	}
 
 	@Transactional(readOnly = true)

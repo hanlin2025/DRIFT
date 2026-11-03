@@ -34,6 +34,7 @@ public class MaritimeAiAssessment {
 		this.validationStatus = validation; this.outputJson = outputJson; this.failureMetadata = failure; this.createdAt = createdAt;
 	}
 	public String getAssessmentId() { return assessmentId; } public MaritimeAiGenerationState getGenerationState() { return generationState; }
+	public Long getOwningCompanyId() { return owningCompanyId; }
 	public String getValidationStatus() { return validationStatus; } public String getOutputJson() { return outputJson; }
 	public String getFailureMetadata() { return failureMetadata; } public String getBundleVersion() { return bundleVersion; }
 	public String getBundleHash() { return bundleHash; } public Instant getAssessmentCutoffUtc() { return assessmentCutoffUtc; }
