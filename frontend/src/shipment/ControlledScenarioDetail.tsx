@@ -7,6 +7,7 @@ import { decodeScenarioSnapshot } from './scenarioDomain';
 import { adaptScenarioSnapshotToTrackPresentation } from './scenarioPresentation';
 import type { ScenarioPresentationContext, ScenarioPresentationView } from './scenarioPresentation';
 import { ShipmentTrackPresentation } from './ShipmentTrackPresentation';
+import { ScenarioAiInterpretation } from './ScenarioAiInterpretation';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
 import { useScenarioSnapshot } from './useScenarioSnapshot';
 
@@ -25,6 +26,8 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
   const [selectedRole, setSelectedRole] = useState<TrackVessel>('MOTHER');
   const [unavailableView, setUnavailableView] = useState<string | null>(null);
   const [hiddenResetEpoch, setHiddenResetEpoch] = useState<string | null>(null);
+  const [maskedSnapshotIdentity, setMaskedSnapshotIdentity] = useState<string | null>(null);
+  const [scenarioAccessLost, setScenarioAccessLost] = useState(false);
   const session = controller.session;
   const binding = controller.binding;
   const snapshot = session?.snapshot ?? null;
@@ -45,9 +48,20 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
     }) ?? null;
   }, [session, binding, anchor.id]);
 
+  const acceptedSnapshotIdentity = session ? `${session.epochId}:${session.revision}:${snapshot?.snapshotId ?? 'UNSTARTED'}` : null;
+  const isMaskedStaleSnapshot = maskedSnapshotIdentity !== null && maskedSnapshotIdentity === acceptedSnapshotIdentity;
+
+  useEffect(() => {
+    if (maskedSnapshotIdentity !== null && acceptedSnapshotIdentity !== maskedSnapshotIdentity) setMaskedSnapshotIdentity(null);
+  }, [acceptedSnapshotIdentity, maskedSnapshotIdentity]);
+
+  useEffect(() => {
+    if (scenarioAccessLost && controller.status === 'ready' && !controller.error) setScenarioAccessLost(false);
+  }, [controller.error, controller.status, scenarioAccessLost]);
+
   const presentationContext: ScenarioPresentationContext | null = session && snapshot && binding
     ? {
-      authorization: controller.error?.status === 403 ? 'denied' : 'authorized',
+      authorization: controller.error?.status === 403 || scenarioAccessLost ? 'denied' : 'authorized',
       viewerId: viewer.id,
       companyId: viewer.company?.id ?? null,
       authContextGeneration,
@@ -64,7 +78,7 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
   const hiddenAfterReset = hiddenResetEpoch !== null
     && session?.epochId === hiddenResetEpoch
     && session.snapshot !== null;
-  const presentation = selected && presentationContext && !hiddenAfterReset
+  const presentation = selected && presentationContext && !hiddenAfterReset && !isMaskedStaleSnapshot
     ? adaptScenarioSnapshotToTrackPresentation(selected, anchor, presentationContext, {
       displayMode: 'scenario', selectedRole, window: DEFAULT_TRACK_WINDOW,
       selectedPointId: null, recordedAisCutoff: null,
@@ -144,7 +158,8 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
       <ScenarioControls controller={protectedController} />
       {unavailableView && <p className="scenario-view-notice" role="status">{unavailableView}</p>}
       {controller.status === 'loading' && !session && <p className="notice" role="status">Verifying controlled scenario access…</p>}
-      {controller.error?.status === 403 && <p className="error-notice" role="alert">Scenario access is denied. Protected scenario positions and facts have been cleared.</p>}
+      {(controller.error?.status === 403 || scenarioAccessLost) && <p className="error-notice" role="alert">Scenario access is denied. Protected scenario positions and facts have been cleared.</p>}
+      {isMaskedStaleSnapshot && <p className="error-notice" role="alert">The scenario changed on the server. The previous snapshot is hidden while the current authorized state is refreshed.</p>}
       {showUnavailableSnapshot && <p className="error-notice" role="alert">The returned scenario snapshot could not be validated. No scenario facts or positions are displayed.</p>}
       {session?.state === 'UNSTARTED' && !controller.busy && !controller.error && (
         <p className="notice" role="status">UNSTARTED — no scenario snapshot, positions, risk, or calculated outputs are displayed.</p>
@@ -165,6 +180,17 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
             onDisplayModeChanged: changeDisplayMode,
           }} />}
           <ScenarioFacts snapshot={selected} />
+          <ScenarioAiInterpretation enabled={import.meta.env.VITE_SCENARIO_AI_ENABLED === 'true'}
+            viewer={viewer} anchor={anchor} authContextGeneration={authContextGeneration}
+            snapshot={selected} onSessionEnded={onSessionEnded}
+            onSnapshotStale={() => {
+              setMaskedSnapshotIdentity(acceptedSnapshotIdentity);
+              void controller.refresh();
+            }}
+            onAuthorizationLost={() => {
+              setScenarioAccessLost(true);
+              void controller.refresh();
+            }} />
         </>
       )}
     </section>

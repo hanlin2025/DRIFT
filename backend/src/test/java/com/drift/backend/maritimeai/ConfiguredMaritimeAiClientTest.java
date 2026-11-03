@@ -76,11 +76,32 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("asking the carrier or operations team to verify the current vessel position")
 				.contains("a concrete verification activity")
 				.contains("Do not recommend evaluating alternative shipment plans, routes, or mitigations")
-				.contains("shipmentContext.businessContext is a minimized authorized projection")
+				.contains("shipmentContext.businessContext is deterministic planning context")
 				.contains("never describe an unavailable comparison as NO_PREDICTED_IMPACT")
 				.contains("DELAY_COMPARISON_REVIEW")
 				.contains("Clearly keep observed MPA/NEA evidence, stored schedule facts, backend-computed risk")
 				.contains("NO_REMAINING_WINDOW means the calculation has no positive buffer");
+	}
+
+	@Test void addsScenarioGroundingInstructionsAndASeparatePromptVersionOnlyForScenarioInputs() {
+		AtomicReference<String> body = new AtomicReference<>();
+		var scenario = new MaritimeAiShipmentContext.Scenario("B", "DEMO-B", "CHANGE", "2026-10-01T04:00:00Z");
+		var context = new MaritimeAiShipmentContext("Synthetic port", null, null, null, null, scenario);
+		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T04:00:00Z", "VERIFIED", context, List.of());
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true,
+				20, 800, new ObjectMapper(), (request, requestBody) -> {
+					body.set(requestBody);
+					return new ConfiguredMaritimeAiClient.TransportResponse(200, responsesEnvelope());
+				});
+
+		var result = client.interpret(input);
+
+		assertThat(result.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
+		assertThat(body.get()).contains("fictional controlled scenario snapshot")
+				.contains("fixture-defined scenario deadline/comparison facts")
+				.contains("not current operational state or an importer-confirmed live constraint")
+				.contains("\\\"shipmentKey\\\":\\\"B\\\"")
+				.contains("\\\"stage\\\":\\\"CHANGE\\\"");
 	}
 
 	@Test void readsHistoricalClaimsWithoutTheOptionalRiskReviewField() throws Exception {

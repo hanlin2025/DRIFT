@@ -65,14 +65,14 @@ function freshnessLabel(state: MaritimeAiEstimateFreshness | null | undefined) {
   }
 }
 
-function relationshipLabel(claim: MaritimeAiClaim) {
+function relationshipLabel(claim: MaritimeAiClaim, scenarioMode = false) {
   switch (claim.relationshipType) {
     case 'SCHEDULE_REVIEW': return 'Schedule review';
     case 'PORT_CONTEXT_REVIEW': return 'Port context';
     case 'PORT_TIME_OVERLAP_REVIEW': return 'Port timing context';
     case 'REGIONAL_WEATHER_CONTEXT': return 'Regional weather context';
     case 'RISK_BUFFER_REVIEW': return 'Connection risk review';
-    case 'DELAY_COMPARISON_REVIEW': return 'Importer deadline comparison';
+    case 'DELAY_COMPARISON_REVIEW': return scenarioMode ? 'Scenario deadline comparison' : 'Importer deadline comparison';
     default: return 'Unclassified relationship';
   }
 }
@@ -171,10 +171,11 @@ function selectedOverrun(risk: MaritimeAiRiskSnapshot | null | undefined) {
   return risk.missedBySeconds;
 }
 
-function RiskFacts({ assessment, snapshot, riskReview }: {
+function RiskFacts({ assessment, snapshot, riskReview, scenarioMode = false }: {
   assessment: MaritimeAiAssessment;
   snapshot: MaritimeAiRiskSnapshot | null;
   riskReview: NonNullable<MaritimeAiClaim['riskReview']> | null;
+  scenarioMode?: boolean;
 }) {
   const severity = snapshot?.severity ?? riskReview?.severity;
   const basis = snapshot?.selectedWindowBasis ?? riskReview?.selectedWindowBasis;
@@ -184,9 +185,9 @@ function RiskFacts({ assessment, snapshot, riskReview }: {
   const overrun = formatDuration(selectedOverrun(snapshot));
   const limitations = snapshot?.calculationLimitations ?? [];
 
-  return <section className="maritime-ai-risk" aria-label="Assessment-time connection risk">
-    <h3>Why this shipment warrants review</h3>
-    <p className="maritime-ai-assessment-time">Risk at assessment time{assessment.generatedAtUtc ? ` · ${assessment.generatedAtUtc}` : ''}. This snapshot does not describe the shipment's current operational state.</p>
+  return <section className="maritime-ai-risk" aria-label={scenarioMode ? 'Scenario connection risk' : 'Assessment-time connection risk'}>
+    <h3>{scenarioMode ? 'Scenario risk context' : 'Why this shipment warrants review'}</h3>
+    <p className="maritime-ai-assessment-time">{scenarioMode ? 'Backend risk at the selected synthetic snapshot' : 'Risk at assessment time'}{assessment.generatedAtUtc ? ` · ${assessment.generatedAtUtc}` : ''}. This snapshot does not describe the shipment's current operational state.</p>
     <dl>
       <div><dt>Backend risk severity</dt><dd>{severity ? humanizeCode(severity) : 'Not recorded'}</dd></div>
       <div><dt>Risk basis</dt><dd>{basisLabel(basis)}</dd></div>
@@ -206,16 +207,16 @@ function RiskFacts({ assessment, snapshot, riskReview }: {
   </section>;
 }
 
-function BusinessContextDetails({ snapshot }: { snapshot: MaritimeAiBusinessSnapshot }) {
+function BusinessContextDetails({ snapshot, scenarioMode = false }: { snapshot: MaritimeAiBusinessSnapshot; scenarioMode?: boolean }) {
   const deadline = snapshot.context?.deadline;
   const comparison = snapshot.context?.comparison;
 
-  return <section aria-label="Assessment-time importer business context">
-    <h4>Assessment-time importer business context</h4>
+  return <section aria-label={scenarioMode ? 'Scenario business context' : 'Assessment-time importer business context'}>
+    <h4>{scenarioMode ? 'Scenario business context' : 'Assessment-time importer business context'}</h4>
     <dl>
       <div><dt>Deadline state</dt><dd>{deadlineStateLabel(deadline?.state)}</dd></div>
-      <div><dt>Transshipment-arrival deadline at assessment time</dt><dd>{deadlineInstantLabel(deadline?.state, deadline?.instant)}</dd></div>
-      <div><dt>Importer-confirmed transshipment port</dt><dd>{deadline?.recordedTransshipmentPort || 'Not recorded'}</dd></div>
+      <div><dt>{scenarioMode ? 'Scenario transshipment-arrival deadline' : 'Transshipment-arrival deadline at assessment time'}</dt><dd>{deadlineInstantLabel(deadline?.state, deadline?.instant)}</dd></div>
+      <div><dt>{scenarioMode ? 'Scenario-defined transshipment port' : 'Importer-confirmed transshipment port'}</dt><dd>{deadline?.recordedTransshipmentPort || 'Not recorded'}</dd></div>
       <div><dt>Deadline applicability</dt><dd>{deadlineApplicabilityLabel(deadline?.applicableToCurrentPort)}</dd></div>
       <div><dt>Comparison state</dt><dd>{comparison ? humanizeCode(comparison.state) : 'Unknown'}</dd></div>
       {comparison?.state === 'AVAILABLE' && <div><dt>Comparison outcome</dt><dd>{comparison.outcome ? humanizeCode(comparison.outcome) : 'Outcome not recorded'}</dd></div>}
@@ -226,20 +227,28 @@ function BusinessContextDetails({ snapshot }: { snapshot: MaritimeAiBusinessSnap
       {comparison?.recordedTransshipmentPort && <div><dt>Comparison transshipment port</dt><dd>{comparison.recordedTransshipmentPort}</dd></div>}
     </dl>
     <p><strong>Canonical business references:</strong> {snapshot.canonicalFactReferences.length ? snapshot.canonicalFactReferences.join(', ') : 'none recorded'}.</p>
-    <p className="maritime-ai-note">These are the facts saved with this assessment; the shipment’s current deadline is not substituted here.</p>
+    <p className="maritime-ai-note">{scenarioMode
+      ? 'These backend-calculated facts belong to the selected synthetic scenario snapshot; they are not current shipment records.'
+      : 'These are the facts saved with this assessment; the shipment’s current deadline is not substituted here.'}</p>
   </section>;
 }
 
-export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating, onGenerate }: {
+export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating, onGenerate, scenarioMode = false, generationError = null }: {
   assessments: MaritimeAiAssessment[];
   unavailable: boolean;
   generating: boolean;
   onGenerate: () => void;
+  scenarioMode?: boolean;
+  generationError?: string | null;
 }) {
-  if (unavailable) return <section className="notice" aria-label="AI maritime interpretation">AI maritime interpretation is unavailable. Maritime evidence remains available.</section>;
-  if (assessments.length === 0) return <section className="notice" aria-label="AI maritime interpretation">
-    <p>No AI maritime interpretation has been generated for this shipment.</p>
-    <button type="button" onClick={onGenerate} disabled={generating}>{generating ? 'Generating advisory…' : 'Generate AI maritime interpretation'}</button>
+  const title = scenarioMode ? 'Scenario AI interpretation' : 'AI maritime interpretation';
+  if (unavailable) return <section className="notice" aria-label={title}>AI maritime interpretation is unavailable. Maritime evidence remains available.</section>;
+  if (assessments.length === 0) return <section className="notice" aria-label={title}>
+    <p>{scenarioMode ? 'No AI interpretation has been generated for this synthetic snapshot.' : 'No AI maritime interpretation has been generated for this shipment.'}</p>
+    {generationError && <p className="error-notice" role="alert">{generationError}</p>}
+    <button type="button" onClick={onGenerate} disabled={generating}>{generating
+      ? scenarioMode ? 'Generating interpretation…' : 'Generating advisory…'
+      : scenarioMode ? 'Generate AI Interpretation' : 'Generate AI maritime interpretation'}</button>
   </section>;
 
   const assessment = assessments[0];
@@ -262,16 +271,17 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
   const uncertainties = interpretation?.uncertainties ?? [];
   const followUpConsiderations = interpretation?.followUpConsiderations ?? [];
 
-  return <section className="shipment-record maritime-context maritime-ai-panel" aria-label="AI maritime interpretation">
-    <p className="eyebrow">MARITIME ASSESSMENT</p>
-    <p className="maritime-ai-status"><strong>Assessment status</strong> {assessmentStateLabel(assessment.state)} · {assessment.validationStatus === 'VALID' ? 'validated' : humanizeCode(assessment.validationStatus)} · assessment time {assessment.generatedAtUtc ?? 'not recorded'}</p>
+  return <section className="shipment-record maritime-context maritime-ai-panel" aria-label={title}>
+    <p className="eyebrow">{scenarioMode ? 'SYNTHETIC SCENARIO INTERPRETATION' : 'MARITIME ASSESSMENT'}</p>
+    {generationError && <p className="error-notice" role="alert">{generationError}</p>}
+    <p className="maritime-ai-status"><strong>Assessment status</strong> {assessmentStateLabel(assessment.state)} · {assessment.validationStatus === 'VALID' ? 'validated' : scenarioMode && assessment.state === 'FAILED' ? `validation code ${assessment.validationStatus}` : humanizeCode(assessment.validationStatus)} · assessment time {assessment.generatedAtUtc ?? 'not recorded'}</p>
     {isVerifiedCaptureReplay(assessment) && <p className="notice">Verified OpenAI provider-capture replay. No provider request was made when this assessment was saved.</p>}
     {isControlledStub(assessment) && <p className="notice">Controlled synthetic stub assessment. It uses fictional evidence and is not an external provider response.</p>}
     {hasProviderGeneratedInterpretation(assessment) && <p className="success-notice maritime-ai-provider-label">Provider-generated assessment from {assessment.provider} at the recorded assessment time.</p>}
 
     {interpretation ? <>
-      {evidenceFacts.length > 0 || evidenceClaims.length > 0 ? <section className="maritime-ai-evidence" aria-label="Observed maritime evidence">
-        <h3>Observed maritime evidence</h3>
+      {evidenceFacts.length > 0 || evidenceClaims.length > 0 ? <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
+        <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
         {evidenceFacts.map((fact, index) => <article className="maritime-ai-observation" key={`observation-${fact.evidenceId ?? index}`}>
           <p><strong>{sourceLabel(fact.sourceType)}</strong>{fact.eventType ? ` · ${humanizeCode(fact.eventType)}` : ''}</p>
           <p>{sourceValue(fact)}</p>
@@ -280,15 +290,15 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
           <p><strong>Evidence interpretation</strong></p>
           <ul>{evidenceClaims.map((claim, index) => <li key={`evidence-claim-${index}`}>{claim.statement}</li>)}</ul>
         </div>}
-      </section> : <section className="maritime-ai-evidence" aria-label="Observed maritime evidence">
-        <h3>Observed maritime evidence</h3>
+      </section> : <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
+        <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
         <p>No cited source observations were saved with this assessment.</p>
       </section>}
 
       {showRiskReview ? <>
-        <RiskFacts assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} />
+        <RiskFacts assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} scenarioMode={scenarioMode} />
         <section className="maritime-ai-implications" aria-label="Tentative risk-review implications">
-          <p><strong>Tentative operational implication</strong></p>
+          <p><strong>{scenarioMode ? 'Tentative scenario planning implication' : 'Tentative operational implication'}</strong></p>
           <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>{claim.statement}</li>)}</ul>
           <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
         </section>
@@ -296,9 +306,11 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
 
       {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Business implications">
         <h3>Business implications</h3>
-        <p><strong>Validated importer deadline comparison</strong></p>
+        <p><strong>{scenarioMode ? 'Validated scenario deadline comparison' : 'Validated importer deadline comparison'}</strong></p>
         <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>{claim.statement}</li>)}</ul>
-        <p className="maritime-ai-note">This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.</p>
+        <p className="maritime-ai-note">{scenarioMode
+          ? 'This is a backend comparison against the deadline defined for the selected synthetic scenario snapshot. It is not a current shipment record or a final-delivery assessment.'
+          : 'This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.'}</p>
       </section>}
 
       <section className="maritime-ai-uncertainty" aria-label="Assessment uncertainty and human follow-up">
@@ -314,8 +326,8 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
       <p>{assessment.limitation ?? 'This assessment did not produce an interpretation that is safe to display.'}</p>
     </section>}
 
-    {scheduleFacts.length > 0 && <section className="maritime-ai-schedule" aria-label="Stored shipment schedule at assessment time">
-      <h3>Stored shipment schedule at assessment time</h3>
+      {scheduleFacts.length > 0 && <section className="maritime-ai-schedule" aria-label={scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}>
+      <h3>{scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}</h3>
       <ul>{scheduleFacts.map((fact, index) => <li key={`schedule-${fact.factReference}-${index}`}>{formatScheduleFact(fact)}</li>)}</ul>
     </section>}
 
@@ -350,18 +362,20 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
         {riskSnapshot.calculationLimitations.length > 0 && <ul>{riskSnapshot.calculationLimitations.map((limitation, index) => <li key={`risk-detail-${index}`}>{limitation}</li>)}</ul>}
         <p><strong>Canonical risk references:</strong> {riskSnapshot.canonicalFactReferences.length ? riskSnapshot.canonicalFactReferences.join(', ') : 'none recorded'}.</p>
       </section>}
-      {businessSnapshot && <BusinessContextDetails snapshot={businessSnapshot} />}
+      {businessSnapshot && <BusinessContextDetails snapshot={businessSnapshot} scenarioMode={scenarioMode} />}
       {claims.length > 0 && <section aria-label="Claim grounding details">
         <h4>Claim grounding</h4>
         {claims.map((claim, index) => <section key={`claim-${index}`} aria-label={`Grounding for claim ${index + 1}`}>
-          <p>{relationshipLabel(claim)} · applicability {humanizeCode(claim.applicability)}.</p>
+          <p>{relationshipLabel(claim, scenarioMode)} · applicability {humanizeCode(claim.applicability)}.</p>
           <p>Evidence IDs: {claim.evidenceIds?.length ? claim.evidenceIds.join(', ') : 'none recorded'}.</p>
           <p>Canonical references: {claim.factReferences?.length ? claim.factReferences.join(', ') : 'none recorded'}.</p>
           {claim.riskReview && <p>Validated risk review: {claim.riskReview.severity ? humanizeCode(claim.riskReview.severity) : 'severity not recorded'} · {basisLabel(claim.riskReview.selectedWindowBasis)} · {windowStateLabel(claim.riskReview.selectedWindowState)} · AIS estimate {freshnessLabel(claim.riskReview.estimateFreshness)}.</p>}
         </section>)}
       </section>}
-      <p>This advisory does not change shipment timing, risk, alerts, recommendations, or operational actions.</p>
+      <p>{scenarioMode ? 'This interpretation is limited to the labeled synthetic snapshot and does not change saved shipment data or operational actions.' : 'This advisory does not change shipment timing, risk, alerts, recommendations, or operational actions.'}</p>
     </details>
-    <button type="button" onClick={onGenerate} disabled={generating}>{generating ? 'Generating advisory…' : 'Generate new interpretation'}</button>
+    <button type="button" onClick={onGenerate} disabled={generating}>{generating
+      ? scenarioMode ? 'Generating interpretation…' : 'Generating advisory…'
+      : scenarioMode ? 'Generate AI Interpretation' : 'Generate new interpretation'}</button>
   </section>;
 }
