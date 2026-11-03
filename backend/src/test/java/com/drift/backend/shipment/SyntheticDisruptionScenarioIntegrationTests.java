@@ -261,9 +261,8 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(OFFLINE_CLIENT.inputs()).hasSize(invocationCountBeforeDenied);
 		assertThat(assessmentCount()).isEqualTo(assessmentRowsBeforeDenied);
 		JsonNode successorHistory = assessmentHistory(shipmentIds.get(0), identity.successorToken());
-		assertHistoricalSnapshot(successorHistory, "2026-10-01T04:00:00Z", "2026-10-01T12:00:00Z", "EXCEEDS_DEADLINE");
-		// This current-owner history behavior is documented as a pre-existing limitation; no migration
-		// or production authorization change belongs to the CDG-283/284 test-scope implementation.
+		assertThat(successorHistory).hasSize(0);
+		// CDG-289 keeps the previous importer's assessment history private after shipment reassignment.
 		patchDeadline(shipmentIds.get(0), identity.importerToken(), "2026-10-02T06:00:00Z", PORT).andExpect(status().isForbidden());
 		patchDeadline(shipmentIds.get(0), identity.successorToken(), "2026-10-02T06:00:00Z", PORT).andExpect(status().isOk());
 		MvcResult successorAssessment = generate(shipmentIds.get(0), identity.successorToken()).andExpect(status().isOk())
