@@ -1339,14 +1339,77 @@ describe('vessel track history on the shipment detail', () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, vessel: 'FEEDER', vesselName: 'Straits Feeder', mmsi: null, windowHours: 6, points: [] });
     await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
     expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6);
-    expect(await within(history).findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
+    expect(await within(history).findByText('No positions were received in this window.')).toBeInTheDocument();
+  });
+
+  it('keeps recorded mode and its receipt cutoff when changing vessel and window', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    const history = await screen.findByRole('region', { name: 'Track history' });
+    await within(history).findByText(/3 positions/);
+    const recorded = {
+      ...track,
+      context: 'SEEDED' as const,
+      status: 'OFFLINE' as const,
+      cutoff: track.to,
+      timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+    };
+    vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded);
+    await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+    await within(history).findByText('Seeded rehearsal data · not an authentic AIS capture');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', points: [] });
+    await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 24, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', windowHours: 6, points: [] });
+    await user.click(within(history).getByRole('button', { name: '6h' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows insufficient history for a single observation', async () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: track.points.slice(0, 1) });
     open(forwarder, '/freight-forwarder/shipments/7');
-    expect(await screen.findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Track points' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/Insufficient history to draw a track for this window\./)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Track points' })).toBeInTheDocument();
+    expect(screen.getByText(/This observation is shown at its recorded time/)).toBeInTheDocument();
+  });
+
+  it('uses receipt-time cutoffs for recorded playback and stops polling live positions', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      await within(history).findByText(/3 positions/);
+      const recorded = {
+        ...track,
+        cutoff: track.to,
+        timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+        context: 'RECORDED' as const,
+        status: 'AVAILABLE' as const,
+        feedStatus: 'OFFLINE' as const,
+        fallbackUsed: false,
+        points: track.points.map(point => ({ ...point, source: 'AIS_STREAM' as const, positionValid: true })),
+      };
+      const firstPointCutoff = { ...recorded, cutoff: track.points[0].ingestedAt, points: [recorded.points[0]] };
+      vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded).mockResolvedValueOnce(firstPointCutoff);
+      await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+      expect(await within(history).findByText('Recorded AIS · receipt-time observations')).toBeInTheDocument();
+      expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.to });
+      expect(within(history).getByRole('list', { name: 'Track points' })).toHaveTextContent(/Recorded AIS_STREAM/);
+
+      const liveTrackingCalls = vi.mocked(getShipmentTracking).mock.calls.length;
+      await user.click(within(history).getByRole('button', { name: 'Next position' }));
+      await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.points[0].ingestedAt }));
+      expect(within(history).getByLabelText('Selected track point').querySelector('time')).toHaveAttribute('dateTime', track.points[0].ingestedAt);
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getShipmentTracking).toHaveBeenCalledTimes(liveTrackingCalls);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('disables the feeder track when no feeder vessel is assigned', async () => {

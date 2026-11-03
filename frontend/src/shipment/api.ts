@@ -560,7 +560,12 @@ export type TrackPoint = {
   courseOverGroundDegrees: number | null;
   trueHeadingDegrees: number | null;
   ingestedAt: string;
+  source?: 'AIS_STREAM' | 'SEEDED';
+  positionValid?: boolean | null;
 };
+
+export type TrackContext = 'LIVE_POSITION' | 'RECORDED' | 'SEEDED' | 'MIXED' | 'UNAVAILABLE';
+export type TrackAvailability = 'AVAILABLE' | 'STALE' | 'OFFLINE' | 'UNAVAILABLE';
 
 export type VesselTrack = {
   vessel: TrackVessel;
@@ -573,10 +578,22 @@ export type VesselTrack = {
   pointLimit: number;
   truncated: boolean;
   points: TrackPoint[];
+  cutoff?: string | null;
+  timestampSemantics?: 'DRIFT_RECEIPT_TIME';
+  context?: TrackContext;
+  status?: TrackAvailability;
+  feedStatus?: AisFeedStatusName;
+  fallbackUsed?: boolean;
+  lastKnownPosition?: TrackPoint | null;
+  captureId?: string | null;
 };
 
-export async function getVesselTrack(token: string, shipmentId: string, vessel: TrackVessel, hours: TrackWindow): Promise<VesselTrack> {
-  const query = new URLSearchParams({ vessel, hours: String(hours) }).toString();
+export async function getVesselTrack(token: string, shipmentId: string, vessel: TrackVessel, hours: TrackWindow,
+  options: { cutoff?: string; captureId?: string } = {}): Promise<VesselTrack> {
+  const params = new URLSearchParams({ vessel, hours: String(hours) });
+  if (options.cutoff) params.set('cutoff', options.cutoff);
+  if (options.captureId) params.set('captureId', options.captureId);
+  const query = params.toString();
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/track-history?${query}`, token);
   const track = asTrack(data);
   if (!track) throw new ApiError(UNEXPECTED, 502);
@@ -1050,6 +1067,8 @@ function isTrackPoint(value: unknown): value is TrackPoint {
     && isOptionalFiniteNumber(value.speedOverGroundKnots)
     && isOptionalFiniteNumber(value.courseOverGroundDegrees)
     && isOptionalFiniteNumber(value.trueHeadingDegrees)
+    && (value.source === undefined || value.source === 'AIS_STREAM' || value.source === 'SEEDED')
+    && (value.positionValid === undefined || value.positionValid === null || typeof value.positionValid === 'boolean')
     && typeof value.ingestedAt === 'string';
 }
 
@@ -1059,6 +1078,14 @@ function asTrack(value: unknown): VesselTrack | null {
   if (!isFiniteNumber(value.windowHours) || !isFiniteNumber(value.slowdownThresholdKnots) || !isFiniteNumber(value.pointLimit)) return null;
   if (typeof value.from !== 'string' || typeof value.to !== 'string' || typeof value.truncated !== 'boolean') return null;
   if (!Array.isArray(value.points) || !value.points.every(isTrackPoint)) return null;
+  if (value.cutoff !== undefined && !isNullableText(value.cutoff)) return null;
+  if (value.timestampSemantics !== undefined && value.timestampSemantics !== 'DRIFT_RECEIPT_TIME') return null;
+  if (value.context !== undefined && !['LIVE_POSITION', 'RECORDED', 'SEEDED', 'MIXED', 'UNAVAILABLE'].includes(String(value.context))) return null;
+  if (value.status !== undefined && !['AVAILABLE', 'STALE', 'OFFLINE', 'UNAVAILABLE'].includes(String(value.status))) return null;
+  if (value.feedStatus !== undefined && !['LIVE', 'DELAYED', 'OFFLINE'].includes(String(value.feedStatus))) return null;
+  if (value.fallbackUsed !== undefined && typeof value.fallbackUsed !== 'boolean') return null;
+  if (value.lastKnownPosition !== undefined && value.lastKnownPosition !== null && !isTrackPoint(value.lastKnownPosition)) return null;
+  if (value.captureId !== undefined && !isNullableText(value.captureId)) return null;
   return {
     vessel: value.vessel,
     vesselName: (value.vesselName ?? null) as string | null,
@@ -1077,7 +1104,17 @@ function asTrack(value: unknown): VesselTrack | null {
       courseOverGroundDegrees: point.courseOverGroundDegrees ?? null,
       trueHeadingDegrees: point.trueHeadingDegrees ?? null,
       ingestedAt: point.ingestedAt,
+      ...(point.source === undefined ? {} : { source: point.source }),
+      ...(point.positionValid === undefined ? {} : { positionValid: point.positionValid }),
     })),
+    ...(value.cutoff === undefined ? {} : { cutoff: value.cutoff as string | null }),
+    ...(value.timestampSemantics === undefined ? {} : { timestampSemantics: value.timestampSemantics as 'DRIFT_RECEIPT_TIME' }),
+    ...(value.context === undefined ? {} : { context: value.context as TrackContext }),
+    ...(value.status === undefined ? {} : { status: value.status as TrackAvailability }),
+    ...(value.feedStatus === undefined ? {} : { feedStatus: value.feedStatus as AisFeedStatusName }),
+    ...(value.fallbackUsed === undefined ? {} : { fallbackUsed: value.fallbackUsed as boolean }),
+    ...(value.lastKnownPosition === undefined ? {} : { lastKnownPosition: value.lastKnownPosition === null ? null : { ...value.lastKnownPosition } as TrackPoint }),
+    ...(value.captureId === undefined ? {} : { captureId: value.captureId as string | null }),
   };
 }
 
