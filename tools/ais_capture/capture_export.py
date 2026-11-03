@@ -201,7 +201,7 @@ def query_rows(mmsi: str, start: datetime, end: datetime) -> str:
         "-v", f"mmsi={mmsi}",
         "-v", f"from_utc={start.isoformat()}",
         "-v", f"to_utc={end.isoformat()}",
-        "-c", COPY_SQL,
+        "-f", "-",
     ]
     psql_environment = {
         name: value
@@ -209,7 +209,7 @@ def query_rows(mmsi: str, start: datetime, end: datetime) -> str:
         if name.startswith("PG") or name in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL")
     }
     try:
-        result = subprocess.run(command, text=True, encoding="utf-8", capture_output=True,
+        result = subprocess.run(command, input=COPY_SQL, text=True, encoding="utf-8", capture_output=True,
                                 check=False, env=psql_environment)
     except OSError as exc:
         raise CaptureError("Unable to start psql; use the offline fixture for rehearsal.") from exc
