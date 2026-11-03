@@ -28,9 +28,15 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
 			assertThat(result.promptVersion())
-					.isEqualTo("cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1")
+					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1")
 					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
 			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v17.cdg252-risk-provenance-human-follow-up.1");
+			assertThat(ConfiguredMaritimeAiClient.V16_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v16.cdg252-risk-citation-unknown-business.1");
+			assertThat(ConfiguredMaritimeAiClient.V15_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1");
+			assertThat(ConfiguredMaritimeAiClient.V14_PROMPT_VERSION)
 					.isEqualTo("cdg247.evidence.v14.cdg252-abstract-revision-business-context.1");
 			assertThat(result.interpretation().claims().get(0).vesselRole()).isNull();
 			assertThat(result.interpretation().claims().get(0).observationType()).isNull();
@@ -77,6 +83,19 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("a concrete verification activity")
 				.contains("Do not recommend evaluating alternative shipment plans, routes, or mitigations")
 				.contains("shipmentContext.businessContext is a minimized authorized projection")
+					.contains("If deadline state is UNKNOWN, do not mention deadline or comparison status/reason in the summary, claims, or uncertainties")
+					.contains("do not assert or infer urgency, business consequences, applicability, or the unknown deadline's relevance to operational risk")
+					.contains("The evidence does not establish whether this shipment is urgent.")
+					.contains("Do not put that uncertainty in a claim, summary, or follow-up")
+					.contains("Do not append a purpose, comparison result, or consequence to that question")
+					.contains("a risk-only claim with only risk references")
+					.contains("the risk claim itself must include its own evidence:<id> reference")
+					.contains("A separate evidence-grounded SCHEDULE_REVIEW claim does not ground a separate RISK_BUFFER_REVIEW claim")
+					.contains("also cite risk:ARRIVAL_ESTIMATE_NOT_USED")
+					.contains("Set the risk claim's applicability to CONTEXTUAL or UNCERTAIN")
+					.contains("A planned connection window and AIS-estimate freshness are separate backend facts")
+					.contains("Never call a planned connection window an estimate")
+					.contains("Do not describe an AVAILABLE planned window as an available AIS estimate")
 				.contains("never describe an unavailable comparison as NO_PREDICTED_IMPACT")
 				.contains("DELAY_COMPARISON_REVIEW")
 				.contains("Clearly keep observed MPA/NEA evidence, stored schedule facts, backend-computed risk")
