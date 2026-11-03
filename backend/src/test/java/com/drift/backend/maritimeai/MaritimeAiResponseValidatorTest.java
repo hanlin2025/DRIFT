@@ -206,6 +206,19 @@ class MaritimeAiResponseValidatorTest {
 				List.of("evidence:mother-arrival", "risk:CONNECTION_SEVERITY", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS"), "RISK_BUFFER_REVIEW", valid.riskReview());
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(missingSelectedWindow), input))
 				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
+		var separateEvidenceClaim = new MaritimeAiClaim("The documented revision warrants schedule review.", List.of("mother-arrival"),
+				"CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				List.of("evidence:mother-arrival", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"),
+				"SCHEDULE_REVIEW");
+		var riskWithoutItsOwnEvidenceReference = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
+				valid.vesselRole(), valid.observationType(), valid.associationScope(),
+				valid.factReferences().stream().filter(reference -> !reference.startsWith("evidence:")).toList(),
+				"RISK_BUFFER_REVIEW", valid.riskReview());
+		var splitGrounding = new MaritimeAiInterpretation("A grounded planning review may be useful.",
+				List.of(separateEvidenceClaim, riskWithoutItsOwnEvidenceReference), List.of(),
+				List.of("Verify the carrier's ETA with the operations team."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(splitGrounding, input))
+				.isEqualTo("UNSUPPORTED_RISK_CONTEXT_RELATIONSHIP");
 
 		var wrongAisWindow = new MaritimeAiClaim(valid.statement(), valid.evidenceIds(), valid.applicability(),
 				valid.vesselRole(), valid.observationType(), valid.associationScope(),
@@ -496,6 +509,41 @@ class MaritimeAiResponseValidatorTest {
 				List.of("business:FINAL_DELIVERY_DEADLINE"), null, null);
 		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
 				"A cautious planning review may be useful.", List.of(wrongTypedClaim), List.of(), List.of(), true, null), authorizedContext)).isTrue();
+	}
+
+	@Test void permitsOnlyAStandaloneEpistemicUrgencyUncertaintyWhenBusinessContextIsUnknown() {
+		var input = businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.UNKNOWN, false,
+				MaritimeAiBusinessContext.ComparisonState.UNAVAILABLE, null,
+				com.drift.backend.shipment.DelayComparison.Reason.MISSING_PREDICTION,
+				MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE);
+		var risk = input.shipmentContext().connectionRisk();
+		var riskReferences = java.util.stream.Stream.concat(java.util.stream.Stream.of("evidence:mother-arrival"),
+				MaritimeAiCanonicalFactReferences.riskReferences(input).stream()).toList();
+		var claim = riskClaim("The documented arrival revision warrants review alongside backend HIGH risk based on the planned connection window. The AIS estimate is unavailable.",
+				riskReferences, risk);
+		var followUp = List.of("Verify whether a transshipment-arrival deadline is recorded for this shipment.",
+				"Ask the carrier's operations team to confirm the vessel's updated ETA.");
+		var permittedUncertainty = new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+				List.of(claim), List.of("The evidence does not establish whether this shipment is urgent."), followUp, true, null);
+		assertThat(MaritimeAiResponseValidator.validate(permittedUncertainty, input)).isNull();
+
+		for (String unsupported : List.of("This shipment is urgent.",
+				"The evidence does not establish whether this shipment is urgent, so urgency may affect operational risk.",
+				"The business deadline is unknown, so its relevance to operational urgency or risk assessment is uncertain.")) {
+			var output = new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+					List.of(claim), List.of(unsupported), followUp, true, null);
+			assertThat(MaritimeAiResponseValidator.validate(output, input))
+					.as("unsupported uncertainty: %s", unsupported).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		}
+
+		var assertedSummary = new MaritimeAiInterpretation("The evidence does not establish whether this shipment is urgent.",
+				List.of(claim), List.of(), followUp, true, null);
+		var assertedClaim = new MaritimeAiClaim("The evidence does not establish whether this shipment is urgent.", claim.evidenceIds(),
+				claim.applicability(), claim.vesselRole(), claim.observationType(), claim.associationScope(), claim.factReferences(),
+				claim.relationshipType(), claim.riskReview());
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(assertedSummary, input)).isTrue();
+		assertThat(MaritimeAiResponseValidator.claimsUnsupportedBusinessConstraint(new MaritimeAiInterpretation(
+				"Review the grounded interpretation and limitations.", List.of(assertedClaim), List.of(), followUp, true, null), input)).isTrue();
 	}
 
 	@Test void humanVerificationCanBeIdentifiedByAnOperationsTeamAndSystemOnlyChecksDoNotQualify() {
