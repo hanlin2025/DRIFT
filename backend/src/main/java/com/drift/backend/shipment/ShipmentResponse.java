@@ -25,8 +25,10 @@ public record ShipmentResponse(
 		Long version,
 		@Schema(description = "Planned time available between mother-vessel arrival and feeder-vessel departure. Calculated from the stored schedule whenever the shipment is read. Null when that window is missing or not positive.")
 		ConnectionWindow connectionWindow,
-		@Schema(description = "Transshipment risk calculated exactly as on the shipment detail: from the remaining connection window when a usable AIS arrival estimate exists, otherwise from the planned window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. Null (not assessed) when the feeder departure is missing.", nullable = true)
+		@Schema(description = "Transshipment risk calculated exactly as on the shipment detail: from the remaining connection window when a usable AIS arrival estimate exists, otherwise from the planned window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. MPA port data that supports a delay can raise LOW to MEDIUM or MEDIUM to HIGH, as on the detail. Null (not assessed) when the feeder departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Likely cause of the shipment's behaviour, as on the shipment detail. UNAVAILABLE when no AIS, port, or weather signal could be used.", example = "PORT_CONDITION")
+		ShipmentDelayAttribution.Cause attributionCause,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
@@ -42,7 +44,7 @@ public record ShipmentResponse(
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
 				shipment.getVersion(), connection.planned().window(), connection.risk(),
-				importer(shipment.getImporterCompany()), shipment.getStatus(), shipment.getUpdatedAt(),
+				connection.attribution().cause(), importer(shipment.getImporterCompany()), shipment.getStatus(), shipment.getUpdatedAt(),
 				shipment.getUpdatedBy().getFullName());
 	}
 

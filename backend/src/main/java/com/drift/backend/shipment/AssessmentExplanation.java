@@ -66,6 +66,27 @@ public record AssessmentExplanation(
 		return new AssessmentExplanation(plannedEvidence(planned, estimate), plannedAssumptions(), LIMITED, null);
 	}
 
+	static final String ATTRIBUTION_RULE =
+			"MPA port data and NEA weather near the port are matched to this shipment. A verified MPA expected arrival that supports a delay, or port data corroborated by AIS or weather, raises Low to Medium or Medium to High. Weather alone does not change the level.";
+
+	/**
+	 * Adds the external port and weather signals that support a delay to a completed assessment.
+	 * An unavailable assessment, and an assessment with no such signal, are returned unchanged.
+	 */
+	static AssessmentExplanation withAttribution(AssessmentExplanation base, ShipmentDelayAttribution attribution) {
+		if (base.unavailable() != null || attribution == null || attribution.supportingExternal().isEmpty()) {
+			return base;
+		}
+		List<String> evidence = new ArrayList<>(base.evidence());
+		attribution.supportingExternal().forEach(signal -> evidence.add(signal.summary()));
+		List<String> assumptions = new ArrayList<>(base.assumptions());
+		assumptions.add(ATTRIBUTION_RULE);
+		String confidence = attribution.corroboratingSources() >= 2
+				? base.confidence() + " Corroborated by " + attribution.corroboratingSources() + " independent sources."
+				: base.confidence();
+		return new AssessmentExplanation(evidence, assumptions, confidence, null);
+	}
+
 	private static List<String> remainingEvidence(RemainingConnectionWindow remaining, ArrivalEstimate estimate) {
 		String observed = remaining.status() == RemainingConnectionWindow.Status.AVAILABLE
 				? remaining.duration()

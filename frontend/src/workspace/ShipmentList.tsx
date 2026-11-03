@@ -3,6 +3,7 @@ import { canArchiveShipment, type ShipmentArchive } from '../shipment/archiveAcc
 import { type Shipment } from '../shipment/api';
 import { ShipmentStatusAction } from '../shipment/ShipmentStatusAction';
 import { RiskBadge } from '../shipment/RiskBadge';
+import { AttributionBadge } from '../shipment/AttributionBadge';
 import { formatWhen, PENDING_ASSIGNMENT } from '../shipment/ShipmentForm';
 
 const columns = ['Reference', 'Risk', 'Importer', 'Origin', 'Destination', 'Transshipment port', 'Mother vessel', 'Feeder vessel', 'Planned arrival'] as const;
@@ -33,7 +34,7 @@ export function ShipmentList({ shipments, basePath, archive, archived = false }:
             return (
               <tr key={shipment.id}>
                 <td><Link className="shipment-row-link" to={`${basePath}/shipments/${shipment.id}`}>{shipment.shipmentReference}</Link></td>
-                <td className="shipment-risk" title={shipment.risk?.explanation}><RiskBadge risk={shipment.risk} /></td>
+                <td className="shipment-risk" title={shipment.risk?.explanation}><RiskBadge risk={shipment.risk} /><AttributionBadge cause={shipment.attributionCause} /></td>
                 <td className={shipment.importer ? undefined : 'is-missing'}>{shipment.importer ? shipment.importer.name : NOT_LINKED}</td>
                 <td>{shipment.origin}</td>
                 <td>{shipment.destination}</td>

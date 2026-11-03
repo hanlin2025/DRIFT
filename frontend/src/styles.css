@@ -319,6 +319,15 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .risk-critical { background: var(--error); }
 .risk-unassessed { background: transparent; color: var(--muted); border: 1px dashed currentColor; font-weight: 600; }
 .shipment-risk { white-space: nowrap; }
+.cause-badge { display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; color: var(--ink); }
+.cause-port-condition, .cause-multiple { color: #c46a2b; }
+.cause-weather { color: #2b6fc4; }
+.cause-vessel-behind-schedule { color: var(--muted); }
+.cause-raised { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.cause-signals { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.cause-signals li { color: var(--muted); }
+.cause-signals li.supports-delay { color: var(--ink); }
+.cause-source { font-weight: 600; }
 .skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
 .skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }

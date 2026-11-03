@@ -2,7 +2,7 @@ package com.drift.backend.maritimechange;
 
 import java.time.OffsetDateTime;
 
-record ShipmentMatchFacts(
+public record ShipmentMatchFacts(
 		long shipmentId,
 		long owningCompanyId,
 		String transshipmentPort,

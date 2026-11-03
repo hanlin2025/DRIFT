@@ -40,10 +40,12 @@ public record ShipmentDetailResponse(
 		ConnectionWindow connectionWindow,
 		@Schema(description = "Time from the mother vessel's estimated arrival to the planned feeder departure. Present when that estimate has an arrival time and is not possibly outdated, including an estimate that is exactly 6 hours old. Null when the estimate is missing, unavailable, or possibly outdated, or when the feeder departure is missing. Not stored.", nullable = true)
 		RemainingConnectionWindow remainingConnectionWindow,
-		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. The explanation names the window. Null when the planned mother-vessel arrival or the planned feeder-vessel departure is missing.", nullable = true)
+		@Schema(description = "Transshipment risk from the remaining connection window when that window is present, and otherwise from the planned connection window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, and LOW at 24 hours or more. Exactly 12 hours is MEDIUM and exactly 24 hours is LOW. MPA port data that supports a delay, from a verified expected arrival or corroborated by AIS or weather, raises LOW to MEDIUM or MEDIUM to HIGH; attribution.riskRaisedFrom then names the level before. The explanation names the window. Null when the planned mother-vessel arrival or the planned feeder-vessel departure is missing.", nullable = true)
 		ShipmentRisk risk,
 		@Schema(description = "Evidence, assumptions, and confidence for the risk on this same read. Calculated when the shipment is read and not stored. Distinct from the contribution list. An unavailable assessment names the missing planned time and does not return a limited confidence.")
 		AssessmentExplanation assessmentExplanation,
+		@Schema(description = "Likely cause of the shipment's behaviour on this read, from the AIS arrival estimate, MPA port data, and NEA weather near the transshipment port. riskRaisedFrom is set when those signals raised the connection risk. Calculated when the shipment is read and not stored.")
+		ShipmentDelayAttribution attribution,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
 		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
@@ -94,8 +96,10 @@ public record ShipmentDetailResponse(
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
 				risk,
-				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
-						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
+				AssessmentExplanation.withAttribution(AssessmentExplanation.of(calculation, remainingConnectionWindow,
+						arrivalComparison, shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
+						connection.attribution()),
+				connection.attribution(),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),

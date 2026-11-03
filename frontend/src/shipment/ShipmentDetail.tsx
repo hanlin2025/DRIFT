@@ -8,6 +8,7 @@ import { MaritimeContextPanel } from './MaritimeContextPanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
+import { AttributionFact } from './AttributionBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { DelayComparisonFact } from './DelayComparisonFact';
@@ -409,6 +410,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          <AttributionFact attribution={shipment.attribution} />
           {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>

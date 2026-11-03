@@ -62,7 +62,7 @@ class MaritimeContextServiceTest {
 					1L, 1L, "DEMO", "SG", "ID", "SG", "KOTA LARIS", null,
 					imo, null, null, null, null, null, null, null,
 					Instant.EPOCH, 0L,
-					null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null,
 					null, null, null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
 		}
 	}

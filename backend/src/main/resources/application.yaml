@@ -72,6 +72,31 @@ app:
   maritime-context:
     # CDG-246 is a read-only recorded/synthetic bundle until persistent snapshot adapters are approved.
     demo-enabled: ${MARITIME_CONTEXT_DEMO_ENABLED:false}
+  maritime-ingest:
+    # Live MPA and NEA collection. Off until approved; each source can also be switched off on its own.
+    enabled: ${MARITIME_INGEST_ENABLED:false}
+    interval: ${MARITIME_INGEST_INTERVAL:15m}
+    nea:
+      enabled: ${MARITIME_INGEST_NEA_ENABLED:true}
+      base-uri: https://api-open.data.gov.sg/v2/real-time/api
+      api-key: ${DATA_GOV_SG_API_KEY:}
+      ports: [singapore, tanjung pelepas]
+      port-radius-km: ${MARITIME_INGEST_NEA_PORT_RADIUS_KM:25}
+    mpa-notices:
+      enabled: ${MARITIME_INGEST_MPA_NOTICES_ENABLED:true}
+      listing-uri: https://www.mpa.gov.sg/api/items/media_releases_and_circulars
+      # Port marine notices category, as used by tools/maritime_notices/mpa_official_notices_collect.py.
+      category: 2b89298e-3d17-4bf2-8275-9079e84f63d0
+      limit: 20
+    mpa-oceansx:
+      api-key: ${MPA_OCEANSX_API_KEY:}
+      base-uri: ${MPA_OCEANSX_API_BASE:}
+      due-to-arrive-path: ${MPA_DUE_TO_ARRIVE_PATH:}
+      lookahead-days: 3
+  delay-attribution:
+    # Weather that counts as adverse when NEA weather is used to attribute a shipment's delay.
+    adverse-rainfall-mm-per-hour: 10
+    adverse-wind-knots: 22
   maritime-reassessment:
     # External processing stays off until a dataset, the global gate, and every source type are approved.
     external-processing-enabled: false

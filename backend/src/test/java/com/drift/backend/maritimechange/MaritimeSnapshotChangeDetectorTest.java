@@ -275,6 +275,14 @@ class MaritimeSnapshotChangeDetectorTest {
 			rows.add(observation);
 		}
 
+		@Override
+		public List<MaritimeSnapshotObservation> currentHeads(Instant now) {
+			return rows.stream()
+					.filter(row -> row.isHead() && row.isForwardLooking()
+							&& (row.getEffectiveUntil() == null || row.getEffectiveUntil().isAfter(now)))
+					.toList();
+		}
+
 		private int size() {
 			return rows.size();
 		}

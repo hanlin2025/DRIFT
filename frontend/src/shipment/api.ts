@@ -226,6 +226,26 @@ export type PortConditionComparison = {
   slowestOwnSpeedKnots: number | null;
 };
 
+export type AttributionCause = 'NONE_DETECTED' | 'VESSEL_BEHIND_SCHEDULE' | 'PORT_CONDITION' | 'WEATHER' | 'MULTIPLE' | 'UNAVAILABLE';
+export type AttributionSource = 'AIS' | 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
+
+export type AttributedSignal = {
+  source: AttributionSource;
+  association: string | null;
+  supportsDelay: boolean;
+  summary: string;
+  observedAt: string | null;
+  provenance: string;
+};
+
+export type DelayAttribution = {
+  cause: AttributionCause;
+  summary: string;
+  corroboratingSources: number;
+  signals: AttributedSignal[];
+  riskRaisedFrom: RiskLevel | null;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -263,6 +283,8 @@ export type Shipment = {
   transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
   delayComparison?: DelayComparison | null;
   portConditionComparison?: PortConditionComparison | null;
+  attribution?: DelayAttribution | null;
+  attributionCause?: AttributionCause | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
 };
@@ -983,6 +1005,10 @@ function asShipment(value: unknown): Shipment | null {
   if (delayComparison === undefined) return null;
   const portConditionComparison = portConditionOf(value, motherVesselPosition ?? null, motherOperationalState ?? null, risk ?? null);
   if (portConditionComparison === undefined) return null;
+  const attribution = attributionOf(value);
+  if (attribution === undefined) return null;
+  const attributionCause = attributionCauseOf(value);
+  if (attributionCause === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
@@ -1023,8 +1049,56 @@ function asShipment(value: unknown): Shipment | null {
     transshipmentArrivalDeadline,
     delayComparison,
     portConditionComparison,
+    attribution,
+    attributionCause: attribution?.cause ?? attributionCause,
     updatedAt,
     updatedByName,
+  };
+}
+
+const ATTRIBUTION_CAUSES: readonly AttributionCause[] = ['NONE_DETECTED', 'VESSEL_BEHIND_SCHEDULE', 'PORT_CONDITION', 'WEATHER', 'MULTIPLE', 'UNAVAILABLE'];
+const ATTRIBUTION_SOURCES: readonly AttributionSource[] = ['AIS', 'MPA_ETA_REVISION', 'MPA_OFFICIAL_NOTICE', 'NEA_WEATHER'];
+
+function isAttributionCause(value: unknown): value is AttributionCause {
+  return typeof value === 'string' && (ATTRIBUTION_CAUSES as readonly string[]).includes(value);
+}
+
+function attributionCauseOf(value: Record<string, unknown>): AttributionCause | null | undefined {
+  if (!('attributionCause' in value) || value.attributionCause == null) return null;
+  return isAttributionCause(value.attributionCause) ? value.attributionCause : undefined;
+}
+
+function attributedSignalOf(value: unknown): AttributedSignal | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.source !== 'string' || !(ATTRIBUTION_SOURCES as readonly string[]).includes(value.source)) return undefined;
+  if (typeof value.supportsDelay !== 'boolean' || !isPresentText(value.summary) || !isPresentText(value.provenance)) return undefined;
+  if (!isNullableText(value.association ?? null) || !isNullableText(value.observedAt ?? null)) return undefined;
+  return {
+    source: value.source as AttributionSource,
+    association: (value.association as string | null | undefined) ?? null,
+    supportsDelay: value.supportsDelay,
+    summary: value.summary,
+    observedAt: (value.observedAt as string | null | undefined) ?? null,
+    provenance: value.provenance,
+  };
+}
+
+function attributionOf(value: Record<string, unknown>): DelayAttribution | null | undefined {
+  if (!('attribution' in value) || value.attribution == null) return null;
+  const attribution = value.attribution;
+  if (!isRecord(attribution) || !isAttributionCause(attribution.cause) || !isPresentText(attribution.summary)) return undefined;
+  if (!isFiniteNumber(attribution.corroboratingSources) || !Array.isArray(attribution.signals)) return undefined;
+  const signals = attribution.signals.map(attributedSignalOf);
+  if (signals.some(signal => signal === undefined)) return undefined;
+  const riskRaisedFrom = attribution.riskRaisedFrom == null ? null
+    : (isRiskLevel(attribution.riskRaisedFrom) ? attribution.riskRaisedFrom : undefined);
+  if (riskRaisedFrom === undefined) return undefined;
+  return {
+    cause: attribution.cause,
+    summary: attribution.summary,
+    corroboratingSources: attribution.corroboratingSources,
+    signals: signals as AttributedSignal[],
+    riskRaisedFrom,
   };
 }
 

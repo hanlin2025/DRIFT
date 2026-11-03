@@ -162,4 +162,25 @@ class MaritimeSnapshotObservation {
 	String getCurrentValue() {
 		return currentValue;
 	}
+
+	boolean isForwardLooking() {
+		return forwardLooking;
+	}
+
+	Instant getEffectiveUntil() {
+		return effectiveUntil;
+	}
+
+	String getPreviousValue() {
+		return previousValue;
+	}
+
+	/** The stored row in the shape the matcher reads. Effective times keep their stored instant. */
+	MaritimeSnapshotChange toChange() {
+		return new MaritimeSnapshotChange(sourceType, sourceIdentity, contentFingerprint, changeKind, ordering,
+				forwardLooking, provenance, sourceEventAt, observedAt, retrievedAtUtc.toString(), retrievedAtUtc,
+				sourceMode, freshness, vesselImo, location, effectiveFrom == null ? null : effectiveFrom.toString(),
+				effectiveUntil == null ? null : effectiveUntil.toString(), previousValue, currentValue,
+				activityCompatibility, locationCompatibility, timeCompatibility, recordedAt);
+	}
 }

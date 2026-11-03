@@ -38,6 +38,36 @@ public record ShipmentRisk(
 		};
 	}
 
+	/**
+	 * Raises the risk one band, to at most High, when external port data supports a delay: a verified MPA expected
+	 * arrival for this shipment's vessel, or port data corroborated by AIS or weather. Weather alone, and AIS with
+	 * weather, do not raise it, because the AIS estimate is already in the window. Critical is unchanged.
+	 */
+	static ShipmentRisk adjusted(ShipmentRisk base, ShipmentDelayAttribution attribution) {
+		if (base == null || attribution == null || base.level() == Level.HIGH || base.level() == Level.CRITICAL) {
+			return base;
+		}
+		String reason;
+		if (attribution.verifiedPortDelay()) {
+			reason = "MPA's expected arrival for this shipment's vessel supports a delay.";
+		} else if (attribution.portCorroborated()) {
+			reason = "MPA port data and another independent source both support a delay.";
+		} else {
+			return base;
+		}
+		Level raised = base.level() == Level.LOW ? Level.MEDIUM : Level.HIGH;
+		return new ShipmentRisk(raised, base.explanation() + " Raised from " + label(base.level()) + " because " + reason);
+	}
+
+	private static String label(Level level) {
+		return switch (level) {
+			case LOW -> "Low";
+			case MEDIUM -> "Medium";
+			case HIGH -> "High";
+			case CRITICAL -> "Critical";
+		};
+	}
+
 	private static ShipmentRisk fromRemaining(RemainingConnectionWindow remaining) {
 		return switch (remaining.status()) {
 			case MISSED -> missed(remaining);

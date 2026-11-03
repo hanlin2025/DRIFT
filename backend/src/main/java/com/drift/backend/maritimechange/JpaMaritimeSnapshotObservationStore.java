@@ -1,5 +1,7 @@
 package com.drift.backend.maritimechange;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.stereotype.Component;
@@ -61,5 +63,17 @@ class JpaMaritimeSnapshotObservationStore implements MaritimeSnapshotObservation
 		}
 		entityManager.persist(observation);
 		entityManager.flush();
+	}
+
+	@Override
+	public List<MaritimeSnapshotObservation> currentHeads(Instant now) {
+		return entityManager.createQuery("""
+				SELECT observation FROM MaritimeSnapshotObservation observation
+				WHERE observation.head = true
+					AND observation.forwardLooking = true
+					AND (observation.effectiveUntil IS NULL OR observation.effectiveUntil > :now)
+				""", MaritimeSnapshotObservation.class)
+				.setParameter("now", now)
+				.getResultList();
 	}
 }

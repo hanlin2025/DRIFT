@@ -57,7 +57,7 @@ class ShipmentSortTest {
 	private static ShipmentResponse row(long id, ShipmentRisk.Level level, OffsetDateTime feederDeparture) {
 		ShipmentRisk risk = level == null ? null : new ShipmentRisk(level, level.name());
 		return new ShipmentResponse(id, 1L, "HBL-" + id, "Jakarta", "Rotterdam", "Singapore", "MV Mother",
-				feederDeparture.minusHours(8), "MV Feeder", feederDeparture, null, 0L, null, risk, null,
-				ShipmentStatus.ACTIVE, null, null);
+				feederDeparture.minusHours(8), "MV Feeder", feederDeparture, null, 0L, null, risk,
+				ShipmentDelayAttribution.Cause.UNAVAILABLE, null, ShipmentStatus.ACTIVE, null, null);
 	}
 }

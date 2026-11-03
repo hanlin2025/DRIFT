@@ -255,6 +255,11 @@ class MaritimeSnapshotShipmentMatcherTest {
 		@Override
 		public void add(MaritimeSnapshotObservation observation, boolean becomesHead) {
 		}
+
+		@Override
+		public List<MaritimeSnapshotObservation> currentHeads(Instant now) {
+			return List.of();
+		}
 	}
 
 	private static MaritimeSnapshotChange change(String sourceType, String imo, String location, String from, String until,

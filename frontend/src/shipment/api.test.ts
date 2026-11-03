@@ -85,6 +85,29 @@ describe('shipment importer API', () => {
     expect(fetch).toHaveBeenCalledWith('/api/shipments?status=ARCHIVED', expect.anything());
   });
 
+  it('reads the likely cause on a list row and the attribution on the detail', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment, attributionCause: 'WEATHER' }])));
+    expect((await listShipments('token'))[0].attributionCause).toBe('WEATHER');
+
+    const attribution = {
+      cause: 'PORT_CONDITION',
+      summary: 'MPA port data supports a delay at the transshipment port.',
+      corroboratingSources: 1,
+      riskRaisedFrom: null,
+      signals: [{ source: 'MPA_ETA_REVISION', association: 'VERIFIED_ASSOCIATION', supportsDelay: true,
+        summary: 'MPA expects the mother vessel 3 hours 0 minutes after its planned arrival.', observedAt: null, provenance: 'MPA' }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, attribution })));
+    const detail = await getShipment('token', '9');
+    expect(detail.attribution?.signals[0].source).toBe('MPA_ETA_REVISION');
+    expect(detail.attributionCause).toBe('PORT_CONDITION');
+  });
+
+  it('rejects an attribution with an unknown cause', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, attribution: { cause: 'TIDES', summary: 'x', corroboratingSources: 0, signals: [], riskRaisedFrom: null } })));
+    await expect(getShipment('token', '9')).rejects.toThrow();
+  });
+
   it('reads who last updated a shipment on the list', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{
       ...shipment,
