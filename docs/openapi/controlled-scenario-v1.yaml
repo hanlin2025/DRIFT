@@ -322,6 +322,11 @@ components:
                 code: SESSION_CAPACITY
                 message: The controlled scenario session limit has been reached.
                 retryable: false
+            storageUnavailable:
+              value:
+                code: SCENARIO_STORAGE_UNAVAILABLE
+                message: Controlled scenario authorization could not be verified.
+                retryable: true
   schemas:
     CreateSessionRequest:
       type: object

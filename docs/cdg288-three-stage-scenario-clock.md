@@ -106,7 +106,7 @@ Errors use `{ "code", "message", "retryable" }` (validation may also include `fi
 | 404 | `SCENARIO_DISABLED`, `SCENARIO_NOT_FOUND` | Feature off, unknown/expired session, or anchor not in configured A/B |
 | 409 | `STALE_EPOCH`, `STALE_REVISION`, `SCENARIO_NOT_STARTED`, `SCENARIO_COMPLETE`, `SESSION_ID_REUSED`, `IDEMPOTENCY_KEY_REUSED` | Stale command, invalid transition or conflicting identity/key reuse |
 | 429 | `SESSION_COMMAND_LIMIT` | Per-session idempotency ledger reached its configured bound |
-| 503 | `SCENARIO_NOT_CONFIGURED`, `SESSION_CAPACITY` | Operator configuration incomplete or in-process capacity exhausted |
+| 503 | `SCENARIO_NOT_CONFIGURED`, `SESSION_CAPACITY`, `SCENARIO_STORAGE_UNAVAILABLE` | Operator configuration incomplete, in-process capacity exhausted, or required shipment authorization storage unavailable |
 
 ## Demo access and A/B provisioning
 

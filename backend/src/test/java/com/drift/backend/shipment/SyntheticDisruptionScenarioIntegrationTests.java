@@ -36,7 +36,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
@@ -109,6 +113,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	@Autowired ObjectMapper json;
 	@Autowired LatestAisPositions positions;
 	@Autowired ControlledScenarioProperties controlledScenarioProperties;
+	@Autowired PlatformTransactionManager transactionManager;
 
 	@AfterEach
 	void disableControlledScenarioAfterTest() {
@@ -392,6 +397,75 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		JsonNode newBaseline = scenarioCommand(sessionId, owner.managerToken(), "start", reset, "start-after-reset", 200);
 		assertThat(newBaseline.at("/snapshot/snapshotId").asText())
 				.isNotEqualTo(baseline.at("/snapshot/snapshotId").asText());
+
+		assertThat(scenarioOperationalSnapshot()).isEqualTo(operationalBefore);
+		assertThat(positionCount()).isEqualTo(positionsBefore);
+		assertThat(assessmentCount()).isEqualTo(assessmentsBefore);
+		assertThat(OFFLINE_CLIENT.inputs()).isEmpty();
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void scenarioSessionLifecycleWorksWithoutATestManagedTransaction() throws Exception {
+		assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+		OFFLINE_CLIENT.clear();
+		Identity owner = createIdentity();
+		Identity otherTenant = createIdentity();
+		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(owner);
+		configureControlledScenario(owner, shipmentIds);
+		String operationalBefore = scenarioOperationalSnapshot();
+		long positionsBefore = positionCount();
+		long assessmentsBefore = assessmentCount();
+
+		UUID readOnlySessionId = UUID.randomUUID();
+		TransactionTemplate readOnlyTransaction = new TransactionTemplate(transactionManager);
+		readOnlyTransaction.setReadOnly(true);
+		MvcResult readOnlyFailure = readOnlyTransaction.execute(status -> {
+			status.setRollbackOnly();
+			try {
+				return mvc.perform(put(scenarioSessionPath(readOnlySessionId))
+						.header("Authorization", "Bearer " + owner.managerToken())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(json.writeValueAsString(Map.of("anchorShipmentId", shipmentIds.get(0)))))
+					.andReturn();
+			} catch (Exception exception) {
+				throw new AssertionError(exception);
+			}
+		});
+		assertThat(readOnlyFailure).isNotNull();
+		assertThat(readOnlyFailure.getResponse().getStatus()).isEqualTo(503);
+		assertThat(json.readTree(readOnlyFailure.getResponse().getContentAsString()).path("code").asText())
+				.isEqualTo("SCENARIO_STORAGE_UNAVAILABLE");
+		JsonNode recoveredAfterStorageFailure = scenarioCreate(readOnlySessionId, owner.managerToken(), shipmentIds.get(0));
+		assertThat(recoveredAfterStorageFailure.path("state").asText()).isEqualTo("UNSTARTED");
+
+		UUID sessionId = UUID.randomUUID();
+
+		JsonNode created = scenarioCreate(sessionId, owner.managerToken(), shipmentIds.get(0));
+		assertThat(created.path("state").asText()).isEqualTo("UNSTARTED");
+		assertThat(created.path("revision").asLong()).isZero();
+		assertThat(created.path("snapshot").isNull()).isTrue();
+		assertThat(created.at("/shipments/0/scenarioShipmentKey").asText()).isEqualTo("A");
+		assertThat(created.at("/shipments/1/scenarioShipmentKey").asText()).isEqualTo("B");
+		assertThat(scenarioGet(sessionId, owner.managerToken())).isEqualTo(created);
+		mvc.perform(get(scenarioSessionPath(sessionId)).header("Authorization", "Bearer " + otherTenant.managerToken()))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("SCENARIO_ACCESS_DENIED"));
+
+		JsonNode baseline = scenarioCommand(sessionId, owner.managerToken(), "start", created, "outside-tx-start", 200);
+		assertThat(baseline.at("/snapshot/stage").asText()).isEqualTo("BASELINE");
+		JsonNode change = scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "outside-tx-next-1", 200);
+		assertThat(change.at("/snapshot/stage").asText()).isEqualTo("CHANGE");
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "outside-tx-stale-revision", 409)
+				.path("code").asText()).isEqualTo("STALE_REVISION");
+		JsonNode worsened = scenarioCommand(sessionId, owner.managerToken(), "next", change, "outside-tx-next-2", 200);
+		assertThat(worsened.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+		JsonNode reset = scenarioCommand(sessionId, owner.managerToken(), "reset", worsened, "outside-tx-reset", 200);
+		assertThat(reset.path("state").asText()).isEqualTo("UNSTARTED");
+		assertThat(reset.path("snapshot").isNull()).isTrue();
+		assertThat(reset.path("epochId").asText()).isNotEqualTo(worsened.path("epochId").asText());
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", worsened, "outside-tx-stale-epoch", 409)
+				.path("code").asText()).isEqualTo("STALE_EPOCH");
+		assertThat(scenarioGet(sessionId, owner.managerToken())).isEqualTo(reset);
 
 		assertThat(scenarioOperationalSnapshot()).isEqualTo(operationalBefore);
 		assertThat(positionCount()).isEqualTo(positionsBefore);

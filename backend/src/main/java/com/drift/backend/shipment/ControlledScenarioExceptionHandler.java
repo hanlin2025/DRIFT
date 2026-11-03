@@ -3,6 +3,7 @@ package com.drift.backend.shipment;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -67,6 +68,12 @@ public class ControlledScenarioExceptionHandler {
 	@ExceptionHandler(SessionEndedException.class)
 	public ResponseEntity<ControlledScenarioApiError> unauthenticated(SessionEndedException exception) {
 		return error(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", exception.getMessage(), false);
+	}
+
+	@ExceptionHandler(DataAccessException.class)
+	public ResponseEntity<ControlledScenarioApiError> storageUnavailable(DataAccessException exception) {
+		return error(HttpStatus.SERVICE_UNAVAILABLE, "SCENARIO_STORAGE_UNAVAILABLE",
+				"Controlled scenario authorization could not be verified.", true);
 	}
 
 	private static ResponseEntity<ControlledScenarioApiError> error(HttpStatus status, String code,
