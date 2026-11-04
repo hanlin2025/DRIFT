@@ -23,7 +23,7 @@ function snapshot(stage: 'BASELINE' | 'CHANGE' | 'WORSENED' = 'CHANGE') {
     snapshotId: envelope.snapshot!.snapshotId, revision: envelope.revision, shipmentId: 142, scenarioShipmentKey: 'A' })!;
 }
 const assessment = {
-  assessmentId: null, state: 'GENERATED', validationStatus: 'VALID', bundleVersion: 'cdg246.maritime-evidence-bundle.v1',
+  assessmentId: 'aa6d9784-6133-41a4-9346-d451b48332ca', state: 'GENERATED', validationStatus: 'VALID', bundleVersion: 'cdg246.maritime-evidence-bundle.v1',
   bundleHash: 'a'.repeat(64), assessmentCutoffUtc: '2026-10-01T04:00:00Z', provider: 'openai-responses', model: 'test-model',
   promptVersion: 'cdg290.scenario-grounded-v1.1', generatedAtUtc: '2026-11-03T00:00:00Z', limitation: null,
   interpretation: { summary: 'Review the grounded interpretation and limitations.', claims: [], uncertainties: [],
@@ -36,7 +36,10 @@ function http(body: unknown, status = 200) {
 function responseFor(selected = snapshot()) {
   return { sessionId: selected.sessionId, epochId: selected.epochId, snapshotId: selected.snapshotId,
     revision: selected.revision, simulationCutoffUtc: selected.simulationCutoffUtc,
-    scenarioShipmentKey: selected.selectedShipment.scenarioShipmentKey, shipmentId: anchor.id, assessment };
+    scenarioShipmentKey: selected.selectedShipment.scenarioShipmentKey, shipmentId: anchor.id, assessment,
+    scenarioId: 'CDG290-API', scenarioVersion: 'cdg290.synthetic-disruption.v1',
+    scenarioShipmentReference: 'SYNTH-A', stage: selected.stage,
+    evidenceHash: 'a'.repeat(64), contextHash: 'b'.repeat(64) };
 }
 function props(selected = snapshot(), onSessionEnded = vi.fn()) {
   return { enabled: true, viewer, anchor, authContextGeneration: 'auth-generation-1', snapshot: selected,
@@ -56,7 +59,9 @@ describe('ScenarioAiInterpretation', () => {
     await user.click(screen.getByRole('button', { name: 'Generate AI Interpretation' }));
     expect(await screen.findByText(/Provider-generated assessment from openai-responses/)).toBeInTheDocument();
     expect(screen.getByText('SYNTHETIC SCENARIO INTERPRETATION')).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0][0]).toContain('/interpretation');
+    expect(fetch.mock.calls[1][0]).toContain(`/assessments/${assessment.assessmentId}`);
     expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toMatchObject({
       scenarioShipmentKey: 'A', expectedEpochId: EPOCH_ID, expectedRevision: 2,
       expectedSnapshotId: snapshot().snapshotId, expectedSimulationCutoffUtc: snapshot().simulationCutoffUtc,

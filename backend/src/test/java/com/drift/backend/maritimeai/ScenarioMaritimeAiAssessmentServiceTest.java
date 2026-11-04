@@ -40,6 +40,7 @@ import com.drift.backend.shipment.ControlledScenarioStage;
 import com.drift.backend.shipment.DelayComparison;
 import com.drift.backend.shipment.RemainingConnectionWindow;
 import com.drift.backend.shipment.ShipmentRisk;
+import com.drift.backend.shipment.ShipmentViewAuthorization;
 import com.drift.backend.shipment.exception.ControlledScenarioUnavailableException;
 import com.drift.backend.shipment.exception.ScenarioTransitionConflictException;
 
@@ -49,6 +50,11 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 	private static final UUID SNAPSHOT_ID = UUID.fromString("55bb0888-2906-4ba0-946f-b054b0ef1272");
 	private static final Instant CUTOFF = Instant.parse("2026-10-01T04:00:00Z");
 	private static final AuthenticatedUser OWNER = new AuthenticatedUser(8L, "owner@example.invalid", Role.IMPORTER, Instant.MAX);
+	private static final ShipmentViewAuthorization AUTHORIZATION = new ShipmentViewAuthorization(1L, 1L, null);
+	private static final MaritimeAiScenarioAssessmentContext CONTEXT = context();
+	private static final MaritimeAiScenarioGenerationResult GENERATION = new MaritimeAiScenarioGenerationResult(
+			new MaritimeAiClient.MaritimeAiClientResult("openai-responses", "test-model", "scenario-prompt", null, "unavailable"),
+			MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", null, "Provider unavailable.");
 
 	@Test
 	void bindsBInterpretationToExactSnapshotAndBackendBusinessFacts() {
@@ -57,7 +63,7 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		var session = session(snapshot(2, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT));
 		when(sessions.get(OWNER, SESSION_ID)).thenReturn(session, session, session);
 		MaritimeAiAssessmentResponse generated = response("GENERATED", "VALID", "openai-responses");
-		when(ai.generateScenarioTransient(any(), eq(true))).thenReturn(generated);
+		stubPersistence(ai, generated);
 		var service = service(sessions, ai, true);
 
 		ScenarioMaritimeAiResponse response = service.generate(OWNER, SESSION_ID, 200L,
@@ -65,10 +71,10 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 
 		assertThat(response.shipmentId()).isEqualTo(200L);
 		assertThat(response.scenarioShipmentKey()).isEqualTo("B");
-		assertThat(response.assessment().assessmentId()).isNull();
+		assertThat(response.assessment().assessmentId()).isNotNull();
 		assertThat(response.assessment().state()).isEqualTo("GENERATED");
 		var captor = org.mockito.ArgumentCaptor.forClass(MaritimeAiEvidencePackage.class);
-		verify(ai).generateScenarioTransient(captor.capture(), eq(true));
+		verify(ai).generateScenario(captor.capture(), eq(true));
 		MaritimeAiEvidencePackage input = captor.getValue();
 		assertThat(input.assessmentCutoffUtc()).isEqualTo(CUTOFF.toString());
 		assertThat(input.evidence()).extracting(MaritimeEvidence::sourceMode).containsOnly("SYNTHETIC_DEMONSTRATION");
@@ -88,13 +94,13 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		ControlledScenarioSessionResponse before = session(snapshot(2, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT));
 		ControlledScenarioSessionResponse after = session(snapshot(3, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT));
 		when(sessions.get(OWNER, SESSION_ID)).thenReturn(before, after);
-		when(ai.generateScenarioTransient(any(), eq(true))).thenReturn(response("GENERATED", "VALID", "openai-responses"));
+		stubPersistence(ai, response("GENERATED", "VALID", "openai-responses"));
 		var service = service(sessions, ai, true);
 
 		assertThatThrownBy(() -> service.generate(OWNER, SESSION_ID, 200L,
 				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
 				.isInstanceOf(ScenarioTransitionConflictException.class).extracting("code").isEqualTo("STALE_REVISION");
-		verify(ai).generateScenarioTransient(any(), eq(true));
+		verify(ai).generateScenario(any(), eq(true));
 	}
 
 	@Test
@@ -104,7 +110,7 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		var current = session(snapshot(2, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT));
 		when(sessions.get(OWNER, SESSION_ID)).thenReturn(current, current, current, current, current);
 		MaritimeAiAssessmentResponse generated = response("GENERATED", "VALID", "openai-responses");
-		when(ai.generateScenarioTransient(any(), eq(true))).thenReturn(generated);
+		stubPersistence(ai, generated);
 		var service = service(sessions, ai, true);
 		var request = request("B", 2, SNAPSHOT_ID, CUTOFF.toString());
 
@@ -112,7 +118,7 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		ScenarioMaritimeAiResponse retry = service.generate(OWNER, SESSION_ID, 200L, request);
 
 		assertThat(retry).isEqualTo(first);
-		verify(ai, times(1)).generateScenarioTransient(any(), eq(true));
+		verify(ai, times(1)).generateScenario(any(), eq(true));
 	}
 
 	@Test
@@ -123,14 +129,14 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
 				.isInstanceOf(ControlledScenarioUnavailableException.class).extracting("status").isEqualTo(HttpStatus.NOT_FOUND.value());
 		verify(sessions, never()).get(any(), any());
-verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+		verify(ai, never()).generateScenario(any(), anyBoolean());
 
 		var current = session(snapshot(2, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT));
 		when(sessions.get(OWNER, SESSION_ID)).thenReturn(current);
 		assertThatThrownBy(() -> service(sessions, ai, true).generate(OWNER, SESSION_ID, 200L,
 				request("B", 1, SNAPSHOT_ID, CUTOFF.toString())))
 				.isInstanceOf(ScenarioTransitionConflictException.class).extracting("code").isEqualTo("STALE_REVISION");
-verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+		verify(ai, never()).generateScenario(any(), anyBoolean());
 	}
 
 	@Test
@@ -151,7 +157,15 @@ verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
 		assertThatThrownBy(() -> service(sessions, ai, true).generate(OWNER, SESSION_ID, 100L,
 				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
 				.isInstanceOf(ScenarioTransitionConflictException.class).extracting("code").isEqualTo("SCENARIO_SHIPMENT_MISMATCH");
-verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+		verify(ai, never()).generateScenario(any(), anyBoolean());
+	}
+
+	private static void stubPersistence(MaritimeAiAssessmentService ai, MaritimeAiAssessmentResponse response) {
+		when(ai.captureScenarioAuthorization(eq(OWNER), eq(200L))).thenReturn(AUTHORIZATION);
+		when(ai.scenarioContext(eq(OWNER), any(), any(), any(), eq(200L), eq(AUTHORIZATION), any())).thenReturn(CONTEXT);
+		when(ai.generateScenario(any(), eq(true))).thenReturn(GENERATION);
+		when(ai.persistScenario(eq(OWNER), eq(200L), any(), eq(CONTEXT), eq(AUTHORIZATION), eq(GENERATION)))
+				.thenReturn(response);
 	}
 
 	private static ScenarioMaritimeAiAssessmentService service(ControlledScenarioSessionService sessions,
@@ -212,7 +226,14 @@ verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
 	}
 
 	private static MaritimeAiAssessmentResponse response(String state, String validation, String provider) {
-		return new MaritimeAiAssessmentResponse(null, state, validation, "bundle", "hash", CUTOFF.toString(), provider,
+		return new MaritimeAiAssessmentResponse(UUID.randomUUID().toString(), state, validation, "bundle", "hash", CUTOFF.toString(), provider,
 				"model", "prompt", Instant.now().toString(), null, null, null);
+	}
+
+	private static MaritimeAiScenarioAssessmentContext context() {
+		String hash = "a".repeat(64);
+		return new MaritimeAiScenarioAssessmentContext(1, "CDG279-Api", "cdg279.synthetic-disruption.v1", SESSION_ID, OWNER.id(),
+				EPOCH_ID, 2, SNAPSHOT_ID, CUTOFF.toString(), "B", "SYNTH-B", "CHANGE", 200L,
+				1L, 1L, null, hash, hash, hash);
 	}
 }
