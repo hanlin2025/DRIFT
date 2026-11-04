@@ -1,15 +1,18 @@
-# CDG-42 feeder-connection miss probability: decision record
+# CDG-42 late-arrival chance: decision record
 
-This record answers the seven CDG-208 questions for CDG-42 ("show users who can
-view a shipment the chance that the mother vessel misses the feeder
-connection"). It is a decision only: no database change, API, page, or
-production code. CDG-209 implements the backend calculation from this record;
-CDG-210 shows it on shipment detail.
+This record answers the seven CDG-208 questions for CDG-42. It is a decision
+only: no database change, API, page, or production code. CDG-209 implements the
+backend calculation from this record; CDG-210 shows it on shipment detail.
 
-The Jira story calls this a "miss probability". With the suggested threshold
-`T_h = 0h`, what is actually calculated is narrower: the chance that the mother
-vessel arrives after the planned feeder departure (see [Q1](#q1-what-does-miss-mean)).
-The user-facing wording says exactly that.
+**Scope of CDG-42.** CDG-42 has been re-scoped: it shows users who can view a
+shipment the chance that the mother vessel arrives after the planned feeder
+departure (a "late-arrival chance"), not a confirmed or calibrated probability
+that the cargo misses its transshipment. With the suggested threshold
+`T_h = 0h`, arriving before the feeder departs does not prove there is time to
+discharge, transfer and load the cargo; handling time is not modelled until
+there is data to support a threshold (see [Open questions](#open-questions)).
+The Jira story title, description and acceptance criteria were updated to
+match, and the user-facing wording says exactly this.
 
 ## Context
 
