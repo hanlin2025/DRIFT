@@ -82,6 +82,27 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 	}
 
 	@Test
+	void emptySyntheticBaselineBundleReachesTheInsufficientEvidencePath() {
+		var sessions = mock(ControlledScenarioSessionService.class);
+		var ai = mock(MaritimeAiAssessmentService.class);
+		ControlledScenarioSessionResponse baseline = session(baselineSnapshot());
+		when(sessions.get(OWNER, SESSION_ID)).thenReturn(baseline, baseline, baseline);
+		when(ai.generateScenarioTransient(any(), eq(true)))
+				.thenReturn(response("ABSTAINED", "INSUFFICIENT_EVIDENCE", "controlled-replay-stub"));
+		var service = service(sessions, ai, true);
+
+		ScenarioMaritimeAiResponse response = service.generate(OWNER, SESSION_ID, 200L,
+				request("B", 2, SNAPSHOT_ID, CUTOFF.toString()));
+
+		assertThat(response.assessment().state()).isEqualTo("ABSTAINED");
+		assertThat(response.assessment().validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
+		var captor = org.mockito.ArgumentCaptor.forClass(MaritimeAiEvidencePackage.class);
+		verify(ai).generateScenarioTransient(captor.capture(), eq(true));
+		assertThat(captor.getValue().evidence()).isEmpty();
+		assertThat(captor.getValue().shipmentContext().scenario().stage()).isEqualTo("BASELINE");
+	}
+
+	@Test
 	void rejectsAStaleStageDuringInferenceBeforeReturningTheResult() {
 		var sessions = mock(ControlledScenarioSessionService.class);
 		var ai = mock(MaritimeAiAssessmentService.class);
@@ -187,6 +208,15 @@ verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
 				"change", CUTOFF, CUTOFF, List.of(a, b), List.of(
 					new ControlledScenarioSnapshot.AisObservationRead("MOTHER", CUTOFF, CUTOFF, "SYNTHETIC_DEMONSTRATION", mother),
 					new ControlledScenarioSnapshot.AisObservationRead("FEEDER", CUTOFF, CUTOFF, "SYNTHETIC_DEMONSTRATION", feeder)), bundle);
+	}
+
+	private static ControlledScenarioSnapshot baselineSnapshot() {
+		ControlledScenarioSnapshot changed = snapshot(2, "2026-10-02T10:00:00Z", DelayComparison.Outcome.NO_PREDICTED_IMPACT);
+		MaritimeContextResponse bundle = new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true,
+				"UNAVAILABLE", CUTOFF.toString(), "UNAVAILABLE", "No evidence is supplied at baseline.", List.of(),
+				List.of(), null, null);
+		return new ControlledScenarioSnapshot(SNAPSHOT_ID, EPOCH_ID, 2, ControlledScenarioStage.BASELINE, 0, 3,
+				"baseline", CUTOFF, CUTOFF, changed.shipments(), changed.aisObservations(), bundle);
 	}
 
 	private static ControlledScenarioSnapshot.ShipmentRead row(String key, Long id, String reference, String deadline,

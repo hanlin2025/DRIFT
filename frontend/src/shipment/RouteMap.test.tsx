@@ -13,11 +13,15 @@ const mapCalls = vi.hoisted(() => ({
   errorHandlers: [] as (() => void)[],
   sources: new Map<string, { setData: (data: unknown) => void }>(),
   mapInstances: 0,
+  mapOptions: null as null | { style: string; center: [number, number]; zoom: number },
 }));
 
 vi.mock('maplibre-gl', () => ({
   Map: class Map {
-    constructor() { mapCalls.mapInstances += 1; }
+    constructor(options: { style: string; center: [number, number]; zoom: number }) {
+      mapCalls.mapInstances += 1;
+      mapCalls.mapOptions = options;
+    }
     on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
       if (typeof layerOrCallback === 'function') {
         if (event === 'load') layerOrCallback();
@@ -104,6 +108,7 @@ describe('shipment route display', () => {
     mapCalls.errorHandlers.length = 0;
     mapCalls.sources.clear();
     mapCalls.mapInstances = 0;
+    mapCalls.mapOptions = null;
   });
 
   it('lists the stored route in connection order', () => {
@@ -292,6 +297,23 @@ describe('shipment route display', () => {
     mapCalls.errorHandlers[0]();
     expect(await screen.findByText(/The basemap is unavailable/)).toBeInTheDocument();
     expect(routeText()).toContain('DEPARTURE Shanghai, CN');
+  });
+
+  it('uses the local configured basemap and frames the synthetic positions in scenario mode', async () => {
+    vi.stubEnv('VITE_MAP_STYLE_URL', '/cdg290-offline-style.json');
+    const positions = [{ role: 'MOTHER' as const, name: 'Fictional mother', latitude: 2.26, longitude: 103.82,
+      ingestedAt: '2026-10-01T00:00:00Z', speedOverGroundKnots: 10, label: 'SCENARIO' as const }];
+
+    render(<RouteMap shipment={{ ...shipment, origin: 'Not recorded', destination: 'Not recorded', transshipmentPort: 'Not recorded' }}
+      displayPositions={positions} displayMode="scenario" />);
+
+    await waitFor(() => expect(mapCalls.mapOptions).not.toBeNull());
+    expect(mapCalls.mapOptions).toMatchObject({
+      style: '/cdg290-offline-style.json',
+      center: [103.82, 2.26],
+      zoom: 5,
+    });
+    vi.unstubAllEnvs();
   });
 });
 

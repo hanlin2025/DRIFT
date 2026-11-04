@@ -120,7 +120,12 @@ public class ScenarioMaritimeAiAssessmentService {
 		ControlledScenarioSnapshot snapshot = selected.snapshot();
 		ControlledScenarioSnapshot.ShipmentRead row = selected.row();
 		MaritimeContextResponse bundle = snapshot.maritimeContext();
-		if (bundle == null || !bundle.enabled() || !"SYNTHETIC_DEMONSTRATION".equals(bundle.sourceMode())
+		// BASELINE deliberately has no evidence. Let that empty UNAVAILABLE bundle reach the
+		// downstream insufficient-evidence response; no inference client is invoked for an empty package.
+		boolean emptyBaseline = bundle != null && snapshot.stage() == com.drift.backend.shipment.ControlledScenarioStage.BASELINE
+				&& "UNAVAILABLE".equals(bundle.sourceMode()) && bundle.evidence() != null && bundle.evidence().isEmpty();
+		if (bundle == null || (!bundle.enabled() && !emptyBaseline)
+				|| (!"SYNTHETIC_DEMONSTRATION".equals(bundle.sourceMode()) && !emptyBaseline)
 				|| !snapshot.simulationCutoffUtc().toString().equals(bundle.assessmentCutoffUtc())
 				|| bundle.evidence() == null || bundle.evidence().stream()
 					.anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {

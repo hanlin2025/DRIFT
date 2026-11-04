@@ -7,12 +7,16 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.drift.backend.maritimecontext.MaritimeEvidence;
+import com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture;
+import com.drift.backend.shipment.DelayComparison;
+import com.drift.backend.shipment.ShipmentRisk;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -83,6 +87,55 @@ class MaritimeAiScenarioTransientTest {
 	}
 
 	@Test
+	void explicitlyEnabledOfflineScenarioStubIsBoundedAndProducesValidatedLabeledResultsForBothOutcomes() {
+		var fixture = SyntheticDisruptionScenarioFixture.create("OFFLINE");
+		var change = fixture.stages().get(1);
+		var worsened = fixture.stages().get(2);
+		AtomicInteger calls = new AtomicInteger();
+		ControlledScenarioReplayAiClient stub = new ControlledScenarioReplayAiClient() {
+			@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
+				calls.incrementAndGet();
+				return super.interpret(input);
+			}
+		};
+		var service = service(new ObjectMapper(), stub, mock(MaritimeAiAssessmentRepository.class));
+
+		MaritimeAiAssessmentResponse baseline = service.generateScenarioTransient(
+				scenarioInput(fixture, "A", "BASELINE", List.of(), ShipmentRisk.Level.LOW,
+						DelayComparison.Outcome.NO_PREDICTED_IMPACT), true);
+		assertThat(baseline.state()).isEqualTo("ABSTAINED");
+		assertThat(baseline.validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
+		assertThat(calls).hasValue(0);
+
+		var changeEvidence = MaritimeAiAssessmentService.eligibleForInference(change.evidence());
+		var worsenedEvidence = MaritimeAiAssessmentService.eligibleForInference(worsened.evidence());
+		for (var sample : List.of(
+				scenarioInput(fixture, "A", "CHANGE", changeEvidence, ShipmentRisk.Level.MEDIUM, DelayComparison.Outcome.EXCEEDS_DEADLINE),
+				scenarioInput(fixture, "B", "CHANGE", changeEvidence, ShipmentRisk.Level.MEDIUM, DelayComparison.Outcome.NO_PREDICTED_IMPACT),
+				scenarioInput(fixture, "A", "WORSENED", worsenedEvidence, ShipmentRisk.Level.HIGH, DelayComparison.Outcome.EXCEEDS_DEADLINE),
+				scenarioInput(fixture, "B", "WORSENED", worsenedEvidence, ShipmentRisk.Level.HIGH, DelayComparison.Outcome.NO_PREDICTED_IMPACT))) {
+			MaritimeAiAssessmentResponse response = service.generateScenarioTransient(sample, true);
+			assertThat(response.assessmentId()).isNull();
+			assertThat(response.state()).withFailMessage("Offline scenario stub validation failed for %s/%s: %s",
+					sample.shipmentContext().scenario().stage(), sample.shipmentContext().scenario().shipmentKey(),
+					response.validationStatus()).isEqualTo("GENERATED");
+			assertThat(response.validationStatus()).isEqualTo("VALID");
+			assertThat(response.provider()).isEqualTo("controlled-replay-stub");
+			assertThat(response.model()).isEqualTo("offline");
+			assertThat(response.promptVersion()).isEqualTo("cdg290.offline-scenario-stub.v1");
+			assertThat(response.interpretation()).isNotNull();
+			assertThat(MaritimeAiResponseValidator.validate(response.interpretation(), sample)).isNull();
+			if (sample.shipmentContext().scenario().stage().equals("WORSENED")) {
+				assertThat(response.interpretation().claims()).extracting(MaritimeAiClaim::relationshipType)
+						.containsOnly("PORT_CONTEXT_REVIEW", "REGIONAL_WEATHER_CONTEXT");
+				assertThat(response.interpretation().claims()).extracting(MaritimeAiClaim::statement)
+						.noneMatch(statement -> statement.toLowerCase().contains("shipment") || statement.toLowerCase().contains("cargo"));
+			}
+		}
+		assertThat(calls).hasValue(4);
+	}
+
+	@Test
 	void scenarioFeatureGateAndInsufficientEvidenceAbstainBeforeProviderUse() {
 		AtomicBoolean called = new AtomicBoolean();
 		MaritimeAiClient provider = ignored -> {
@@ -122,6 +175,32 @@ class MaritimeAiScenarioTransientTest {
 		var context = new MaritimeAiShipmentContext("Synthetic port", null, null, null, null, scenario);
 		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", "2026-10-01T04:00:00Z", "VERIFIED",
 				context, List.of(evidence));
+	}
+
+	private static MaritimeAiEvidencePackage scenarioInput(SyntheticDisruptionScenarioFixture.Scenario fixture,
+			String key, String stage, List<MaritimeEvidence> evidence, ShipmentRisk.Level risk,
+			DelayComparison.Outcome outcome) {
+		Instant cutoff = Instant.parse(stage.equals("BASELINE") ? "2026-10-01T00:00:00Z"
+				: stage.equals("CHANGE") ? "2026-10-01T04:00:00Z" : "2026-10-01T08:00:00Z");
+		var riskContext = new MaritimeAiConnectionRiskContext(true, null, risk,
+				MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 108_000L),
+				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 14_400L, null),
+				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
+						OffsetDateTime.parse(stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z"), cutoff, null), List.of());
+		OffsetDateTime deadline = OffsetDateTime.parse(key.equals("A") ? "2026-10-01T12:00:00Z" : "2026-10-02T10:00:00Z");
+		OffsetDateTime estimate = OffsetDateTime.parse(stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z");
+		var business = new MaritimeAiBusinessContext(
+				new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED, deadline,
+						fixture.transshipmentPort(), true),
+				new MaritimeAiBusinessContext.Comparison(MaritimeAiBusinessContext.ComparisonState.AVAILABLE, outcome, null,
+						estimate, deadline, fixture.transshipmentPort()));
+		var scenario = new MaritimeAiShipmentContext.Scenario(key, "SYNTH-" + key, stage, cutoff.toString());
+		var context = new MaritimeAiShipmentContext(fixture.transshipmentPort(),
+				new MaritimeAiShipmentContext.Vessel("MOTHER", fixture.motherVessel(), null, "PLANNED_ARRIVAL", fixture.plannedMotherArrivalAt()),
+				new MaritimeAiShipmentContext.Vessel("FEEDER", fixture.feederVessel(), null, "PLANNED_DEPARTURE", fixture.plannedFeederDepartureAt()),
+				riskContext, business, scenario);
+		return new MaritimeAiEvidencePackage(fixture.contractVersion(), cutoff.toString(), "VERIFIED", context, evidence);
 	}
 
 	private static MaritimeEvidence syntheticEvidence() {
