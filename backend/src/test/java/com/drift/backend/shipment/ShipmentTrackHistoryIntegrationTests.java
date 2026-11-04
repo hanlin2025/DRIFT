@@ -220,6 +220,18 @@ class ShipmentTrackHistoryIntegrationTests {
 		String fixtureMmsi = "990285001";
 		Long shipmentId = create("HBL-CDG286-FIXTURE", fixtureMmsi, null);
 		loadFixture();
+		assertThat(jdbc.queryForObject("""
+				SELECT ais_utc_second FROM vessel_observations
+				WHERE mmsi = '990285002' AND ingested_at = ?
+				""", Integer.class, Timestamp.from(Instant.parse("2026-10-30T12:00:40Z")))).isEqualTo(30);
+		assertThat(jdbc.queryForObject("""
+				SELECT ais_utc_second FROM vessel_observations
+				WHERE mmsi = '990285001' AND ingested_at = ?
+				""", Integer.class, Timestamp.from(Instant.parse("2026-10-30T12:00:30Z")))).isZero();
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM vessel_observations
+				WHERE mmsi = '990285002' AND ingested_at = ? AND ais_utc_second IS NULL
+				""", Integer.class, Timestamp.from(Instant.parse("2026-10-30T12:01:10Z")))).isEqualTo(1);
 		jdbc.update("""
 				INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
 					position_valid, ingested_at, source)
@@ -367,10 +379,18 @@ class ShipmentTrackHistoryIntegrationTests {
 						row.get("true_heading_degrees").isBlank() ? null : Integer.valueOf(row.get("true_heading_degrees")),
 						row.get("navigational_status").isBlank() ? null : Integer.valueOf(row.get("navigational_status")),
 						row.get("position_valid").isBlank() ? null : Boolean.valueOf(row.get("position_valid")),
-						row.get("ais_utc_second").isBlank() ? null : Integer.valueOf(row.get("ais_utc_second")),
+						normalizeAisUtcSecond(row.get("ais_utc_second")),
 						Timestamp.from(Instant.parse(row.get("ingested_at_utc"))), row.get("source"));
 			}
 		}
+	}
+
+	private static Integer normalizeAisUtcSecond(String value) {
+		if (value.isBlank()) return null;
+		int second = Integer.parseInt(value);
+		if (second >= 0 && second <= 59) return second;
+		if (second >= 60 && second <= 63) return null;
+		throw new IllegalArgumentException("AIS UTC second must be 0-59 or an unavailable sentinel (60-63).");
 	}
 
 	private static BigDecimal decimal(String value) {
