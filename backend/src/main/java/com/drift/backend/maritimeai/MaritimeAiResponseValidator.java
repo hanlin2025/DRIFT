@@ -449,6 +449,13 @@ final class MaritimeAiResponseValidator {
 						allowedFactReferences, businessContext)) return "claims[" + index + "].statement";
 			}
 		}
+		if (output.uncertainties() != null) {
+			for (int index = 0; index < output.uncertainties().size(); index++) {
+				String uncertainty = output.uncertainties().get(index);
+				if (hasUnsupportedBusinessConstraint(uncertainty, null, allowedFactReferences, businessContext))
+					return "uncertainties[" + index + "]";
+			}
+		}
 		if (output.followUpConsiderations() != null) {
 			for (int index = 0; index < output.followUpConsiderations().size(); index++) {
 				if (hasUnsupportedBusinessConstraint(output.followUpConsiderations().get(index), null,

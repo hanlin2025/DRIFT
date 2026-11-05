@@ -40,6 +40,30 @@ class MaritimeAiScenarioValidationDiagnosticTest {
 		verifyNoInteractions(assessments);
 	}
 
+	@Test
+	void transientFailureLocatesUnsupportedBusinessConstraintInUncertaintyWithoutExposingText() throws Exception {
+		ObjectMapper json = new ObjectMapper();
+		String rejectedText = "The shipment is urgent.";
+		MaritimeAiInterpretation unsupported = new MaritimeAiInterpretation(
+				"The supplied maritime evidence does not establish an operational impact.",
+				List.of(), List.of(rejectedText), List.of(), false, null);
+		String body = json.writeValueAsString(unsupported);
+		var client = new ConfiguredMaritimeAiClient("test-json-provider", "test-model", "never-printed",
+				"https://unused.invalid", true, 20, 800, json,
+				(request, requestBody) -> new ConfiguredMaritimeAiClient.TransportResponse(200, body));
+		var assessments = mock(MaritimeAiAssessmentRepository.class);
+		var service = service(json, client, assessments);
+
+		MaritimeAiAssessmentResponse response = service.generateScenarioTransient(input(), true);
+
+		assertThat(response.state()).isEqualTo("FAILED");
+		assertThat(response.validationStatus()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(response.limitation()).isEqualTo(
+				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at uncertainties[0]). No interpretation is displayed.");
+		assertThat(response.limitation()).doesNotContain(rejectedText, "never-printed");
+		verifyNoInteractions(assessments);
+	}
+
 	private static MaritimeAiAssessmentService service(ObjectMapper json, MaritimeAiClient client,
 			MaritimeAiAssessmentRepository assessments) {
 		var beans = new DefaultListableBeanFactory();
