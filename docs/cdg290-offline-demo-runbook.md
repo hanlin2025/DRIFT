@@ -38,6 +38,8 @@ In terminal 2, use the runtime path printed above:
 
 Enter a local-only password when prompted. It is not stored in the runtime file or printed. The script creates one invitation and registers the presenter through the real backend API, then creates two ordinary anchor shipments through `POST /api/shipments`. It verifies the generated user and shipment IDs before reporting success. Fixed IDs 29000–29002 are used only in this fresh database so the backend can restrict scenario access to that presenter and the A/B bindings at startup.
 
+The ordinary shipment creation hooks record two `CREATED` history events and two initial risk transitions for these demo anchors. In the verified rehearsal both shipment versions remained `0`, with no shipment field-change events, risk alert deliveries, vessel observations, or persisted AI assessments. Scenario stage commands and transient stub assessments did not change shipment records. All of these fixture rows live only in this disposable database and disappear during cleanup.
+
 Expected output includes:
 
 ```text
