@@ -18,8 +18,8 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 
 /**
- * Migrates an owned disposable database through V30, stores representative current decisions,
- * then applies the available V31-to-V33 migrations. V32 may be supplied by CDG-252.
+ * Migrates an owned disposable database through the landed V32 migration, stores representative
+ * current decisions, then applies V33. Flyway out-of-order stays disabled.
  */
 class RecommendationDecisionHistoryBackfillTest {
 
@@ -39,7 +39,7 @@ class RecommendationDecisionHistoryBackfillTest {
 			Flyway.configure()
 					.dataSource(url, username, password)
 					.locations(migrationLocation)
-					.target("30")
+					.target("32")
 					.outOfOrder(false)
 					.load()
 					.migrate();
@@ -70,7 +70,7 @@ class RecommendationDecisionHistoryBackfillTest {
 						.filter(row -> row.actorId == seed.adaId)
 						.map(row -> row.actorName))
 						.containsOnly("Ada Lee");
-				assertThat(versions(connection)).containsSubsequence("30", "31", "33");
+				assertThat(versions(connection)).endsWith("31", "32", "33");
 				assertThat(monotonic(versions(connection))).isTrue();
 			}
 		} finally {

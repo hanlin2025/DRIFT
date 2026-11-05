@@ -1,6 +1,6 @@
 -- Append-only history of accepted recommendation decisions.
--- Main's V31 creates maritime snapshot observations. CDG-252's V32 widens
--- maritime AI validation status and must be applied before this V33 migration.
+-- Landed V31 creates maritime snapshot observations. Landed V32 widens
+-- maritime AI validation status. This V33 migration follows that sequence.
 -- V29 creates recommendation_decisions and V30 creates shipment importer constraints.
 -- Existing current rows are copied once. Their stored actor and decided_at are kept.
 -- The actor name is the user's name at migration time, because earlier decisions did not store one.

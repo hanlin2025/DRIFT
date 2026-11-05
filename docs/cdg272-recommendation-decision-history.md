@@ -7,36 +7,26 @@ time.
 
 ## Migration allocation and order
 
-The coordinated sequence on a fresh database is:
+The landed sequence, with Flyway out-of-order left disabled, is:
 
-1. **V31** — main's maritime snapshot observations.
-2. **V32** — CDG-252's AI validation-status widening (PR #202).
-3. **V33** — CDG-272's recommendation decision history (this PR, #203).
+1. **V31** — maritime snapshot observations, merged from #210.
+2. **V32** — maritime AI validation-status widening, merged from #202.
+3. **V33** — recommendation decision history, added by this PR, #203.
 
-Merge and deploy #202 before #203. With Flyway `outOfOrder=false`, a database
-that reaches V33 before V32 exists will record V33 and will not later apply the
-missing V32 as an ordinary upgrade. Do not ship #203 ahead of #202. The V33
-migration backfills current decision rows once; it does not rewrite the current
-decision table or reconstruct decisions already replaced there.
+V31 and V32 are already on main. This branch does not edit them. V33 is the
+next version and runs only after V32. The V33 migration backfills current
+decision rows once; it does not rewrite the current decision table or
+reconstruct decisions already replaced there.
 
 ## Disposable migration and backfill checks
 
 `RecommendationDecisionHistoryBackfillTest` requires
 `DRIFT_CDG53_ADMIN_JDBC_URL`, `DRIFT_CDG53_DB_USERNAME`, and
 `DRIFT_CDG53_DB_PASSWORD` for a disposable PostgreSQL server. It creates a
-uniquely named `drift_cdg53_backfill_*` database, migrates it to V30, seeds
-representative decisions, applies the remaining migrations with
-`outOfOrder=false`, verifies the backfill and ordered migration history, then
-drops only the database it created. The test rejects shared database targets.
-
-The fresh-schema integration assertions require V31 before V33 and tolerate
-V32 between them so the PR can be tested on its own branch and after #202 is
-included. For the full migration chain, use a disposable database and migration
-locations containing the V31, V32, and V33 scripts together; verify fresh
-migration and a V30-to-latest upgrade with out-of-order execution disabled.
-The backfill test accepts
-`-Ddrift.cdg272.backfill.migration-location=filesystem:/path/to/combined/migrations`
-to rehearse the same seed/backfill assertions with the combined migration set.
+uniquely named `drift_cdg53_backfill_*` database, migrates it through V32,
+seeds representative current decisions, applies V33 with `outOfOrder=false`,
+verifies the backfill and that versions end at 31, 32, 33, then drops only
+the database it created. The test rejects shared database targets.
 
 ## Existing databases
 

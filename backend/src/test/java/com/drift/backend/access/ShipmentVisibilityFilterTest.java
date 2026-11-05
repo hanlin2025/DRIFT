@@ -120,6 +120,51 @@ class ShipmentVisibilityFilterTest {
 	}
 
 	@Test
+	void refusesHiddenAiAssessmentAndReassessmentReadsUsingTheDetailRule() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+
+		for (String path : List.of("/api/shipments/8/maritime-ai-assessments",
+				"/api/shipments/8/maritime-reassessments")) {
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			filter.doFilter(request("GET", path), response, chain);
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).isEqualTo(
+					"{\"message\":\"" + ShipmentDetailForbiddenException.MESSAGE + "\"}");
+		}
+
+		verify(chain, never()).doFilter(any(), any());
+	}
+
+	@Test
+	void refusesHiddenAiAssessmentGenerationBeforeHandlerAndAllowsVisibleShipment() throws Exception {
+		signIn();
+		when(shipments.find(8L)).thenReturn(Optional.of(new ShipmentVisibility(8L, 10L, 30L)));
+		when(shipments.find(9L)).thenReturn(Optional.of(new ShipmentVisibility(9L, 10L, COMPANY_ID)));
+		doAnswer(invocation -> {
+			HttpServletResponse response = invocation.getArgument(1);
+			response.setStatus(HttpServletResponse.SC_ACCEPTED);
+			return null;
+		}).when(chain).doFilter(any(), any());
+		MockHttpServletResponse hidden = new MockHttpServletResponse();
+
+		filter.doFilter(request("POST", "/api/shipments/8/maritime-ai-assessments"), hidden, chain);
+
+		verify(chain, never()).doFilter(any(), any());
+		assertThat(hidden.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+		assertThat(hidden.getHeader("Cache-Control")).isEqualTo("no-store");
+		assertThat(hidden.getContentAsString()).isEqualTo(
+				"{\"message\":\"" + ShipmentDetailForbiddenException.MESSAGE + "\"}");
+
+		MockHttpServletResponse visible = new MockHttpServletResponse();
+		filter.doFilter(request("POST", "/api/shipments/9/maritime-ai-assessments"), visible, chain);
+
+		verify(chain).doFilter(any(), any());
+		assertThat(visible.getStatus()).isEqualTo(HttpServletResponse.SC_ACCEPTED);
+	}
+
+	@Test
 	void passesAMissingCdg201EvidenceShipmentToTheNotFoundHandler() throws Exception {
 		signIn();
 		when(shipments.find(8L)).thenReturn(Optional.empty());
