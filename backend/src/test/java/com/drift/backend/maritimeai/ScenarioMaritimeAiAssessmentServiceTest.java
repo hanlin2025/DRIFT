@@ -103,6 +103,63 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 	}
 
 	@Test
+	void rejectsNonEmptySyntheticEvidenceAtBaseline() {
+		var sessions = mock(ControlledScenarioSessionService.class);
+		var ai = mock(MaritimeAiAssessmentService.class);
+		ControlledScenarioSnapshot baseline = baselineSnapshot();
+		MaritimeContextResponse evidenceBundle = new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true,
+				"SYNTHETIC_DEMONSTRATION", CUTOFF.toString(), "VERIFIED", "Baseline must not carry evidence.",
+				List.of(syntheticEvidence()), List.of(), null, null);
+		when(sessions.get(OWNER, SESSION_ID)).thenReturn(session(withBundle(baseline, evidenceBundle)));
+
+		assertThatThrownBy(() -> service(sessions, ai, true).generate(OWNER, SESSION_ID, 200L,
+				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
+				.isInstanceOf(ControlledScenarioUnavailableException.class).extracting("code")
+				.isEqualTo("SCENARIO_AI_SYNTHETIC_EVIDENCE_REQUIRED");
+		verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+	}
+
+	@Test
+	void rejectsDisabledUnavailableBundleAtBaseline() {
+		var sessions = mock(ControlledScenarioSessionService.class);
+		var ai = mock(MaritimeAiAssessmentService.class);
+		ControlledScenarioSnapshot baseline = baselineSnapshot();
+		MaritimeContextResponse disabledBundle = new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", false,
+				"UNAVAILABLE", CUTOFF.toString(), "UNAVAILABLE", "Maritime context feature is disabled.",
+				List.of(), List.of(), null, null);
+		when(sessions.get(OWNER, SESSION_ID)).thenReturn(session(withBundle(baseline, disabledBundle)));
+
+		assertThatThrownBy(() -> service(sessions, ai, true).generate(OWNER, SESSION_ID, 200L,
+				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
+				.isInstanceOf(ControlledScenarioUnavailableException.class).extracting("code")
+				.isEqualTo("SCENARIO_AI_SYNTHETIC_EVIDENCE_REQUIRED");
+		verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+	}
+
+	@Test
+	void rejectsBaselineBundleWithMismatchedCutoff() {
+		var sessions = mock(ControlledScenarioSessionService.class);
+		var ai = mock(MaritimeAiAssessmentService.class);
+		ControlledScenarioSnapshot baseline = baselineSnapshot();
+		MaritimeContextResponse wrongCutoff = new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true,
+				"UNAVAILABLE", "2026-10-01T04:01:00Z", "UNAVAILABLE", "Cutoff differs from the scenario.",
+				List.of(), List.of(), null, null);
+		when(sessions.get(OWNER, SESSION_ID)).thenReturn(session(withBundle(baseline, wrongCutoff)));
+
+		assertThatThrownBy(() -> service(sessions, ai, true).generate(OWNER, SESSION_ID, 200L,
+				request("B", 2, SNAPSHOT_ID, CUTOFF.toString())))
+				.isInstanceOf(ControlledScenarioUnavailableException.class).extracting("code")
+				.isEqualTo("SCENARIO_AI_SYNTHETIC_EVIDENCE_REQUIRED");
+		verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
+	}
+
+	private static ControlledScenarioSnapshot withBundle(ControlledScenarioSnapshot snapshot, MaritimeContextResponse bundle) {
+		return new ControlledScenarioSnapshot(snapshot.snapshotId(), snapshot.epochId(), snapshot.revision(), snapshot.stage(),
+				snapshot.stageOrder(), snapshot.stageCount(), snapshot.fixtureStageId(), snapshot.simulationCutoffUtc(),
+				snapshot.mapPlaybackCutoffUtc(), snapshot.shipments(), snapshot.aisObservations(), bundle);
+	}
+
+	@Test
 	void rejectsAStaleStageDuringInferenceBeforeReturningTheResult() {
 		var sessions = mock(ControlledScenarioSessionService.class);
 		var ai = mock(MaritimeAiAssessmentService.class);
