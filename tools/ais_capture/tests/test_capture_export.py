@@ -112,7 +112,7 @@ class CaptureExportTests(unittest.TestCase):
             with self.assertRaisesRegex(capture.CaptureError, "offline fixture"):
                 capture.query_rows("563123456", datetime.now(timezone.utc), datetime.now(timezone.utc))
 
-    def test_provider_key_is_not_passed_to_postgres_client(self):
+    def test_psql_reads_the_script_from_stdin_and_provider_key_is_not_passed(self):
         start = datetime(2026, 11, 2, tzinfo=timezone.utc)
         end = datetime(2026, 11, 2, 0, 30, tzinfo=timezone.utc)
         completed = subprocess.CompletedProcess([], 0, ",".join(capture.CSV_FIELDS) + "\n", "")
@@ -120,8 +120,31 @@ class CaptureExportTests(unittest.TestCase):
             with patch.object(capture.shutil, "which", return_value="/usr/bin/psql"):
                 with patch.object(capture.subprocess, "run", return_value=completed) as run:
                     capture.query_rows("563123456", start, end)
+        command = run.call_args.args[0]
+        self.assertEqual(command[-2:], ["-f", "-"])
+        self.assertNotIn("-c", command)
+        self.assertEqual(run.call_args.kwargs["input"], capture.COPY_SQL)
         child_environment = run.call_args.kwargs["env"]
         self.assertNotIn("AISSTREAM_API_KEY", child_environment)
+
+    def test_invalid_mmsi_returns_a_safe_failure_before_querying(self):
+        today = datetime.now(timezone.utc).date().isoformat()
+        with tempfile.TemporaryDirectory() as directory:
+            args = [
+                "--role", "mother", "--vessel-type", "container", "--vessel-name", "MV Test Container",
+                "--imo", "1234567", "--mmsi", "063123456", "--identity-reference", "registry ref",
+                "--identity-checked-at", "2026-11-01T00:00:00Z", "--from", "2026-11-02T00:00:00Z",
+                "--to", "2026-11-02T00:30:00Z", "--terms-reference", "terms ref",
+                "--terms-reviewed-at", "2026-11-01T00:00:00Z", "--replay-permission", "UNKNOWN",
+                "--retain-until", today, "--output", str(Path(directory) / "invalid.csv"),
+            ]
+            error = io.StringIO()
+            with patch.object(capture, "query_rows") as query_rows:
+                with contextlib.redirect_stderr(error):
+                    status = capture.main(args)
+        self.assertEqual(status, 2)
+        self.assertIn("MMSI must contain nine digits", error.getvalue())
+        query_rows.assert_not_called()
 
     def test_rehearsal_fixture_is_explicitly_fictional_and_seeded(self):
         fixture = REPO / "fixtures/cdg285/fictional_ais_track.csv"

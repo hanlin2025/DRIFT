@@ -265,7 +265,9 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 						"Feeder", arrival.plusHours(connectionHours), null), importer);
 		Shipment shipment = shipmentRepository.findAll().stream()
 				.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
-		return ShipmentResponse.from(shipment, null);
+		return shipments.list(principal, ShipmentFilterCriteria.of(reference, null, null, null)).stream()
+				.filter(candidate -> candidate.id().equals(shipment.getId()))
+				.findFirst().orElseThrow();
 	}
 
 	private ShipmentResponse updateWindow(ShipmentResponse current, int connectionHours) {

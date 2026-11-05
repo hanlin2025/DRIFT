@@ -44,6 +44,9 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern UNSUPPORTED_ALTERNATIVE_PLAN_FOLLOW_UP = Pattern.compile("(?i)\\b(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b[^.!?;]{0,80}\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b|\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b[^.!?;]{0,80}\\b(?:should|could|may|need(?:s)? to|can)\\s+(?:be\\s+)?(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b");
 	private static final Pattern NO_WINDOW_ASSERTION = Pattern.compile("(?i)\\b(?:(?:no|zero)\\s+(?:(?:positive|remaining|available)\\s+)?(?:connection\\s+)?(?:windows?|buffers?)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:(?:is|has(?:\\s+been)?)\\s+)?(?:exhausted|unavailable|zero|ended|expired|gone|depleted|consumed|run\\s+out|not\\s+available|used\\s+up)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:has\\s+)?no\\s+positive\\s+buffer)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
+	/* Uncertainty-only exception for a fully scoped, explicitly negative evidence statement.
+	 * It does not authorize urgency assertions or claims that urgency affects a deadline/risk. */
+	private static final Pattern SCOPED_URGENCY_UNCERTAINTY = Pattern.compile("(?i)^(?:the\\s+)?(?:supplied\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|confirm|determine|show|indicate|support)\\s+whether\\s+(?:this|the\\s+current)\\s+shipment\\s+is\\s+(?:urgent|time[- ]sensitive)\\.?$");
 	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
@@ -417,9 +420,13 @@ final class MaritimeAiResponseValidator {
 		if (output.claims() != null && output.claims().stream().filter(java.util.Objects::nonNull)
 				.anyMatch(claim -> hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(), allowedFactReferences, businessContext))) return true;
 		if (output.uncertainties() != null && output.uncertainties().stream()
-				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
+				.anyMatch(text -> !isScopedUrgencyUncertainty(text)
+						&& hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
 		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
 				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext));
+	}
+	private static boolean isScopedUrgencyUncertainty(String text) {
+		return text != null && SCOPED_URGENCY_UNCERTAINTY.matcher(text.strip()).matches();
 	}
 	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
 			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {

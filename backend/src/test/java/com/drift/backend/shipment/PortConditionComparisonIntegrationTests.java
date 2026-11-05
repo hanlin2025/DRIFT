@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -374,7 +375,7 @@ class PortConditionComparisonIntegrationTests {
 	private void observe(String mmsi, String name, BigDecimal latitude, BigDecimal longitude, BigDecimal speed,
 			int status, boolean valid, Instant ingestedAt, AisPositionSource source) {
 		latestPositions.record(new AisPosition(mmsi, name, latitude, longitude, speed, null, null, status, valid, null,
-				ingestedAt, source));
+			ingestedAt.truncatedTo(ChronoUnit.MICROS), source));
 	}
 
 	private int storedComparisonColumns() {
