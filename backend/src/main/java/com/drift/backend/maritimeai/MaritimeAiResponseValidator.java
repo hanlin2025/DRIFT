@@ -452,7 +452,7 @@ final class MaritimeAiResponseValidator {
 		if (output.uncertainties() != null) {
 			for (int index = 0; index < output.uncertainties().size(); index++) {
 				String uncertainty = output.uncertainties().get(index);
-				if (hasUnsupportedBusinessConstraint(uncertainty, null, allowedFactReferences, businessContext))
+				if (hasUnsupportedBusinessConstraintInUncertainty(uncertainty, allowedFactReferences, businessContext))
 					return "uncertainties[" + index + "]";
 			}
 		}
@@ -464,7 +464,13 @@ final class MaritimeAiResponseValidator {
 		}
 		return null;
 	}
-
+	private static boolean hasUnsupportedBusinessConstraintInUncertainty(String uncertainty,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (uncertainty == null) return false;
+		MaritimeAiInterpretation isolated = new MaritimeAiInterpretation("The supplied context does not establish an operational impact.",
+				List.of(), List.of(uncertainty), List.of(), false, null);
+		return claimsUnsupportedBusinessConstraint(isolated, allowedFactReferences, businessContext);
+	}
 	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
 			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
 		if (text == null) return false;
