@@ -117,12 +117,23 @@ class ConfiguredMaritimeAiClientTest {
 
 		var result = client.interpret(input);
 
-		assertThat(result.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.2")
+				.isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
 		assertThat(body.get()).contains("fictional controlled scenario snapshot")
 				.contains("fixture-defined scenario deadline/comparison facts")
 				.contains("not current operational state or an importer-confirmed live constraint")
+				.contains("When deterministic comparison state is AVAILABLE and eligible cited synthetic maritime evidence supports a shipment-specific review, include a DELAY_COMPARISON_REVIEW claim, state the exact backend comparison outcome")
+				.contains("If the evidence does not support a shipment-specific review, omit that claim; do not create it solely because backend comparison facts are available")
+				.contains("Make a RISK_BUFFER_REVIEW claim only when its cited eligible synthetic observation supports why human review is warranted")
+				.contains("If eligible evidence cannot support a claim, omit it; if no supported interpretation remains or evidence is otherwise insufficient, abstain")
+				.contains("For a supported risk review, ask the carrier or operations team to verify the latest arrival estimate")
+				.contains("for a supported comparison review, ask the operations team to confirm whether the scenario-defined deadline and port still apply")
+				.contains("Preserve the distinction between the planned connection window, AIS-derived remaining window")
+				.contains("Never describe an AVAILABLE selected window as having no remaining window or no positive buffer")
+				.contains("UNAVAILABLE must remain unavailable, and UNKNOWN must remain unknown")
 				.contains("\\\"shipmentKey\\\":\\\"B\\\"")
-				.contains("\\\"stage\\\":\\\"CHANGE\\\"");
+				.contains("\\\"stage\\\":\\\"CHANGE\\\"")
+				.doesNotContain("When the deterministic comparison is AVAILABLE, state its exact backend outcome");
 	}
 
 	@Test void readsHistoricalClaimsWithoutTheOptionalRiskReviewField() throws Exception {
