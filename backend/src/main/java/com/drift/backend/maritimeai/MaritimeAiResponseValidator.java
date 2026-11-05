@@ -133,6 +133,7 @@ final class MaritimeAiResponseValidator {
 				|| input.shipmentContext().businessContext().comparison() == null
 				|| input.shipmentContext().businessContext().comparison().state()
 						!= MaritimeAiBusinessContext.ComparisonState.AVAILABLE) return null;
+		if (!output.evidenceSufficient() && output.claims().isEmpty()) return null;
 
 		List<MaritimeAiClaim> comparisonClaims = output.claims().stream().filter(java.util.Objects::nonNull)
 				.filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).toList();
@@ -153,7 +154,36 @@ final class MaritimeAiResponseValidator {
 					.anyMatch(reference -> reference.startsWith("business:") || reference.startsWith("comparison:")))
 				return "UNSUPPORTED_DELAY_COMPARISON";
 		}
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+				.noneMatch(MaritimeAiResponseValidator::verifiesLatestScenarioArrivalEstimate))
+			return "MISSING_SCENARIO_ETA_VERIFICATION_FOLLOW_UP";
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+				.noneMatch(MaritimeAiResponseValidator::confirmsScenarioDeadlineApplicability))
+			return "MISSING_SCENARIO_DEADLINE_APPLICABILITY_FOLLOW_UP";
 		return null;
+	}
+
+	private static boolean verifiesLatestScenarioArrivalEstimate(String text) {
+		if (text == null) return false;
+		String lower = text.toLowerCase(Locale.ROOT);
+		boolean latestEstimate = containsAny(lower, "latest eta", "most recent eta", "latest arrival estimate",
+				"most recent arrival estimate", "eta remains current", "arrival estimate remains current");
+		return isScenarioHumanVerification(lower) && latestEstimate
+				&& containsAny(lower, "verify", "check", "confirm", "ask");
+	}
+
+	private static boolean confirmsScenarioDeadlineApplicability(String text) {
+		if (text == null) return false;
+		String lower = text.toLowerCase(Locale.ROOT);
+		return isScenarioHumanVerification(lower)
+				&& containsAny(lower, "confirm", "verify", "check", "ask")
+				&& containsAny(lower, "deadline")
+				&& containsAny(lower, "applicable", "applicability", "applies", "apply")
+				&& containsAny(lower, "current shipment port", "current transshipment port", "current port");
+	}
+
+	private static boolean isScenarioHumanVerification(String lower) {
+		return HUMAN_REVIEW_PARTICIPANT.matcher(lower).find() || containsWord(lower, "carrier");
 	}
 
 	private static boolean mentionsBusinessConstraint(String text) {

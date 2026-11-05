@@ -62,7 +62,9 @@ class ScenarioQualityStubClientTest {
 				revision.vesselRole(), revision.observationType(), revision.associationScope(), canonicalReferences,
 				"DELAY_COMPARISON_REVIEW");
 		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review the grounded interpretation.",
-				List.of(businessClaim), List.of(), List.of(), true, null), input)).isNull();
+				List.of(businessClaim), List.of(), List.of(
+						"Ask the carrier operations team to verify whether the latest arrival estimate remains current at the scenario cutoff.",
+						"Ask the operations team to confirm whether the transshipment-arrival deadline remains applicable to the current shipment port."), true, null), input)).isNull();
 
 		List<String> missingReferences = canonicalReferences.stream()
 				.filter(reference -> !MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY.equals(reference)).toList();
