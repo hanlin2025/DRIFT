@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -568,6 +569,64 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(MaritimeAiResponseValidator.validate(unnamedReviewerFollowUp, input)).isEqualTo("MISSING_HUMAN_RISK_FOLLOW_UP");
 	}
 
+	@Test void scenarioDeadlineVerificationMatchesTheStrictBusinessConstraintContract() {
+		var input = businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		MaritimeAiInterpretation valid = businessAwareInterpretation(input);
+		assertThat(MaritimeAiResponseValidator.validate(valid, input)).isNull();
+
+		var promptSuggestedFollowUp = withFollowUps(valid, List.of(
+				"Ask the operations team to confirm whether the scenario-defined deadline and port still apply."));
+		assertThat(MaritimeAiResponseValidator.validate(promptSuggestedFollowUp, input))
+				.as("the previous prompt's compound follow-up is split at 'and' before the safe-verification check")
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.safeValidationDiagnostic("UNSUPPORTED_BUSINESS_CONSTRAINT",
+				promptSuggestedFollowUp, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT at followUpConsiderations[0]");
+
+		var correctedFollowUp = withFollowUps(valid, List.of(
+				"Ask the operations team to confirm whether the scenario-defined transshipment-arrival deadline remains applicable to the current shipment port."));
+		assertThat(MaritimeAiResponseValidator.validate(correctedFollowUp, input)).isNull();
+	}
+
+	@Test void worsenedShipmentAAndBKeepDistinctDeadlineOutcomesAndUsefulHumanVerification() {
+		var worsenedA = asScenario(businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE), "A");
+		var worsenedB = asScenario(businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.NO_PREDICTED_IMPACT, null,
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE), "B");
+		List<String> usefulFollowUps = List.of(
+				"Ask the carrier operations team to verify whether the latest arrival estimate remains current at the scenario cutoff.",
+				"Ask the operations team to confirm whether the scenario-defined transshipment-arrival deadline remains applicable to the current shipment port.");
+
+		assertScenarioUsefulness(worsenedA, "A", "EXCEEDS_DEADLINE", "predicted arrival exceeds", usefulFollowUps);
+		assertScenarioUsefulness(worsenedB, "B", "NO_PREDICTED_IMPACT", "no predicted impact", usefulFollowUps);
+		assertThat(worsenedA.shipmentContext().connectionRisk().riskLevel()).isEqualTo(com.drift.backend.shipment.ShipmentRisk.Level.HIGH);
+		assertThat(worsenedB.shipmentContext().connectionRisk().riskLevel()).isEqualTo(com.drift.backend.shipment.ShipmentRisk.Level.HIGH);
+	}
+
+	@Test void authorizedDeadlineFactsDoNotAuthorizeUrgencyInAnyInterpretationField() {
+		var input = businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		MaritimeAiInterpretation valid = businessAwareInterpretation(input);
+		assertThat(MaritimeAiResponseValidator.validate(valid, input)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(withSummary(valid, "The shipment is urgent."), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(withDelayClaimStatement(valid,
+				valid.claims().get(1).statement() + " The shipment is urgent."), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(withUncertainties(valid, List.of("The shipment is urgent.")), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+		assertThat(MaritimeAiResponseValidator.validate(withFollowUps(valid, List.of("The shipment is urgent.")), input))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+	}
+
 	@Test void validatesOnlyTheBackendComparisonOutcomeAndKeepsUnavailableReasonsDistinct() {
 		var exceeds = businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
 				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
@@ -959,6 +1018,52 @@ class MaritimeAiResponseValidatorTest {
 	private static MaritimeAiInterpretation withSummary(MaritimeAiInterpretation interpretation, String summary) {
 		return new MaritimeAiInterpretation(summary, interpretation.claims(), interpretation.uncertainties(),
 				interpretation.followUpConsiderations(), interpretation.evidenceSufficient(), interpretation.formalRecommendationCode());
+	}
+	private static MaritimeAiInterpretation withFollowUps(MaritimeAiInterpretation interpretation, List<String> followUps) {
+		return new MaritimeAiInterpretation(interpretation.summary(), interpretation.claims(), interpretation.uncertainties(),
+				followUps, interpretation.evidenceSufficient(), interpretation.formalRecommendationCode());
+	}
+	private static MaritimeAiInterpretation withUncertainties(MaritimeAiInterpretation interpretation, List<String> uncertainties) {
+		return new MaritimeAiInterpretation(interpretation.summary(), interpretation.claims(), uncertainties,
+				interpretation.followUpConsiderations(), interpretation.evidenceSufficient(), interpretation.formalRecommendationCode());
+	}
+	private static MaritimeAiEvidencePackage asScenario(MaritimeAiEvidencePackage input, String shipmentKey) {
+		MaritimeAiShipmentContext existing = input.shipmentContext();
+		var scenario = new MaritimeAiShipmentContext.Scenario(shipmentKey, "SYNTH-" + shipmentKey, "WORSENED",
+				input.assessmentCutoffUtc());
+		var context = new MaritimeAiShipmentContext(existing.transshipmentPort(), existing.motherVessel(), existing.feederVessel(),
+				existing.connectionRisk(), existing.businessContext(), scenario);
+		return new MaritimeAiEvidencePackage(input.bundleVersion(), input.assessmentCutoffUtc(), input.shipmentAssociationConfidence(),
+				context, input.evidence());
+	}
+	private static void assertScenarioUsefulness(MaritimeAiEvidencePackage input, String expectedKey,
+			String expectedOutcome, String expectedConsequence, List<String> followUps) {
+		assertThat(input.shipmentContext().scenario().shipmentKey()).isEqualTo(expectedKey);
+		assertThat(input.shipmentContext().scenario().stage()).isEqualTo("WORSENED");
+		assertThat(input.shipmentContext().businessContext().comparison().outcome().name()).isEqualTo(expectedOutcome);
+		MaritimeAiInterpretation output = withFollowUps(businessAwareInterpretation(input), followUps);
+		assertThat(MaritimeAiResponseValidator.validate(output, input)).isNull();
+		MaritimeAiClaim businessClaim = output.claims().stream()
+				.filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).findFirst().orElseThrow();
+		assertThat(businessClaim.statement().toLowerCase(Locale.ROOT)).contains(expectedConsequence);
+		assertThat(businessClaim.factReferences()).contains("evidence:mother-arrival",
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY,
+				MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT);
+		String statement = businessClaim.statement().toLowerCase(Locale.ROOT);
+		assertThat(statement).doesNotContain("actual missed connection", "confirmed delay", "cargo", "financial loss", "caused");
+		List<String> normalizedFollowUps = followUps.stream().map(value -> value.toLowerCase(Locale.ROOT)).toList();
+		boolean consequencePoint = statement.contains(expectedConsequence);
+		boolean verificationPoint = normalizedFollowUps.stream().anyMatch(value -> value.contains("carrier operations team")
+				&& value.contains("verify") && value.contains("arrival estimate"))
+				&& normalizedFollowUps.stream().anyMatch(value -> value.contains("operations team") && value.contains("confirm")
+						&& value.contains("transshipment-arrival deadline") && value.contains("current shipment port"));
+		assertThat((consequencePoint ? 1 : 0) + (verificationPoint ? 1 : 0))
+				.as("scenario shipment %s usefulness out of two", expectedKey).isEqualTo(2);
 	}
 	private static String validateWith(MaritimeEvidence evidence, String evidenceId) {
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null, List.of(evidence));

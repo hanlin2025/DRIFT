@@ -428,6 +428,36 @@ final class MaritimeAiResponseValidator {
 	private static boolean isScopedUrgencyUncertainty(String text) {
 		return text != null && SCOPED_URGENCY_UNCERTAINTY.matcher(text.strip()).matches();
 	}
+	/** Returns only a field path for transient scenario diagnostics; never includes generated text or fact values. */
+	static String safeValidationDiagnostic(String validationCode, MaritimeAiInterpretation output,
+			MaritimeAiEvidencePackage input) {
+		if (validationCode == null || !"UNSUPPORTED_BUSINESS_CONSTRAINT".equals(validationCode) || input == null)
+			return validationCode;
+		String location = unsupportedBusinessConstraintLocation(output,
+				MaritimeAiCanonicalFactReferences.allowed(input),
+				input.shipmentContext() == null ? null : input.shipmentContext().businessContext());
+		return location == null ? validationCode : validationCode + " at " + location;
+	}
+	private static String unsupportedBusinessConstraintLocation(MaritimeAiInterpretation output,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (output == null) return null;
+		if (hasUnsupportedBusinessConstraint(output.summary(), null, allowedFactReferences, businessContext)) return "summary";
+		if (output.claims() != null) {
+			for (int index = 0; index < output.claims().size(); index++) {
+				MaritimeAiClaim claim = output.claims().get(index);
+				if (claim != null && hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(),
+						allowedFactReferences, businessContext)) return "claims[" + index + "].statement";
+			}
+		}
+		if (output.followUpConsiderations() != null) {
+			for (int index = 0; index < output.followUpConsiderations().size(); index++) {
+				if (hasUnsupportedBusinessConstraint(output.followUpConsiderations().get(index), null,
+						allowedFactReferences, businessContext)) return "followUpConsiderations[" + index + "]";
+			}
+		}
+		return null;
+	}
+
 	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
 			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
 		if (text == null) return false;
