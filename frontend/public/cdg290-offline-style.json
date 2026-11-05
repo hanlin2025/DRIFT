@@ -1,0 +1,30 @@
+{
+  "version": 8,
+  "name": "DRIFT offline scenario coordinate map",
+  "sources": {
+    "local-grid": {
+      "type": "geojson",
+      "data": "/cdg290-offline-grid.geojson",
+      "attribution": "DRIFT offline schematic grid; not for navigation"
+    }
+  },
+  "layers": [
+    {
+      "id": "offline-ocean",
+      "type": "background",
+      "paint": {
+        "background-color": "#e7f0ef"
+      }
+    },
+    {
+      "id": "offline-coordinate-grid",
+      "type": "line",
+      "source": "local-grid",
+      "paint": {
+        "line-color": "#8aa5a6",
+        "line-width": 0.7,
+        "line-opacity": 0.42
+      }
+    }
+  ]
+}

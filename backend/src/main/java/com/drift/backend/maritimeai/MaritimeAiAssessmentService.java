@@ -113,9 +113,10 @@ public class MaritimeAiAssessmentService {
 				"SCENARIO_AI_DISABLED", null, "Scenario AI interpretation is disabled for this environment.");
 		if (!enabled) return scenarioTransient(input, MaritimeAiGenerationState.ABSTAINED,
 				"FEATURE_DISABLED", null, "AI generation is disabled for this environment.");
-		if (!(client instanceof ConfiguredMaritimeAiClient)) return scenarioTransient(input,
+		boolean explicitOfflineScenarioStub = client instanceof ControlledScenarioReplayAiClient;
+		if (!(client instanceof ConfiguredMaritimeAiClient) && !explicitOfflineScenarioStub) return scenarioTransient(input,
 				MaritimeAiGenerationState.ABSTAINED, "REAL_PROVIDER_REQUIRED", null,
-				"A configured real inference provider is required for scenario interpretation.");
+				"A configured inference provider or the explicitly enabled controlled scenario stub is required.");
 		if (input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
 			return scenarioTransient(input, MaritimeAiGenerationState.ABSTAINED,
 					"SYNTHETIC_EVIDENCE_REQUIRED", null, "Only synthetic scenario evidence can be sent for this interpretation.");

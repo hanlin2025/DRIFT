@@ -338,11 +338,17 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     mapReadyRef.current = false;
     void import('maplibre-gl').then(maplibre => {
       if (disposed) return;
+      const scenarioPosition = fixesRef.current[0];
+      const scenarioCenter: [number, number] = scenarioPosition
+        ? [scenarioPosition.position.longitude, scenarioPosition.position.latitude]
+        : [103.82, 1.26];
       const globe = new maplibre.Map({
         container: node,
-        style: 'https://tiles.openfreemap.org/styles/liberty',
-        center: stopsRef.current.find(stop => stop.at)?.at ?? [103.82, 1.26],
-        zoom: 1.3,
+        style: import.meta.env.VITE_MAP_STYLE_URL?.trim() || 'https://tiles.openfreemap.org/styles/liberty',
+        center: displayMode === 'scenario'
+          ? scenarioCenter
+          : stopsRef.current.find(stop => stop.at)?.at ?? [103.82, 1.26],
+        zoom: displayMode === 'scenario' ? 5 : 1.3,
         attributionControl: { compact: true },
         cooperativeGestures: true,
       });
