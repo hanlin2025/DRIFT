@@ -35,7 +35,7 @@ class MaritimeAiScenarioValidationDiagnosticTest {
 		assertThat(response.validationStatus()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		assertThat(response.interpretation()).isNull();
 		assertThat(response.limitation()).isEqualTo(
-				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at summary). No interpretation is displayed.");
+				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at summary (URGENCY_ASSERTION_NOT_AUTHORIZED, clause 1)). No interpretation is displayed.");
 		assertThat(response.limitation()).doesNotContain("urgent", "weather", "weather-1", "never-printed");
 		verifyNoInteractions(assessments);
 	}
@@ -59,7 +59,7 @@ class MaritimeAiScenarioValidationDiagnosticTest {
 		assertThat(response.state()).isEqualTo("FAILED");
 		assertThat(response.validationStatus()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		assertThat(response.limitation()).isEqualTo(
-				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at uncertainties[0]). No interpretation is displayed.");
+				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at uncertainties[0] (URGENCY_ASSERTION_NOT_AUTHORIZED, clause 1)). No interpretation is displayed.");
 		assertThat(response.limitation()).doesNotContain(rejectedText, "never-printed");
 		verifyNoInteractions(assessments);
 	}
@@ -78,7 +78,7 @@ class MaritimeAiScenarioValidationDiagnosticTest {
 		assertThat(response.state()).isEqualTo("FAILED");
 		assertThat(response.validationStatus()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		assertThat(response.limitation()).isEqualTo(
-				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at claims[0].statement). No interpretation is displayed.");
+				"The provider response failed validation (UNSUPPORTED_BUSINESS_CONSTRAINT at claims[0].statement (URGENCY_ASSERTION_NOT_AUTHORIZED, clause 1)). No interpretation is displayed.");
 		assertThat(response.limitation()).doesNotContain(rejectedText);
 		verifyNoInteractions(assessments);
 	}

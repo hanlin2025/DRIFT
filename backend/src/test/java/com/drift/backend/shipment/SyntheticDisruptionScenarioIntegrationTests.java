@@ -364,7 +364,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				assertThat(result.getResponse().getStatus()).isEqualTo(200);
 				JsonNode response = json.readTree(result.getResponse().getContentAsString());
 				assertScenarioEnvelope(response, sessionId, current, key, shipmentIds.get(shipmentIndex));
-				assertScenarioPositiveQuality(response, expected, shipmentIndex, key);
+				assertScenarioPositiveQuality(response, current, expected, shipmentIndex, key);
 				assertThat(response.at("/assessment/assessmentId").isMissingNode()
 						|| response.at("/assessment/assessmentId").isNull()).isTrue();
 				expectedStubCalls++;
@@ -891,19 +891,26 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.isEqualTo(session.at("/snapshot/simulationCutoffUtc").asText());
 	}
 
-	private void assertScenarioPositiveQuality(JsonNode response, ExpectedStage expected, int shipmentIndex, String key) {
+	private void assertScenarioPositiveQuality(JsonNode response, JsonNode session, ExpectedStage expected,
+			int shipmentIndex, String key) {
 		JsonNode assessment = response.path("assessment");
 		assertThat(assessment.path("state").asText()).isEqualTo("GENERATED");
 		assertThat(assessment.path("validationStatus").asText()).isEqualTo("VALID");
 		assertThat(assessment.path("provider").asText()).isEqualTo("offline-scenario-quality-stub");
 		assertThat(assessment.path("model").asText()).isEqualTo("deterministic-fixture");
-		assertThat(assessment.path("promptVersion").asText()).isEqualTo("cdg290.scenario-grounded-v1.3");
+		assertThat(assessment.path("promptVersion").asText()).isEqualTo("cdg290.scenario-grounded-v1.5");
 		JsonNode claims = assessment.at("/interpretation/claims");
 		JsonNode riskClaim = claimWithRelationship(claims, "RISK_BUFFER_REVIEW");
 		JsonNode businessClaim = claimWithRelationship(claims, "DELAY_COMPARISON_REVIEW");
 		assertThat(riskClaim).isNotNull();
 		assertThat(businessClaim).isNotNull();
-		assertThat(riskClaim.path("statement").asText().toLowerCase()).contains("synthetic", "revision", expected.riskLevel().toLowerCase(), "ais", "remaining", "available");
+		long businessClaimCount = 0;
+		for (JsonNode claim : claims) {
+			if ("DELAY_COMPARISON_REVIEW".equals(claim.path("relationshipType").asText())) businessClaimCount++;
+		}
+		assertThat(businessClaimCount).isEqualTo(1);
+		assertThat(riskClaim.path("statement").asText().toLowerCase()).contains("synthetic", "revision", "warrants human review",
+				expected.riskLevel().toLowerCase(), "ais", "remaining", "available");
 		JsonNode riskReview = riskClaim.path("riskReview");
 		assertThat(riskReview.path("severity").asText()).isEqualTo(expected.riskLevel());
 		assertThat(riskReview.path("selectedWindowBasis").asText()).isEqualTo("AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE");
@@ -917,15 +924,21 @@ class SyntheticDisruptionScenarioIntegrationTests {
 
 		String expectedOutcome = shipmentIndex == 0 ? expected.impactA() : expected.impactB();
 		String businessStatement = businessClaim.path("statement").asText().toLowerCase();
-		assertThat(businessStatement).contains("synthetic", "revision", "review", "transshipment-arrival deadline");
-		if ("EXCEEDS_DEADLINE".equals(expectedOutcome)) assertThat(businessStatement).contains("predicted arrival exceeds", "applicable");
-		else assertThat(businessStatement).contains("no predicted impact", "applicable");
+		if ("EXCEEDS_DEADLINE".equals(expectedOutcome))
+			assertThat(businessStatement).contains("predicted arrival exceeds");
+		else assertThat(businessStatement).contains("no predicted impact");
+		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
 		List<String> businessReferences = strings(businessClaim.path("factReferences"));
 		assertThat(businessReferences).contains("evidence:cdg279-v1-revision-1", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
 				"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY",
 				"comparison:DELAY_OUTCOME", "comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
 				"comparison:RECORDED_TRANSSHIPMENT_PORT");
 		assertThat(strings(businessClaim.path("evidenceIds"))).containsExactly("cdg279-v1-revision-1");
+		JsonNode deterministicBusinessImpact = session.at("/snapshot/shipments/" + shipmentIndex + "/businessImpact");
+		assertThat(deterministicBusinessImpact.path("outcome").asText()).isEqualTo(expectedOutcome);
+		assertThat(deterministicBusinessImpact.path("reason").isNull()).isTrue();
+		assertThat(deterministicBusinessImpact.path("deadline").asText()).isNotBlank();
+		assertThat(deterministicBusinessImpact.path("recordedTransshipmentPort").asText()).isNotBlank();
 
 		List<String> followUps = strings(assessment.at("/interpretation/followUpConsiderations")).stream()
 				.map(String::toLowerCase).toList();
@@ -933,11 +946,22 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(followUps).anySatisfy(text -> assertThat(text).contains("operations team", "confirm", "transshipment-arrival deadline", "current shipment port"));
 		String authored = assessment.path("interpretation").toString().toLowerCase();
 		assertThat(authored).doesNotContain("cargo", "financial loss", "caused", "missed connection", "urgent", "probability", "reroute", "cancel");
+		assertThat(assessment.at("/interpretation/summary").asText().toLowerCase())
+				.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		assertThat(assessment.at("/interpretation/uncertainties").toString().toLowerCase())
+				.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		for (JsonNode claim : claims) {
+			if ("DELAY_COMPARISON_REVIEW".equals(claim.path("relationshipType").asText())) continue;
+			assertThat(claim.path("statement").asText().toLowerCase())
+					.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		}
 
-		// Two rubric points: the correct shipment-specific deterministic consequence, plus concrete human verification.
+		// Both rubric points are earned by the generated AI output: exact grounded business outcome and human verification.
 		int usefulnessScore = 0;
-		if (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds"))
-				|| ("NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("no predicted impact"))) usefulnessScore++;
+		if (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds")
+				|| "NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("no predicted impact"))
+				&& businessReferences.contains("comparison:DELAY_OUTCOME")
+				&& businessReferences.contains("business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY")) usefulnessScore++;
 		if (followUps.stream().anyMatch(text -> text.contains("carrier operations team") && text.contains("verify") && text.contains("arrival estimate"))
 				&& followUps.stream().anyMatch(text -> text.contains("operations team") && text.contains("confirm")
 						&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port"))) usefulnessScore++;

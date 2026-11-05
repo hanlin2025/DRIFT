@@ -56,7 +56,7 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("Association verification is evidence-item-specific")
 					.contains("never call a synthetic notice official or real")
 					.contains("say only that the documented revision warrants schedule review")
-					.contains("Do not state its magnitude or previous/current values")
+					.contains("Do not state the revision's magnitude or previous/current values")
 					.contains("Never call the revision additional, further, another, or subsequent")
 					.contains("shipmentContext is deterministic planned schedule context, not retrieved maritime evidence")
 					.contains("Canonical factReferences (use these instead of restating facts)")
@@ -82,9 +82,8 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("asking the carrier or operations team to verify the current vessel position")
 				.contains("a concrete verification activity")
 				.contains("Do not recommend evaluating alternative shipment plans, routes, or mitigations")
-				.contains("shipmentContext.businessContext is a minimized authorized projection")
+				.contains("shipmentContext.businessContext is a minimized authorized projection from the shipment detail service")
 				.contains("For an ordinary shipment request without scenario context")
-				.contains("For a controlled scenario, shipmentContext.businessContext is deterministic planning context")
 					.contains("If deadline state is UNKNOWN, do not mention deadline or comparison status/reason in the summary, claims, or uncertainties")
 					.contains("do not assert or infer urgency, business consequences, applicability, or the unknown deadline's relevance to operational risk")
 					.contains("The evidence does not establish whether this shipment is urgent.")
@@ -107,7 +106,14 @@ class ConfiguredMaritimeAiClientTest {
 	@Test void addsScenarioGroundingInstructionsAndASeparatePromptVersionOnlyForScenarioInputs() {
 		AtomicReference<String> body = new AtomicReference<>();
 		var scenario = new MaritimeAiShipmentContext.Scenario("B", "DEMO-B", "CHANGE", "2026-10-01T04:00:00Z");
-		var context = new MaritimeAiShipmentContext("Synthetic port", null, null, null, null, scenario);
+		var business = new MaritimeAiBusinessContext(
+				new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED,
+						java.time.OffsetDateTime.parse("2026-10-02T10:00:00Z"), "Synthetic port", true),
+				new MaritimeAiBusinessContext.Comparison(MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+						com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+						java.time.OffsetDateTime.parse("2026-10-02T11:00:00Z"),
+						java.time.OffsetDateTime.parse("2026-10-02T10:00:00Z"), "Synthetic port"));
+		var context = new MaritimeAiShipmentContext("Synthetic port", null, null, null, business, scenario);
 		var input = new MaritimeAiEvidencePackage("v1", "2026-10-01T04:00:00Z", "VERIFIED", context, List.of());
 		var client = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true,
 				20, 800, new ObjectMapper(), (request, requestBody) -> {
@@ -117,26 +123,34 @@ class ConfiguredMaritimeAiClientTest {
 
 		var result = client.interpret(input);
 
-		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.3")
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.5")
 				.isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
+		assertThat(ConfiguredMaritimeAiClient.PREVIOUS_SCENARIO_PROMPT_VERSION).isEqualTo("cdg290.scenario-grounded-v1.4");
+		assertThat(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION_V13).isEqualTo("cdg290.scenario-grounded-v1.3");
 		assertThat(body.get()).contains("fictional controlled scenario snapshot")
-				.contains("fixture-defined scenario deadline/comparison facts")
-				.contains("not current operational state or an importer-confirmed live constraint")
-				.contains("When deterministic comparison state is AVAILABLE and eligible cited synthetic maritime evidence supports a shipment-specific review, include a DELAY_COMPARISON_REVIEW claim and state the exact backend comparison outcome only in that claim")
-				.contains("Do not state deadline existence, applicability, or outcome in the summary, uncertainties, or another claim")
-				.contains("If the evidence does not support a shipment-specific review, omit that claim; do not create it solely because backend comparison facts are available")
-				.contains("Make a RISK_BUFFER_REVIEW claim only when its cited eligible synthetic observation supports why human review is warranted")
-				.contains("If eligible evidence cannot support a claim, omit it; if no supported interpretation remains or evidence is otherwise insufficient, abstain")
-				.contains("For a supported risk review, ask the carrier or operations team to verify the latest arrival estimate")
-				.contains("For a supported comparison review, use one neutral human-verification question only: ask the operations team to confirm whether the scenario-defined transshipment-arrival deadline remains applicable to the current shipment port")
-				.contains("Do not combine deadline and port checks in one compound assertion or state the comparison outcome in a follow-up")
-				.contains("Preserve the distinction between the planned connection window, AIS-derived remaining window")
+				.contains("Use the supplied typed businessContext and its canonical references as authoritative scenario facts")
+				.contains("A DELAY_COMPARISON_REVIEW may state the separately supplied backend comparison outcome")
+				.contains("emit exactly one DELAY_COMPARISON_REVIEW claim")
+				.contains("include the authorized deadline, deadline port, applicability, comparison outcome, estimated-arrival, recorded-deadline, and recorded-port references")
+				.contains("Keep every deadline assertion in this one claim")
+				.contains("do not mention deadline, applicability, or comparison outcome in the summary, uncertainties, or any other claim")
+				.contains("Keep the deadline phrase and backend-matching applicability wording together in the same clause")
+				.contains("the backend comparison shows the predicted arrival exceeds the applicable transshipment-arrival deadline")
+				.contains("the backend comparison shows no predicted impact on the applicable transshipment-arrival deadline")
+				.contains("A RISK_BUFFER_REVIEW statement must explain why human review is warranted by discussing the cited maritime observation alongside the backend severity and selected window")
+				.contains("Also produce a separate RISK_BUFFER_REVIEW claim grounded in eligible synthetic evidence")
+				.contains("For a controlled scenario, include one human ETA verification consideration and one neutral deadline-applicability verification question")
+				.contains("Preserve the distinction between planned connection window and AIS-derived remaining window")
 				.contains("Never describe an AVAILABLE selected window as having no remaining window or no positive buffer")
 				.contains("UNAVAILABLE must remain unavailable, and UNKNOWN must remain unknown")
 				.contains("\\\"shipmentKey\\\":\\\"B\\\"")
 				.contains("\\\"stage\\\":\\\"CHANGE\\\"")
-				.doesNotContain("confirm whether the scenario-defined deadline and port still apply")
-				.doesNotContain("When the deterministic comparison is AVAILABLE, state its exact backend outcome");
+				.contains("EXCEEDS_DEADLINE", "2026-10-02T10:00:00Z", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
+						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY", "comparison:DELAY_OUTCOME",
+						"comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE", "comparison:RECORDED_TRANSSHIPMENT_PORT")
+				.doesNotContain("deliberately withheld", "intentionally omitted");
+		assertThat(input.shipmentContext().businessContext().comparison().outcome())
+				.isEqualTo(com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE);
 	}
 
 	@Test void readsHistoricalClaimsWithoutTheOptionalRiskReviewField() throws Exception {

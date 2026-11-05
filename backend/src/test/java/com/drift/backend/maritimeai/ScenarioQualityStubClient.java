@@ -43,9 +43,6 @@ public final class ScenarioQualityStubClient extends ConfiguredMaritimeAiClient 
 	private static MaritimeAiInterpretation interpretation(MaritimeAiEvidencePackage input) {
 		var context = Objects.requireNonNull(input.shipmentContext());
 		var risk = Objects.requireNonNull(context.connectionRisk());
-		var business = Objects.requireNonNull(context.businessContext());
-		var deadline = Objects.requireNonNull(business.deadline());
-		var comparison = Objects.requireNonNull(business.comparison());
 		var revision = input.evidence().stream()
 				.filter(item -> "MPA_ETA_REVISION".equals(item.sourceType())
 						&& "MOTHER".equals(item.vesselRole()) && "EXPECTED_ARRIVAL".equals(item.observationType()))
@@ -66,25 +63,24 @@ public final class ScenarioQualityStubClient extends ConfiguredMaritimeAiClient 
 		var riskClaim = new MaritimeAiClaim(riskStatement, List.of(revision.evidenceId()), "CONTEXTUAL",
 				revision.vesselRole(), revision.observationType(), revision.associationScope(), riskReferences,
 				"RISK_BUFFER_REVIEW", riskReview(risk));
-
-		String comparisonText = switch (comparison.outcome()) {
-			case EXCEEDS_DEADLINE -> "the predicted arrival exceeds the applicable transshipment-arrival deadline";
-			case NO_PREDICTED_IMPACT -> "the comparison shows no predicted impact against the applicable transshipment-arrival deadline";
-		};
-		if (deadline.state() != MaritimeAiBusinessContext.DeadlineState.RECORDED
-				|| comparison.state() != MaritimeAiBusinessContext.ComparisonState.AVAILABLE
-				|| !Boolean.TRUE.equals(deadline.applicableToCurrentPort()))
-			throw new IllegalArgumentException("Positive scenario fixture must provide an applicable recorded deadline comparison.");
-		String businessStatement = "The synthetic expected-arrival revision warrants review; for this scenario, the backend comparison states "
-				+ comparisonText + ".";
-		List<String> businessReferences = new ArrayList<>(MaritimeAiCanonicalFactReferences.businessReferences(input));
-		businessReferences.add("evidence:" + revision.evidenceId());
-		var businessClaim = new MaritimeAiClaim(businessStatement, List.of(revision.evidenceId()), "CONTEXTUAL",
-				revision.vesselRole(), revision.observationType(), revision.associationScope(), businessReferences,
-				"DELAY_COMPARISON_REVIEW");
+		var business = Objects.requireNonNull(context.businessContext());
+		var comparison = Objects.requireNonNull(business.comparison());
+		MaritimeAiClaim delayClaim = null;
+		if (comparison.state() == MaritimeAiBusinessContext.ComparisonState.AVAILABLE) {
+			String outcomeStatement = switch (Objects.requireNonNull(comparison.outcome())) {
+				case EXCEEDS_DEADLINE -> "The backend comparison shows the predicted arrival exceeds the applicable transshipment-arrival deadline.";
+				case NO_PREDICTED_IMPACT -> "The backend comparison shows no predicted impact on the applicable transshipment-arrival deadline.";
+			};
+			String statement = "The synthetic expected-arrival revision warrants review; " + outcomeStatement;
+			List<String> comparisonReferences = new ArrayList<>(MaritimeAiCanonicalFactReferences.businessReferences(input));
+			comparisonReferences.add("evidence:" + revision.evidenceId());
+			delayClaim = new MaritimeAiClaim(statement, List.of(revision.evidenceId()), "CONTEXTUAL",
+					revision.vesselRole(), revision.observationType(), revision.associationScope(), comparisonReferences,
+					"DELAY_COMPARISON_REVIEW");
+		}
 
 		return new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
-				List.of(riskClaim, businessClaim),
+				delayClaim == null ? List.of(riskClaim) : List.of(riskClaim, delayClaim),
 				List.of("The synthetic maritime observation does not establish an actual arrival or explain the backend risk calculation."),
 				List.of(
 						"Ask the carrier operations team to verify whether the latest arrival estimate remains current at the scenario cutoff.",

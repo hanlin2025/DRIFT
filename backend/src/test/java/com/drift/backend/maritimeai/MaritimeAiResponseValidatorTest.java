@@ -583,7 +583,8 @@ class MaritimeAiResponseValidatorTest {
 				.as("the previous prompt's compound follow-up is split at 'and' before the safe-verification check")
 				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		assertThat(MaritimeAiResponseValidator.safeValidationDiagnostic("UNSUPPORTED_BUSINESS_CONSTRAINT",
-				promptSuggestedFollowUp, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT at followUpConsiderations[0]");
+				promptSuggestedFollowUp, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT at followUpConsiderations[0] "
+						+ "(VERIFICATION_QUESTION_WORDING_NOT_SUPPORTED, clause 1)");
 
 		var correctedFollowUp = withFollowUps(valid, List.of(
 				"Ask the operations team to confirm whether the scenario-defined transshipment-arrival deadline remains applicable to the current shipment port."));
@@ -670,6 +671,47 @@ class MaritimeAiResponseValidatorTest {
 		assertThat(MaritimeAiResponseValidator.validate(differentPortOutput, differentPort)).isNull();
 		assertThat(MaritimeAiResponseValidator.validate(withDelayClaimStatement(differentPortOutput,
 				"The documented revision warrants review alongside the applicable transshipment-arrival deadline; the comparison is unavailable because the port differs."), differentPort))
+				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+	}
+
+	@Test void controlledScenarioRequiresExactlyOneGroundedComparisonClaimAndKeepsItInItsOwnClaim() {
+		var input = asScenario(businessComparisonInput(MaritimeAiBusinessContext.DeadlineState.RECORDED, true,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE), "A");
+		MaritimeAiInterpretation valid = businessAwareInterpretation(input);
+		assertThat(MaritimeAiResponseValidator.validate(valid, input)).isNull();
+
+		MaritimeAiClaim riskClaim = valid.claims().getFirst();
+		MaritimeAiClaim delayClaim = valid.claims().get(1);
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation(valid.summary(), List.of(riskClaim),
+				valid.uncertainties(), valid.followUpConsiderations(), true, null), input))
+				.isEqualTo("UNSUPPORTED_DELAY_COMPARISON");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation(valid.summary(),
+				List.of(riskClaim, delayClaim, delayClaim), valid.uncertainties(), valid.followUpConsiderations(), true, null), input))
+				.isEqualTo("UNSUPPORTED_DELAY_COMPARISON");
+		List<String> businessOnlyReferences = delayClaim.factReferences().stream()
+				.filter(reference -> reference.startsWith("evidence:") || reference.startsWith("business:")
+						|| reference.startsWith("comparison:"))
+				.toList();
+		MaritimeAiClaim outcomeOmittedClaim = new MaritimeAiClaim(
+				"The synthetic expected-arrival revision warrants review; the applicable transshipment-arrival deadline is recorded for this port.",
+				delayClaim.evidenceIds(), delayClaim.applicability(), delayClaim.vesselRole(), delayClaim.observationType(),
+				delayClaim.associationScope(), businessOnlyReferences, delayClaim.relationshipType());
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation(valid.summary(),
+				List.of(riskClaim, outcomeOmittedClaim), valid.uncertainties(), valid.followUpConsiderations(), true, null), input))
+				.isEqualTo("UNSUPPORTED_DELAY_COMPARISON");
+
+		List<String> unrelatedReferences = new java.util.ArrayList<>(delayClaim.factReferences());
+		unrelatedReferences.add("schedule:MOTHER:PLANNED_ARRIVAL");
+		unrelatedReferences.add("schedule:FEEDER:PLANNED_DEPARTURE");
+		MaritimeAiClaim unrelatedScheduleClaim = new MaritimeAiClaim(
+				"The documented MPA revision warrants review against the applicable transshipment-arrival deadline.",
+				List.of("mother-arrival"), "CONTEXTUAL", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+				unrelatedReferences, "SCHEDULE_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation(valid.summary(),
+				List.of(riskClaim, delayClaim, unrelatedScheduleClaim), valid.uncertainties(),
+						valid.followUpConsiderations(), true, null), input))
 				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 	}
 
@@ -982,8 +1024,8 @@ class MaritimeAiResponseValidatorTest {
 		String comparisonText;
 		if (comparison.state() == MaritimeAiBusinessContext.ComparisonState.AVAILABLE) {
 			comparisonText = comparison.outcome() == com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE
-					? "the predicted arrival exceeds the applicable transshipment-arrival deadline."
-					: "the comparison shows no predicted impact on the applicable transshipment-arrival deadline.";
+					? "the backend comparison shows the predicted arrival exceeds the applicable transshipment-arrival deadline."
+					: "the backend comparison shows no predicted impact on the applicable transshipment-arrival deadline.";
 		} else if (deadline.state() == MaritimeAiBusinessContext.DeadlineState.NOT_RECORDED) {
 			comparisonText = "no transshipment-arrival deadline is recorded, so the comparison is unavailable.";
 		} else if (Boolean.FALSE.equals(deadline.applicableToCurrentPort())) {

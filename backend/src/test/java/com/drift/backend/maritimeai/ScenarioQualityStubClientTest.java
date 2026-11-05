@@ -43,6 +43,60 @@ class ScenarioQualityStubClientTest {
 		assertThat(client.scenarioInputs()).hasSize(4);
 	}
 
+	@Test
+	void worsenedShipmentAReproducesBusinessConstraintRejectionReasonsWithoutLeakingClaimText() {
+		var fixture = SyntheticDisruptionScenarioFixture.create("BusinessDiagnostic");
+		MaritimeAiEvidencePackage input = input(fixture, 2, 0);
+		assertThat(input.shipmentContext().scenario().stage()).isEqualTo("WORSENED");
+		assertThat(input.shipmentContext().scenario().shipmentKey()).isEqualTo("A");
+		assertThat(input.shipmentContext().businessContext().comparison().outcome().name()).isEqualTo("EXCEEDS_DEADLINE");
+
+		var riskClaim = new ScenarioQualityStubClient().interpret(input).interpretation().claims().getFirst();
+		String evidenceId = riskClaim.evidenceIds().getFirst();
+		var revision = input.evidence().stream().filter(item -> item.evidenceId().equals(evidenceId)).findFirst().orElseThrow();
+		List<String> canonicalReferences = new java.util.ArrayList<>(MaritimeAiCanonicalFactReferences.businessReferences(input));
+		canonicalReferences.add("evidence:" + evidenceId);
+		String groundedStatement = "The synthetic expected-arrival revision warrants review; the backend comparison shows "
+				+ "the predicted arrival exceeds the applicable transshipment-arrival deadline.";
+		var businessClaim = new MaritimeAiClaim(groundedStatement, List.of(evidenceId), "CONTEXTUAL",
+				revision.vesselRole(), revision.observationType(), revision.associationScope(), canonicalReferences,
+				"DELAY_COMPARISON_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review the grounded interpretation.",
+				List.of(businessClaim), List.of(), List.of(), true, null), input)).isNull();
+
+		List<String> missingReferences = canonicalReferences.stream()
+				.filter(reference -> !MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY.equals(reference)).toList();
+		List<DiagnosticCase> cases = List.of(
+				new DiagnosticCase(groundedStatement, missingReferences, "CANONICAL_BUSINESS_REFERENCE_MISSING"),
+				new DiagnosticCase(groundedStatement + " The shipment is urgent.", canonicalReferences,
+						"URGENCY_ASSERTION_NOT_AUTHORIZED"),
+				new DiagnosticCase("The synthetic expected-arrival revision warrants review; the backend comparison predicts arrival exceeds "
+						+ "the scenario-defined transshipment-arrival deadline.", canonicalReferences,
+						"APPLICABILITY_WORDING_MISSING"),
+				new DiagnosticCase("The synthetic expected-arrival revision warrants review; the predicted arrival exceeds the scenario-defined "
+						+ "deadline, which is applicable to the current transshipment port.", canonicalReferences,
+						"TRANSSHIPMENT_ARRIVAL_DEADLINE_TERM_MISSING"),
+				new DiagnosticCase("The synthetic expected-arrival revision warrants review against the scenario-defined transshipment-arrival "
+						+ "deadline and it is applicable to the current transshipment port.", canonicalReferences,
+						"CLAUSE_SPLIT_SEPARATED_DEADLINE_AND_APPLICABILITY"));
+
+		for (DiagnosticCase diagnosticCase : cases) {
+			var rejectedBusinessClaim = new MaritimeAiClaim(diagnosticCase.statement(), List.of(evidenceId), "CONTEXTUAL",
+					revision.vesselRole(), revision.observationType(), revision.associationScope(), diagnosticCase.references(),
+					"DELAY_COMPARISON_REVIEW");
+			List<MaritimeAiClaim> claims = List.of(riskClaim, riskClaim, riskClaim, riskClaim, rejectedBusinessClaim);
+			var output = new MaritimeAiInterpretation("Review the grounded interpretation.", claims,
+					List.of(), List.of(), true, null);
+
+			assertThat(MaritimeAiResponseValidator.validate(output, input))
+					.as("WORSENED A validator reproduction: %s", diagnosticCase.reason()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+			assertThat(MaritimeAiResponseValidator.safeValidationDiagnostic("UNSUPPORTED_BUSINESS_CONSTRAINT", output, input))
+					.as("WORSENED A safe diagnostic: %s", diagnosticCase.reason())
+					.contains("at claims[4].statement (" + diagnosticCase.reason())
+					.doesNotContain(diagnosticCase.statement());
+		}
+	}
+
 	private static MaritimeAiEvidencePackage input(SyntheticDisruptionScenarioFixture.Scenario fixture,
 			int stageIndex, int shipmentIndex) {
 		var stage = fixture.stages().get(stageIndex);
@@ -87,24 +141,42 @@ class ScenarioQualityStubClientTest {
 
 	private static void assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
 		String expected = input.shipmentContext().businessContext().comparison().outcome().name();
-		MaritimeAiClaim business = interpretation.claims().stream()
-				.filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).findFirst().orElseThrow();
-		String statement = business.statement().toLowerCase();
-		assertThat(business.factReferences()).contains("comparison:DELAY_OUTCOME",
-				"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY");
-		if ("EXCEEDS_DEADLINE".equals(expected)) assertThat(statement).contains("predicted arrival exceeds", "applicable");
-		else assertThat(statement).contains("no predicted impact", "applicable");
+		var comparison = input.shipmentContext().businessContext().comparison();
+		assertThat(comparison.state().name()).isEqualTo("AVAILABLE");
+		List<MaritimeAiClaim> businessClaims = interpretation.claims().stream()
+				.filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).toList();
+		assertThat(businessClaims).hasSize(1);
+		MaritimeAiClaim businessClaim = businessClaims.getFirst();
+		String businessStatement = businessClaim.statement().toLowerCase();
+		if ("EXCEEDS_DEADLINE".equals(expected)) assertThat(businessStatement).contains("predicted arrival exceeds");
+		else assertThat(businessStatement).contains("no predicted impact");
+		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
+		assertThat(businessClaim.factReferences()).contains("evidence:" + businessClaim.evidenceIds().getFirst(),
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE, MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT);
+		MaritimeAiClaim risk = interpretation.claims().stream()
+				.filter(claim -> "RISK_BUFFER_REVIEW".equals(claim.relationshipType())).findFirst().orElseThrow();
+		String statement = risk.statement().toLowerCase();
+		assertThat(statement).contains("synthetic", "revision", "warrants human review", input.shipmentContext().connectionRisk().riskLevel().name().toLowerCase());
+		assertThat(risk.factReferences()).contains("evidence:" + risk.evidenceIds().getFirst(), "risk:CONNECTION_SEVERITY");
 
 		List<String> followUps = interpretation.followUpConsiderations().stream().map(String::toLowerCase).toList();
 		assertThat(followUps).anySatisfy(text -> assertThat(text)
 				.contains("carrier operations team", "verify", "arrival estimate"));
 		assertThat(followUps).anySatisfy(text -> assertThat(text)
 				.contains("operations team", "confirm", "transshipment-arrival deadline", "current shipment port"));
-		int score = (statement.contains("predicted arrival exceeds") || statement.contains("no predicted impact") ? 1 : 0)
+		int score = (comparison.outcome().name().equals(expected)
+				&& ("EXCEEDS_DEADLINE".equals(expected) ? businessStatement.contains("predicted arrival exceeds")
+						: businessStatement.contains("no predicted impact")) ? 1 : 0)
 				+ (followUps.stream().anyMatch(text -> text.contains("carrier operations team")
 						&& text.contains("verify") && text.contains("arrival estimate"))
 					&& followUps.stream().anyMatch(text -> text.contains("operations team") && text.contains("confirm")
 							&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port")) ? 1 : 0);
 		assertThat(score).as("shipment %s usefulness", input.shipmentContext().scenario().shipmentKey()).isEqualTo(2);
 	}
+
+	private record DiagnosticCase(String statement, List<String> references, String reason) { }
 }
