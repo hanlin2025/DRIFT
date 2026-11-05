@@ -135,8 +135,11 @@ public class MaritimeAiAssessmentService {
 				MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", result,
 				result.failure() == null ? "The configured provider returned no interpretation." : result.failure());
 		String validation = MaritimeAiResponseValidator.validate(result.interpretation(), eligibleInput);
-		if (validation != null) return scenarioTransient(eligibleInput, MaritimeAiGenerationState.FAILED,
-				validation, result, "The provider response failed validation (" + validation + "). No interpretation is displayed.");
+		if (validation != null) {
+			String diagnostic = MaritimeAiResponseValidator.safeValidationDiagnostic(validation, result.interpretation(), eligibleInput);
+			return scenarioTransient(eligibleInput, MaritimeAiGenerationState.FAILED, validation, result,
+					"The provider response failed validation (" + diagnostic + "). No interpretation is displayed.");
+		}
 		if (!result.interpretation().evidenceSufficient()) return scenarioTransient(eligibleInput,
 				MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_MODEL_EVIDENCE", result,
 				"The model reported that the supplied evidence was insufficient.");
