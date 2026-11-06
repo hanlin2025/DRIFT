@@ -23,6 +23,7 @@ final class ScenarioMaritimeAiProse {
 	private static final List<String> DEADLINE_TARGETS = List.of("milestone", "arrival requirement");
 	private static final List<String> COMPARISON_VERBS = List.of("shows", "indicates", "reports");
 	private static final List<String> ARRIVAL_ADJECTIVES = List.of("predicted", "estimated");
+	private static final List<String> ARRIVAL_ARTICLE_PREFIXES = List.of("the ", "");
 	private static final List<String> EXCEED_VERBS = List.of("exceeds", "is later than", "falls after");
 	private static final String AVAILABLE_WINDOW_STATE = "The AIS-estimated remaining connection window is available.";
 	private static final String NO_REMAINING_WINDOW_STATE = "The AIS estimate leaves no positive remaining connection window.";
@@ -80,12 +81,12 @@ final class ScenarioMaritimeAiProse {
 		if (outcome == null) return List.of();
 		List<String> outcomes = new ArrayList<>();
 		if (outcome == DelayComparison.Outcome.EXCEEDS_DEADLINE) {
-			for (String arrival : ARRIVAL_ADJECTIVES) for (String verb : EXCEED_VERBS)
-				outcomes.add("the " + arrival + " arrival " + verb + " the applicable transshipment-arrival deadline");
+			for (String arrival : arrivalPhrases()) for (String verb : EXCEED_VERBS)
+				outcomes.add(arrival + " " + verb + " the applicable transshipment-arrival deadline");
 		} else {
 			outcomes.add("no predicted impact on the applicable transshipment-arrival deadline");
-			for (String arrival : ARRIVAL_ADJECTIVES)
-				outcomes.add("the " + arrival + " arrival is at or before the applicable transshipment-arrival deadline");
+			for (String arrival : arrivalPhrases())
+				outcomes.add(arrival + " is at or before the applicable transshipment-arrival deadline");
 		}
 		List<String> relevance = new ArrayList<>();
 		for (String noun : REVISION_NOUNS) for (String verb : DEADLINE_RELEVANCE_VERBS)
@@ -141,9 +142,9 @@ final class ScenarioMaritimeAiProse {
 				+ "Deadline relevance: 'The synthetic [" + choices(REVISION_NOUNS) + "] [" + choices(DEADLINE_RELEVANCE_VERBS)
 				+ "] the arrival estimate against the recorded [" + choices(DEADLINE_TARGETS)
 				+ "].' Then state the supplied comparison outcome in one sentence beginning 'The backend comparison ["
-				+ choices(COMPARISON_VERBS) + "]'. For EXCEEDS_DEADLINE, say '[" + choices(ARRIVAL_ADJECTIVES)
-				+ "] arrival [" + choices(EXCEED_VERBS) + "] the applicable transshipment-arrival deadline.' For NO_PREDICTED_IMPACT, say 'no predicted impact on the applicable transshipment-arrival deadline' or '["
-				+ choices(ARRIVAL_ADJECTIVES) + "] arrival is at or before the applicable transshipment-arrival deadline.' "
+				+ choices(COMPARISON_VERBS) + "]'. For EXCEEDS_DEADLINE, say one of [" + choices(arrivalPhrases())
+				+ "] [" + choices(EXCEED_VERBS) + "] the applicable transshipment-arrival deadline. For NO_PREDICTED_IMPACT, say 'no predicted impact on the applicable transshipment-arrival deadline' or one of ["
+				+ choices(arrivalPhrases()) + "] is at or before the applicable transshipment-arrival deadline. "
 				+ "The deadline revision sentence and comparison sentence may be in either order. Uncertainty: 'The synthetic ["
 				+ choices(UNCERTAINTY_SUBJECTS) + "] [" + choices(UNCERTAINTY_VERBS) + "] ["
 				+ choices(UNCERTAINTY_OBJECTS) + "].' ETA check: 'Ask the [" + choices(ETA_TEAMS) + "] to ["
@@ -173,7 +174,7 @@ final class ScenarioMaritimeAiProse {
 		choices.addAll(DEADLINE_RELEVANCE_VERBS);
 		choices.addAll(DEADLINE_TARGETS);
 		choices.addAll(COMPARISON_VERBS);
-		choices.addAll(ARRIVAL_ADJECTIVES);
+		choices.addAll(arrivalPhrases());
 		choices.addAll(EXCEED_VERBS);
 		choices.addAll(UNCERTAINTY_SUBJECTS);
 		choices.addAll(UNCERTAINTY_VERBS);
@@ -186,6 +187,13 @@ final class ScenarioMaritimeAiProse {
 		choices.addAll(DEADLINE_APPLICABILITY);
 		choices.addAll(PORT_NAMES);
 		return List.copyOf(choices);
+	}
+
+	private static List<String> arrivalPhrases() {
+		List<String> result = new ArrayList<>();
+		for (String article : ARRIVAL_ARTICLE_PREFIXES) for (String adjective : ARRIVAL_ADJECTIVES)
+			result.add(article + adjective + " arrival");
+		return List.copyOf(result);
 	}
 
 	private static boolean matches(String authored, List<String> alternatives) {

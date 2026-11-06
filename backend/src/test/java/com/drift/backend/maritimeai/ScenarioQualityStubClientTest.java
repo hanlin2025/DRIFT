@@ -150,7 +150,7 @@ class ScenarioQualityStubClientTest {
 		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", cutoff.toString(), "VERIFIED", shipmentContext, evidence);
 	}
 
-	static void assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
+	static int assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
 		String expected = input.shipmentContext().businessContext().comparison().outcome().name();
 		var comparison = input.shipmentContext().businessContext().comparison();
 		assertThat(comparison.state().name()).isEqualTo("AVAILABLE");
@@ -159,9 +159,8 @@ class ScenarioQualityStubClientTest {
 		assertThat(businessClaims).hasSize(1);
 		MaritimeAiClaim businessClaim = businessClaims.getFirst();
 		String businessStatement = businessClaim.statement().toLowerCase();
-		if ("EXCEEDS_DEADLINE".equals(expected)) assertThat(businessStatement).contains("predicted arrival exceeds");
-		else assertThat(businessStatement).contains("no predicted impact");
-		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(), comparison.outcome())).isTrue();
+		assertThat(businessStatement).contains("synthetic", "transshipment-arrival deadline", "applicable");
 		assertThat(businessClaim.factReferences()).contains("evidence:" + businessClaim.evidenceIds().getFirst(),
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE, MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
@@ -175,18 +174,19 @@ class ScenarioQualityStubClientTest {
 		assertThat(risk.factReferences()).contains("evidence:" + risk.evidenceIds().getFirst(), "risk:CONNECTION_SEVERITY");
 
 		List<String> followUps = interpretation.followUpConsiderations().stream().map(String::toLowerCase).toList();
-		assertThat(followUps).anySatisfy(text -> assertThat(text)
-				.contains("carrier operations team", "verify", "arrival estimate"));
-		assertThat(followUps).anySatisfy(text -> assertThat(text)
-				.contains("operations team", "confirm", "transshipment-arrival deadline", "current shipment port"));
-		int score = (comparison.outcome().name().equals(expected)
-				&& ("EXCEEDS_DEADLINE".equals(expected) ? businessStatement.contains("predicted arrival exceeds")
-						: businessStatement.contains("no predicted impact")) ? 1 : 0)
-				+ (followUps.stream().anyMatch(text -> text.contains("carrier operations team")
-						&& text.contains("verify") && text.contains("arrival estimate"))
-					&& followUps.stream().anyMatch(text -> text.contains("operations team") && text.contains("confirm")
-							&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port")) ? 1 : 0);
+		assertThat(followUps).hasSize(2);
+		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesEtaCheck(text)).isTrue());
+		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesDeadlineCheck(text)).isTrue());
+		boolean outcomePoint = comparison.outcome().name().equals(expected)
+				&& ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(), comparison.outcome())
+				&& !businessClaim.evidenceIds().isEmpty()
+				&& businessClaim.factReferences().contains("evidence:" + businessClaim.evidenceIds().getFirst())
+				&& businessClaim.factReferences().containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
+		int score = (outcomePoint ? 1 : 0)
+				+ (followUps.stream().anyMatch(ScenarioMaritimeAiProse::matchesEtaCheck)
+					&& followUps.stream().anyMatch(ScenarioMaritimeAiProse::matchesDeadlineCheck) ? 1 : 0);
 		assertThat(score).as("shipment %s usefulness", input.shipmentContext().scenario().shipmentKey()).isEqualTo(2);
+		return score;
 	}
 
 	private record DiagnosticCase(String statement, List<String> references, String reason) { }
