@@ -20,6 +20,10 @@ import com.drift.backend.shipment.RemainingConnectionWindow;
 import com.drift.backend.shipment.ShipmentRisk;
 
 class ScenarioQualityStubClientTest {
+	static MaritimeAiEvidencePackage worsenedShipmentAInput(String runId) {
+		return input(SyntheticDisruptionScenarioFixture.create(runId), 2, 0);
+	}
+
 	@Test
 	void fourPositiveScenarioInterpretationsPassGroundingAndScoreTwoOutOfTwo() {
 		var fixture = SyntheticDisruptionScenarioFixture.create("Quality");

@@ -3,9 +3,7 @@ package com.drift.backend.maritimeai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -22,30 +20,38 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 		MaritimeAiShipmentContext context = input.shipmentContext();
 		MaritimeAiConnectionRiskContext risk = context.connectionRisk();
 		MaritimeAiBusinessContext business = context.businessContext();
-		OffsetDateTime estimatedArrival = OffsetDateTime.parse("2026-10-02T11:00:00Z");
-		OffsetDateTime deadline = OffsetDateTime.parse("2026-10-02T10:00:00Z");
+		OffsetDateTime estimatedArrival = OffsetDateTime.parse("2026-10-02T08:00:00Z");
+		OffsetDateTime deadline = OffsetDateTime.parse("2026-10-01T12:00:00Z");
 
 		assertThat(context.scenario().shipmentKey()).isEqualTo("A");
+		assertThat(context.scenario().shipmentReference()).isEqualTo("DEMO-CDG279-LiveSmoke-A");
 		assertThat(context.scenario().stage()).isEqualTo("WORSENED");
+		assertThat(context.scenario().simulationCutoffUtc()).isEqualTo("2026-10-01T08:00:00Z");
+		assertThat(input.assessmentCutoffUtc()).isEqualTo("2026-10-01T08:00:00Z");
 		assertThat(risk.assessed()).isTrue();
 		assertThat(risk.riskLevel()).isEqualTo(com.drift.backend.shipment.ShipmentRisk.Level.HIGH);
 		assertThat(risk.riskBasis()).isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
-		assertThat(risk.remainingWindow()).isEqualTo(new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 3_600L, null));
-		assertThat(risk.arrivalEstimate()).isEqualTo(new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(
-				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE, estimatedArrival,
-				Instant.parse("2026-10-01T07:30:00Z"), null));
+		assertThat(risk.plannedWindow().durationSeconds()).isEqualTo(108_000L);
+		assertThat(risk.remainingWindow()).isEqualTo(new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 14_400L, null));
+		assertThat(risk.arrivalEstimate().state()).isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		assertThat(risk.arrivalEstimate().estimatedArrivalAt()).isEqualTo(estimatedArrival);
 		assertThat(business.deadline()).isEqualTo(new MaritimeAiBusinessContext.Deadline(
-				MaritimeAiBusinessContext.DeadlineState.RECORDED, deadline, "Fictional transshipment port", true));
+				MaritimeAiBusinessContext.DeadlineState.RECORDED, deadline,
+				com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture.PORT, true));
 		assertThat(business.comparison()).isEqualTo(new MaritimeAiBusinessContext.Comparison(
 				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
 				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE,
-				null, estimatedArrival, deadline, "Fictional transshipment port"));
+				null, estimatedArrival, deadline, com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture.PORT));
+		assertThat(java.time.Duration.between(deadline, estimatedArrival).toHours()).isEqualTo(20);
+		assertThat(input.evidence()).extracting(MaritimeEvidence::evidenceId)
+				.containsExactly("cdg279-v1-revision-1", "cdg279-v1-notice-2", "cdg279-v1-weather-2");
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(
 				"risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL",
 				"risk:ARRIVAL_ESTIMATE_FRESHNESS", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
 				"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY",
 				"comparison:DELAY_OUTCOME", "comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
-				"comparison:RECORDED_TRANSSHIPMENT_PORT");
+				"comparison:RECORDED_TRANSSHIPMENT_PORT", "evidence:cdg279-v1-revision-1",
+				"evidence:cdg279-v1-notice-2", "evidence:cdg279-v1-weather-2");
 	}
 
 	@Test
@@ -64,12 +70,25 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 		assertThat(boundedPromptInput)
 				.contains("\"riskLevel\":\"HIGH\"")
 				.contains("\"riskBasis\":\"AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE\"")
-				.contains("\"remainingSeconds\":3600")
+				.contains("\"durationSeconds\":108000")
+				.contains("\"remainingSeconds\":14400")
+				.contains("\"estimatedArrivalAt\":\"2026-10-02T08:00:00Z\"")
+				.contains("\"positionReceivedAt\":\"2026-10-01T08:00:00Z\"")
 				.contains("\"outcome\":\"EXCEEDS_DEADLINE\"")
-				.contains("\"instant\":\"2026-10-02T10:00:00Z\"")
-				.contains("\"comparedDeadline\":\"2026-10-02T10:00:00Z\"")
+				.contains("\"instant\":\"2026-10-01T12:00:00Z\"")
+				.contains("\"comparedDeadline\":\"2026-10-01T12:00:00Z\"")
+				.contains("\"applicableToCurrentPort\":true")
+				.contains("\"recordedTransshipmentPort\":\"Synthetic Multi-source Port\"")
+				.contains("\"shipmentKey\":\"A\"")
+				.contains("\"stage\":\"WORSENED\"")
+				.contains("\"simulationCutoffUtc\":\"2026-10-01T08:00:00Z\"")
 				.contains("risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW",
-						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY", "comparison:DELAY_OUTCOME");
+						"risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS",
+						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT",
+						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY", "comparison:DELAY_OUTCOME",
+						"comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
+						"comparison:RECORDED_TRANSSHIPMENT_PORT", "evidence:cdg279-v1-revision-1",
+						"evidence:cdg279-v1-notice-2", "evidence:cdg279-v1-weather-2");
 	}
 
 	@Test
@@ -117,43 +136,6 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 	private static boolean nonblank(String value) { return value != null && !value.isBlank(); }
 
 	private static MaritimeAiEvidencePackage scenarioInput() {
-		String cutoff = "2026-10-01T08:00:00Z";
-		MaritimeEvidence mpa = new MaritimeEvidence("MPA_ETA_REVISION", "SYNTHETIC_DEMONSTRATION", "demo-synthetic-mpa-schedule-001",
-				"Fictional expected arrival revision", "fixture", "", "Synthetic fixture citation",
-				"2026-10-01T06:00:00+08:00", "2026-10-01T06:00:00+08:00", cutoff, "FRESH",
-				"2026-10-01T05:00:00+08:00", "2026-10-02T08:00:00+08:00", "Fictional changed value",
-				"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED",
-				"Synthetic demonstration only.", "Fictional mother vessel", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
-		MaritimeEvidence notice = new MaritimeEvidence("MPA_OFFICIAL_NOTICE", "SYNTHETIC_DEMONSTRATION", "demo-synthetic-notice-001",
-				"Fictional port notice", "fixture", "", "Synthetic fixture citation", "2026-10-01T00:00:00+08:00",
-				"2026-10-01T00:00:00+08:00", cutoff, "FRESH", null,
-				"Effective 2026-10-01 06:00-12:00 SGT; fictional maintenance.", null, "COMPATIBLE", "COMPATIBLE",
-				"COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED", "Synthetic demonstration only.", null, null, null, "PORT_CONTEXT");
-		MaritimeEvidence weather = new MaritimeEvidence("NEA_WEATHER", "SYNTHETIC_DEMONSTRATION", "demo-synthetic-nea-rainfall-001",
-				"Fictional regional weather", "fixture", "", "Synthetic fixture citation", "2026-10-01T05:00:00+08:00",
-				"2026-10-01T05:00:00+08:00", cutoff, "FRESH", null, "Fictional regional context.", null, "UNKNOWN",
-				"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED", "Synthetic demonstration only.", null, null, null, "REGIONAL_CONTEXT");
-		var context = new MaritimeAiShipmentContext("Fictional transshipment port",
-				new MaritimeAiShipmentContext.Vessel("MOTHER", "Fictional mother vessel", null, "PLANNED_ARRIVAL",
-						OffsetDateTime.parse("2026-10-02T08:00:00Z")),
-				new MaritimeAiShipmentContext.Vessel("FEEDER", "Fictional feeder vessel", null, "PLANNED_DEPARTURE",
-						OffsetDateTime.parse("2026-10-02T12:00:00Z")),
-				new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
-						MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
-						new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 14_400L),
-						new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 3_600L, null),
-						new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
-							OffsetDateTime.parse("2026-10-02T11:00:00Z"), Instant.parse("2026-10-01T07:30:00Z"), null),
-						List.of("Synthetic WORSENED scenario calculation.")),
-				new MaritimeAiBusinessContext(
-						new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED,
-							OffsetDateTime.parse("2026-10-02T10:00:00Z"), "Fictional transshipment port", true),
-						new MaritimeAiBusinessContext.Comparison(MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
-							com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
-							OffsetDateTime.parse("2026-10-02T11:00:00Z"), OffsetDateTime.parse("2026-10-02T10:00:00Z"),
-							"Fictional transshipment port")),
-				new MaritimeAiShipmentContext.Scenario("A", "DEMO-A", "WORSENED", cutoff));
-		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", cutoff, "VERIFIED", context,
-				List.of(mpa, notice, weather));
+		return ScenarioQualityStubClientTest.worsenedShipmentAInput("LiveSmoke");
 	}
 }
