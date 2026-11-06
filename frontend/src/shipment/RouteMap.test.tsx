@@ -13,6 +13,8 @@ const mapCalls = vi.hoisted(() => ({
   errorHandlers: [] as (() => void)[],
   sources: new Map<string, { setData: (data: unknown) => void }>(),
   mapInstances: 0,
+  styleLoaded: true,
+  loadOnSubscribe: true,
 }));
 
 vi.mock('maplibre-gl', () => ({
@@ -20,7 +22,7 @@ vi.mock('maplibre-gl', () => ({
     constructor() { mapCalls.mapInstances += 1; }
     on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
       if (typeof layerOrCallback === 'function') {
-        if (event === 'load') layerOrCallback();
+        if (event === 'load' && mapCalls.loadOnSubscribe) layerOrCallback();
         if (event === 'error') mapCalls.errorHandlers.push(layerOrCallback);
       }
       else if (handler) mapCalls.layerHandlers.set(`${event}:${layerOrCallback}`, handler);
@@ -29,8 +31,12 @@ vi.mock('maplibre-gl', () => ({
     addSource(id: string) { mapCalls.sources.set(id, { setData: (data: unknown) => mapCalls.setData(id, data) }); }
     addLayer(layer: unknown) { mapCalls.addLayer(layer); }
     getSource(id: string) { return mapCalls.sources.get(id); }
-    setFilter(id: string, filter: unknown) { mapCalls.setFilter(id, filter); }
+    setFilter(id: string, filter: unknown) {
+      if (!mapCalls.styleLoaded) throw new Error('Style is not done loading.');
+      mapCalls.setFilter(id, filter);
+    }
     getCanvas() { return { style: {} }; }
+    isStyleLoaded() { return mapCalls.styleLoaded; }
     loaded() { return false; }
     remove() {}
     addControl() {}
@@ -104,6 +110,8 @@ describe('shipment route display', () => {
     mapCalls.errorHandlers.length = 0;
     mapCalls.sources.clear();
     mapCalls.mapInstances = 0;
+    mapCalls.styleLoaded = true;
+    mapCalls.loadOnSubscribe = true;
   });
 
   it('lists the stored route in connection order', () => {
@@ -284,6 +292,18 @@ describe('shipment route display', () => {
     rerender(<RouteMap shipment={{ ...shipment, origin: 'Jakarta, ID' }} history={{ ...trackFixture(), to: '2026-10-05T13:00:00Z' }} selectedId={102} />);
     await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalledTimes(2));
     expect(mapCalls.mapInstances).toBe(1);
+  });
+
+  it('keeps the route available when a scenario revision arrives before the map style loads', async () => {
+    mapCalls.styleLoaded = false;
+    mapCalls.loadOnSubscribe = false;
+    const { rerender } = render(<RouteMap shipment={shipment} contextKey="session:baseline" />);
+    await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
+
+    rerender(<RouteMap shipment={shipment} contextKey="session:change" />);
+
+    expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
+    expect(mapCalls.setFilter).not.toHaveBeenCalled();
   });
 
   it('keeps track text available when basemap assets fail', async () => {
