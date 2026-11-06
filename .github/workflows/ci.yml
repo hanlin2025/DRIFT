@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SPRING_PROFILES_ACTIVE: test
   DRIFT_TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/drift_test
   DRIFT_TEST_DATABASE_USERNAME: drift
   DRIFT_TEST_DATABASE_PASSWORD: drift
@@ -56,6 +55,7 @@ jobs:
           POSTGRES_INITDB_ARGS: "--set=max_connections=500"
         ports:
           - 5432:5432
+          - 55433:5432
         options: >-
           --health-cmd "pg_isready -U drift -d drift_test"
           --health-interval 5s
@@ -72,20 +72,21 @@ jobs:
           cache: maven
           cache-dependency-path: backend/pom.xml
       - name: Compile and run the complete backend suite
-        working-directory: backend
-        run: bash ./mvnw -B -ntp clean test
-      - name: Confirm the database reached V34
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/ci/backend-checks.sh
+      - name: Confirm the database reached the latest Flyway migration
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         run: |
           set -euo pipefail
-          latest="$(docker exec "$POSTGRES_CONTAINER_ID" psql -U drift -d drift_test -Atqc \
-            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
-          if [[ "$latest" != "34" ]]; then
-            echo "Expected Flyway V34, found '$latest'." >&2
+          expected="$(python3 -c 'from pathlib import Path; print(max(int(p.name.split("__", 1)[0][1:]) for p in Path("backend/src/main/resources/db/migration").glob("V*__*.sql")))')"
+          latest="$(docker exec "$POSTGRES_CONTAINER_ID" psql -U drift -d drift_test -Atqc "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
+          if [[ "$latest" != "$expected" ]]; then
+            echo "Expected Flyway V$expected, found '$latest'." >&2
             exit 1
           fi
-
+          echo "Database reached latest checked-in migration V$latest."
   database:
     name: Database and Flyway
     runs-on: ubuntu-24.04
@@ -100,6 +101,7 @@ jobs:
           POSTGRES_INITDB_ARGS: "--set=max_connections=500"
         ports:
           - 5432:5432
+          - 55433:5432
         options: >-
           --health-cmd "pg_isready -U drift -d drift_test"
           --health-interval 5s
@@ -115,96 +117,13 @@ jobs:
           java-version: "25"
           cache: maven
           cache-dependency-path: backend/pom.xml
-      - name: Run V33-to-V34 migration and persistence tests
-        working-directory: backend
+      - name: Validate migration chain and database integration tests
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
           DRIFT_CDG289_ADMIN_JDBC_URL: jdbc:postgresql://127.0.0.1:5432/postgres
           DRIFT_CDG289_DB_USERNAME: drift
           DRIFT_CDG289_DB_PASSWORD: drift
-        run: |
-          set -euo pipefail
-          container="$POSTGRES_CONTAINER_ID"
-          database=""
-          ownership_token=""
-          created=0
-
-          cleanup() {
-            exit_code=$?
-            if [[ "$created" == "1" ]]; then
-              comment="$(docker exec "$container" psql -U drift -d postgres -Atqc \
-                "SELECT COALESCE(shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = '$database'" 2>/dev/null || true)"
-              if [[ "$comment" == "$ownership_token" ]]; then
-                docker exec "$container" dropdb -U drift --if-exists "$database" || exit_code=1
-              else
-                echo "Refusing to drop $database because its ownership marker changed." >&2
-                exit_code=1
-              fi
-            fi
-            exit "$exit_code"
-          }
-          trap cleanup EXIT
-
-          create_owned_database() {
-            database="drift_cdg289_$(date -u +%Y%m%d%H%M%S)_$(openssl rand -hex 6)"
-            ownership_token="$(openssl rand -hex 16)"
-            if [[ ! "$database" =~ ^drift_cdg289_[0-9]{14}_[a-f0-9]{12}$ ]]; then
-              echo "Generated database name failed the ownership guard." >&2
-              return 1
-            fi
-            if [[ "$(docker exec "$container" psql -U drift -d postgres -Atqc \
-              "SELECT 1 FROM pg_database WHERE datname = '$database'")" == "1" ]]; then
-              echo "Refusing to reuse existing database $database." >&2
-              return 1
-            fi
-            docker exec "$container" createdb -U drift -O drift "$database"
-            created=1
-            docker exec "$container" psql -U drift -d postgres -v ON_ERROR_STOP=1 \
-              -c "COMMENT ON DATABASE $database IS '$ownership_token'"
-          }
-
-          drop_owned_database() {
-            comment="$(docker exec "$container" psql -U drift -d postgres -Atqc \
-              "SELECT COALESCE(shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = '$database'")"
-            if [[ "$comment" != "$ownership_token" ]]; then
-              echo "Refusing to drop $database because its ownership marker changed." >&2
-              return 1
-            fi
-            docker exec "$container" dropdb -U drift --if-exists "$database"
-            created=0
-            database=""
-            ownership_token=""
-          }
-
-          cd ..
-          create_owned_database
-          export DRIFT_CDG289_JDBC_URL="jdbc:postgresql://127.0.0.1:5432/$database"
-          export DRIFT_CDG289_OWNERSHIP_TOKEN="$ownership_token"
-          cd backend
-          bash ./mvnw -B -ntp \
-            -Dtest=MaritimeAiAssessmentRecordTypeMigrationTest,MaritimeAiScenarioAssessmentPersistenceIntegrationTests,ScenarioMaritimeAiAssessmentServiceTest,MaritimeAiScenarioTransientTest \
-            test
-          latest="$(docker exec "$container" psql -U drift -d "$database" -Atqc \
-            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
-          if [[ "$latest" != "34" ]]; then
-            echo "Expected the disposable persistence database to reach V34, found '$latest'." >&2
-            exit 1
-          fi
-          drop_owned_database
-
-          create_owned_database
-          export DRIFT_TEST_DATABASE_URL="jdbc:postgresql://127.0.0.1:5432/$database"
-          bash ./mvnw -B -ntp \
-            -Dtest=MaritimeAiAssessmentHistoryAuthorizationIntegrationTests,MaritimeAiAssessmentHistoryConcurrencyIntegrationTests \
-            test
-          latest="$(docker exec "$container" psql -U drift -d "$database" -Atqc \
-            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
-          if [[ "$latest" != "34" ]]; then
-            echo "Expected the disposable history database to reach V34, found '$latest'." >&2
-            exit 1
-          fi
-          drop_owned_database
-
+        run: bash scripts/ci/database-checks.sh
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
