@@ -39,7 +39,7 @@ The local full-suite helper expects both published PostgreSQL ports shown above,
 
 ## Required checks
 
-After the workflow is present on the target branch, configure branch protection or a repository ruleset separately for main and the #232 candidate branch. Require the successful CI / Backend, CI / Database and Flyway, and CI / Frontend checks before merge, along with the team's existing review rules. CI / Docker builds (when configured) can be required once deployment Dockerfiles are part of the branch; its job reports a successful no-op when those files are absent.
+After the workflow is present on the target branch, configure branch protection or a repository ruleset separately for main and the #232 candidate branch. Require the successful `Backend`, `Database and Flyway`, and `Frontend` checks before merge, along with the team's existing review rules. `Docker builds (when configured)` can be required once deployment Dockerfiles are part of the branch; its job reports a successful no-op when those files are absent.
 
 This PR does not change repository rules or merge settings. Configure required checks only after the first workflow run has created the check names.
 
