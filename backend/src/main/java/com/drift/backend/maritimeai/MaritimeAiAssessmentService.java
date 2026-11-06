@@ -110,9 +110,8 @@ public class MaritimeAiAssessmentService {
 				persist(detail, input, now, result, MaritimeAiGenerationState.GENERATED, "VALID", result.interpretation()));
 	}
 
-	/**
-	 * Generates a transient interpretation only for an explicitly enabled controlled-scenario
-	 * request. This path never calls the ordinary shipment reader and never persists a row.
+	/** Compatibility adapter for callers that need a transient scenario response. The authenticated scenario endpoint
+	 * uses {@link #generateScenario(MaritimeAiEvidencePackage, boolean)} and persists its result separately.
 	 */
 	MaritimeAiAssessmentResponse generateScenarioTransient(MaritimeAiEvidencePackage input, boolean scenarioEnabled) {
 		return scenarioTransient(input, generateScenario(input, scenarioEnabled));
@@ -144,8 +143,11 @@ public class MaritimeAiAssessmentService {
 				"MODEL_UNAVAILABLE", result,
 				result.failure() == null ? "The configured provider returned no interpretation." : result.failure());
 		String validation = MaritimeAiResponseValidator.validate(result.interpretation(), eligibleInput);
-		if (validation != null) return scenarioResult(MaritimeAiGenerationState.FAILED, validation, result,
-				"The provider response failed validation (" + validation + "). No interpretation is displayed.");
+		if (validation != null) {
+			String diagnostic = MaritimeAiResponseValidator.safeValidationDiagnostic(validation, result.interpretation(), eligibleInput);
+			return scenarioResult(MaritimeAiGenerationState.FAILED, validation, result,
+					"The provider response failed validation (" + diagnostic + "). No interpretation is displayed.");
+		}
 		if (!result.interpretation().evidenceSufficient()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"INSUFFICIENT_MODEL_EVIDENCE", result, "The model reported that the supplied evidence was insufficient.");
 		return new MaritimeAiScenarioGenerationResult(result, MaritimeAiGenerationState.GENERATED, "VALID",

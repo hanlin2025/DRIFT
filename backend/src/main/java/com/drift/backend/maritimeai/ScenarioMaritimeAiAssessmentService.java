@@ -144,10 +144,18 @@ public class ScenarioMaritimeAiAssessmentService {
 		ControlledScenarioSnapshot snapshot = selected.snapshot();
 		ControlledScenarioSnapshot.ShipmentRead row = selected.row();
 		MaritimeContextResponse bundle = snapshot.maritimeContext();
-		if (bundle == null || !bundle.enabled() || !"SYNTHETIC_DEMONSTRATION".equals(bundle.sourceMode())
-				|| !snapshot.simulationCutoffUtc().toString().equals(bundle.assessmentCutoffUtc())
-				|| bundle.evidence() == null || bundle.evidence().stream()
-					.anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
+		// BASELINE deliberately has no evidence. Only an enabled, cutoff-matched empty UNAVAILABLE
+		// bundle may reach the downstream insufficient-evidence response. Progressed stages require
+		// a synthetic bundle and synthetic evidence; baseline must never carry evidence into inference.
+		boolean baseline = snapshot.stage() == com.drift.backend.shipment.ControlledScenarioStage.BASELINE;
+		boolean validEmptyBaseline = bundle != null && bundle.enabled()
+				&& "UNAVAILABLE".equals(bundle.sourceMode()) && bundle.evidence() != null && bundle.evidence().isEmpty();
+		boolean validSyntheticProgression = bundle != null && bundle.enabled()
+				&& "SYNTHETIC_DEMONSTRATION".equals(bundle.sourceMode()) && bundle.evidence() != null
+				&& !bundle.evidence().isEmpty()
+				&& bundle.evidence().stream().allMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()));
+		if (!(baseline ? validEmptyBaseline : validSyntheticProgression)
+				|| !snapshot.simulationCutoffUtc().toString().equals(bundle.assessmentCutoffUtc())) {
 			throw unavailable("SCENARIO_AI_SYNTHETIC_EVIDENCE_REQUIRED", HttpStatus.SERVICE_UNAVAILABLE,
 				"The selected scenario does not have a consistent synthetic evidence bundle at its cutoff.");
 		}

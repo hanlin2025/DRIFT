@@ -49,6 +49,7 @@ import com.drift.backend.maritimeai.MaritimeAiAssessmentResponse;
 import com.drift.backend.maritimeai.MaritimeAiBusinessContext;
 import com.drift.backend.maritimeai.MaritimeAiConnectionRiskContext;
 import com.drift.backend.maritimeai.MaritimeAiEvidencePackage;
+import com.drift.backend.maritimeai.ScenarioQualityStubClient;
 import com.drift.backend.maritimeai.SyntheticDisruptionAiClient;
 import com.drift.backend.maritimecontext.MaritimeContextResponse;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
@@ -78,6 +79,7 @@ import tools.jackson.databind.ObjectMapper;
 		"app.maritime-context.demo-enabled=false",
 		"app.controlled-scenario.enabled=false",
 		"app.maritime-ai.enabled=true",
+		"app.maritime-ai.scenario-enabled=true",
 		"app.maritime-ai.controlled-replay-stub-enabled=false",
 		"app.maritime-ai.external-requests-approved=false",
 		"app.maritime-ai.provider=",
@@ -100,6 +102,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	private static final Scenario SCENARIO = SyntheticDisruptionScenarioFixture.create("Integration1");
 	private static final MutableScenarioClock TEST_CLOCK = new MutableScenarioClock(Instant.parse("2026-10-01T00:00:00Z"));
 	private static final SyntheticDisruptionAiClient OFFLINE_CLIENT = new SyntheticDisruptionAiClient();
+	private static final ScenarioQualityStubClient SCENARIO_AI_CLIENT = new ScenarioQualityStubClient(OFFLINE_CLIENT);
 	private static final String PORT = SyntheticDisruptionScenarioFixture.PORT;
 	private static final String PASSWORD = "Example123";
 	private static final List<ExpectedStage> EXPECTED = List.of(
@@ -127,6 +130,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	@Test
 	void authenticatedThreeStageReplayCalculatesRiskImpactAndGroundedAssessmentsWithoutOperationalMutation() throws Exception {
 		OFFLINE_CLIENT.clear();
+		SCENARIO_AI_CLIENT.clearScenarioInputs();
 		TEST_CLOCK.set(Instant.parse("2026-10-01T00:00:00Z"));
 		Identity identity = createIdentity();
 		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(identity);
@@ -274,6 +278,106 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.isEqualTo(Instant.parse("2026-10-02T06:00:00Z"));
 
 		verifyExistingCalculationBoundaries(identity, shipmentIds.get(0));
+	}
+
+	@Test
+	void authenticatedScenarioAiEndpointPassesTheSixCaseQualityMatrixAndRejectsStaleBindings() throws Exception {
+		SCENARIO_AI_CLIENT.clearScenarioInputs();
+		TEST_CLOCK.set(Instant.parse("2026-10-01T00:00:00Z"));
+		Identity owner = createIdentity();
+		Identity unrelated = createIdentity();
+		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(owner);
+		configureControlledScenario(owner, shipmentIds);
+		UUID sessionId = UUID.randomUUID();
+		JsonNode created = scenarioCreate(sessionId, owner.managerToken(), shipmentIds.getFirst());
+		JsonNode baseline = scenarioCommand(sessionId, owner.managerToken(), "start", created, "ai-quality-start", 200);
+		assertThat(baseline.at("/snapshot/stage").asText()).isEqualTo("BASELINE");
+		for (int shipmentIndex = 0; shipmentIndex < shipmentIds.size(); shipmentIndex++) {
+			String key = shipmentIndex == 0 ? "A" : "B";
+			assertThat(baseline.at("/snapshot/shipments/" + shipmentIndex + "/risk/level").asText())
+					.isEqualTo("LOW");
+			assertThat(baseline.at("/snapshot/shipments/" + shipmentIndex + "/businessImpact/outcome").asText())
+					.isEqualTo("NO_PREDICTED_IMPACT");
+			assertThat(baseline.at("/snapshot/shipments/" + shipmentIndex + "/scenarioShipmentKey").asText())
+					.isEqualTo(key);
+		}
+
+		Map<String, Object> baselineARequest = scenarioAiRequest(baseline, "A");
+		MvcResult unauthenticated = scenarioAi(sessionId, shipmentIds.getFirst(), null, baselineARequest);
+		assertThat(unauthenticated.getResponse().getStatus()).isEqualTo(401);
+		MvcResult unauthorized = scenarioAi(sessionId, shipmentIds.getFirst(), unrelated.unrelatedToken(), baselineARequest);
+		assertThat(unauthorized.getResponse().getStatus()).isEqualTo(403);
+		MvcResult unknownSession = scenarioAi(UUID.randomUUID(), shipmentIds.getFirst(), owner.managerToken(), baselineARequest);
+		assertThat(unknownSession.getResponse().getStatus()).isEqualTo(404);
+		assertThat(json.readTree(unknownSession.getResponse().getContentAsString()).path("code").asText())
+				.isEqualTo("SCENARIO_NOT_FOUND");
+		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).isEmpty();
+
+		String beforeBaseline = scenarioOperationalStateSnapshot();
+		long baselinePositions = positionCount();
+		long baselineAssessments = assessmentCount();
+		for (int shipmentIndex = 0; shipmentIndex < shipmentIds.size(); shipmentIndex++) {
+			String key = shipmentIndex == 0 ? "A" : "B";
+			MvcResult generated = scenarioAi(sessionId, shipmentIds.get(shipmentIndex), owner.managerToken(),
+					scenarioAiRequest(baseline, key));
+			assertThat(generated.getResponse().getStatus()).isEqualTo(200);
+			JsonNode posted = json.readTree(generated.getResponse().getContentAsString());
+			assertScenarioEnvelope(posted, sessionId, baseline, key, shipmentIds.get(shipmentIndex));
+			assertThat(posted.at("/assessment/state").asText()).isEqualTo("ABSTAINED");
+			assertThat(posted.at("/assessment/validationStatus").asText()).isEqualTo("INSUFFICIENT_EVIDENCE");
+			assertThat(posted.at("/assessment/interpretation").isNull()).isTrue();
+			assertThat(posted.at("/assessment/assessmentId").isMissingNode()
+					|| posted.at("/assessment/assessmentId").isNull()).isTrue();
+		}
+		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).isEmpty();
+		assertThat(scenarioOperationalStateSnapshot()).isEqualTo(beforeBaseline);
+		assertThat(positionCount()).isEqualTo(baselinePositions);
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
+
+		assertScenarioBindingRejected(sessionId, shipmentIds.getFirst(), baseline, "A", owner.managerToken(),
+				"expectedEpochId", UUID.randomUUID().toString(), "STALE_EPOCH");
+		assertScenarioBindingRejected(sessionId, shipmentIds.getFirst(), baseline, "A", owner.managerToken(),
+				"expectedRevision", baseline.path("revision").asLong() + 1, "STALE_REVISION");
+		assertScenarioBindingRejected(sessionId, shipmentIds.getFirst(), baseline, "A", owner.managerToken(),
+				"expectedSnapshotId", UUID.randomUUID().toString(), "STALE_SNAPSHOT");
+		assertScenarioBindingRejected(sessionId, shipmentIds.getFirst(), baseline, "A", owner.managerToken(),
+				"expectedSimulationCutoffUtc", "2026-10-01T00:00:01Z", "STALE_SNAPSHOT");
+		assertScenarioBindingRejected(sessionId, shipmentIds.get(1), baseline, "A", owner.managerToken(),
+				null, null, "SCENARIO_SHIPMENT_MISMATCH");
+		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).isEmpty();
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
+
+		int expectedStubCalls = 0;
+		JsonNode current = baseline;
+		for (int stageIndex = 1; stageIndex < EXPECTED.size(); stageIndex++) {
+			current = scenarioCommand(sessionId, owner.managerToken(), "next", current,
+					"ai-quality-next-" + stageIndex, 200);
+			assertThat(current.at("/snapshot/stage").asText()).isEqualTo(stageIndex == 1 ? "CHANGE" : "WORSENED");
+			String operationsBefore = scenarioOperationalStateSnapshot();
+			long positionsBefore = positionCount();
+			long assessmentsBefore = assessmentCount();
+			ExpectedStage expected = EXPECTED.get(stageIndex);
+			for (int shipmentIndex = 0; shipmentIndex < shipmentIds.size(); shipmentIndex++) {
+				String key = shipmentIndex == 0 ? "A" : "B";
+				MvcResult result = scenarioAi(sessionId, shipmentIds.get(shipmentIndex), owner.managerToken(),
+						scenarioAiRequest(current, key));
+				assertThat(result.getResponse().getStatus()).isEqualTo(200);
+				JsonNode response = json.readTree(result.getResponse().getContentAsString());
+				assertScenarioEnvelope(response, sessionId, current, key, shipmentIds.get(shipmentIndex));
+				assertScenarioPositiveQuality(response, current, expected, shipmentIndex, key);
+				assertThat(response.at("/assessment/assessmentId").isMissingNode()
+						|| response.at("/assessment/assessmentId").isNull()).isTrue();
+				expectedStubCalls++;
+				assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).hasSize(expectedStubCalls);
+				assertScenarioInput(SCENARIO_AI_CLIENT.scenarioInputs().get(expectedStubCalls - 1), current,
+						expected, key);
+			}
+			assertThat(scenarioOperationalStateSnapshot()).isEqualTo(operationsBefore);
+			assertThat(positionCount()).isEqualTo(positionsBefore);
+			assertThat(assessmentCount()).isEqualTo(assessmentsBefore);
+		}
+		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).hasSize(4);
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
 	}
 
 	@Test
@@ -748,6 +852,151 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.andExpect(status().is(expectedStatus)).andReturn().getResponse().getContentAsString());
 	}
 
+	private Map<String, Object> scenarioAiRequest(JsonNode session, String key) {
+		JsonNode snapshot = session.path("snapshot");
+		return new java.util.LinkedHashMap<>(Map.of("scenarioShipmentKey", key,
+				"expectedEpochId", session.path("epochId").asText(),
+				"expectedRevision", session.path("revision").asLong(),
+				"expectedSnapshotId", snapshot.path("snapshotId").asText(),
+				"expectedSimulationCutoffUtc", snapshot.path("simulationCutoffUtc").asText()));
+	}
+
+	private MvcResult scenarioAi(UUID sessionId, long shipmentId, String token, Map<String, Object> body) throws Exception {
+		var request = post(scenarioSessionPath(sessionId) + "/shipments/" + shipmentId + "/interpretation")
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
+		if (token != null) request.header("Authorization", "Bearer " + token);
+		return mvc.perform(request).andReturn();
+	}
+
+	private void assertScenarioBindingRejected(UUID sessionId, long shipmentId, JsonNode session, String key,
+			String token, String changedField, Object changedValue, String expectedCode) throws Exception {
+		Map<String, Object> body = scenarioAiRequest(session, key);
+		if (changedField != null) body.put(changedField, changedValue);
+		MvcResult result = scenarioAi(sessionId, shipmentId, token, body);
+		assertThat(result.getResponse().getStatus()).isEqualTo(409);
+		assertThat(json.readTree(result.getResponse().getContentAsString()).path("code").asText()).isEqualTo(expectedCode);
+	}
+
+	private void assertScenarioEnvelope(JsonNode response, UUID sessionId, JsonNode session, String key, long shipmentId) {
+		assertThat(response.path("sessionId").asText()).isEqualTo(sessionId.toString());
+		assertThat(response.path("epochId").asText()).isEqualTo(session.path("epochId").asText());
+		assertThat(response.path("snapshotId").asText()).isEqualTo(session.at("/snapshot/snapshotId").asText());
+		assertThat(response.path("revision").asLong()).isEqualTo(session.path("revision").asLong());
+		assertThat(response.path("simulationCutoffUtc").asText()).isEqualTo(session.at("/snapshot/simulationCutoffUtc").asText());
+		assertThat(response.path("scenarioShipmentKey").asText()).isEqualTo(key);
+		assertThat(response.path("shipmentId").asLong()).isEqualTo(shipmentId);
+		assertThat(response.at("/assessment/bundleVersion").asText()).isEqualTo("cdg246.maritime-evidence-bundle.v1");
+		assertThat(response.at("/assessment/bundleHash").asText()).matches("[0-9a-f]{64}");
+		assertThat(response.at("/assessment/assessmentCutoffUtc").asText())
+				.isEqualTo(session.at("/snapshot/simulationCutoffUtc").asText());
+	}
+
+	private void assertScenarioPositiveQuality(JsonNode response, JsonNode session, ExpectedStage expected,
+			int shipmentIndex, String key) {
+		JsonNode assessment = response.path("assessment");
+		assertThat(assessment.path("state").asText()).isEqualTo("GENERATED");
+		assertThat(assessment.path("validationStatus").asText()).isEqualTo("VALID");
+		assertThat(assessment.path("provider").asText()).isEqualTo("offline-scenario-quality-stub");
+		assertThat(assessment.path("model").asText()).isEqualTo("deterministic-fixture");
+		assertThat(assessment.path("promptVersion").asText()).isEqualTo("cdg290.scenario-grounded-v1.5");
+		JsonNode claims = assessment.at("/interpretation/claims");
+		JsonNode riskClaim = claimWithRelationship(claims, "RISK_BUFFER_REVIEW");
+		JsonNode businessClaim = claimWithRelationship(claims, "DELAY_COMPARISON_REVIEW");
+		assertThat(riskClaim).isNotNull();
+		assertThat(businessClaim).isNotNull();
+		long businessClaimCount = 0;
+		for (JsonNode claim : claims) {
+			if ("DELAY_COMPARISON_REVIEW".equals(claim.path("relationshipType").asText())) businessClaimCount++;
+		}
+		assertThat(businessClaimCount).isEqualTo(1);
+		assertThat(riskClaim.path("statement").asText().toLowerCase()).contains("synthetic", "revision", "warrants human review",
+				expected.riskLevel().toLowerCase(), "ais", "remaining", "available");
+		JsonNode riskReview = riskClaim.path("riskReview");
+		assertThat(riskReview.path("severity").asText()).isEqualTo(expected.riskLevel());
+		assertThat(riskReview.path("selectedWindowBasis").asText()).isEqualTo("AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE");
+		assertThat(riskReview.path("selectedWindowState").asText()).isEqualTo("AVAILABLE");
+		assertThat(riskReview.path("estimateFreshness").asText()).isEqualTo("AVAILABLE");
+		List<String> riskReferences = strings(riskClaim.path("factReferences"));
+		assertThat(riskReferences).contains("evidence:cdg279-v1-revision-1", "risk:CONNECTION_SEVERITY",
+				"risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS")
+				.doesNotContain("risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED");
+		assertThat(strings(riskClaim.path("evidenceIds"))).containsExactly("cdg279-v1-revision-1");
+
+		String expectedOutcome = shipmentIndex == 0 ? expected.impactA() : expected.impactB();
+		String businessStatement = businessClaim.path("statement").asText().toLowerCase();
+		if ("EXCEEDS_DEADLINE".equals(expectedOutcome))
+			assertThat(businessStatement).contains("predicted arrival exceeds");
+		else assertThat(businessStatement).contains("no predicted impact");
+		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
+		List<String> businessReferences = strings(businessClaim.path("factReferences"));
+		assertThat(businessReferences).contains("evidence:cdg279-v1-revision-1", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
+				"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY",
+				"comparison:DELAY_OUTCOME", "comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
+				"comparison:RECORDED_TRANSSHIPMENT_PORT");
+		assertThat(strings(businessClaim.path("evidenceIds"))).containsExactly("cdg279-v1-revision-1");
+		JsonNode deterministicBusinessImpact = session.at("/snapshot/shipments/" + shipmentIndex + "/businessImpact");
+		assertThat(deterministicBusinessImpact.path("outcome").asText()).isEqualTo(expectedOutcome);
+		assertThat(deterministicBusinessImpact.path("reason").isNull()).isTrue();
+		assertThat(deterministicBusinessImpact.path("deadline").asText()).isNotBlank();
+		assertThat(deterministicBusinessImpact.path("recordedTransshipmentPort").asText()).isNotBlank();
+
+		List<String> followUps = strings(assessment.at("/interpretation/followUpConsiderations")).stream()
+				.map(String::toLowerCase).toList();
+		assertThat(followUps).anySatisfy(text -> assertThat(text).contains("carrier operations team", "verify", "arrival estimate"));
+		assertThat(followUps).anySatisfy(text -> assertThat(text).contains("operations team", "confirm", "transshipment-arrival deadline", "current shipment port"));
+		String authored = assessment.path("interpretation").toString().toLowerCase();
+		assertThat(authored).doesNotContain("cargo", "financial loss", "caused", "missed connection", "urgent", "probability", "reroute", "cancel");
+		assertThat(assessment.at("/interpretation/summary").asText().toLowerCase())
+				.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		assertThat(assessment.at("/interpretation/uncertainties").toString().toLowerCase())
+				.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		for (JsonNode claim : claims) {
+			if ("DELAY_COMPARISON_REVIEW".equals(claim.path("relationshipType").asText())) continue;
+			assertThat(claim.path("statement").asText().toLowerCase())
+					.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
+		}
+
+		// Both rubric points are earned by the generated AI output: exact grounded business outcome and human verification.
+		int usefulnessScore = 0;
+		if (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds")
+				|| "NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("no predicted impact"))
+				&& businessReferences.contains("comparison:DELAY_OUTCOME")
+				&& businessReferences.contains("business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY")) usefulnessScore++;
+		if (followUps.stream().anyMatch(text -> text.contains("carrier operations team") && text.contains("verify") && text.contains("arrival estimate"))
+				&& followUps.stream().anyMatch(text -> text.contains("operations team") && text.contains("confirm")
+						&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port"))) usefulnessScore++;
+		assertThat(usefulnessScore).as("scenario shipment %s usefulness out of two", key).isEqualTo(2);
+	}
+
+	private void assertScenarioInput(MaritimeAiEvidencePackage input, JsonNode session, ExpectedStage expected, String key) {
+		assertThat(input.shipmentAssociationConfidence()).isEqualTo("VERIFIED");
+		assertThat(input.assessmentCutoffUtc()).isEqualTo(session.at("/snapshot/simulationCutoffUtc").asText());
+		assertThat(input.shipmentContext().scenario().shipmentKey()).isEqualTo(key);
+		assertThat(input.shipmentContext().scenario().stage()).isEqualTo(session.at("/snapshot/stage").asText());
+		assertThat(input.shipmentContext().scenario().simulationCutoffUtc()).isEqualTo(input.assessmentCutoffUtc());
+		assertThat(input.shipmentContext().connectionRisk().riskLevel().name()).isEqualTo(expected.riskLevel());
+		assertThat(input.shipmentContext().connectionRisk().riskBasis())
+				.isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
+		assertThat(input.shipmentContext().connectionRisk().remainingWindow().status()).isEqualTo("AVAILABLE");
+		assertThat(input.shipmentContext().connectionRisk().arrivalEstimate().state())
+				.isEqualTo(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE);
+		assertThat(input.shipmentContext().businessContext().comparison().outcome().name())
+				.isEqualTo(key.equals("A") ? expected.impactA() : expected.impactB());
+		assertThat(input.evidence()).extracting(MaritimeEvidence::evidenceId).contains("cdg279-v1-revision-1");
+		assertThat(input.evidence()).allMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()));
+	}
+
+	private static JsonNode claimWithRelationship(JsonNode claims, String relationship) {
+		for (JsonNode claim : claims) if (relationship.equals(claim.path("relationshipType").asText())) return claim;
+		return null;
+	}
+
+	private static List<String> strings(JsonNode array) {
+		List<String> result = new ArrayList<>();
+		array.forEach(value -> result.add(value.asText()));
+		return result;
+	}
+
 	private JsonNode context(long shipmentId, String token) throws Exception {
 		return json.readTree(mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-context")
 				.header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
@@ -778,11 +1027,15 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	}
 
 	private String scenarioOperationalSnapshot() {
+		return scenarioOperationalStateSnapshot()
+				+ jsonRows("SELECT to_jsonb(a)::text FROM maritime_ai_assessments a ORDER BY id", new Object[0]);
+	}
+
+	private String scenarioOperationalStateSnapshot() {
 		return jsonRows("SELECT to_jsonb(s)::text FROM shipments s ORDER BY id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(c)::text FROM shipment_importer_constraints c ORDER BY shipment_id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(e)::text FROM shipment_change_events e ORDER BY id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(c)::text FROM shipment_field_changes c ORDER BY event_id, id", new Object[0])
-				+ jsonRows("SELECT to_jsonb(a)::text FROM maritime_ai_assessments a ORDER BY id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(s)::text FROM shipment_risk_states s ORDER BY shipment_id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(s)::text FROM shipment_risk_transitions s ORDER BY id", new Object[0])
 				+ jsonRows("SELECT to_jsonb(d)::text FROM shipment_risk_alert_deliveries d ORDER BY id", new Object[0])
@@ -832,7 +1085,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		@Bean @Primary com.drift.backend.maritimecontext.MaritimeContextService syntheticDisruptionContext() {
 			return SCENARIO.contextForClock(TEST_CLOCK);
 		}
-		@Bean @Primary SyntheticDisruptionAiClient syntheticDisruptionAiClient() { return OFFLINE_CLIENT; }
+		@Bean @Primary ScenarioQualityStubClient scenarioQualityStubClient() { return SCENARIO_AI_CLIENT; }
 	}
 
 	private static final class MutableScenarioClock extends Clock {

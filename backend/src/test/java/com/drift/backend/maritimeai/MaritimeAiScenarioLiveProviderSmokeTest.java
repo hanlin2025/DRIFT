@@ -46,8 +46,9 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 		MaritimeAiAssessmentResponse response = service.generateScenarioTransient(scenarioInput(), true);
 
 		assertThat(response.assessmentId()).isNull();
-		assertThat(response.state()).isEqualTo("GENERATED");
-		assertThat(response.validationStatus()).isEqualTo("VALID");
+		// On failure, limitation contains only the validation rule and a generated-field path, never model text.
+		assertThat(response.state()).as("Safe scenario validation diagnostic: %s", response.limitation()).isEqualTo("GENERATED");
+		assertThat(response.validationStatus()).as("Safe scenario validation diagnostic: %s", response.limitation()).isEqualTo("VALID");
 		assertThat(response.provider()).isEqualTo(providerName);
 		assertThat(response.model()).isEqualTo(modelName);
 		assertThat(response.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
