@@ -10,6 +10,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.drift.backend.maritimecontext.MaritimeEvidence;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /** Manual one-request smoke test. It is skipped unless an owner opts in and every production gate is present. */
@@ -67,30 +68,28 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 
 		client.interpret(scenarioInput());
 
-		String boundedPromptInput = json.readTree(body.get()).at("/input/1/content/0/text").asString();
+		JsonNode request = json.readTree(body.get());
+		String boundedPromptInput = request.at("/input/1/content/0/text").asString();
 		assertThat(boundedPromptInput)
-				.contains("\"bundleVersion\":\"cdg246.maritime-evidence-bundle.v1\"")
-				.contains("\"riskLevel\":\"HIGH\"")
-				.contains("\"riskBasis\":\"AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE\"")
-				.contains("\"durationSeconds\":108000")
+				.contains("\"severity\":\"HIGH\"")
+				.contains("\"selectedWindowBasis\":\"AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE\"")
+				.contains("\"selectedWindowState\":\"AVAILABLE\"")
 				.contains("\"remainingSeconds\":14400")
-				.contains("\"estimatedArrivalAt\":\"2026-10-02T08:00:00Z\"")
+				.contains("\"estimatedArrivalAt\":\"2026-10-02T08:00Z\"")
 				.contains("\"positionReceivedAt\":\"2026-10-01T08:00:00Z\"")
 				.contains("\"outcome\":\"EXCEEDS_DEADLINE\"")
-				.contains("\"instant\":\"2026-10-01T12:00:00Z\"")
-				.contains("\"comparedDeadline\":\"2026-10-01T12:00:00Z\"")
+				.contains("\"deadlineAt\":\"2026-10-01T12:00Z\"")
+				.contains("\"comparedDeadline\":\"2026-10-01T12:00Z\"")
 				.contains("\"applicableToCurrentPort\":true")
 				.contains("\"recordedTransshipmentPort\":\"Synthetic Multi-source Port\"")
-				.contains("\"shipmentKey\":\"A\"")
+				.contains("\"scenarioShipmentKey\":\"A\"")
 				.contains("\"stage\":\"WORSENED\"")
-				.contains("\"simulationCutoffUtc\":\"2026-10-01T08:00:00Z\"")
-				.contains("risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW",
-						"risk:AIS_ESTIMATED_ARRIVAL", "risk:ARRIVAL_ESTIMATE_FRESHNESS",
-						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT",
-						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY", "comparison:DELAY_OUTCOME",
-						"comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
-						"comparison:RECORDED_TRANSSHIPMENT_PORT", "evidence:cdg279-v1-revision-1",
-						"evidence:cdg279-v1-notice-2", "evidence:cdg279-v1-weather-2");
+				.contains("\"cutoffUtc\":\"2026-10-01T08:00:00Z\"")
+				.contains("\"evidenceRef\":\"evidence:cdg279-v1-revision-1\"")
+				.contains("\"sourceType\":\"MPA_ETA_REVISION\"")
+				.contains("\"associationScope\":\"VESSEL_OBSERVATION\"")
+				.doesNotContain("cdg279-v1-notice-2", "cdg279-v1-weather-2", "https://example.invalid",
+						"Fictional", "citation", "sourceUrl", "vesselIdentity", "bundleVersion");
 	}
 
 	@Test
@@ -129,8 +128,9 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 		assertThat(response.validationStatus()).as("Safe scenario validation diagnostic: %s", response.limitation()).isEqualTo("VALID");
 		assertThat(response.provider()).isEqualTo(providerName);
 		assertThat(response.model()).isEqualTo(modelName);
-		assertThat(response.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
+		assertThat(response.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
 		assertThat(response.interpretation()).isNotNull();
+		ScenarioQualityStubClientTest.assertUsefulness(response.interpretation(), scenarioInput());
 		assertThat(response.deterministicSummary().evidenceFacts()).allSatisfy(fact ->
 				assertThat(fact.sourceMode()).isEqualTo("SYNTHETIC_DEMONSTRATION"));
 	}
