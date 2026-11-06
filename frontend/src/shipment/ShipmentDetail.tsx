@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeContext, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { RecommendationDecisionPanel } from './RecommendationDecisionPanel';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
+import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
 import { RiskBadge } from './RiskBadge';
@@ -51,6 +52,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [cdg201Evidence, setCdg201Evidence] = useState<Cdg201ArrivalEvidence | null>(null);
   const [maritimeContext, setMaritimeContext] = useState<MaritimeContext | null>(null);
   const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
+  const [maritimeAiAssessments, setMaritimeAiAssessments] = useState<MaritimeAiAssessment[]>([]);
+  const [maritimeAiUnavailable, setMaritimeAiUnavailable] = useState(false);
+  const [maritimeAiGenerating, setMaritimeAiGenerating] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
@@ -138,6 +142,20 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     }
   }, [token, shipmentId, onSessionEnded]);
 
+  const generateMaritimeAi = useCallback(async () => {
+    setMaritimeAiGenerating(true);
+    try {
+      const generated = await generateMaritimeAiAssessment(token, shipmentId);
+      setMaritimeAiAssessments(current => [generated, ...current]);
+      setMaritimeAiUnavailable(false);
+    } catch (reason: unknown) {
+      if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
+      else setMaritimeAiUnavailable(true);
+    } finally {
+      setMaritimeAiGenerating(false);
+    }
+  }, [token, shipmentId, onSessionEnded]);
+
   useEffect(() => {
     let active = true;
     const requestId = ++requestSeq.current;
@@ -149,6 +167,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setHistory(null);
     setCdg201Evidence(null);
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
+    setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
       if (!active || requestId !== requestSeq.current) return;
@@ -207,6 +226,18 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       .catch(() => {
         if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
       });
+    // AI assessments are independently additive and must not prevent the evidence panel or
+    // shipment detail from rendering when an optional client throws or returns a non-Promise.
+    void Promise.resolve()
+      .then(() => listMaritimeAiAssessments(token, shipmentId))
+      .then(found => {
+        if (!active || requestId !== requestSeq.current) return;
+        if (Array.isArray(found)) setMaritimeAiAssessments(found);
+        else setMaritimeAiUnavailable(true);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setMaritimeAiUnavailable(true);
+      });
     return () => {
       active = false;
       requestSeq.current += 1;
@@ -253,7 +284,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} maritimeAiGenerating={maritimeAiGenerating} onGenerateMaritimeAi={generateMaritimeAi} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking('explicit');
                   void reloadHistory();
@@ -307,7 +338,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 24;
+const FACT_ROWS = 25;
 
 function ShipmentSkeleton() {
   return (
@@ -330,12 +361,16 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
   maritimeContext: MaritimeContext | null;
   maritimeContextUnavailable: boolean;
+  maritimeAiAssessments: MaritimeAiAssessment[];
+  maritimeAiUnavailable: boolean;
+  maritimeAiGenerating: boolean;
+  onGenerateMaritimeAi: () => void;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
@@ -378,6 +413,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       </div>
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}
@@ -388,6 +424,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
           <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
           {operationFact('Mother vessel operation', shipment.motherOperationalState)}
+          {portConditionFact(shipment.portConditionComparison)}
           <div>
             <dt>Planned arrival</dt>
             <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
@@ -440,6 +477,45 @@ const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', str
   AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
   NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
 };
+
+const PORT_OUTCOME_LABELS: Record<NonNullable<PortConditionComparison['outcome']>, string> = {
+  MATCHES_NORMAL: 'Matches own reports',
+  SLOWER_THAN_OWN_REPORTS: 'Slower than own reports',
+};
+
+function portConditionFact(comparison: Shipment['portConditionComparison']) {
+  if (!comparison) return null;
+  const heading = comparison.outcome ? PORT_OUTCOME_LABELS[comparison.outcome] : comparison.message;
+  const port = comparison.knownPort ?? comparison.transshipmentPort;
+  const vessel = comparison.vesselName?.trim();
+  return (
+    <div>
+      <dt>Port conditions</dt>
+      <dd>
+        {heading}
+        <dl className="arrival-comparison">
+          {comparison.outcome && <div><dt>Comparison</dt><dd>{comparison.message}</dd></div>}
+          <div><dt>Vessel</dt><dd>{vessel ? `Mother · ${vessel}` : 'Mother'}</dd></div>
+          {port ? <div><dt>Port</dt><dd>{port}</dd></div> : null}
+          {comparison.speedOverGroundKnots != null
+            ? <div><dt>Current speed</dt><dd>{comparison.speedOverGroundKnots} knots</dd></div>
+            : null}
+          {comparison.slowestOwnSpeedKnots != null
+            ? <div><dt>Slowest own reports</dt><dd>{comparison.slowestOwnSpeedKnots} knots</dd></div>
+            : null}
+          {comparison.outcome
+            ? <div><dt>Earlier reports</dt><dd>{comparison.earlierReportCount}</dd></div>
+            : null}
+          {comparison.latitude != null && comparison.longitude != null
+            ? <div><dt>Position used</dt><dd>{comparison.latitude}, {comparison.longitude}</dd></div>
+            : null}
+          {reportTime(comparison.ingestedAt)}
+          {comparison.source === 'SEEDED' ? <div><dt>Source</dt><dd>Seeded position</dd></div> : null}
+        </dl>
+      </dd>
+    </div>
+  );
+}
 
 function recommendationFact(recommendation: Shipment['recommendation']) {
   if (!recommendation) return null;

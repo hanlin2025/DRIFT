@@ -62,6 +62,8 @@ public record ShipmentDetailResponse(
 		OperationalState feederOperationalState,
 		@Schema(description = "Whether DRIFT is still receiving AIS reports, and when it stored the newest AIS_STREAM report. The result is the feed status and that report time only. Null when this response was assembled without reading the feed.", nullable = true)
 		AisFeedStatus aisFeed,
+		@Schema(description = "Comparison of the mother vessel's latest retained report with that vessel's own earlier reports near the transshipment port. Calculated when the shipment is read and not stored. It is not a measured congestion index. It does not replace the operational state or the AIS feed status. A position more than six hours old is not used. The feed status does not by itself make this unavailable.")
+		PortConditionComparison portConditionComparison,
 		@Schema(description = "Comparison of the planned mother-vessel arrival with an estimate from that same retained mother-vessel position. Calculated when the shipment is read and not stored. An unavailable estimate contains only unavailableReason; every other comparison field is null. lastReceivedAt is the report time of that estimate. Null when the planned mother-vessel arrival is missing; that is not an unavailable reason.", nullable = true)
 		ArrivalEstimate arrivalComparison,
 		@Schema(description = "The current linked importer's transshipment-arrival deadline and the port it was confirmed for. Null when that importer has no deadline. applicable is false when the recorded port differs from the shipment's current port.", nullable = true)
@@ -108,6 +110,10 @@ public record ShipmentDetailResponse(
 		ShipmentRisk risk = connection.risk();
 		VesselPosition motherVesselPosition = connection.motherVesselPosition();
 		VesselPosition feederVesselPosition = connection.feederVesselPosition();
+		ShipmentOperationalStates.ObservedVessel mother = ShipmentOperationalStates.observed(shipment.getMotherVessel(),
+				shipment.getTransshipmentPort());
+		ShipmentOperationalStates.ObservedVessel feeder = ShipmentOperationalStates.observed(shipment.getFeederVessel(),
+				shipment.getTransshipmentPort());
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -122,9 +128,11 @@ public record ShipmentDetailResponse(
 				ShipmentRecommendation.of(risk, impact == null ? ShipmentRecommendationImpact.notReturned() : impact),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
-				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
-				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
+				mother.state(),
+				feeder.state(),
 				ShipmentAisFeed.current(),
+				PortConditionComparisons.forMother(shipment.getMotherVessel(), shipment.getTransshipmentPort(),
+						mother.position()),
 				arrivalComparison,
 				transshipmentArrivalDeadline,
 				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),

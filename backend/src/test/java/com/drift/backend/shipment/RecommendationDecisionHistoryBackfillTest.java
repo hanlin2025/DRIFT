@@ -18,8 +18,8 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 
 /**
- * Migrates a disposable database through V30, stores representative current decisions,
- * then applies V32. V31 is left unused because that version belongs to another pending migration.
+ * Migrates an owned disposable database through the landed V32 migration, stores representative
+ * current decisions, then applies V33. Flyway out-of-order stays disabled.
  */
 class RecommendationDecisionHistoryBackfillTest {
 
@@ -28,48 +28,53 @@ class RecommendationDecisionHistoryBackfillTest {
 		String adminUrl = required("DRIFT_CDG53_ADMIN_JDBC_URL");
 		String username = required("DRIFT_CDG53_DB_USERNAME");
 		String password = required("DRIFT_CDG53_DB_PASSWORD");
+		String migrationLocation = System.getProperty("drift.cdg272.backfill.migration-location", "classpath:db/migration");
 		refuseSharedDatabase(adminUrl);
 		String databaseName = "drift_cdg53_backfill_" + System.currentTimeMillis() + "_"
 				+ UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 		createDatabase(adminUrl, username, password, databaseName);
 		String url = adminUrl.substring(0, adminUrl.lastIndexOf('/') + 1) + databaseName;
 
-		Flyway.configure()
-				.dataSource(url, username, password)
-				.locations("classpath:db/migration")
-				.target("30")
-				.outOfOrder(false)
-				.load()
-				.migrate();
-
-		try (Connection connection = DriverManager.getConnection(url, username, password)) {
-			assertThat(tableExists(connection, "recommendation_decisions")).isTrue();
-			assertThat(tableExists(connection, "recommendation_decision_history")).isFalse();
-			Seed seed = seed(connection);
-			List<DecisionRow> before = currentRows(connection);
-
+		try {
 			Flyway.configure()
 					.dataSource(url, username, password)
-					.locations("classpath:db/migration")
+					.locations(migrationLocation)
+					.target("32")
 					.outOfOrder(false)
 					.load()
 					.migrate();
 
-			assertThat(currentRows(connection)).isEqualTo(before);
-			assertThat(historyCount(connection, seed.emptyShipmentId)).isZero();
-			assertThat(historyRows(connection)).containsExactlyInAnyOrderElementsOf(expectedHistory(before, seed));
-			assertThat(actorName(connection, seed.adaId)).isEqualTo("Ada Lee");
-			try (PreparedStatement rename = connection.prepareStatement("UPDATE users SET full_name = ? WHERE id = ?")) {
-				rename.setString(1, "Ada Renamed");
-				rename.setLong(2, seed.adaId);
-				assertThat(rename.executeUpdate()).isEqualTo(1);
+			try (Connection connection = DriverManager.getConnection(url, username, password)) {
+				assertThat(tableExists(connection, "recommendation_decisions")).isTrue();
+				assertThat(tableExists(connection, "recommendation_decision_history")).isFalse();
+				Seed seed = seed(connection);
+				List<DecisionRow> before = currentRows(connection);
+
+				Flyway.configure()
+						.dataSource(url, username, password)
+						.locations(migrationLocation)
+						.outOfOrder(false)
+						.load()
+						.migrate();
+
+				assertThat(currentRows(connection)).isEqualTo(before);
+				assertThat(historyCount(connection, seed.emptyShipmentId)).isZero();
+				assertThat(historyRows(connection)).containsExactlyInAnyOrderElementsOf(expectedHistory(before, seed));
+				assertThat(actorName(connection, seed.adaId)).isEqualTo("Ada Lee");
+				try (PreparedStatement rename = connection.prepareStatement("UPDATE users SET full_name = ? WHERE id = ?")) {
+					rename.setString(1, "Ada Renamed");
+					rename.setLong(2, seed.adaId);
+					assertThat(rename.executeUpdate()).isEqualTo(1);
+				}
+				assertThat(historyRows(connection).stream()
+						.filter(row -> row.actorId == seed.adaId)
+						.map(row -> row.actorName))
+						.containsOnly("Ada Lee");
+				assertThat(versions(connection)).endsWith("31", "32", "33");
+				assertThat(monotonic(versions(connection))).isTrue();
 			}
-			assertThat(historyRows(connection).stream()
-					.filter(row -> row.actorId == seed.adaId)
-					.map(row -> row.actorName))
-					.containsOnly("Ada Lee");
-			assertThat(versions(connection)).doesNotContain("31").endsWith("30", "32");
-			assertThat(monotonic(versions(connection))).isTrue();
+		} finally {
+			dropOwnedDatabase(adminUrl, username, password, databaseName);
 		}
 	}
 
@@ -263,9 +268,23 @@ class RecommendationDecisionHistoryBackfillTest {
 
 	private static void createDatabase(String adminUrl, String username, String password, String databaseName)
 			throws Exception {
+		if (!databaseName.matches("drift_cdg53_backfill_[0-9]+_[a-f0-9]{12}")) {
+			throw new IllegalArgumentException("Refusing unowned database name " + databaseName);
+		}
 		try (Connection connection = DriverManager.getConnection(adminUrl, username, password);
 				Statement statement = connection.createStatement()) {
 			statement.execute("CREATE DATABASE " + databaseName);
+		}
+	}
+
+	private static void dropOwnedDatabase(String adminUrl, String username, String password, String databaseName)
+			throws Exception {
+		if (!databaseName.matches("drift_cdg53_backfill_[0-9]+_[a-f0-9]{12}")) {
+			throw new IllegalArgumentException("Refusing unowned database name " + databaseName);
+		}
+		try (Connection connection = DriverManager.getConnection(adminUrl, username, password);
+				Statement statement = connection.createStatement()) {
+			statement.execute("DROP DATABASE " + databaseName);
 		}
 	}
 

@@ -170,4 +170,11 @@ public class UserAccount {
 		this.status = AccountStatus.REMOVED;
 		sessionGeneration++;
 	}
+
+	public void reactivate() {
+		if (status != AccountStatus.REMOVED) {
+			throw new IllegalStateException("Account is already active");
+		}
+		this.status = AccountStatus.ACTIVE;
+	}
 }

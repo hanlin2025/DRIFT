@@ -118,6 +118,9 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/track-history?hours=6")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/cdg201-arrival-evidence")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-context")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-ai-assessments")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-reassessments")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("POST", "/api/shipments/4/maritime-reassessments")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/history?page=1")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/")).isTrue();
@@ -133,6 +136,16 @@ class RolePermissionMatrixTest {
 				.isFalse();
 		assertThat(RolePermissionMatrix.isRecommendationDecision("PATCH", "/api/shipments/4/status")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("PATCH", "/api/shipments/4/recommendation-decision")).isFalse();
+	}
+
+	@Test
+	void appliesActiveCompanyAndVisibilityRulesToAiAssessmentGeneration() {
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "POST", "/api/shipments/4/maritime-ai-assessments"))
+				.contains(ShipmentAccessForbiddenException.MESSAGE);
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, true, "POST", "/api/shipments/4/maritime-ai-assessments")).isEmpty();
+		assertThat(RolePermissionMatrix.isShipmentScoped("POST", "/api/shipments/4/maritime-ai-assessments")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentScoped("GET", "/api/shipments/4/maritime-ai-assessments")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentScoped("GET", "/api/shipments/4/maritime-reassessments")).isTrue();
 	}
 
 	@Test

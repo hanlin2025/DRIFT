@@ -69,7 +69,7 @@ public final class RolePermissionMatrix {
 			return Optional.empty();
 		}
 		if (shipmentRead(method, normalized) || shipmentReplace(method, normalized)
-				|| recommendationDecision(method, normalized)) {
+				|| recommendationDecision(method, normalized) || maritimeAiAssessmentGeneration(method, normalized)) {
 			if (!activeCompany) {
 				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
 			}
@@ -105,14 +105,27 @@ public final class RolePermissionMatrix {
 		return recommendationDecision(method, normalize(path));
 	}
 
+	/** Shipment-scoped endpoints whose visibility must be checked before a controller runs. */
+	static boolean isShipmentScoped(String method, String path) {
+		String normalized = normalize(path);
+		return shipmentRead(method, normalized) || maritimeAiAssessmentGeneration(method, normalized)
+				|| recommendationDecision(method, normalized);
+	}
+
 	private static boolean shipmentRead(String method, String path) {
 		return "GET".equals(method) && (path.equals("/api/shipments")
 				|| path.matches("/api/shipments/\\d+")
 				|| path.matches("/api/shipments/\\d+/maritime-context")
+				|| path.matches("/api/shipments/\\d+/maritime-ai-assessments")
+				|| path.matches("/api/shipments/\\d+/maritime-reassessments")
 				|| path.matches("/api/shipments/\\d+/tracking")
 				|| path.matches("/api/shipments/\\d+/track-history")
 				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence")
 				|| path.matches("/api/shipments/\\d+/history"));
+	}
+
+	private static boolean maritimeAiAssessmentGeneration(String method, String path) {
+		return "POST".equals(method) && path.matches("/api/shipments/\\d+/maritime-ai-assessments");
 	}
 
 	private static boolean profile(String method, String path) {

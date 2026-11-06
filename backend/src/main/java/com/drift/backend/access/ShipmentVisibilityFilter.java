@@ -66,7 +66,7 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			throws ServletException, IOException {
 		String path = path(request);
 		boolean decision = RolePermissionMatrix.isRecommendationDecision(request.getMethod(), path);
-		if (!RolePermissionMatrix.isShipmentRead(request.getMethod(), path) && !decision) {
+		if (!RolePermissionMatrix.isShipmentScoped(request.getMethod(), path)) {
 			chain.doFilter(request, response);
 			return;
 		}
@@ -112,7 +112,9 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 		}
 		if (path.matches("/api/shipments/\\d+")
 				|| path.matches("/api/shipments/\\d+/cdg201-arrival-evidence")
-				|| path.matches("/api/shipments/\\d+/maritime-context")) {
+				|| path.matches("/api/shipments/\\d+/maritime-context")
+				|| path.matches("/api/shipments/\\d+/maritime-ai-assessments")
+				|| path.matches("/api/shipments/\\d+/maritime-reassessments")) {
 			if (shipmentId == null) {
 				chain.doFilter(request, response);
 				return;

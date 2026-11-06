@@ -141,12 +141,34 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-panel .intro { margin-bottom: 18px; }
 .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .shipment-record { background: #e8ede2; border: 1px solid #c8d9bf; border-radius: 5px; padding: 16px 16px 4px; margin: 0 0 22px; }
+.maritime-context details { margin: 8px 0 12px; font-size: 12px; }
+.maritime-context summary { cursor: pointer; color: var(--green); font-weight: 700; min-height: 32px; display: flex; align-items: center; }
+.maritime-context article + article { margin-top: 12px; }
 .shipment-record strong { display: block; font-size: 16px; margin: 4px 0 6px; }
 .shipment-route { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .shipment-record dl { margin: 0; }
 .shipment-record dl div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #d5e0cc; padding: 10px 0; }
 .shipment-record dt { color: var(--muted); font-size: 11px; }
 .shipment-record dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
+.maritime-ai-panel h3 { font-family: 'Fraunces Variable', Georgia, serif; font-size: 20px; font-weight: 500; letter-spacing: -.25px; margin: 18px 0 8px; }
+.maritime-ai-panel h4 { font-size: 13px; font-weight: 750; margin: 14px 0 6px; }
+.maritime-ai-panel p, .maritime-ai-panel li { font-size: 12px; line-height: 1.55; }
+.maritime-ai-panel ul { margin: 6px 0 14px; padding-left: 20px; }
+.maritime-ai-status { color: var(--muted); }
+.maritime-ai-provider-label { margin: 12px 0; }
+.maritime-ai-assessment-time, .maritime-ai-note { color: var(--muted); }
+.maritime-ai-evidence, .maritime-ai-schedule, .maritime-ai-uncertainty { border-top: 1px solid #d5e0cc; margin-top: 14px; padding-top: 4px; }
+.maritime-ai-observation { border-left: 2px solid #92ac8c; margin: 10px 0 12px; padding-left: 12px; }
+.maritime-ai-observation p { margin: 4px 0; overflow-wrap: anywhere; }
+.maritime-ai-risk { background: #f6f7f0; border: 1px solid #c8d9bf; border-radius: 4px; margin: 16px 0 10px; padding: 4px 14px 12px; }
+.maritime-ai-risk dl { margin: 8px 0 10px; }
+.maritime-ai-implications { border-left: 3px solid #78916f; margin: 12px 0 16px; padding: 2px 12px; }
+.maritime-ai-uncertainty { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.maritime-ai-details { border-top: 1px solid #d5e0cc; margin: 16px 0; padding-top: 10px; }
+.maritime-ai-details > summary { color: var(--green); cursor: pointer; font-size: 12px; font-weight: 750; min-height: 36px; padding: 8px 0; }
+.maritime-ai-details section { margin: 12px 0; }
+.maritime-ai-details section > section { border-top: 1px solid #d5e0cc; padding-top: 8px; }
+.maritime-ai-panel button { margin-top: 8px; }
 .shipment-list { margin-top: 28px; overflow-x: auto; }
 .shipment-list table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12px; }
 .shipment-list th, .shipment-list td { text-align: left; white-space: nowrap; padding: 12px 16px 12px 0; border-top: 1px solid var(--line); }
@@ -325,13 +347,14 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (min-width: 761px) {
-  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(13, auto); grid-auto-flow: column; column-gap: 32px; }
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(14, auto); grid-auto-flow: column; column-gap: 32px; }
 }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
   .session-facts div, .shipment-record dl div { display: block; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
+  .maritime-ai-uncertainty { grid-template-columns: 1fr; gap: 0; }
   .pair-grid { grid-template-columns: 1fr; }
   .shipment-filter-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }

@@ -174,7 +174,7 @@ test('an administrator removes a user in their company and the removal is record
     await expect(page.getByRole('status')).toHaveText(`${target.fullName}'s account was removed.`);
     await expect(row).toHaveAccessibleName(/Removed/);
     await expect(page.getByRole('button', { name: `Remove ${target.fullName}` })).toHaveCount(0);
-    const history = page.getByRole('region', { name: 'Removal history' });
+    const history = page.getByRole('region', { name: 'Account status history' });
     const entry = history.getByRole('listitem').filter({ hasText: `${administrator.fullName} removed ${target.fullName}` });
     await expect(entry).toHaveCount(1);
     await expect(entry).toContainText('Active → Removed');
@@ -186,7 +186,7 @@ test('an administrator removes a user in their company and the removal is record
     await expect(page.getByRole('radio', { name: new RegExp(target.fullName) })).toHaveAccessibleName(/Removed/);
     await page.locator('#user-status-filter').selectOption('ACTIVE');
     await expect(page.getByRole('radio', { name: new RegExp(target.fullName) })).toHaveCount(0);
-    await expect(page.getByRole('region', { name: 'Removal history' }).getByRole('listitem')
+    await expect(page.getByRole('region', { name: 'Account status history' }).getByRole('listitem')
       .filter({ hasText: `${administrator.fullName} removed ${target.fullName}` })).toHaveCount(1);
 
     const audits = await request.get('/api/admin/account-status-audits', { headers: bearer(administrator.token) });

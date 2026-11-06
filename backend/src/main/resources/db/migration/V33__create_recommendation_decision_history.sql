@@ -1,7 +1,7 @@
 -- Append-only history of accepted recommendation decisions.
--- V31 is the pending maritime validation widening, so this migration is V32.
--- The preceding migrations on this baseline remain V1 through V30, including
--- V29 (recommendation_decisions) and V30 (shipment importer constraints).
+-- Landed V31 creates maritime snapshot observations. Landed V32 widens
+-- maritime AI validation status. This V33 migration follows that sequence.
+-- V29 creates recommendation_decisions and V30 creates shipment importer constraints.
 -- Existing current rows are copied once. Their stored actor and decided_at are kept.
 -- The actor name is the user's name at migration time, because earlier decisions did not store one.
 -- Decisions already replaced on recommendation_decisions are not reconstructed.
