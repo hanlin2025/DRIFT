@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.drift.backend.shipment.DelayComparison;
 import com.drift.backend.shipment.ShipmentRisk;
@@ -53,7 +54,20 @@ class ScenarioMaritimeAiOutputTest {
 				.isEqualTo(MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE);
 		assertThat(risk.factReferences()).containsAll(MaritimeAiCanonicalFactReferences.riskReferences(input));
 		assertThat(deadline.factReferences()).containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
-		assertThat(ScenarioQualityStubClientTest.assertUsefulness(validation.interpretation(), input)).isEqualTo(2);
+
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "offline-genuine-replay", "offline-only-key",
+				"https://example.invalid/v1/responses", true, 20, 800, json,
+				(request, body) -> new ConfiguredMaritimeAiClient.TransportResponse(200,
+						ScenarioQualityStubClient.fixtureResponsesEnvelope(captured)));
+		var beans = new DefaultListableBeanFactory();
+		var service = new MaritimeAiAssessmentService(null, null, null, client, null,
+				new MaritimeAiAssessmentHistoryAccessPolicy(), json, beans.getBeanProvider(java.time.Clock.class),
+				true, false, "", "");
+		var replay = service.generateScenarioTransient(input, true);
+		assertThat(replay.state()).isEqualTo("GENERATED");
+		assertThat(replay.validationStatus()).isEqualTo("VALID");
+		assertThat(replay.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
+		assertThat(ScenarioQualityStubClientTest.assertUsefulness(replay.interpretation(), input)).isEqualTo(2);
 	}
 
 	@Test
