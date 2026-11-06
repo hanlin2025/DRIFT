@@ -94,7 +94,8 @@ configure_database DRIFT_CDG203 drift_cdg203_deadline DRIFT_CDG203
 configure_database DRIFT_CDG206 drift_cdg206_comparison DRIFT_CDG206 55433
 
 # Migration tests create their own marker-guarded databases through these disposable admin URLs.
-export DRIFT_CDG53_ADMIN_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/postgres
+# This migration test deliberately refuses the default 5432 port as a shared target.
+export DRIFT_CDG53_ADMIN_JDBC_URL=jdbc:postgresql://127.0.0.1:55433/postgres
 export DRIFT_CDG53_DB_USERNAME=drift
 export DRIFT_CDG53_DB_PASSWORD=drift
 export DRIFT_CDG289_ADMIN_JDBC_URL=jdbc:postgresql://127.0.0.1:5432/postgres
