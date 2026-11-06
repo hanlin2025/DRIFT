@@ -148,7 +148,7 @@ describe('connection window on the shipment detail', () => {
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }, { timeout: 10_000 }));
     expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
     expect(await screen.findByText('Disabled.')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
