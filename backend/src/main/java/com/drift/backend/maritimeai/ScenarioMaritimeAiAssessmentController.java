@@ -5,6 +5,7 @@ import java.util.UUID;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,9 +19,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
-/** Explicitly triggered, transient AI interpretation for one authorized synthetic scenario snapshot. */
+/** Explicitly triggered, persisted AI interpretation for one authorized synthetic scenario snapshot. */
 @RestController
-@Tag(name = "Controlled Scenario AI", description = "Generate a transient interpretation from an authorized synthetic scenario snapshot.")
+@Tag(name = "Controlled Scenario AI", description = "Persist and retrieve an interpretation for an authorized synthetic scenario snapshot.")
 @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME)
 public class ScenarioMaritimeAiAssessmentController {
 	private final ScenarioMaritimeAiAssessmentService assessments;
@@ -36,5 +37,13 @@ public class ScenarioMaritimeAiAssessmentController {
 		if (user == null) throw new SessionEndedException();
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(assessments.generate(user, sessionId, shipmentId, request));
+	}
+
+	@GetMapping("/api/scenarios/v1/sessions/{sessionId}/shipments/{shipmentId}/assessments/{assessmentId}")
+	public ResponseEntity<ScenarioMaritimeAiResponse> retrieve(@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID sessionId, @PathVariable Long shipmentId, @PathVariable String assessmentId) {
+		if (user == null) throw new SessionEndedException();
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(assessments.retrieve(user, sessionId, shipmentId, assessmentId));
 	}
 }

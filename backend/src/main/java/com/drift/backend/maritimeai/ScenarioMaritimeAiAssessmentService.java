@@ -22,10 +22,11 @@ import com.drift.backend.maritimecontext.MaritimeEvidence;
 import com.drift.backend.shipment.ControlledScenarioSessionResponse;
 import com.drift.backend.shipment.ControlledScenarioSessionService;
 import com.drift.backend.shipment.ControlledScenarioSnapshot;
+import com.drift.backend.shipment.ShipmentViewAuthorization;
 import com.drift.backend.shipment.exception.ControlledScenarioUnavailableException;
 import com.drift.backend.shipment.exception.ScenarioTransitionConflictException;
 
-/** Reauthorizes a scenario snapshot, then performs a bounded transient interpretation on explicit user request. */
+/** Reauthorizes an exact scenario snapshot, then validates, persists, and retrieves explicit interpretations. */
 @Service
 public class ScenarioMaritimeAiAssessmentService {
 	private static final int MAX_CACHE_ENTRIES = 128;
@@ -53,18 +54,19 @@ public class ScenarioMaritimeAiAssessmentService {
 				"Scenario AI interpretation is not available.");
 		ControlledScenarioSessionResponse current = sessions.get(user, sessionId);
 		SelectedSnapshot selected = select(current, shipmentId, request);
-		CacheKey key = new CacheKey(user.id(), sessionId, selected.snapshot().epochId(), selected.snapshot().snapshotId(),
-				selected.snapshot().revision(), shipmentId, selected.row().scenarioShipmentKey(),
-				selected.snapshot().simulationCutoffUtc().toString());
+		MaritimeAiEvidencePackage input = input(selected);
+		ShipmentViewAuthorization authorization = assessments.captureScenarioAuthorization(user, shipmentId);
+		MaritimeAiScenarioAssessmentContext context = assessments.scenarioContext(user, current, selected.snapshot(),
+				selected.row(), shipmentId, authorization, input);
+		CacheKey key = new CacheKey(user.id(), context);
 		CacheEntry entry = reserve(key);
 		if (entry.owner()) {
 			try {
-				MaritimeAiEvidencePackage input = input(selected);
-				MaritimeAiAssessmentResponse assessment = assessments.generateScenarioTransient(input, true);
-				ControlledScenarioSessionResponse after = sessions.get(user, sessionId);
-				assertSameSnapshot(after, key);
-				entry.result().complete(new ScenarioMaritimeAiResponse(sessionId, key.epochId(), key.snapshotId(),
-						key.revision(), key.cutoff(), key.scenarioShipmentKey(), key.shipmentId(), assessment));
+				MaritimeAiScenarioGenerationResult generation = assessments.generateScenario(input, true);
+				assertSameSnapshot(user, sessionId, key);
+				MaritimeAiAssessmentResponse assessment = assessments.persistScenario(user, shipmentId, input, context,
+						authorization, generation);
+				entry.result().complete(response(context, assessment));
 			} catch (RuntimeException failure) {
 				cache.remove(key, entry);
 				entry.result().completeExceptionally(failure);
@@ -72,14 +74,36 @@ public class ScenarioMaritimeAiAssessmentService {
 		}
 		try {
 			ScenarioMaritimeAiResponse response = entry.result().join();
-			ControlledScenarioSessionResponse after = sessions.get(user, sessionId);
-			assertSameSnapshot(after, key);
+			assertSameSnapshot(user, sessionId, key);
 			return response;
 		} catch (CompletionException failure) {
 			Throwable cause = failure.getCause();
 			if (cause instanceof RuntimeException runtime) throw runtime;
 			throw failure;
 		}
+	}
+
+	public ScenarioMaritimeAiResponse retrieve(AuthenticatedUser user, UUID sessionId, Long shipmentId, String assessmentId) {
+		ControlledScenarioSessionResponse current = sessions.get(user, sessionId);
+		MaritimeAiScenarioAssessmentContext stored = assessments.scenarioContext(assessmentId)
+				.orElseThrow(this::assessmentNotFound);
+		if (!sessionId.equals(stored.sessionId()) || !shipmentId.equals(stored.shipmentId())
+				|| !user.id().equals(stored.userId()) || current.snapshot() == null) throw assessmentNotFound();
+		ScenarioMaritimeAiRequest currentBinding = new ScenarioMaritimeAiRequest(stored.scenarioShipmentKey(),
+				current.epochId(), current.revision(), current.snapshot().snapshotId(), current.snapshot().simulationCutoffUtc().toString());
+		SelectedSnapshot selected;
+		try { selected = select(current, shipmentId, currentBinding); }
+		catch (ScenarioTransitionConflictException conflict) { throw assessmentNotFound(); }
+		MaritimeAiEvidencePackage input = input(selected);
+		ShipmentViewAuthorization authorization = assessments.captureScenarioAuthorization(user, shipmentId);
+		MaritimeAiScenarioAssessmentContext expected = assessments.scenarioContext(user, current, selected.snapshot(),
+				selected.row(), shipmentId, authorization, input);
+		if (!stored.equals(expected)) throw assessmentNotFound();
+		MaritimeAiAssessmentResponse assessment = assessments.retrieveScenario(user, shipmentId, assessmentId, expected)
+				.orElseThrow(this::assessmentNotFound);
+		CacheKey key = new CacheKey(user.id(), expected);
+		assertSameSnapshot(user, sessionId, key);
+		return response(expected, assessment);
 	}
 
 	private SelectedSnapshot select(ControlledScenarioSessionResponse session, Long shipmentId,
@@ -156,20 +180,36 @@ public class ScenarioMaritimeAiAssessmentService {
 				.map(ControlledScenarioSnapshot.AisObservationRead::position).findFirst().orElse(null);
 	}
 
-	private void assertSameSnapshot(ControlledScenarioSessionResponse current, CacheKey key) {
-		if (!current.epochId().equals(key.epochId())) throw conflict("STALE_EPOCH",
+	private void assertSameSnapshot(AuthenticatedUser user, UUID sessionId, CacheKey key) {
+		ControlledScenarioSessionResponse current = sessions.get(user, sessionId);
+		MaritimeAiScenarioAssessmentContext expected = key.context();
+		if (!current.epochId().equals(expected.epochId())) throw conflict("STALE_EPOCH",
 				"The scenario session was reset while the interpretation was being generated.");
-		if (current.revision() != key.revision()) throw conflict("STALE_REVISION",
+		if (current.revision() != expected.revision()) throw conflict("STALE_REVISION",
 				"The scenario advanced while the interpretation was being generated.");
 		ControlledScenarioSnapshot snapshot = current.snapshot();
-		if (snapshot == null || !snapshot.snapshotId().equals(key.snapshotId())
-				|| !snapshot.simulationCutoffUtc().toString().equals(key.cutoff())) {
+		if (snapshot == null || !snapshot.snapshotId().equals(expected.snapshotId())
+				|| !snapshot.simulationCutoffUtc().toString().equals(expected.simulationCutoffUtc())) {
 			throw conflict("STALE_SNAPSHOT", "The scenario snapshot changed while the interpretation was being generated.");
 		}
-		if (current.shipments().stream().noneMatch(binding -> binding.scenarioShipmentKey().equals(key.scenarioShipmentKey())
-				&& binding.shipmentId().equals(key.shipmentId()))) {
+		if (current.shipments().stream().noneMatch(binding -> binding.scenarioShipmentKey().equals(expected.scenarioShipmentKey())
+				&& binding.shipmentId().equals(expected.shipmentId()))) {
 			throw conflict("SCENARIO_SHIPMENT_MISMATCH", "The authorized scenario shipment binding changed.");
 		}
+		SelectedSnapshot selected = select(current, expected.shipmentId(), new ScenarioMaritimeAiRequest(
+				expected.scenarioShipmentKey(), expected.epochId(), expected.revision(), expected.snapshotId(), expected.simulationCutoffUtc()));
+		MaritimeAiEvidencePackage currentInput = input(selected);
+		ShipmentViewAuthorization authorization = assessments.captureScenarioAuthorization(user, expected.shipmentId());
+		MaritimeAiScenarioAssessmentContext actual = assessments.scenarioContext(user, current, selected.snapshot(), selected.row(),
+				expected.shipmentId(), authorization, currentInput);
+		if (!expected.equals(actual)) throw conflict("STALE_SNAPSHOT", "The scenario context changed while the interpretation was generated.");
+	}
+
+	private ScenarioMaritimeAiResponse response(MaritimeAiScenarioAssessmentContext context, MaritimeAiAssessmentResponse assessment) {
+		return new ScenarioMaritimeAiResponse(context.sessionId(), context.epochId(), context.snapshotId(), context.revision(),
+				context.simulationCutoffUtc(), context.scenarioShipmentKey(), context.shipmentId(), assessment,
+				context.scenarioId(), context.scenarioVersion(), context.scenarioShipmentReference(), context.stage(),
+				context.evidenceHash(), context.contextHash());
 	}
 
 	private CacheEntry reserve(CacheKey key) {
@@ -193,11 +233,14 @@ public class ScenarioMaritimeAiAssessmentService {
 	private static ControlledScenarioUnavailableException unavailable(String code, HttpStatus status, String message) {
 		return new ControlledScenarioUnavailableException(code, status.value(), message);
 	}
+	private ControlledScenarioUnavailableException assessmentNotFound() {
+		return unavailable("SCENARIO_ASSESSMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
+				"The scenario assessment is not available in this session and snapshot.");
+	}
 
 	private record SelectedSnapshot(ControlledScenarioSessionResponse session,
 			ControlledScenarioSnapshot snapshot, ControlledScenarioSnapshot.ShipmentRead row) { }
-	private record CacheKey(Long userId, UUID sessionId, UUID epochId, UUID snapshotId, long revision,
-			Long shipmentId, String scenarioShipmentKey, String cutoff) { }
+	private record CacheKey(Long userId, MaritimeAiScenarioAssessmentContext context) { }
 	private record CacheEntry(Instant createdAt, CompletableFuture<ScenarioMaritimeAiResponse> result, boolean owner) {
 		private static CacheEntry owner(Instant now) { return new CacheEntry(now, new CompletableFuture<>(), true); }
 		private CacheEntry asFollower() { return owner ? new CacheEntry(createdAt, result, false) : this; }

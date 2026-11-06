@@ -326,13 +326,17 @@ class SyntheticDisruptionScenarioIntegrationTests {
 			assertThat(posted.at("/assessment/state").asText()).isEqualTo("ABSTAINED");
 			assertThat(posted.at("/assessment/validationStatus").asText()).isEqualTo("INSUFFICIENT_EVIDENCE");
 			assertThat(posted.at("/assessment/interpretation").isNull()).isTrue();
-			assertThat(posted.at("/assessment/assessmentId").isMissingNode()
-					|| posted.at("/assessment/assessmentId").isNull()).isTrue();
+			String assessmentId = posted.at("/assessment/assessmentId").asText();
+			assertThat(assessmentId).matches("[0-9a-f-]{36}");
+			JsonNode retrieved = retrieveScenarioAssessment(sessionId, shipmentIds.get(shipmentIndex), assessmentId,
+					owner.managerToken());
+			assertThat(retrieved.path("assessment")).isEqualTo(posted.path("assessment"));
+			assertScenarioEnvelope(retrieved, sessionId, baseline, key, shipmentIds.get(shipmentIndex));
 		}
 		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).isEmpty();
 		assertThat(scenarioOperationalStateSnapshot()).isEqualTo(beforeBaseline);
 		assertThat(positionCount()).isEqualTo(baselinePositions);
-		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments + 2);
 
 		assertScenarioBindingRejected(sessionId, shipmentIds.getFirst(), baseline, "A", owner.managerToken(),
 				"expectedEpochId", UUID.randomUUID().toString(), "STALE_EPOCH");
@@ -345,7 +349,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertScenarioBindingRejected(sessionId, shipmentIds.get(1), baseline, "A", owner.managerToken(),
 				null, null, "SCENARIO_SHIPMENT_MISMATCH");
 		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).isEmpty();
-		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments + 2);
 
 		int expectedStubCalls = 0;
 		JsonNode current = baseline;
@@ -365,8 +369,12 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				JsonNode response = json.readTree(result.getResponse().getContentAsString());
 				assertScenarioEnvelope(response, sessionId, current, key, shipmentIds.get(shipmentIndex));
 				assertScenarioPositiveQuality(response, current, expected, shipmentIndex, key);
-				assertThat(response.at("/assessment/assessmentId").isMissingNode()
-						|| response.at("/assessment/assessmentId").isNull()).isTrue();
+				String assessmentId = response.at("/assessment/assessmentId").asText();
+				assertThat(assessmentId).matches("[0-9a-f-]{36}");
+				JsonNode retrieved = retrieveScenarioAssessment(sessionId, shipmentIds.get(shipmentIndex), assessmentId,
+						owner.managerToken());
+				assertThat(retrieved.path("assessment")).isEqualTo(response.path("assessment"));
+				assertScenarioEnvelope(retrieved, sessionId, current, key, shipmentIds.get(shipmentIndex));
 				expectedStubCalls++;
 				assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).hasSize(expectedStubCalls);
 				assertScenarioInput(SCENARIO_AI_CLIENT.scenarioInputs().get(expectedStubCalls - 1), current,
@@ -374,10 +382,12 @@ class SyntheticDisruptionScenarioIntegrationTests {
 			}
 			assertThat(scenarioOperationalStateSnapshot()).isEqualTo(operationsBefore);
 			assertThat(positionCount()).isEqualTo(positionsBefore);
-			assertThat(assessmentCount()).isEqualTo(assessmentsBefore);
+			assertThat(assessmentCount()).isEqualTo(assessmentsBefore + 2);
 		}
 		assertThat(SCENARIO_AI_CLIENT.scenarioInputs()).hasSize(4);
-		assertThat(assessmentCount()).isEqualTo(baselineAssessments);
+		assertThat(assessmentCount()).isEqualTo(baselineAssessments + 6);
+		assertThat(assessmentHistory(shipmentIds.getFirst(), owner.managerToken())).isEmpty();
+		assertThat(assessmentHistory(shipmentIds.get(1), owner.managerToken())).isEmpty();
 	}
 
 	@Test
@@ -866,6 +876,13 @@ class SyntheticDisruptionScenarioIntegrationTests {
 				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body));
 		if (token != null) request.header("Authorization", "Bearer " + token);
 		return mvc.perform(request).andReturn();
+	}
+
+	private JsonNode retrieveScenarioAssessment(UUID sessionId, long shipmentId, String assessmentId, String token)
+			throws Exception {
+		return json.readTree(mvc.perform(get("/api/scenarios/v1/sessions/" + sessionId + "/shipments/" + shipmentId
+				+ "/assessments/" + assessmentId).header("Authorization", "Bearer " + token))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
 	private void assertScenarioBindingRejected(UUID sessionId, long shipmentId, JsonNode session, String key,
