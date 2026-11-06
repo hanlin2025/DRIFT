@@ -3,6 +3,7 @@ package com.drift.backend.maritimeai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -15,6 +16,62 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Manual one-request smoke test. It is skipped unless an owner opts in and every production gate is present. */
 class MaritimeAiScenarioLiveProviderSmokeTest {
+	@Test
+	void worsenedShipmentASmokeFixtureIncludesBackendRiskAndDeadlineComparisonFacts() {
+		MaritimeAiEvidencePackage input = scenarioInput();
+		MaritimeAiShipmentContext context = input.shipmentContext();
+		MaritimeAiConnectionRiskContext risk = context.connectionRisk();
+		MaritimeAiBusinessContext business = context.businessContext();
+		OffsetDateTime estimatedArrival = OffsetDateTime.parse("2026-10-02T11:00:00Z");
+		OffsetDateTime deadline = OffsetDateTime.parse("2026-10-02T10:00:00Z");
+
+		assertThat(context.scenario().shipmentKey()).isEqualTo("A");
+		assertThat(context.scenario().stage()).isEqualTo("WORSENED");
+		assertThat(risk.assessed()).isTrue();
+		assertThat(risk.riskLevel()).isEqualTo(com.drift.backend.shipment.ShipmentRisk.Level.HIGH);
+		assertThat(risk.riskBasis()).isEqualTo(MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE);
+		assertThat(risk.remainingWindow()).isEqualTo(new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 3_600L, null));
+		assertThat(risk.arrivalEstimate()).isEqualTo(new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(
+				MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE, estimatedArrival,
+				Instant.parse("2026-10-01T07:30:00Z"), null));
+		assertThat(business.deadline()).isEqualTo(new MaritimeAiBusinessContext.Deadline(
+				MaritimeAiBusinessContext.DeadlineState.RECORDED, deadline, "Fictional transshipment port", true));
+		assertThat(business.comparison()).isEqualTo(new MaritimeAiBusinessContext.Comparison(
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+				com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE,
+				null, estimatedArrival, deadline, "Fictional transshipment port"));
+		assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(
+				"risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW", "risk:AIS_ESTIMATED_ARRIVAL",
+				"risk:ARRIVAL_ESTIMATE_FRESHNESS", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
+				"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY",
+				"comparison:DELAY_OUTCOME", "comparison:ESTIMATED_ARRIVAL", "comparison:RECORDED_DEADLINE",
+				"comparison:RECORDED_TRANSSHIPMENT_PORT");
+	}
+
+	@Test
+	void serializesWorsenedShipmentARiskAndDeadlineFactsIntoTheProviderInput() throws Exception {
+		var body = new java.util.concurrent.atomic.AtomicReference<String>();
+		ObjectMapper json = new ObjectMapper();
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "offline-test-model", "offline-test-key",
+				"https://example.invalid/v1/responses", true, 20, 800, json, (request, requestBody) -> {
+					body.set(requestBody);
+					return new ConfiguredMaritimeAiClient.TransportResponse(503, "offline transport only");
+				});
+
+		client.interpret(scenarioInput());
+
+		String boundedPromptInput = json.readTree(body.get()).at("/input/1/content/0/text").asString();
+		assertThat(boundedPromptInput)
+				.contains("\"riskLevel\":\"HIGH\"")
+				.contains("\"riskBasis\":\"AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE\"")
+				.contains("\"remainingSeconds\":3600")
+				.contains("\"outcome\":\"EXCEEDS_DEADLINE\"")
+				.contains("\"instant\":\"2026-10-02T10:00:00Z\"")
+				.contains("\"comparedDeadline\":\"2026-10-02T10:00:00Z\"")
+				.contains("risk:CONNECTION_SEVERITY", "risk:REMAINING_CONNECTION_WINDOW",
+						"business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY", "comparison:DELAY_OUTCOME");
+	}
+
 	@Test
 	void oneRealProviderResponseIsParsedAndAcceptedByTheExistingValidator() {
 		String approval = System.getenv("MARITIME_AI_SCENARIO_LIVE_SMOKE_APPROVED");
@@ -80,7 +137,21 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 				new MaritimeAiShipmentContext.Vessel("MOTHER", "Fictional mother vessel", null, "PLANNED_ARRIVAL",
 						OffsetDateTime.parse("2026-10-02T08:00:00Z")),
 				new MaritimeAiShipmentContext.Vessel("FEEDER", "Fictional feeder vessel", null, "PLANNED_DEPARTURE",
-						OffsetDateTime.parse("2026-10-02T12:00:00Z")), null, null,
+						OffsetDateTime.parse("2026-10-02T12:00:00Z")),
+				new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+						MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
+						new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 14_400L),
+						new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 3_600L, null),
+						new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
+							OffsetDateTime.parse("2026-10-02T11:00:00Z"), Instant.parse("2026-10-01T07:30:00Z"), null),
+						List.of("Synthetic WORSENED scenario calculation.")),
+				new MaritimeAiBusinessContext(
+						new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED,
+							OffsetDateTime.parse("2026-10-02T10:00:00Z"), "Fictional transshipment port", true),
+						new MaritimeAiBusinessContext.Comparison(MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+							com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+							OffsetDateTime.parse("2026-10-02T11:00:00Z"), OffsetDateTime.parse("2026-10-02T10:00:00Z"),
+							"Fictional transshipment port")),
 				new MaritimeAiShipmentContext.Scenario("A", "DEMO-A", "WORSENED", cutoff));
 		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", cutoff, "VERIFIED", context,
 				List.of(mpa, notice, weather));

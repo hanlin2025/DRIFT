@@ -579,12 +579,18 @@ class MaritimeAiResponseValidatorTest {
 
 		var promptSuggestedFollowUp = withFollowUps(valid, List.of(
 				"Ask the operations team to confirm whether the scenario-defined deadline and port still apply."));
-		assertThat(MaritimeAiResponseValidator.validate(promptSuggestedFollowUp, input))
-				.as("the previous prompt's compound follow-up is split at 'and' before the safe-verification check")
+		assertThat(MaritimeAiResponseValidator.validate(promptSuggestedFollowUp, input)).isNull();
+		assertThat(MaritimeAiResponseValidator.safeValidationDiagnostic("UNSUPPORTED_BUSINESS_CONSTRAINT",
+				promptSuggestedFollowUp, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+
+		var appendedAssertion = withFollowUps(valid, List.of(
+				"Ask the operations team to confirm whether the scenario-defined deadline and port still apply. This shipment is urgent."));
+		assertThat(MaritimeAiResponseValidator.validate(appendedAssertion, input))
+				.as("the narrow verification exception must not cover an appended factual assertion")
 				.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		assertThat(MaritimeAiResponseValidator.safeValidationDiagnostic("UNSUPPORTED_BUSINESS_CONSTRAINT",
-				promptSuggestedFollowUp, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT at followUpConsiderations[0] "
-						+ "(VERIFICATION_QUESTION_WORDING_NOT_SUPPORTED, clause 1)");
+				appendedAssertion, input)).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT at followUpConsiderations[0] "
+						+ "(URGENCY_ASSERTION_NOT_AUTHORIZED, clause 1)");
 
 		var correctedFollowUp = withFollowUps(valid, List.of(
 				"Ask the carrier operations team to verify whether the latest arrival estimate remains current at the scenario cutoff.",

@@ -54,6 +54,7 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern SCENARIO_NO_IMPACT_OUTCOME = Pattern.compile("(?i)\\bbackend\\s+comparison\\s+shows\\s+no\\s+predicted\\s+impact\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_SUFFIX = Pattern.compile("(?i)^\\s+(?:exists?|does\\s+not\\s+exist|doesn['’]t\\s+exist|is\\s+(?:recorded|provided|specified|available|known|unknown|unavailable|unspecified|unrecorded|absent|missing|applicable|not\\s+(?:known|available|provided|recorded|specified|applicable))|has\\s+been\\s+(?:recorded|provided|specified)|has\\s+not\\s+been\\s+(?:recorded|provided|specified)|remains\\s+applicable|applies|does\\s+not\\s+apply|doesn['’]t\\s+apply)(?:\\s+(?:with\\s+(?:the\\s+)?(?:operations\\s+)?team|in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment|to\\s+(?:the\\s+)?current\\s+(?:shipment\\s+)?port))?\\s*$");
+	private static final Pattern SAFE_COMPOSITE_DEADLINE_PORT_VERIFICATION = Pattern.compile("(?i)^\\s*ask\\s+the\\s+operations\\s+team\\s+to\\s+confirm\\s+whether\\s+the\\s+scenario-defined\\s+deadline\\s+and\\s+port\\s+still\\s+apply(?:[.!?]\\s*|$)");
 	private static final Pattern BUSINESS_TEMPORAL_DETAIL = Pattern.compile("(?i)\\b(?:\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}:\\d{2}|today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d+\\s+(?:minutes?|hours?|days?|weeks?|months?|years?))\\b|\\b(?:next|last|this)\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year)\\b|\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_PREFIX = Pattern.compile("(?i)\\bno\\s+(?:(?:final|commercial|delivery|transshipment(?:[- ]arrival)?|shipment|recorded)\\s+){0,3}$");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
@@ -493,7 +494,16 @@ final class MaritimeAiResponseValidator {
 				.anyMatch(text -> !isScopedUrgencyUncertainty(text)
 						&& hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
 		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
+				.map(MaritimeAiResponseValidator::followUpTextAfterSafeCompositeVerification)
+				.filter(java.util.Objects::nonNull)
 				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext));
+	}
+	private static String followUpTextAfterSafeCompositeVerification(String text) {
+		if (text == null) return null;
+		Matcher verification = SAFE_COMPOSITE_DEADLINE_PORT_VERIFICATION.matcher(text);
+		if (!verification.find()) return text;
+		String remaining = text.substring(verification.end()).strip();
+		return remaining.isEmpty() ? null : remaining;
 	}
 	private static boolean isScopedUrgencyUncertainty(String text) {
 		return text != null && SCOPED_URGENCY_UNCERTAINTY.matcher(text.strip()).matches();
@@ -538,7 +548,8 @@ final class MaritimeAiResponseValidator {
 		}
 		if (output.followUpConsiderations() != null) {
 			for (int index = 0; index < output.followUpConsiderations().size(); index++) {
-				String followUp = output.followUpConsiderations().get(index);
+				String followUp = followUpTextAfterSafeCompositeVerification(output.followUpConsiderations().get(index));
+				if (followUp == null) continue;
 				reason = firstBusinessConstraintReason(followUp, null, allowedFactReferences, businessContext);
 				if (reason != null) return new BusinessConstraintFinding("followUpConsiderations[" + index + "]",
 						firstBusinessConstraintClause(followUp, null, allowedFactReferences, businessContext), reason);
