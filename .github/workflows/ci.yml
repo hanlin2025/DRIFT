@@ -1,0 +1,260 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/CDG-290-clean-integrated-demo-candidate
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SPRING_PROFILES_ACTIVE: test
+  DRIFT_TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/drift_test
+  DRIFT_TEST_DATABASE_USERNAME: drift
+  DRIFT_TEST_DATABASE_PASSWORD: drift
+  JWT_SECRET: ci-only-jwt-secret-not-for-production-0000000000000000
+  MAIL_HOST: 127.0.0.1
+  MAIL_PORT: "1"
+  AIS_ENABLED: "false"
+  AISSTREAM_API_KEY: ""
+  MARITIME_CONTEXT_DEMO_ENABLED: "false"
+  MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED: "false"
+  MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED: "false"
+  MARITIME_AI_ENABLED: "false"
+  MARITIME_AI_SCENARIO_ENABLED: "false"
+  MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED: "false"
+  MARITIME_AI_PROVIDER: ""
+  MARITIME_AI_MODEL: ""
+  MARITIME_AI_ENDPOINT: ""
+  MARITIME_AI_API_KEY: ""
+  MARITIME_AI_EXTERNAL_REQUESTS_APPROVED: "false"
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED: "false"
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED: ""
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED: ""
+  RISK_ALERTS_MAIL_ENABLED: "false"
+  RISK_ALERTS_DISPATCH_ENABLED: "false"
+  RISK_ALERTS_EVALUATION_ENABLED: "false"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: drift_test
+          POSTGRES_USER: drift
+          POSTGRES_PASSWORD: drift
+          POSTGRES_INITDB_ARGS: "--set=max_connections=500"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U drift -d drift_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Compile and run the complete backend suite
+        working-directory: backend
+        run: bash ./mvnw -B -ntp clean test
+      - name: Confirm the database reached V34
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          latest="$(docker exec "$POSTGRES_CONTAINER_ID" psql -U drift -d drift_test -Atqc \
+            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
+          if [[ "$latest" != "34" ]]; then
+            echo "Expected Flyway V34, found '$latest'." >&2
+            exit 1
+          fi
+
+  database:
+    name: Database and Flyway
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: drift_test
+          POSTGRES_USER: drift
+          POSTGRES_PASSWORD: drift
+          POSTGRES_INITDB_ARGS: "--set=max_connections=500"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U drift -d drift_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Run V33-to-V34 migration and persistence tests
+        working-directory: backend
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+          DRIFT_CDG289_ADMIN_JDBC_URL: jdbc:postgresql://127.0.0.1:5432/postgres
+          DRIFT_CDG289_DB_USERNAME: drift
+          DRIFT_CDG289_DB_PASSWORD: drift
+        run: |
+          set -euo pipefail
+          container="$POSTGRES_CONTAINER_ID"
+          database=""
+          ownership_token=""
+          created=0
+
+          cleanup() {
+            exit_code=$?
+            if [[ "$created" == "1" ]]; then
+              comment="$(docker exec "$container" psql -U drift -d postgres -Atqc \
+                "SELECT COALESCE(shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = '$database'" 2>/dev/null || true)"
+              if [[ "$comment" == "$ownership_token" ]]; then
+                docker exec "$container" dropdb -U drift --if-exists "$database" || exit_code=1
+              else
+                echo "Refusing to drop $database because its ownership marker changed." >&2
+                exit_code=1
+              fi
+            fi
+            exit "$exit_code"
+          }
+          trap cleanup EXIT
+
+          create_owned_database() {
+            database="drift_cdg289_$(date -u +%Y%m%d%H%M%S)_$(openssl rand -hex 6)"
+            ownership_token="$(openssl rand -hex 16)"
+            if [[ ! "$database" =~ ^drift_cdg289_[0-9]{14}_[a-f0-9]{12}$ ]]; then
+              echo "Generated database name failed the ownership guard." >&2
+              return 1
+            fi
+            if [[ "$(docker exec "$container" psql -U drift -d postgres -Atqc \
+              "SELECT 1 FROM pg_database WHERE datname = '$database'")" == "1" ]]; then
+              echo "Refusing to reuse existing database $database." >&2
+              return 1
+            fi
+            docker exec "$container" createdb -U drift -O drift "$database"
+            created=1
+            docker exec "$container" psql -U drift -d postgres -v ON_ERROR_STOP=1 \
+              -c "COMMENT ON DATABASE $database IS '$ownership_token'"
+          }
+
+          drop_owned_database() {
+            comment="$(docker exec "$container" psql -U drift -d postgres -Atqc \
+              "SELECT COALESCE(shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = '$database'")"
+            if [[ "$comment" != "$ownership_token" ]]; then
+              echo "Refusing to drop $database because its ownership marker changed." >&2
+              return 1
+            fi
+            docker exec "$container" dropdb -U drift --if-exists "$database"
+            created=0
+            database=""
+            ownership_token=""
+          }
+
+          cd ..
+          create_owned_database
+          export DRIFT_CDG289_JDBC_URL="jdbc:postgresql://127.0.0.1:5432/$database"
+          export DRIFT_CDG289_OWNERSHIP_TOKEN="$ownership_token"
+          cd backend
+          bash ./mvnw -B -ntp \
+            -Dtest=MaritimeAiAssessmentRecordTypeMigrationTest,MaritimeAiScenarioAssessmentPersistenceIntegrationTests,ScenarioMaritimeAiAssessmentServiceTest,MaritimeAiScenarioTransientTest \
+            test
+          latest="$(docker exec "$container" psql -U drift -d "$database" -Atqc \
+            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
+          if [[ "$latest" != "34" ]]; then
+            echo "Expected the disposable persistence database to reach V34, found '$latest'." >&2
+            exit 1
+          fi
+          drop_owned_database
+
+          create_owned_database
+          export DRIFT_TEST_DATABASE_URL="jdbc:postgresql://127.0.0.1:5432/$database"
+          bash ./mvnw -B -ntp \
+            -Dtest=MaritimeAiAssessmentHistoryAuthorizationIntegrationTests,MaritimeAiAssessmentHistoryConcurrencyIntegrationTests \
+            test
+          latest="$(docker exec "$container" psql -U drift -d "$database" -Atqc \
+            "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
+          if [[ "$latest" != "34" ]]; then
+            echo "Expected the disposable history database to reach V34, found '$latest'." >&2
+            exit 1
+          fi
+          drop_owned_database
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked npm dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run Vitest
+        run: npm test -- --maxWorkers=2
+      - name: Type-check and build production frontend
+        run: npm run build
+
+  docker:
+    name: Docker builds (when configured)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Detect deployable Dockerfiles
+        id: dockerfiles
+        run: |
+          if [[ -f deploy/backend.Dockerfile ]]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ -f deploy/frontend.Dockerfile ]]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build backend image
+        if: ${{ steps.dockerfiles.outputs.backend == 'true' }}
+        run: docker build --file deploy/backend.Dockerfile --tag drift-backend:ci .
+      - name: Build frontend image
+        if: ${{ steps.dockerfiles.outputs.frontend == 'true' }}
+        run: docker build --file deploy/frontend.Dockerfile --tag drift-frontend:ci .
+      - name: Report unavailable Docker configuration
+        if: ${{ steps.dockerfiles.outputs.backend != 'true' && steps.dockerfiles.outputs.frontend != 'true' }}
+        run: echo "No deployable Dockerfiles are present; there is nothing to build."
