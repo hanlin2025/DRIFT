@@ -53,6 +53,25 @@ class MaritimeAiScenarioTransientTest {
 	}
 
 	@Test
+	void insufficientEvidenceAbstainsBeforeTheAvailableScenarioComparisonRequiresClaims() throws Exception {
+		ObjectMapper json = new ObjectMapper();
+		MaritimeAiInterpretation abstention = new MaritimeAiInterpretation(
+				"The supplied evidence is insufficient for a grounded interpretation.", List.of(), List.of(), List.of(), false, null);
+		var assessments = mock(MaritimeAiAssessmentRepository.class);
+		var service = service(json, configured(json, abstention), assessments);
+
+		MaritimeAiAssessmentResponse response = service.generateScenarioTransient(
+				inputWithAvailableScenarioComparison(syntheticEvidence()), true);
+
+		assertThat(response.state()).isEqualTo("ABSTAINED");
+		assertThat(response.validationStatus()).isEqualTo("INSUFFICIENT_MODEL_EVIDENCE");
+		assertThat(response.interpretation()).isNull();
+		assertThat(response.assessmentId()).isNull();
+		assertThat(response.limitation()).contains("evidence was insufficient");
+		verifyNoInteractions(assessments);
+	}
+
+	@Test
 	void replayOrMockClientsAndAuthenticEvidenceCannotReachTheScenarioProviderPath() throws Exception {
 		AtomicBoolean called = new AtomicBoolean();
 		MaritimeAiClient replay = ignored -> {
@@ -122,6 +141,23 @@ class MaritimeAiScenarioTransientTest {
 		var context = new MaritimeAiShipmentContext("Synthetic port", null, null, null, null, scenario);
 		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", "2026-10-01T04:00:00Z", "VERIFIED",
 				context, List.of(evidence));
+	}
+
+	private static MaritimeAiEvidencePackage inputWithAvailableScenarioComparison(MaritimeEvidence evidence) {
+		MaritimeAiEvidencePackage base = input(evidence);
+		OffsetDateTime deadline = OffsetDateTime.parse("2026-10-01T10:00:00Z");
+		OffsetDateTime estimatedArrival = OffsetDateTime.parse("2026-10-01T11:00:00Z");
+		var business = new MaritimeAiBusinessContext(
+				new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED,
+						deadline, "Synthetic port", true),
+				new MaritimeAiBusinessContext.Comparison(MaritimeAiBusinessContext.ComparisonState.AVAILABLE,
+						com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+						estimatedArrival, deadline, "Synthetic port"));
+		MaritimeAiShipmentContext original = base.shipmentContext();
+		var context = new MaritimeAiShipmentContext(original.transshipmentPort(), original.motherVessel(),
+				original.feederVessel(), original.connectionRisk(), business, original.scenario());
+		return new MaritimeAiEvidencePackage(base.bundleVersion(), base.assessmentCutoffUtc(),
+				base.shipmentAssociationConfidence(), context, base.evidence());
 	}
 
 	private static MaritimeEvidence syntheticEvidence() {

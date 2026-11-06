@@ -72,7 +72,7 @@ export function ScenarioAiInterpretation({ enabled, viewer, anchor, authContextG
           setResult(null);
           onSessionEnded();
         } else if (cause.backendCode === 'STALE_EPOCH' || cause.backendCode === 'STALE_REVISION'
-          || cause.backendCode === 'STALE_SNAPSHOT') {
+          || cause.backendCode === 'STALE_SNAPSHOT' || cause.backendCode === 'SCENARIO_ASSESSMENT_NOT_FOUND') {
           setResult(null);
           onSnapshotStale();
         } else if (cause.status === 403 || (cause.status === 404 && cause.backendCode !== 'SCENARIO_AI_DISABLED')) {
