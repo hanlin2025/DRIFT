@@ -12,7 +12,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -133,6 +132,8 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 
 		String outputJson = jdbc.queryForObject("SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId);
 		JsonNode stored = json.readTree(outputJson);
+		assertThat(jdbc.queryForObject("SELECT record_type FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId))
+				.isEqualTo(MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT);
 		assertThat(stored.path("recordType").asText()).isEqualTo(MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT);
 		assertThat(stored.at("/scenarioContext/sessionId").asText()).isEqualTo(sessionId.toString());
 		assertThat(stored.at("/scenarioContext/epochId").asText()).isEqualTo(change.path("epochId").asText());
@@ -163,20 +164,30 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 		MvcResult ordinaryHistory = mvc.perform(get("/api/shipments/" + harness.shipmentAId() + "/maritime-ai-assessments")
 				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
 		assertThat(json.readTree(ordinaryHistory.getResponse().getContentAsString()).size()).isZero();
+		assertRetrievedScenarioMatches(sessionId, harness, assessmentId, change, response);
+
+		ObjectNode missingDiscriminators = (ObjectNode) stored.deepCopy();
+		missingDiscriminators.remove(List.of("recordType", "scenarioContext"));
+		ObjectNode nullDiscriminators = (ObjectNode) stored.deepCopy();
+		nullDiscriminators.putNull("recordType");
+		nullDiscriminators.putNull("scenarioContext");
+		ObjectNode malformedDiscriminators = (ObjectNode) stored.deepCopy();
+		malformedDiscriminators.put("recordType", 34);
+		malformedDiscriminators.put("scenarioContext", "not-an-object");
+		for (ObjectNode damagedEnvelope : List.of(missingDiscriminators, nullDiscriminators, malformedDiscriminators)) {
+			jdbc.update("UPDATE maritime_ai_assessments SET output_json = ? WHERE assessment_id = ?",
+					json.writeValueAsString(damagedEnvelope), assessmentId);
+			mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId))
+					.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isNotFound());
+			MvcResult malformedOrdinaryHistory = mvc.perform(get("/api/shipments/" + harness.shipmentAId() + "/maritime-ai-assessments")
+					.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
+			assertThat(json.readTree(malformedOrdinaryHistory.getResponse().getContentAsString()).size()).isZero();
+		}
 
 		jdbc.update("UPDATE shipments SET importer_company_id = ? WHERE id = ?", harness.otherCompanyId(), harness.shipmentAId());
 		mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.managerToken())))
 				.andExpect(status().isNotFound());
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE assessment_id = ?", Long.class, assessmentId)).isEqualTo(1L);
-
-		ObjectNode malformedEnvelope = (ObjectNode) stored.deepCopy();
-		malformedEnvelope.putNull("recordType");
-		malformedEnvelope.putNull("scenarioContext");
-		jdbc.update("UPDATE maritime_ai_assessments SET output_json = ? WHERE assessment_id = ?",
-				json.writeValueAsString(malformedEnvelope), assessmentId);
-		MvcResult malformedOrdinaryHistory = mvc.perform(get("/api/shipments/" + harness.shipmentAId() + "/maritime-ai-assessments")
-				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
-		assertThat(json.readTree(malformedOrdinaryHistory.getResponse().getContentAsString()).size()).isZero();
 	}
 
 	@Test
@@ -309,6 +320,19 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 				.content(json.writeValueAsString(request))).andExpect(status().isOk()).andReturn();
 		return json.readTree(result.getResponse().getContentAsString());
 	}
+	private void assertRetrievedScenarioMatches(UUID sessionId, Harness harness, String assessmentId, JsonNode state,
+			JsonNode posted) throws Exception {
+		MvcResult result = mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId))
+				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
+		JsonNode retrieved = json.readTree(result.getResponse().getContentAsString());
+		assertThat(retrieved.path("assessment")).isEqualTo(posted.path("assessment"));
+		assertThat(retrieved.path("sessionId").asText()).isEqualTo(sessionId.toString());
+		assertThat(retrieved.path("epochId").asText()).isEqualTo(state.path("epochId").asText());
+		assertThat(retrieved.path("revision").asLong()).isEqualTo(state.path("revision").asLong());
+		assertThat(retrieved.path("snapshotId").asText()).isEqualTo(state.at("/snapshot/snapshotId").asText());
+		assertThat(retrieved.path("simulationCutoffUtc").asText()).isEqualTo(state.at("/snapshot/simulationCutoffUtc").asText());
+		assertThat(retrieved.path("scenarioShipmentKey").asText()).isEqualTo("A");
+	}
 	private static String assessmentPath(UUID sessionId, long shipmentId, String assessmentId) {
 		return "/api/scenarios/v1/sessions/" + sessionId + "/shipments/" + shipmentId + "/assessments/" + assessmentId;
 	}
@@ -323,30 +347,7 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 		}
 		if ("ABSTAIN".equals(mode)) return new MaritimeAiInterpretation(
 				"The synthetic evidence is insufficient for an interpretation.", List.of(), List.of(), List.of(), false, null);
-		List<MaritimeAiClaim> claims = new ArrayList<>();
-		for (MaritimeEvidence evidence : input.evidence()) {
-			if ("MPA_ETA_REVISION".equals(evidence.sourceType())) {
-				claims.add(new MaritimeAiClaim("Review the documented schedule change against the shipment plan.",
-						List.of(evidence.evidenceId()), "CONTEXTUAL", evidence.vesselRole(), evidence.observationType(),
-						evidence.associationScope(), List.of("evidence:" + evidence.evidenceId(),
-							"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW"));
-			} else if ("MPA_OFFICIAL_NOTICE".equals(evidence.sourceType())) {
-				claims.add(new MaritimeAiClaim("The fictional port context does not establish an operational impact.",
-						List.of(evidence.evidenceId()), "CONTEXTUAL", null, null, "PORT_CONTEXT",
-						List.of("evidence:" + evidence.evidenceId()), "PORT_CONTEXT_REVIEW"));
-			} else if ("NEA_WEATHER".equals(evidence.sourceType())) {
-				claims.add(new MaritimeAiClaim("The fictional regional weather context does not establish an operational impact.",
-						List.of(evidence.evidenceId()), "CONTEXTUAL", null, null, "REGIONAL_CONTEXT",
-						List.of("evidence:" + evidence.evidenceId()), "REGIONAL_WEATHER_CONTEXT"));
-			}
-		}
-		if (claims.isEmpty()) {
-			MaritimeEvidence evidence = input.evidence().getFirst();
-			claims.add(new MaritimeAiClaim("Review the synthetic evidence with the operations team.", List.of(evidence.evidenceId()),
-					"CONTEXTUAL", evidence.vesselRole(), evidence.observationType(), evidence.associationScope()));
-		}
-		return new MaritimeAiInterpretation("The documented schedule change warrants cautious human review alongside the fictional context.",
-				claims, List.of("The synthetic context does not establish a vessel-specific cause."), List.of(), true, null);
+		return new ScenarioQualityStubClient().interpret(input).interpretation();
 	}
 
 	private record Harness(long forwarderCompanyId, long otherCompanyId, long managerUserId, String managerToken,

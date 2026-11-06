@@ -21,6 +21,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+drop_owned_database() {
+	comment="$(docker exec drift-postgres psql -U drift -d postgres -Atqc "SELECT COALESCE(shobj_description(oid, 'pg_database'), '') FROM pg_database WHERE datname = '$database'")"
+	if [[ "$comment" != "$ownership_token" ]]; then
+		echo "Refusing to drop $database because its ownership marker changed." >&2
+		return 1
+	fi
+	docker exec drift-postgres dropdb -U drift --if-exists "$database"
+	created=0
+}
+
 [[ "$database" =~ ^drift_cdg289_[0-9]{14}_[a-f0-9]{12}$ ]] || exit 1
 if docker inspect drift-postgres >/dev/null 2>&1; then
 	if [[ "$(docker inspect --format '{{.State.Status}}' drift-postgres)" != running ]]; then
@@ -44,8 +54,26 @@ docker exec drift-postgres psql -U drift -d postgres -v ON_ERROR_STOP=1 \
 	-c "COMMENT ON DATABASE $database IS '$ownership_token'"
 
 export DRIFT_CDG289_JDBC_URL="jdbc:postgresql://127.0.0.1:5432/$database"
+export DRIFT_CDG289_ADMIN_JDBC_URL="jdbc:postgresql://127.0.0.1:5432/postgres"
 export DRIFT_CDG289_DB_USERNAME=drift
 export DRIFT_CDG289_DB_PASSWORD=drift
 export DRIFT_CDG289_OWNERSHIP_TOKEN="$ownership_token"
 cd backend
-bash ./mvnw -o -Dtest=MaritimeAiScenarioAssessmentPersistenceIntegrationTests,ScenarioMaritimeAiAssessmentServiceTest,MaritimeAiScenarioTransientTest test
+bash ./mvnw -o -Dtest=MaritimeAiAssessmentRecordTypeMigrationTest,MaritimeAiScenarioAssessmentPersistenceIntegrationTests,ScenarioMaritimeAiAssessmentServiceTest,MaritimeAiScenarioTransientTest test
+
+drop_owned_database
+database="drift_cdg289_$(date -u +%Y%m%d%H%M%S)_$(tr -d '-' </proc/sys/kernel/random/uuid | cut -c1-12)"
+ownership_token="$(tr -d '-' </proc/sys/kernel/random/uuid | cut -c1-32)"
+[[ "$database" =~ ^drift_cdg289_[0-9]{14}_[a-f0-9]{12}$ ]] || exit 1
+if docker exec drift-postgres psql -U drift -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$database'" | rg -q '^1$'; then
+	echo "Refusing to reuse existing database $database." >&2
+	exit 1
+fi
+docker exec drift-postgres createdb -U drift -O drift "$database"
+created=1
+docker exec drift-postgres psql -U drift -d postgres -v ON_ERROR_STOP=1 \
+	-c "COMMENT ON DATABASE $database IS '$ownership_token'"
+export DRIFT_TEST_DATABASE_URL="jdbc:postgresql://127.0.0.1:5432/$database"
+export DRIFT_TEST_DATABASE_USERNAME=drift
+export DRIFT_TEST_DATABASE_PASSWORD=drift
+bash ./mvnw -o -Dtest=MaritimeAiAssessmentHistoryAuthorizationIntegrationTests,MaritimeAiAssessmentHistoryConcurrencyIntegrationTests test

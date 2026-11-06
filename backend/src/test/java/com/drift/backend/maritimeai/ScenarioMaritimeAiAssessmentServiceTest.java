@@ -93,8 +93,12 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		var ai = mock(MaritimeAiAssessmentService.class);
 		ControlledScenarioSessionResponse baseline = session(baselineSnapshot());
 		when(sessions.get(OWNER, SESSION_ID)).thenReturn(baseline, baseline, baseline);
-		when(ai.generateScenarioTransient(any(), eq(true)))
-				.thenReturn(response("ABSTAINED", "INSUFFICIENT_EVIDENCE", "controlled-replay-stub"));
+		MaritimeAiScenarioGenerationResult abstained = new MaritimeAiScenarioGenerationResult(
+				new MaritimeAiClient.MaritimeAiClientResult("controlled-replay-stub", "synthetic", "scenario-prompt", null, null),
+				MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE", null,
+				"No eligible synthetic evidence is available at baseline.");
+		MaritimeAiAssessmentResponse persisted = response("ABSTAINED", "INSUFFICIENT_EVIDENCE", "controlled-replay-stub");
+		stubPersistence(ai, persisted, abstained);
 		var service = service(sessions, ai, true);
 
 		ScenarioMaritimeAiResponse response = service.generate(OWNER, SESSION_ID, 200L,
@@ -103,7 +107,8 @@ class ScenarioMaritimeAiAssessmentServiceTest {
 		assertThat(response.assessment().state()).isEqualTo("ABSTAINED");
 		assertThat(response.assessment().validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
 		var captor = org.mockito.ArgumentCaptor.forClass(MaritimeAiEvidencePackage.class);
-		verify(ai).generateScenarioTransient(captor.capture(), eq(true));
+		verify(ai).generateScenario(captor.capture(), eq(true));
+		verify(ai).persistScenario(eq(OWNER), eq(200L), any(), eq(CONTEXT), eq(AUTHORIZATION), eq(abstained));
 		assertThat(captor.getValue().evidence()).isEmpty();
 		assertThat(captor.getValue().shipmentContext().scenario().stage()).isEqualTo("BASELINE");
 	}
@@ -239,10 +244,15 @@ verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
 	}
 
 	private static void stubPersistence(MaritimeAiAssessmentService ai, MaritimeAiAssessmentResponse response) {
+		stubPersistence(ai, response, GENERATION);
+	}
+
+	private static void stubPersistence(MaritimeAiAssessmentService ai, MaritimeAiAssessmentResponse response,
+			MaritimeAiScenarioGenerationResult generation) {
 		when(ai.captureScenarioAuthorization(eq(OWNER), eq(200L))).thenReturn(AUTHORIZATION);
 		when(ai.scenarioContext(eq(OWNER), any(), any(), any(), eq(200L), eq(AUTHORIZATION), any())).thenReturn(CONTEXT);
-		when(ai.generateScenario(any(), eq(true))).thenReturn(GENERATION);
-		when(ai.persistScenario(eq(OWNER), eq(200L), any(), eq(CONTEXT), eq(AUTHORIZATION), eq(GENERATION)))
+		when(ai.generateScenario(any(), eq(true))).thenReturn(generation);
+		when(ai.persistScenario(eq(OWNER), eq(200L), any(), eq(CONTEXT), eq(AUTHORIZATION), eq(generation)))
 				.thenReturn(response);
 	}
 

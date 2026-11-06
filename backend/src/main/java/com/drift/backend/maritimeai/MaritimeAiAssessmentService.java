@@ -223,7 +223,8 @@ public class MaritimeAiAssessmentService {
 				? firstNonBlank(result.clientResult().failure(), result.limitation()) : null;
 		MaritimeAiAssessment saved = assessments.save(new MaritimeAiAssessment(shipment, UUID.randomUUID().toString(), input.bundleVersion(),
 				hash(input), Instant.parse(input.assessmentCutoffUtc()), result.clientResult().provider(), result.clientResult().model(),
-				result.clientResult().promptVersion(), result.state(), result.validationStatus(), outputJson, failure, clock.instant()));
+				result.clientResult().promptVersion(), result.state(), result.validationStatus(),
+				MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT, outputJson, failure, clock.instant()));
 		return response(saved);
 	}
 
@@ -314,7 +315,8 @@ public class MaritimeAiAssessmentService {
 				MaritimeAiAssessmentHistoryScope.captured(importerCompanyId), MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT, null));
 		String failure = output == null ? result.failure() : null;
 		MaritimeAiAssessment saved = assessments.save(new MaritimeAiAssessment(shipment, UUID.randomUUID().toString(), input.bundleVersion(), hash(input),
-				Instant.parse(input.assessmentCutoffUtc()), result.provider(), result.model(), result.promptVersion(), state, validation, outputJson, failure, now));
+				Instant.parse(input.assessmentCutoffUtc()), result.provider(), result.model(), result.promptVersion(), state, validation,
+				MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT, outputJson, failure, now));
 		return response(saved);
 	}
 
@@ -332,6 +334,7 @@ public class MaritimeAiAssessmentService {
 	}
 	private Optional<MaritimeAiScenarioAssessmentContext> storedScenarioContext(MaritimeAiAssessment value) {
 		try {
+			if (!MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT.equals(value.getRecordType())) return Optional.empty();
 			MaritimeAiStoredAssessmentContent content = readContent(value.getOutputJson());
 			MaritimeAiScenarioAssessmentContext scenarioContext = content.scenarioContext();
 			if (!MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT.equals(content.recordType())
@@ -347,17 +350,15 @@ public class MaritimeAiAssessmentService {
 		}
 	}
 	private boolean isOrdinaryAssessment(MaritimeAiAssessment value) {
+		if (!MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT.equals(value.getRecordType())) return false;
 		try {
 			JsonNode root = json.readTree(value.getOutputJson());
 			if (root == null || !root.isObject()) return false;
-			if (root.has("recordType")) {
-				JsonNode type = root.get("recordType");
-				return type != null && type.isTextual()
-						&& MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT.equals(type.asText())
-						&& !root.has("scenarioContext");
-			}
-			return !root.has("scenarioContext")
-					&& (root.has("interpretation") || root.has("deterministicSummary") || root.has("claims"));
+			JsonNode type = root.get("recordType");
+			if (type != null && !type.isNull()
+					&& (!type.isTextual() || !MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT.equals(type.asText()))) return false;
+			JsonNode scenarioContext = root.get("scenarioContext");
+			return scenarioContext == null || scenarioContext.isNull();
 		} catch (Exception exception) {
 			// Unknown or malformed envelopes are hidden from ordinary history to fail closed.
 			return false;
