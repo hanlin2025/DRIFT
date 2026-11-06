@@ -104,6 +104,9 @@ public class ShipmentController {
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
 			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
 			+ "The current recommendation decision is included when one has been recorded. "
+			+ "recommendationDecisionHistory lists every accepted decision for that shipment, newest decidedAt first and then highest id, "
+			+ "including the recommendation snapshot, the selected response when modified, the actor id, the actor name at that time, and the server time. "
+			+ "It is empty when no decision is stored. A company that cannot view the shipment receives no history. "
 			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
 			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
 			+ "The same read returns one recommendation from that connection risk and the impact on this read. "
@@ -310,8 +313,11 @@ public class ShipmentController {
 	@PatchMapping("/api/shipments/{shipmentId}/recommendation-decision")
 	@Operation(summary = "Record the current recommendation decision", description = "Accepts approval, modification, or dismissal of the recommendation on this read. "
 			+ "The stored decision replaces any current decision for the shipment and keeps the outcome, the recommendation it was made against, the actor, and the time. "
+			+ "The same accepted decision appends one history row with that persisted snapshot, the decision-time actor name, and the same server time. "
+			+ "A repeated outcome appends another row. A rejected submission leaves the current row and the history unchanged. "
 			+ "A modification also stores the chosen response, which is another response from the recommendation set. "
 			+ "An unknown shipment is not found. An unavailable recommendation is rejected and stores nothing. "
+			+ "A client-supplied time is ignored. "
 			+ "Anyone who can view the shipment may decide, including a linked importer. A company that cannot view it is forbidden, and nothing is stored. "
 			+ "This endpoint does not perform the recommended action and does not send mail.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))

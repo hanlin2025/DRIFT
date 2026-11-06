@@ -74,16 +74,34 @@ public record ShipmentDetailResponse(
 		ShipmentStatus status,
 		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
 				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
-		RecommendationDecisionResponse recommendationDecision) {
+		RecommendationDecisionResponse recommendationDecision,
+		@Schema(description = "Accepted recommendation decisions for this shipment, newest decidedAt first and then highest id. Empty when no decision has been stored. Each entry keeps the recommendation snapshot, the decision-time actor name, and the server time.")
+		java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
-		return from(shipment, connection, transshipmentArrivalDeadline, null);
+		return from(shipment, connection, transshipmentArrivalDeadline, null, java.util.List.of());
 	}
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 			RecommendationDecisionResponse recommendationDecision) {
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision, java.util.List.of());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
+				recommendationDecisionHistory, ShipmentRecommendationImpact.notReturned());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
+			ShipmentRecommendationImpact impact) {
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -101,7 +119,7 @@ public record ShipmentDetailResponse(
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
-				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
+				ShipmentRecommendation.of(risk, impact == null ? ShipmentRecommendationImpact.notReturned() : impact),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
@@ -110,7 +128,8 @@ public record ShipmentDetailResponse(
 				arrivalComparison,
 				transshipmentArrivalDeadline,
 				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
-				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision);
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision,
+				recommendationDecisionHistory == null ? java.util.List.of() : recommendationDecisionHistory);
 	}
 
 }

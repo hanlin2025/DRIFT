@@ -110,6 +110,10 @@ export type RecommendationDecision = {
   decidedAt: string;
 };
 
+export type RecommendationDecisionHistoryEntry = RecommendationDecision & {
+  id: number;
+};
+
 export type RecommendationDecisionRequest =
   | { outcome: 'APPROVED' | 'DISMISSED' }
   | { outcome: 'MODIFIED'; selectedResponse: RecommendationCode };
@@ -242,8 +246,8 @@ export type Shipment = {
   delayComparison?: DelayComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
-  recommendation?: ShipmentRecommendation | null;
   recommendationDecision?: RecommendationDecision | null;
+  recommendationDecisionHistory?: RecommendationDecisionHistoryEntry[];
 };
 
 export type Cdg201ArrivalEvidence = {
@@ -737,6 +741,25 @@ function recommendationDecisionOf(value: Record<string, unknown>): Recommendatio
   return parseRecommendationDecision(value.recommendationDecision);
 }
 
+function recommendationDecisionHistoryOf(value: Record<string, unknown>): RecommendationDecisionHistoryEntry[] | undefined {
+  if (!('recommendationDecisionHistory' in value) || value.recommendationDecisionHistory == null) return [];
+  if (!Array.isArray(value.recommendationDecisionHistory)) return undefined;
+  const history: RecommendationDecisionHistoryEntry[] = [];
+  for (const entry of value.recommendationDecisionHistory) {
+    const parsed = parseRecommendationDecisionHistory(entry);
+    if (parsed === undefined) return undefined;
+    history.push(parsed);
+  }
+  return history;
+}
+
+function parseRecommendationDecisionHistory(value: unknown): RecommendationDecisionHistoryEntry | undefined {
+  if (!isRecord(value) || !isFiniteNumber(value.id) || value.id <= 0) return undefined;
+  const decision = parseRecommendationDecision(value);
+  if (decision === undefined) return undefined;
+  return { id: value.id, ...decision };
+}
+
 function parseRecommendationDecision(value: unknown): RecommendationDecision | undefined {
   if (!isRecord(value)) return undefined;
   const outcome = value.outcome;
@@ -989,6 +1012,8 @@ function asShipment(value: unknown): Shipment | null {
   if (updatedAt === undefined || updatedByName === undefined) return null;
   const recommendationDecision = recommendationDecisionOf(value);
   if (recommendationDecision === undefined) return null;
+  const recommendationDecisionHistory = recommendationDecisionHistoryOf(value);
+  if (recommendationDecisionHistory === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -1028,6 +1053,7 @@ function asShipment(value: unknown): Shipment | null {
     updatedByName,
     recommendation,
     recommendationDecision,
+    recommendationDecisionHistory,
   };
 }
 
