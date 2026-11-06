@@ -17,6 +17,7 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 	@Test
 	void worsenedShipmentASmokeFixtureIncludesBackendRiskAndDeadlineComparisonFacts() {
 		MaritimeAiEvidencePackage input = scenarioInput();
+		assertThat(input.bundleVersion()).isEqualTo("cdg246.maritime-evidence-bundle.v1");
 		MaritimeAiShipmentContext context = input.shipmentContext();
 		MaritimeAiConnectionRiskContext risk = context.connectionRisk();
 		MaritimeAiBusinessContext business = context.businessContext();
@@ -68,6 +69,7 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 
 		String boundedPromptInput = json.readTree(body.get()).at("/input/1/content/0/text").asString();
 		assertThat(boundedPromptInput)
+				.contains("\"bundleVersion\":\"cdg246.maritime-evidence-bundle.v1\"")
 				.contains("\"riskLevel\":\"HIGH\"")
 				.contains("\"riskBasis\":\"AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE\"")
 				.contains("\"durationSeconds\":108000")

@@ -142,7 +142,7 @@ class ScenarioQualityStubClientTest {
 				MaritimeAiBusinessContext.fromScenario(comparison, fixture.transshipmentPort()), scenarioContext);
 		List<MaritimeEvidence> evidence = MaritimeAiAssessmentService.eligibleForInference(
 				fixture.eligibleEvidenceFor(shipment, cutoff));
-		return new MaritimeAiEvidencePackage(fixture.contractVersion(), cutoff.toString(), "VERIFIED", shipmentContext, evidence);
+		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", cutoff.toString(), "VERIFIED", shipmentContext, evidence);
 	}
 
 	private static void assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
