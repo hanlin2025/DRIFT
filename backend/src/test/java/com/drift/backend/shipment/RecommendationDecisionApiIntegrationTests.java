@@ -697,6 +697,10 @@ class RecommendationDecisionApiIntegrationTests {
 	static final class ChosenImpact extends ShipmentRecommendationImpactSource {
 		private ShipmentRecommendationImpact impact = ShipmentRecommendationImpact.notReturned();
 
+		ChosenImpact() {
+			super();
+		}
+
 		@Override
 		ShipmentRecommendationImpact current() {
 			return impact;
