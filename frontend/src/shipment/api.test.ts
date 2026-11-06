@@ -949,6 +949,7 @@ describe('recommendation decision API', () => {
     await expect(getShipment('token', '9')).resolves.toMatchObject({
       recommendation: null,
       recommendationDecision: null,
+      recommendationDecisionHistory: [],
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
     await expect(listShipments('token')).resolves.toMatchObject([{ recommendation: null, recommendationDecision: null }]);
@@ -1025,5 +1026,32 @@ describe('recommendation decision API', () => {
     await expect(recordRecommendationDecision('token', 9, { outcome: 'DISMISSED' }))
       .rejects.toMatchObject({ status: 409, message: 'An unavailable recommendation is not stored.' });
     expect(IMPACT_NOT_RETURNED).toContain('impact assessment has not been returned');
+  });
+
+  it('keeps server history order when decision times are equal', async () => {
+    const dismissed = {
+      id: 9,
+      ...approved,
+      outcome: 'DISMISSED',
+      decidedAt: '2026-10-28T06:00:00Z',
+      decidedByName: 'Bo Chen',
+    };
+    const earlierApproval = { id: 4, ...approved };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendation: noAction,
+      risk: { level: 'LOW', explanation: noAction.riskExplanation },
+      recommendationDecision: approved,
+      recommendationDecisionHistory: [dismissed, earlierApproval],
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendationDecisionHistory: [dismissed, earlierApproval],
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendationDecisionHistory: { id: 1 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 });

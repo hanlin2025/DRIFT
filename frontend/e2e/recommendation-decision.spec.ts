@@ -27,11 +27,27 @@ function assertOwnedDatabase() {
   }
 }
 
-const useDocker = spawnSync('docker', ['compose', 'version'], { cwd: root, encoding: 'utf8' }).status === 0;
+const pgHost = process.env.DRIFT_E2E_PGHOST ?? '';
+const pgPort = process.env.DRIFT_E2E_PGPORT ?? '';
+const useDocker = !pgHost && !pgPort && spawnSync('docker', ['compose', 'version'], { cwd: root, encoding: 'utf8' }).status === 0;
 
 function sql(query: string, variables: Record<string, string> = {}) {
   const common = ['-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At',
     ...Object.entries(variables).flatMap(([key, value]) => ['-v', `${key}=${value}`])];
+  if (pgPort === '5432') {
+    throw new Error('Refusing the shared database port.');
+  }
+  const container = process.env.DRIFT_E2E_PGCONTAINER ?? '';
+  if (container) {
+    if (container === 'drift-postgres') throw new Error('Refusing the shared database container.');
+    return execFileSync('docker', ['exec', '-i', container, 'psql', ...common],
+      { cwd: root, input: query, encoding: 'utf8' }).trim();
+  }
+  if (pgHost && pgPort) {
+    return execFileSync('psql', ['-h', pgHost, '-p', pgPort, ...common], {
+      cwd: root, input: query, encoding: 'utf8', env: { ...process.env, PGPASSWORD: process.env.PGPASSWORD || 'drift' },
+    }).trim();
+  }
   if (useDocker) {
     return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', ...common],
       { cwd: root, input: query, encoding: 'utf8' }).trim();
@@ -268,7 +284,8 @@ test('dismissing a recommendation sets it aside and leaves the recommendation, r
     await expect(page.getByRole('article', { name: 'Recommendation' }).getByRole('heading', { name: 'No action' })).toBeVisible();
     await expect(page.locator('.recommendation-impact').getByText(NO_PREDICTED_IMPACT, { exact: true })).toBeVisible();
     await expect(fact(page, 'Risk')).toContainText(LOW_RISK);
-    await expect(page.getByText('The recommendation was set aside')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Current decision' }).getByText('The recommendation was set aside')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Decision history' }).getByText('The recommendation was set aside')).toBeVisible();
     const stored = await recommendation(request, owner.token, shipment.id);
     expect(stored.risk.explanation).toBe(LOW_RISK);
     expect(stored.recommendation.response?.wording).toBe(NO_ACTION.wording);
@@ -382,7 +399,119 @@ test('an unavailable recommendation shows the reason and no approve, modify, or 
     await expect(panel.getByRole('heading', { name: 'No action' })).toHaveCount(0);
     await expect(page.getByText('The recommendation was set aside')).toHaveCount(0);
     await expect(fact(page, 'Risk')).toContainText(LOW_RISK);
+    await expect(page.getByRole('region', { name: 'Decision history' })).toHaveCount(0);
   } finally {
     cleanup([owner.email]);
+  }
+});
+
+test('one session records two decisions, reopens the history, and checks importer, access, and a narrow page', {
+  tag: ['@disposable-database', '@completed-impact', '@decision-history'],
+}, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The history page is covered once, then narrowed in this session.');
+  test.setTimeout(90_000);
+  const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO', 'Ada Lee');
+  const importer = await registerAccount(request, 'IMPORTER', 'STRAITS_FRESH_DEMO', 'Blake Lim');
+  const outsiderCode = `CDG275${randomBytes(3).toString('hex')}`;
+  sql("INSERT INTO companies (code, name, active) VALUES (:'code', 'Other Logistics', true)", { code: outsiderCode });
+  const outsider = await registerAccount(request, 'FREIGHT_FORWARDER', outsiderCode, 'Casey Outsider');
+  try {
+    const shipment = await createShipment(request, owner.token);
+    await signIn(page, owner.email, '/freight-forwarder');
+    await openShipment(page, 'freight-forwarder', shipment);
+    await expect(page.getByRole('region', { name: 'Decision history' })).toHaveCount(0);
+
+    const approved = page.waitForResponse(response =>
+      response.request().method() === 'PATCH' && response.url().includes('/recommendation-decision'));
+    await page.getByRole('button', { name: 'Approve' }).click();
+    const approvedResponse = await approved;
+    expect(approvedResponse.status(), await approvedResponse.text()).toBe(200);
+    const approvedBody = approvedResponse.request().postDataJSON() as { decidedAt?: string };
+    expect(approvedBody).toEqual({ outcome: 'APPROVED' });
+    expect(approvedBody.decidedAt).toBeUndefined();
+    const approvedAt = await page.getByRole('region', { name: 'Current decision' }).locator('time').getAttribute('datetime');
+
+    await page.getByLabel('Modify with a different response').selectOption('MONITOR_CONSTRAINTS');
+    const modified = page.waitForResponse(response =>
+      response.request().method() === 'PATCH' && response.url().includes('/recommendation-decision'));
+    await page.getByRole('button', { name: 'Modify', exact: true }).click();
+    const modifiedResponse = await modified;
+    expect(modifiedResponse.status(), await modifiedResponse.text()).toBe(200);
+    const persisted = await modifiedResponse.json() as { decidedAt: string; decidedByName: string; outcome: string };
+    expect(persisted).toMatchObject({ outcome: 'MODIFIED', decidedByName: 'Ada Lee' });
+
+    const current = page.getByRole('region', { name: 'Current decision' });
+    await expect(current.getByText('Modified', { exact: true })).toBeVisible();
+    await expect(current.locator('time')).toHaveAttribute('datetime', persisted.decidedAt);
+    const history = page.getByRole('region', { name: 'Decision history' });
+    const items = history.getByRole('listitem');
+    await expect(items).toHaveCount(2);
+    await expect(items.nth(0)).toContainText('Modified');
+    await expect(items.nth(0)).toContainText('Monitor');
+    await expect(items.nth(0)).toContainText(MONITOR.wording);
+    await expect(items.nth(0).locator('time')).toHaveAttribute('datetime', persisted.decidedAt);
+    await expect(items.nth(1)).toContainText('Approved');
+    await expect(items.nth(1)).toContainText('Ada Lee');
+    await expect(items.nth(1).locator('time')).toHaveAttribute('datetime', approvedAt!);
+    await expect(page.getByRole('heading', { name: 'No action' })).toBeVisible();
+    await expect(fact(page, 'Risk')).toContainText(LOW_RISK);
+    await expect(page.getByRole('heading', { name: 'Change history' })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Current decision' }).locator('time')).toHaveAttribute('datetime', persisted.decidedAt);
+    await expect(page.getByRole('region', { name: 'Decision history' }).getByRole('listitem')).toHaveCount(2);
+
+    const importerCompanyId = Number(sql("SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO';"));
+    const linked = await request.patch(`/api/shipments/${shipment.id}/link-importer`, {
+      headers: { Authorization: `Bearer ${owner.token}` },
+      data: { importerCompanyId },
+    });
+    expect(linked.status(), await linked.text()).toBe(200);
+
+    await page.evaluate(() => sessionStorage.clear());
+    await signIn(page, importer.email, '/importer');
+    await openShipment(page, 'importer', shipment);
+    const importerHistory = page.getByRole('region', { name: 'Decision history' });
+    await expect(importerHistory.getByRole('listitem')).toHaveCount(2);
+    await expect(importerHistory.getByRole('listitem').nth(0).locator('time')).toHaveAttribute('datetime', persisted.decidedAt);
+    await expect(importerHistory.getByRole('listitem').nth(1).locator('time')).toHaveAttribute('datetime', approvedAt!);
+    await expect(page.getByRole('region', { name: 'Current decision' })).toContainText('Modified');
+
+    const denied = await request.patch(`/api/shipments/${shipment.id}/recommendation-decision`, {
+      headers: { Authorization: `Bearer ${outsider.token}` },
+      data: { outcome: 'DISMISSED' },
+    });
+    expect(denied.status()).toBe(403);
+    expect(await denied.json()).toEqual({ message: NO_ACCESS });
+
+    await page.evaluate(() => sessionStorage.clear());
+    await signIn(page, outsider.email, '/freight-forwarder');
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible();
+    await expect(page.getByText(shipment.shipmentReference)).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Decision history' })).toHaveCount(0);
+    await expect(page.getByRole('article', { name: 'Recommendation' })).toHaveCount(0);
+
+    const stored = await request.get(`/api/shipments/${shipment.id}`, {
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    const detail = await stored.json() as {
+      recommendationDecisionHistory: { outcome: string; decidedAt: string; decidedByName: string }[];
+    };
+    expect(detail.recommendationDecisionHistory.map(entry => entry.outcome)).toEqual(['MODIFIED', 'APPROVED']);
+    expect(detail.recommendationDecisionHistory.map(entry => entry.decidedAt)).toEqual([persisted.decidedAt, approvedAt]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => sessionStorage.clear());
+    await signIn(page, owner.email, '/freight-forwarder');
+    await openShipment(page, 'freight-forwarder', shipment);
+    const narrow = page.getByRole('article', { name: 'Recommendation' });
+    await expect(narrow.getByRole('region', { name: 'Decision history' }).getByRole('listitem')).toHaveCount(2);
+    await expect(narrow.getByRole('button', { name: 'Approve' })).toBeVisible();
+    const fits = await narrow.evaluate(article => article.scrollWidth <= article.clientWidth + 1);
+    expect(fits).toBe(true);
+  } finally {
+    cleanup([owner.email, importer.email, outsider.email]);
   }
 });

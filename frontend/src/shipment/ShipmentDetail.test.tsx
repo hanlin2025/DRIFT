@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type RecommendationDecision, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -1499,6 +1499,7 @@ describe('recommendation decision on the shipment page', () => {
     expect(within(panel).queryByRole('button', { name: 'Modify' })).not.toBeInTheDocument();
     expect(within(panel).queryByText(RECOMMENDATION_RESPONSES.NO_ACTION.wording)).not.toBeInTheDocument();
     expect(within(panel).queryByText('The recommendation was set aside')).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('region', { name: 'Decision history' })).not.toBeInTheDocument();
   });
 
   it('lets the viewer approve, modify, or dismiss a completed recommendation', async () => {
@@ -1567,7 +1568,7 @@ describe('recommendation decision on the shipment page', () => {
     expect(within(panel).getByRole('heading', { name: 'No action' })).toBeInTheDocument();
     expect(panel).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
     expect(within(panel).getByText("Does not affect the importer's constraints")).toBeInTheDocument();
-    expect(screen.getByText(shipment.risk!.explanation)).toBeInTheDocument();
+    expect(screen.getAllByText(shipment.risk!.explanation).length).toBeGreaterThan(0);
     expect(within(panel).getByRole('region', { name: 'Current decision' })).toHaveTextContent('The recommendation was set aside');
   });
 
@@ -1659,14 +1660,71 @@ describe('recommendation decision on the shipment page', () => {
   });
 
   it('keeps the stored decision and hides the controls when a new decision is refused', async () => {
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation({ recommendationDecision: approved }));
+    const stored: RecommendationDecisionHistoryEntry = { ...approved, id: 1 };
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({
+      recommendationDecision: approved,
+      recommendationDecisionHistory: [stored],
+    }));
     vi.mocked(recordRecommendationDecision).mockRejectedValue(new ApiError('An unavailable recommendation is not stored.', 409));
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Approve' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('An unavailable recommendation is not stored.');
     expect(screen.getByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    const history = screen.getByRole('region', { name: 'Decision history' });
+    expect(within(history).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(history).getByText('Ada Lee')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  });
+
+  it('shows history in the order returned and keeps the persisted decision after a write', async () => {
+    const sameTime = '2026-10-28T06:00:00Z';
+    const persisted: RecommendationDecision = { ...approved, decidedAt: sameTime, decidedByName: 'Ada Lee' };
+    const newest: RecommendationDecisionHistoryEntry = {
+      ...persisted,
+      id: 9,
+      outcome: 'DISMISSED',
+      decidedByName: 'Bo Chen',
+    };
+    const older: RecommendationDecisionHistoryEntry = {
+      ...approved,
+      id: 4,
+      outcome: 'MODIFIED',
+      selectedResponseName: 'Monitor',
+      selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
+      decidedAt: sameTime,
+    };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({
+        recommendationDecision: { ...persisted, decidedByName: 'Renamed User', decidedAt: '2026-10-28T09:00:00Z' },
+        recommendationDecisionHistory: [newest, older],
+      })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return persisted;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    expect(screen.queryByRole('region', { name: 'Decision history' })).not.toBeInTheDocument();
+    await userEvent.setup().click(approve);
+    const current = await screen.findByRole('region', { name: 'Current decision' });
+    expect(current).toHaveTextContent('Ada Lee');
+    expect(current).toHaveTextContent(formatWhen(sameTime));
+    expect(current).not.toHaveTextContent('Renamed User');
+    expect(current).not.toHaveTextContent(formatWhen('2026-10-28T09:00:00Z'));
+    const history = await screen.findByRole('region', { name: 'Decision history' });
+    const items = within(history).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('The recommendation was set aside');
+    expect(items[0]).toHaveTextContent('Bo Chen');
+    expect(items[1]).toHaveTextContent('Modified');
+    expect(items[1]).toHaveTextContent('Chosen response');
+    expect(items[1]).toHaveTextContent('Monitor');
+    expect(items[0]).toHaveTextContent(formatWhen(sameTime));
+    expect(items[1]).toHaveTextContent(formatWhen(sameTime));
+    expect(screen.getByRole('heading', { name: 'Change history' })).toBeInTheDocument();
   });
 
   it('ends the session when recording a decision is rejected', async () => {
