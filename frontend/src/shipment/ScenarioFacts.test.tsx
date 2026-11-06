@@ -29,6 +29,7 @@ describe('ScenarioFacts', () => {
 
     const facts = screen.getByRole('region', { name: 'Scenario snapshot facts' });
     expect(facts).toHaveTextContent(`SYNTHETIC SCENARIO · ${stage}`);
+    expect(facts).toHaveTextContent('Backend-calculated facts. Risk, arrival estimates, connection windows and the deadline assessment below belong to this confirmed snapshot. Any AI interpretation is separate.');
     expect(within(facts).getByText(risk)).toBeInTheDocument();
     expect(facts.querySelector(`time[datetime="${arrival}"]`)).toBeInTheDocument();
     expect(facts).toHaveTextContent('Planned originNot recorded');

@@ -161,6 +161,27 @@ function isValidatedInterpretation(assessment: MaritimeAiAssessment) {
   return assessment.state === 'GENERATED' && assessment.validationStatus === 'VALID' && assessment.interpretation != null;
 }
 
+function claimSupport(claim: MaritimeAiClaim, evidenceFacts: MaritimeAiFact[]) {
+  const citedIds = [...new Set(claim.evidenceIds ?? [])];
+  const citations = citedIds.map(id => {
+    const fact = evidenceFacts.find(item => item.evidenceId === id);
+    return fact
+      ? `${sourceLabel(fact.sourceType)}${fact.eventType ? ` · ${humanizeCode(fact.eventType)}` : ''} (evidence ${id}): ${fact.citation || 'citation text not recorded'}`
+      : `Evidence ${id}: source details are not available in this saved assessment`;
+  });
+  const backendFacts = [...new Set((claim.factReferences ?? []).flatMap(reference => {
+    if (reference.startsWith('risk:')) return ['Backend risk calculation'];
+    if (reference.startsWith('comparison:')) return ['Backend deadline comparison'];
+    if (reference.startsWith('business:')) return ['Recorded business constraints'];
+    if (reference.startsWith('schedule:')) return ['Saved shipment schedule'];
+    return [];
+  }))];
+  const sourceText = citations.length
+    ? `Source citations: ${citations.join('; ')}.`
+    : 'No external source citation is attached to this claim.';
+  return backendFacts.length ? `${sourceText} Backend facts: ${backendFacts.join(', ')}.` : sourceText;
+}
+
 function selectedDuration(risk: MaritimeAiRiskSnapshot | null | undefined) {
   if (!risk || risk.selectedWindowState !== 'AVAILABLE') return null;
   return risk.windowSeconds;
@@ -278,6 +299,7 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
     {isVerifiedCaptureReplay(assessment) && <p className="notice">Verified OpenAI provider-capture replay. No provider request was made when this assessment was saved.</p>}
     {isControlledStub(assessment) && <p className="notice">Controlled synthetic stub assessment. It uses fictional evidence and is not an external provider response.</p>}
     {hasProviderGeneratedInterpretation(assessment) && <p className="success-notice maritime-ai-provider-label">Provider-generated assessment from {assessment.provider} at the recorded assessment time.</p>}
+    <p className="maritime-ai-review-note"><strong>Human review:</strong> Verify any cited source alongside the separate backend facts before changing a plan. This panel does not approve or apply a change.</p>
 
     {interpretation ? <>
       {evidenceFacts.length > 0 || evidenceClaims.length > 0 ? <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
@@ -288,7 +310,9 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
         </article>)}
         {evidenceClaims.length > 0 && <div className="maritime-ai-claims" aria-label="Evidence interpretation">
           <p><strong>Evidence interpretation</strong></p>
-          <ul>{evidenceClaims.map((claim, index) => <li key={`evidence-claim-${index}`}>{claim.statement}</li>)}</ul>
+          <ul>{evidenceClaims.map((claim, index) => <li key={`evidence-claim-${index}`}>
+            {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+          </li>)}</ul>
         </div>}
       </section> : <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
         <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
@@ -299,7 +323,9 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
         <RiskFacts assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} scenarioMode={scenarioMode} />
         <section className="maritime-ai-implications" aria-label="Tentative risk-review implications">
           <p><strong>{scenarioMode ? 'Tentative scenario planning implication' : 'Tentative operational implication'}</strong></p>
-          <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>{claim.statement}</li>)}</ul>
+          <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>
+            {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+          </li>)}</ul>
           <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
         </section>
       </> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : businessClaims.length === 0 ? <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p> : null}
@@ -307,7 +333,9 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
       {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Business implications">
         <h3>Business implications</h3>
         <p><strong>{scenarioMode ? 'Validated scenario deadline comparison' : 'Validated importer deadline comparison'}</strong></p>
-        <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>{claim.statement}</li>)}</ul>
+        <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>
+          {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+        </li>)}</ul>
         <p className="maritime-ai-note">{scenarioMode
           ? 'This is a backend comparison against the deadline defined for the selected synthetic scenario snapshot. It is not a current shipment record or a final-delivery assessment.'
           : 'This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.'}</p>
@@ -323,6 +351,9 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
       </section>
     </> : <section className="maritime-ai-unavailable" aria-label="No validated interpretation">
       <h3>{assessment.state === 'ABSTAINED' ? 'No validated interpretation was produced' : 'Validated interpretation unavailable'}</h3>
+      <p>{assessment.state === 'ABSTAINED' ? 'The assessment abstained; no AI interpretation is shown.'
+        : assessment.state === 'FAILED' ? 'AI generation failed; no interpretation is shown.'
+          : 'The generated response did not pass validation; no interpretation is shown.'}</p>
       <p>{assessment.limitation ?? 'This assessment did not produce an interpretation that is safe to display.'}</p>
     </section>}
 

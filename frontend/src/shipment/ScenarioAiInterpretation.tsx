@@ -43,7 +43,10 @@ export function ScenarioAiInterpretation({ enabled, viewer, anchor, authContextG
     return () => abortRef.current?.abort();
   }, [contextKey]);
 
-  if (!enabled) return null;
+  if (!enabled) return <section className="notice maritime-ai-disabled" aria-label="Scenario AI interpretation">
+    <p><strong>AI interpretation is not enabled for this environment.</strong></p>
+    <p>Backend-calculated scenario facts and source evidence remain available. No AI request was made.</p>
+  </section>;
   const assessment = result?.contextKey === contextKey ? result.assessment : null;
   const error = failure?.contextKey === contextKey ? failure.message : null;
   const generating = loadingKey === contextKey;

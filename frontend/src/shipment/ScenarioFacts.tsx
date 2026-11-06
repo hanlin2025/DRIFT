@@ -35,6 +35,7 @@ export function ScenarioFacts({ snapshot }: { snapshot: DecodedScenarioSnapshot 
       <section className="shipment-record scenario-facts" aria-label="Scenario snapshot facts">
         <p className="eyebrow">SYNTHETIC SCENARIO · {snapshot.stage}</p>
         <p>This is a controlled fictional demonstration. It does not change the saved shipment or trigger an operational decision.</p>
+        <p className="scenario-facts-context"><strong>Backend-calculated facts.</strong> Risk, arrival estimates, connection windows and the deadline assessment below belong to this confirmed snapshot. Any AI interpretation is separate.</p>
         <dl>
           <div><dt>Stage</dt><dd>{snapshot.stageOrder + 1} of {snapshot.stageCount} · {snapshot.stage}</dd></div>
           {utcFact('Simulation reference cutoff (UTC)', snapshot.simulationCutoffUtc)}

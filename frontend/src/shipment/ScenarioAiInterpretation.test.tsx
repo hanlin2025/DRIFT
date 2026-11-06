@@ -110,11 +110,44 @@ describe('ScenarioAiInterpretation', () => {
     expect(onAuthorizationLost).toHaveBeenCalledOnce();
   });
 
-  it('renders no generation controls when the explicit frontend gate is off', () => {
+  it('shows an explicit abstention without presenting a generated interpretation', async () => {
+    const user = userEvent.setup();
+    const abstainedAssessment = {
+      ...assessment,
+      state: 'ABSTAINED',
+      validationStatus: 'INSUFFICIENT_MODEL_EVIDENCE',
+      interpretation: null,
+      limitation: 'The scenario evidence does not support a validated interpretation.',
+    };
+    const fetch = vi.fn().mockResolvedValue(http({ ...responseFor(), assessment: abstainedAssessment }));
+    vi.stubGlobal('fetch', fetch);
+    render(<ScenarioAiInterpretation {...props()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Generate AI Interpretation' }));
+    expect(await screen.findByText('The assessment abstained; no AI interpretation is shown.')).toBeInTheDocument();
+    expect(screen.getByText(abstainedAssessment.limitation)).toBeInTheDocument();
+    expect(screen.queryByText(/Provider-generated assessment/)).not.toBeInTheDocument();
+  });
+
+  it('keeps retry available after a generation failure', async () => {
+    const user = userEvent.setup();
+    const fetch = vi.fn().mockResolvedValue(http({ code: 'PROVIDER_UNAVAILABLE', message: 'AI service is unavailable.', retryable: true }, 503));
+    vi.stubGlobal('fetch', fetch);
+    render(<ScenarioAiInterpretation {...props()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Generate AI Interpretation' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('AI service is unavailable.');
+    expect(screen.getByRole('button', { name: 'Generate AI Interpretation' })).toBeEnabled();
+    expect(screen.queryByText(/Provider-generated assessment/)).not.toBeInTheDocument();
+  });
+
+  it('explains when the explicit frontend gate is off without making a request', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    const result = render(<ScenarioAiInterpretation {...props()} enabled={false} />);
-    expect(result.container).toBeEmptyDOMElement();
+    render(<ScenarioAiInterpretation {...props()} enabled={false} />);
+    const panel = screen.getByRole('region', { name: 'Scenario AI interpretation' });
+    expect(panel).toHaveTextContent('AI interpretation is not enabled for this environment.');
+    expect(panel).toHaveTextContent('Backend-calculated scenario facts and source evidence remain available. No AI request was made.');
     expect(fetch).not.toHaveBeenCalled();
   });
 });

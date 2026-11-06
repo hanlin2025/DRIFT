@@ -1222,7 +1222,7 @@ describe('vessel track history on the shipment detail', () => {
     const user = userEvent.setup();
     const history = await screen.findByRole('region', { name: 'Track history' });
 
-    expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24);
+    await waitFor(() => expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24));
     expect(within(history).getByRole('button', { name: 'Mother vessel' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(history).getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
     expect(await within(history).findByText('3 positions in the last 24 hours · 1 slowdown segment')).toBeInTheDocument();
@@ -1240,6 +1240,16 @@ describe('vessel track history on the shipment detail', () => {
     expect(within(quiet).getByText('0.4 kn')).toBeInTheDocument();
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveTextContent('Not reported');
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveClass('is-missing');
+  });
+
+  it('shows backend-calculated shipment facts before the separate AI interpretation panel', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const facts = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const aiPanel = screen.getByRole('region', { name: 'AI maritime interpretation' });
+    expect(screen.getByRole('region', { name: 'Backend-calculated shipment assessment' }))
+      .toHaveTextContent('The AI interpretation is shown separately and does not approve or apply a change.');
+    expect(facts.compareDocumentPosition(aiPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps the selected observation across polls and clears it once that observation leaves the window', async () => {
