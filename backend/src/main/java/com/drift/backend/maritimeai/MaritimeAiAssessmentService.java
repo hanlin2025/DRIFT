@@ -160,8 +160,9 @@ public class MaritimeAiAssessmentService {
 		}
 		if (scenarioV16) {
 			if (result.scenarioFailureCode() != null) {
-				return scenarioResult(MaritimeAiGenerationState.FAILED, "INVALID_SCENARIO_OUTPUT", result,
-						"The provider response failed validation (INVALID_SCENARIO_OUTPUT at output). No interpretation is displayed.");
+				String failureCode = result.scenarioFailureCode();
+				return scenarioResult(MaritimeAiGenerationState.FAILED, failureCode, result,
+						"The provider response failed validation (" + failureCode + " at output). No interpretation is displayed.");
 			}
 			if (result.failure() != null || result.scenarioOutputText() == null) return scenarioResult(
 					MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", result,

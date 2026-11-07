@@ -160,7 +160,7 @@ class ConfiguredMaritimeAiClientTest {
 		assertThat(refused.scenarioEnvelopeStatus()).isEqualTo("refusal");
 		assertThat(refused.scenarioOutputText()).isNull();
 		assertThat(refused.failure()).contains("refused");
-		assertThat(refused.scenarioFailureCode()).isNull();
+		assertThat(refused.scenarioFailureCode()).isEqualTo("PROVIDER_REFUSAL");
 
 		String incomplete = """
 				{"status":"incomplete","output":[{"type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"{\\"assessment\\":null}"}]}]}
@@ -169,6 +169,7 @@ class ConfiguredMaritimeAiClientTest {
 		assertThat(partial.scenarioEnvelopeStatus()).isEqualTo("incomplete_message");
 		assertThat(partial.scenarioOutputText()).isEqualTo("{\"assessment\":null}");
 		assertThat(partial.failure()).contains("did not complete");
+		assertThat(partial.scenarioFailureCode()).isEqualTo("INCOMPLETE_PROVIDER_OUTPUT");
 
 		String multiple = """
 				{"status":"completed","output":[
@@ -179,6 +180,18 @@ class ConfiguredMaritimeAiClientTest {
 		assertThat(ambiguous.scenarioEnvelopeStatus()).isEqualTo("multiple_output_text");
 		assertThat(ambiguous.scenarioOutputText()).isNull();
 		assertThat(ambiguous.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
+	}
+
+	@Test void malformedAndMissingCompletedOutputAreRejectedAsInvalidScenarioOutput() {
+		var malformed = scenarioClient("not-json").interpret(
+				ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeMalformed"));
+		assertThat(malformed.scenarioEnvelopeStatus()).isEqualTo("invalid_envelope");
+		assertThat(malformed.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
+
+		var missingOutput = scenarioClient("{\"status\":\"completed\",\"output\":[]}").interpret(
+				ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeMissingOutput"));
+		assertThat(missingOutput.scenarioEnvelopeStatus()).isEqualTo("missing_output_text");
+		assertThat(missingOutput.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
 	}
 
 	@Test void readsHistoricalClaimsWithoutTheOptionalRiskReviewField() throws Exception {

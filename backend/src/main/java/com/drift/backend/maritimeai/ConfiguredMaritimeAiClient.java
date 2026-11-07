@@ -146,39 +146,45 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 		try {
 			JsonNode root = json.readTree(body);
 			String responseStatus = root == null ? "" : root.path("status").asText("");
+			if ("failed".equals(responseStatus) || "cancelled".equals(responseStatus))
+				return new ScenarioEnvelope(responseStatus, null,
+						"The Responses API did not complete the controlled-scenario request.", null);
 			JsonNode output = root == null ? null : root.get("output");
-			if (output == null || !output.isArray()) return new ScenarioEnvelope("missing_output", null,
-					"The Responses API returned no usable scenario output.", null);
 			List<String> textOutputs = new java.util.ArrayList<>();
 			boolean refusal = false;
 			boolean incompleteAssistantMessage = false;
-			for (JsonNode item : output) {
-				JsonNode contentArray = item.path("content");
-				if (!"assistant".equals(item.path("role").asText()) || !contentArray.isArray()) continue;
-				if (!"message".equals(item.path("type").asText())
-						|| !"completed".equals(item.path("status").asText())) incompleteAssistantMessage = true;
-				for (JsonNode content : contentArray) {
-					if ("refusal".equals(content.path("type").asText())) refusal = true;
-					if ("output_text".equals(content.path("type").asText()) && content.hasNonNull("text")
-							&& content.get("text").isTextual()) textOutputs.add(content.get("text").asText());
+			if (output != null && output.isArray()) {
+				for (JsonNode item : output) {
+					JsonNode contentArray = item.path("content");
+					if (!"assistant".equals(item.path("role").asText()) || !contentArray.isArray()) continue;
+					if (!"message".equals(item.path("type").asText())
+							|| !"completed".equals(item.path("status").asText())) incompleteAssistantMessage = true;
+					for (JsonNode content : contentArray) {
+						if ("refusal".equals(content.path("type").asText())) refusal = true;
+						if ("output_text".equals(content.path("type").asText()) && content.hasNonNull("text")
+								&& content.get("text").isTextual()) textOutputs.add(content.get("text").asText());
+					}
 				}
 			}
 			String capturedText = textOutputs.size() == 1 ? textOutputs.getFirst() : null;
 			if (refusal) return new ScenarioEnvelope("refusal", capturedText,
-					"The Responses API refused the controlled-scenario request.", null);
+					"The Responses API refused the controlled-scenario request.", "PROVIDER_REFUSAL");
 			if (incompleteAssistantMessage) return new ScenarioEnvelope("incomplete_message", capturedText,
-					"The Responses API did not complete its assistant message.", null);
-			if (!"completed".equals(responseStatus)) return new ScenarioEnvelope(
-					responseStatus.isBlank() ? "missing_status" : responseStatus, capturedText,
-					"The Responses API did not complete the controlled-scenario request.", null);
+					"The Responses API did not complete its assistant message.", "INCOMPLETE_PROVIDER_OUTPUT");
+			if ("incomplete".equals(responseStatus) || "in_progress".equals(responseStatus)
+					|| "queued".equals(responseStatus)) return new ScenarioEnvelope("incomplete_response", capturedText,
+					"The Responses API returned an incomplete controlled-scenario response.", "INCOMPLETE_PROVIDER_OUTPUT");
+			if (!"completed".equals(responseStatus) || output == null || !output.isArray())
+				return new ScenarioEnvelope("invalid_envelope", capturedText,
+						"The Responses API returned an invalid controlled-scenario envelope.", "INVALID_SCENARIO_OUTPUT");
 			if (textOutputs.size() > 1) return new ScenarioEnvelope("multiple_output_text", null,
 					"The Responses API returned ambiguous controlled-scenario output.", "INVALID_SCENARIO_OUTPUT");
 			if (textOutputs.isEmpty()) return new ScenarioEnvelope("missing_output_text", null,
-					"The Responses API returned no structured scenario output.", null);
+					"The Responses API returned no structured scenario output.", "INVALID_SCENARIO_OUTPUT");
 			return new ScenarioEnvelope("completed", capturedText, null, null);
 		} catch (Exception invalidEnvelope) {
 			return new ScenarioEnvelope("invalid_envelope", null,
-					"The Responses API returned an unusable controlled-scenario envelope.", null);
+					"The Responses API returned an unusable controlled-scenario envelope.", "INVALID_SCENARIO_OUTPUT");
 		}
 	}
 	private record ScenarioEnvelope(String status, String outputText, String failure, String failureCode) { }

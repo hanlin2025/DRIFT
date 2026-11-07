@@ -151,7 +151,6 @@ class ScenarioQualityStubClientTest {
 	}
 
 	static int assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
-		String expected = input.shipmentContext().businessContext().comparison().outcome().name();
 		var comparison = input.shipmentContext().businessContext().comparison();
 		assertThat(comparison.state().name()).isEqualTo("AVAILABLE");
 		List<MaritimeAiClaim> businessClaims = interpretation.claims().stream()
@@ -177,14 +176,8 @@ class ScenarioQualityStubClientTest {
 		assertThat(followUps).hasSize(2);
 		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesEtaCheck(text)).isTrue());
 		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesDeadlineCheck(text)).isTrue());
-		boolean outcomePoint = comparison.outcome().name().equals(expected)
-				&& ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(), comparison.outcome())
-				&& !businessClaim.evidenceIds().isEmpty()
-				&& businessClaim.factReferences().contains("evidence:" + businessClaim.evidenceIds().getFirst())
-				&& businessClaim.factReferences().containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
-		int score = (outcomePoint ? 1 : 0)
-				+ (followUps.stream().anyMatch(ScenarioMaritimeAiProse::matchesEtaCheck)
-					&& followUps.stream().anyMatch(ScenarioMaritimeAiProse::matchesDeadlineCheck) ? 1 : 0);
+		ScenarioAiUsefulnessRubric.Score rubric = ScenarioAiUsefulnessRubric.evaluate(interpretation, input);
+		int score = rubric.total();
 		assertThat(score).as("shipment %s usefulness", input.shipmentContext().scenario().shipmentKey()).isEqualTo(2);
 		return score;
 	}

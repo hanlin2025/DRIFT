@@ -2,6 +2,8 @@ package com.drift.backend.maritimeai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -22,7 +24,7 @@ class ScenarioMaritimeAiOutputTest {
 	private final ObjectMapper json = new ObjectMapper();
 
 	@Test
-	void capturedGenuineWorsenedAResponseNowPassesWithGroundedClaimsAndOriginalUsefulness() throws Exception {
+	void capturedGenuineWorsenedAResponsePassesWithGroundedClaimsAndSharedUsefulnessRubric() throws Exception {
 		MaritimeAiEvidencePackage input = ScenarioQualityStubClientTest.worsenedShipmentAInput("GenuineReplay");
 		String captured = genuineWorsenedAResponse();
 		ScenarioMaritimeAiOutput parsed = ScenarioMaritimeAiOutput.parse(captured);
@@ -67,7 +69,54 @@ class ScenarioMaritimeAiOutputTest {
 		assertThat(replay.state()).isEqualTo("GENERATED");
 		assertThat(replay.validationStatus()).isEqualTo("VALID");
 		assertThat(replay.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
+		var usefulness = ScenarioAiUsefulnessRubric.evaluate(replay.interpretation(), input);
+		assertThat(usefulness.groundedOutcome()).isEqualTo(1);
+		assertThat(usefulness.humanVerificationChecks()).isEqualTo(1);
+		assertThat(usefulness.total()).isEqualTo(2);
 		assertThat(ScenarioQualityStubClientTest.assertUsefulness(replay.interpretation(), input)).isEqualTo(2);
+		assertThat(scoreAuthoredOutput(replay.interpretation(), input)).isEqualTo(2);
+	}
+
+	@Test
+	void serviceRejectsRefusalIncompleteMalformedAndUnsupportedResponsesWithoutDisplayingOrPersistingThem() throws Exception {
+		MaritimeAiEvidencePackage input = ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeService");
+		var assessments = mock(MaritimeAiAssessmentRepository.class);
+		String refusal = """
+				{"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"Not available"}]}]}
+				""";
+		String incomplete = """
+				{"status":"incomplete","output":[{"type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"{\\"assessment\\":null}"}]}]}
+				""";
+		assertServiceResult(input, 200, refusal, assessments, "FAILED", "PROVIDER_REFUSAL");
+		assertServiceResult(input, 200, incomplete, assessments, "FAILED", "INCOMPLETE_PROVIDER_OUTPUT");
+		assertServiceResult(input, 503, "{\"error\":\"synthetic provider outage\"}", assessments,
+				"ABSTAINED", "MODEL_UNAVAILABLE");
+		assertServiceResult(input, 200, ScenarioQualityStubClient.fixtureResponsesEnvelope("not-json"), assessments,
+				"FAILED", "INVALID_SCENARIO_OUTPUT");
+
+		ObjectNode unsupported = (ObjectNode) json.readTree(ScenarioQualityStubClient.fixtureOutputText(input));
+		((ObjectNode) unsupported.at("/assessment/deadline")).put("outcome", "NO_PREDICTED_IMPACT");
+		assertServiceResult(input, 200,
+				ScenarioQualityStubClient.fixtureResponsesEnvelope(json.writeValueAsString(unsupported)),
+				assessments, "FAILED", "SCENARIO_FACT_MISMATCH");
+		verifyNoInteractions(assessments);
+	}
+
+	private void assertServiceResult(MaritimeAiEvidencePackage input, int httpStatus, String envelope,
+			MaritimeAiAssessmentRepository assessments, String expectedState, String expectedStatus) {
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "offline-service-test", "offline-only-key",
+				"https://example.invalid/v1/responses", true, 20, 800, json,
+				(request, body) -> new ConfiguredMaritimeAiClient.TransportResponse(httpStatus, envelope));
+		var beans = new DefaultListableBeanFactory();
+		var service = new MaritimeAiAssessmentService(null, null, null, client, assessments,
+				new MaritimeAiAssessmentHistoryAccessPolicy(), json, beans.getBeanProvider(java.time.Clock.class),
+				true, false, "", "");
+		var response = service.generateScenarioTransient(input, true);
+		assertThat(response.state()).isEqualTo(expectedState);
+		assertThat(response.validationStatus()).isEqualTo(expectedStatus);
+		assertThat(response.interpretation()).isNull();
+		assertThat(response.assessmentId()).isNull();
+		assertThat(response.limitation()).doesNotContain("Not available", "synthetic provider outage", "not-json");
 	}
 
 	@Test
@@ -269,7 +318,7 @@ class ScenarioMaritimeAiOutputTest {
 	}
 
 	@Test
-	void independentAuthoredTextRubricProducesZeroOneAndTwoPointCases() throws Exception {
+	void sharedAuthoredTextRubricProducesZeroOneAndTwoPointCases() throws Exception {
 		MaritimeAiEvidencePackage input = ScenarioQualityStubClientTest.worsenedShipmentAInput("Rubric");
 		var complete = MaritimeAiResponseValidator.validateScenarioV16(ScenarioQualityStubClient.fixtureOutputText(input), input)
 				.interpretation();
@@ -340,21 +389,6 @@ class ScenarioMaritimeAiOutputTest {
 	}
 
 	private int scoreAuthoredOutput(MaritimeAiInterpretation authored, MaritimeAiEvidencePackage input) {
-		var comparison = input.shipmentContext().businessContext().comparison();
-		var business = authored.claims().stream().filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).findFirst().orElse(null);
-		boolean outcomePoint = false;
-		if (business != null) {
-			outcomePoint = ScenarioMaritimeAiProse.matchesDeadline(business.statement(), comparison.outcome())
-					&& business.evidenceIds() != null && !business.evidenceIds().isEmpty()
-					&& business.factReferences().contains("evidence:" + business.evidenceIds().getFirst())
-					&& business.factReferences().containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
-		}
-		List<String> followUps = authored.followUpConsiderations().stream().map(String::toLowerCase).toList();
-		boolean actionPoint = followUps.stream().anyMatch(text -> text.contains("carrier operations team")
-				&& text.matches(".*\\b(verify|confirm|check)\\b.*") && text.contains("arrival estimate"))
-				&& followUps.stream().anyMatch(text -> text.contains("operations team")
-						&& text.matches(".*\\b(confirm|verify|check)\\b.*")
-						&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port"));
-		return (outcomePoint ? 1 : 0) + (actionPoint ? 1 : 0);
+		return ScenarioAiUsefulnessRubric.evaluate(authored, input).total();
 	}
 }
