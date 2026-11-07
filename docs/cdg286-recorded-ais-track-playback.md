@@ -99,17 +99,28 @@ CREATE TEMP TABLE cdg285_fixture_import (
   ingested_at_utc timestamptz, source text
 );
 \copy cdg285_fixture_import FROM 'fixtures/cdg285/fictional_ais_track.csv' WITH (FORMAT csv, HEADER true)
+DO $fixture_validation$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM cdg285_fixture_import
+    WHERE ais_utc_second IS NOT NULL AND ais_utc_second NOT BETWEEN 0 AND 63
+  ) THEN
+    RAISE EXCEPTION 'Fixture AIS seconds must be valid (0-59) or an unavailable AIS sentinel (60-63)';
+  END IF;
+END
+$fixture_validation$;
 INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
   course_over_ground_degrees, true_heading_degrees, navigational_status, position_valid,
   ais_utc_second, ingested_at, source)
 SELECT mmsi, vessel_name, latitude, longitude, speed_over_ground_knots,
   course_over_ground_degrees, true_heading_degrees, navigational_status, position_valid,
-  ais_utc_second, ingested_at_utc, source
+  CASE WHEN ais_utc_second BETWEEN 0 AND 59 THEN ais_utc_second ELSE NULL END,
+  ingested_at_utc, source
 FROM cdg285_fixture_import
 WHERE source = 'SEEDED';
 ```
 
-Then call the seeded example above at a cutoff such as `2026-10-30T12:01:00Z`. The SQL ignores the fixture's text observation IDs so the database assigns its own unique IDs. Fixture observations are not authentic and do not establish a vessel relationship.
+The importer preserves valid seconds (0-59) and maps AIS unavailable sentinels (60-63) to SQL `NULL`, matching `AisPositionParser`. Its preflight rejects any other numeric value before insertion. The test fixture intentionally contains the fictional feeder sentinel `60` to cover this behavior. Then call the seeded example above at a cutoff such as `2026-10-30T12:01:00Z`. The SQL ignores the fixture's text observation IDs so the database assigns its own unique IDs. Every imported row retains `SEEDED` provenance; fixture observations are not authentic and do not establish a vessel relationship.
 
 ## CDG-287 map handoff
 
