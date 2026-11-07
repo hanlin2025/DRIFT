@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.ActiveProfiles;
@@ -51,12 +53,14 @@ class ShipmentRiskAlertEndToEndIntegrationTests {
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskAlertDeliveryService deliveryService;
 	@Autowired JavaMailSender mailSender;
+	@Autowired JdbcTemplate jdbc;
 
 	private AuthenticatedUser principal;
 
 	@BeforeEach
 	void activateAndCreateEligibleUser() {
 		reset(mailSender);
+		removeCommittedFixtures();
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
@@ -66,6 +70,23 @@ class ShipmentRiskAlertEndToEndIntegrationTests {
 			principal = new AuthenticatedUser(user.getId(), user.getEmail(), Role.LOGISTICS_MANAGER, java.time.Instant.now());
 		});
 		activation.activate();
+	}
+
+	@AfterEach
+	void removeCommittedFixtures() {
+		transactions.executeWithoutResult(status -> {
+			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN "
+					+ "(SELECT id FROM shipment_risk_transitions WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%'))");
+			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE user_id IN "
+					+ "(SELECT id FROM users WHERE email LIKE 'e2e-%@example.test')");
+			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%')");
+			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%')");
+			jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%'");
+			jdbc.update("DELETE FROM users WHERE email LIKE 'e2e-%@example.test'");
+		});
 	}
 
 	@Test

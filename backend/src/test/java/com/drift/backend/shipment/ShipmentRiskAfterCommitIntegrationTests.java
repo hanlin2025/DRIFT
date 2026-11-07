@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -36,11 +38,13 @@ class ShipmentRiskAfterCommitIntegrationTests {
 	@Autowired ShipmentRiskTransitionRepository transitions;
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskEvaluator evaluator;
+	@Autowired JdbcTemplate jdbc;
 
 	private AuthenticatedUser principal;
 
 	@BeforeEach
 	void activateAndCreateEligibleUser() {
+		removeCommittedFixtures();
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
@@ -50,6 +54,25 @@ class ShipmentRiskAfterCommitIntegrationTests {
 			principal = new AuthenticatedUser(user.getId(), user.getEmail(), Role.LOGISTICS_MANAGER, java.time.Instant.now());
 		});
 		activation.activate();
+	}
+
+	@AfterEach
+	void removeCommittedFixtures() {
+		transactions.executeWithoutResult(status -> {
+			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN "
+					+ "(SELECT id FROM shipment_risk_transitions WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-%'))");
+			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE user_id IN "
+					+ "(SELECT id FROM users WHERE email LIKE 'after-%@example.test')");
+			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-%')");
+			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-%')");
+			jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN "
+					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-%')");
+			jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE 'CDG198-%'");
+			jdbc.update("DELETE FROM users WHERE email LIKE 'after-%@example.test'");
+		});
 	}
 
 	@Test
