@@ -155,33 +155,5 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Detect deployable Dockerfiles
-        id: dockerfiles
-        run: |
-          if [[ -f backend/Dockerfile ]]; then
-            echo "backend_root=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "backend_root=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [[ -f deploy/backend.Dockerfile ]]; then
-            echo "backend_deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "backend_deploy=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [[ -f deploy/frontend.Dockerfile ]]; then
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "frontend=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Build backend image from backend/Dockerfile
-        if: ${{ steps.dockerfiles.outputs.backend_root == 'true' }}
-        run: docker build --file backend/Dockerfile --tag drift-backend:ci .
-      - name: Build backend image from deploy/backend.Dockerfile
-        if: ${{ steps.dockerfiles.outputs.backend_deploy == 'true' }}
-        run: docker build --file deploy/backend.Dockerfile --tag drift-backend-deploy:ci .
-      - name: Build frontend image
-        if: ${{ steps.dockerfiles.outputs.frontend == 'true' }}
-        run: docker build --file deploy/frontend.Dockerfile --tag drift-frontend:ci .
-      - name: Report unavailable Docker configuration
-        if: ${{ steps.dockerfiles.outputs.backend_root != 'true' && steps.dockerfiles.outputs.backend_deploy != 'true' && steps.dockerfiles.outputs.frontend != 'true' }}
-        run: echo "No deployable Dockerfiles are present; there is nothing to build."
+      - name: Build available deployable Docker images
+        run: bash scripts/ci/docker-builds.sh
