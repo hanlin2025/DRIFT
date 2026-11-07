@@ -13,9 +13,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+		"spring.datasource.url=${DRIFT_CDG198_ACTIVATION_CONCURRENCY_JDBC_URL}",
+		"spring.flyway.url=${DRIFT_CDG198_ACTIVATION_CONCURRENCY_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG198_ACTIVATION_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG198_ACTIVATION_DB_PASSWORD}",
+		"spring.flyway.user=${DRIFT_CDG198_ACTIVATION_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG198_ACTIVATION_DB_PASSWORD}",
+		"app.ais.enabled=false",
+		"drift.startup-guard.expected-url=${DRIFT_CDG198_ACTIVATION_CONCURRENCY_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG198_ACTIVATION_CONCURRENCY_OWNERSHIP_TOKEN}"
+})
 @ActiveProfiles("test")
+@ContextConfiguration(initializers = ShipmentDisposableDatabaseGuard.class)
 class ShipmentRiskAlertActivationConcurrencyIntegrationTests {
 	@Autowired ShipmentRiskAlertActivationService activation;
 	@Autowired ShipmentRiskAlertActivationStore activationStore;
