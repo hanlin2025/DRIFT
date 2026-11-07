@@ -216,7 +216,7 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     const critical = atRiskRows.find(item => item.shipmentReference === reference('CRITICAL'))!;
     await page.getByRole('link', { name: reference('CRITICAL') }).click();
     const record = page.getByRole('article', { name: `Shipment ${reference('CRITICAL')}` });
-    const riskDetail = record.locator('dd').filter({ has: page.locator('.risk-badge') });
+    const riskDetail = record.locator('dt').filter({ hasText: /^Risk$/ }).locator('xpath=following-sibling::dd[1]');
     await expect(riskDetail.locator('.risk-badge')).toHaveText('Critical');
     await expect(riskDetail).toContainText(critical.risk!.explanation);
   } finally {
