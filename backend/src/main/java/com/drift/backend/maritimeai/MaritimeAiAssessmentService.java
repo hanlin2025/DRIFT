@@ -122,6 +122,12 @@ public class MaritimeAiAssessmentService {
 				"Scenario AI interpretation is disabled for this environment.");
 		if (!enabled) return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null,
 				"AI generation is disabled for this environment.");
+		if (input.shipmentContext() != null && input.shipmentContext().scenario() != null
+				&& "BASELINE".equals(input.shipmentContext().scenario().stage())) {
+			return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE",
+					MaritimeAiClient.MaritimeAiClientResult.unavailable("BASELINE has no model interpretation."),
+					"The baseline snapshot intentionally has no AI interpretation.");
+		}
 		if (!(client instanceof ConfiguredMaritimeAiClient)) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"REAL_PROVIDER_REQUIRED", null, "A configured real inference provider is required for scenario interpretation.");
 		if (input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
@@ -134,10 +140,46 @@ public class MaritimeAiAssessmentService {
 		if (eligible.isEmpty()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"INSUFFICIENT_EVIDENCE", MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved evidence."),
 				"No sufficient, current synthetic evidence is available for inference.");
+		boolean scenarioV16 = client instanceof ConfiguredMaritimeAiClient configured
+				&& configured.usesScenarioV16(eligibleInput);
+		if (scenarioV16) {
+			String missingField = ScenarioMaritimeAiOutput.preflightFailureField(eligibleInput);
+			if (missingField != null) {
+				var unavailable = new MaritimeAiClient.MaritimeAiClientResult("UNCONFIGURED", "",
+						ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION, null,
+						"The controlled snapshot does not contain complete fresh scenario context.", null,
+						"preflight", null);
+				return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_SCENARIO_CONTEXT",
+						unavailable, "The controlled snapshot lacks complete, current risk, deadline, or revision facts.");
+			}
+		}
 		MaritimeAiClient.MaritimeAiClientResult result;
 		try { result = client.interpret(eligibleInput); }
 		catch (RuntimeException ex) {
 			result = MaritimeAiClient.MaritimeAiClientResult.unavailable("Model client failure: " + ex.getClass().getSimpleName());
+		}
+		if (scenarioV16) {
+			if (result.scenarioFailureCode() != null) {
+				String failureCode = result.scenarioFailureCode();
+				return scenarioResult(MaritimeAiGenerationState.FAILED, failureCode, result,
+						"The provider response failed validation (" + failureCode + " at output). No interpretation is displayed.");
+			}
+			if (result.failure() != null || result.scenarioOutputText() == null) return scenarioResult(
+					MaritimeAiGenerationState.ABSTAINED, "MODEL_UNAVAILABLE", result,
+					result.failure() == null ? "The configured provider returned no interpretation." : result.failure());
+			MaritimeAiResponseValidator.ScenarioValidation validation =
+					MaritimeAiResponseValidator.validateScenarioV16(result.scenarioOutputText(), eligibleInput);
+			if (validation.abstained()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
+					validation.validationStatus(), result,
+					"The provider did not supply enough grounded evidence for a complete scenario interpretation.");
+			if (!validation.valid()) return scenarioResult(MaritimeAiGenerationState.FAILED,
+					validation.validationStatus(), result, "The provider response failed validation ("
+							+ validation.validationStatus() + " at " + validation.fieldPath() + "). No interpretation is displayed.");
+			MaritimeAiClient.MaritimeAiClientResult projected = new MaritimeAiClient.MaritimeAiClientResult(result.provider(),
+					result.model(), result.promptVersion(), validation.interpretation(), null, result.scenarioOutputText(),
+					result.scenarioEnvelopeStatus(), null);
+			return new MaritimeAiScenarioGenerationResult(projected, MaritimeAiGenerationState.GENERATED,
+					"VALID", validation.interpretation(), null);
 		}
 		if (result.interpretation() == null) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"MODEL_UNAVAILABLE", result,

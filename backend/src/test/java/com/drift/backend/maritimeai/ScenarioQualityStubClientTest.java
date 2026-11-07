@@ -33,15 +33,18 @@ class ScenarioQualityStubClientTest {
 			for (int shipmentIndex = 0; shipmentIndex < 2; shipmentIndex++) {
 				MaritimeAiEvidencePackage input = input(fixture, stageIndex, shipmentIndex);
 				MaritimeAiClient.MaritimeAiClientResult result = client.interpret(input);
-				assertThat(MaritimeAiResponseValidator.validate(result.interpretation(), input))
+				assertThat(result.interpretation()).isNull();
+				assertThat(result.scenarioOutputText()).isNotBlank();
+				var validation = MaritimeAiResponseValidator.validateScenarioV16(result.scenarioOutputText(), input);
+				assertThat(validation.valid())
 						.as("%s shipment %s grounding", input.shipmentContext().scenario().stage(),
-							input.shipmentContext().scenario().shipmentKey()).isNull();
-				assertThat(result.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION);
+							input.shipmentContext().scenario().shipmentKey()).isTrue();
+				assertThat(result.promptVersion()).isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
 				assertThat(input.shipmentContext().connectionRisk().riskLevel().name())
 						.isEqualTo(stageIndex == 1 ? "MEDIUM" : "HIGH");
 				assertThat(input.shipmentContext().businessContext().comparison().outcome().name())
 						.isEqualTo(shipmentIndex == 0 ? "EXCEEDS_DEADLINE" : "NO_PREDICTED_IMPACT");
-				assertUsefulness(result.interpretation(), input);
+				assertUsefulness(validation.interpretation(), input);
 			}
 		}
 		assertThat(client.scenarioInputs()).hasSize(4);
@@ -55,7 +58,9 @@ class ScenarioQualityStubClientTest {
 		assertThat(input.shipmentContext().scenario().shipmentKey()).isEqualTo("A");
 		assertThat(input.shipmentContext().businessContext().comparison().outcome().name()).isEqualTo("EXCEEDS_DEADLINE");
 
-		var riskClaim = new ScenarioQualityStubClient().interpret(input).interpretation().claims().getFirst();
+		var response = new ScenarioQualityStubClient().interpret(input);
+		var riskClaim = MaritimeAiResponseValidator.validateScenarioV16(response.scenarioOutputText(), input)
+				.interpretation().claims().getFirst();
 		String evidenceId = riskClaim.evidenceIds().getFirst();
 		var revision = input.evidence().stream().filter(item -> item.evidenceId().equals(evidenceId)).findFirst().orElseThrow();
 		List<String> canonicalReferences = new java.util.ArrayList<>(MaritimeAiCanonicalFactReferences.businessReferences(input));
@@ -103,7 +108,7 @@ class ScenarioQualityStubClientTest {
 		}
 	}
 
-	private static MaritimeAiEvidencePackage input(SyntheticDisruptionScenarioFixture.Scenario fixture,
+	static MaritimeAiEvidencePackage input(SyntheticDisruptionScenarioFixture.Scenario fixture,
 			int stageIndex, int shipmentIndex) {
 		var stage = fixture.stages().get(stageIndex);
 		var shipment = fixture.shipments().get(shipmentIndex);
@@ -145,8 +150,7 @@ class ScenarioQualityStubClientTest {
 		return new MaritimeAiEvidencePackage("cdg246.maritime-evidence-bundle.v1", cutoff.toString(), "VERIFIED", shipmentContext, evidence);
 	}
 
-	private static void assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
-		String expected = input.shipmentContext().businessContext().comparison().outcome().name();
+	static int assertUsefulness(MaritimeAiInterpretation interpretation, MaritimeAiEvidencePackage input) {
 		var comparison = input.shipmentContext().businessContext().comparison();
 		assertThat(comparison.state().name()).isEqualTo("AVAILABLE");
 		List<MaritimeAiClaim> businessClaims = interpretation.claims().stream()
@@ -154,9 +158,8 @@ class ScenarioQualityStubClientTest {
 		assertThat(businessClaims).hasSize(1);
 		MaritimeAiClaim businessClaim = businessClaims.getFirst();
 		String businessStatement = businessClaim.statement().toLowerCase();
-		if ("EXCEEDS_DEADLINE".equals(expected)) assertThat(businessStatement).contains("predicted arrival exceeds");
-		else assertThat(businessStatement).contains("no predicted impact");
-		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(), comparison.outcome())).isTrue();
+		assertThat(businessStatement).contains("synthetic", "transshipment-arrival deadline", "applicable");
 		assertThat(businessClaim.factReferences()).contains("evidence:" + businessClaim.evidenceIds().getFirst(),
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE, MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
@@ -170,18 +173,13 @@ class ScenarioQualityStubClientTest {
 		assertThat(risk.factReferences()).contains("evidence:" + risk.evidenceIds().getFirst(), "risk:CONNECTION_SEVERITY");
 
 		List<String> followUps = interpretation.followUpConsiderations().stream().map(String::toLowerCase).toList();
-		assertThat(followUps).anySatisfy(text -> assertThat(text)
-				.contains("carrier operations team", "verify", "arrival estimate"));
-		assertThat(followUps).anySatisfy(text -> assertThat(text)
-				.contains("operations team", "confirm", "transshipment-arrival deadline", "current shipment port"));
-		int score = (comparison.outcome().name().equals(expected)
-				&& ("EXCEEDS_DEADLINE".equals(expected) ? businessStatement.contains("predicted arrival exceeds")
-						: businessStatement.contains("no predicted impact")) ? 1 : 0)
-				+ (followUps.stream().anyMatch(text -> text.contains("carrier operations team")
-						&& text.contains("verify") && text.contains("arrival estimate"))
-					&& followUps.stream().anyMatch(text -> text.contains("operations team") && text.contains("confirm")
-							&& text.contains("transshipment-arrival deadline") && text.contains("current shipment port")) ? 1 : 0);
+		assertThat(followUps).hasSize(2);
+		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesEtaCheck(text)).isTrue());
+		assertThat(followUps).anySatisfy(text -> assertThat(ScenarioMaritimeAiProse.matchesDeadlineCheck(text)).isTrue());
+		ScenarioAiUsefulnessRubric.Score rubric = ScenarioAiUsefulnessRubric.evaluate(interpretation, input);
+		int score = rubric.total();
 		assertThat(score).as("shipment %s usefulness", input.shipmentContext().scenario().shipmentKey()).isEqualTo(2);
+		return score;
 	}
 
 	private record DiagnosticCase(String statement, List<String> references, String reason) { }

@@ -6,9 +6,9 @@ const request: ScenarioInterpretationRequest = {
   expectedSnapshotId: '55bb0888-2906-4ba0-946f-b054b0ef1272', expectedSimulationCutoffUtc: '2026-10-01T04:00:00Z',
 };
 const assessment = {
-  assessmentId: null, state: 'GENERATED', validationStatus: 'VALID', bundleVersion: 'cdg246.maritime-evidence-bundle.v1',
+  assessmentId: 'aa6d9784-6133-41a4-9346-d451b48332ca', state: 'GENERATED', validationStatus: 'VALID', bundleVersion: 'cdg246.maritime-evidence-bundle.v1',
   bundleHash: 'a'.repeat(64), assessmentCutoffUtc: request.expectedSimulationCutoffUtc,
-  provider: 'openai-responses', model: 'test-model', promptVersion: 'cdg290.scenario-grounded-v1.1',
+  provider: 'openai-responses', model: 'test-model', promptVersion: 'cdg290.scenario-grounded-v1.6',
   generatedAtUtc: '2026-11-03T00:00:00Z', limitation: null,
   interpretation: { summary: 'Review the grounded interpretation and limitations.', claims: [], uncertainties: [],
     followUpConsiderations: ['Ask the operations team to verify current evidence.'], evidenceSufficient: true, formalRecommendationCode: null },
@@ -19,6 +19,9 @@ function response(overrides: Record<string, unknown> = {}) {
     sessionId: 'd5f2390b-d610-4c5d-9b6c-7153f8a89fbf', epochId: request.expectedEpochId,
     snapshotId: request.expectedSnapshotId, revision: request.expectedRevision,
     simulationCutoffUtc: request.expectedSimulationCutoffUtc, scenarioShipmentKey: 'A', shipmentId: 142,
+    scenarioId: 'CDG290-API', scenarioVersion: 'cdg290.synthetic-disruption.v1',
+    scenarioShipmentReference: 'DEMO-CDG290-SYNTHETIC-A', stage: 'CHANGE',
+    evidenceHash: 'b'.repeat(64), contextHash: 'c'.repeat(64),
     assessment, ...overrides,
   };
 }
@@ -30,18 +33,24 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('scenario AI transport', () => {
   it('posts the exact selected snapshot binding with bearer auth and no-store semantics', async () => {
-    const fetch = vi.fn().mockResolvedValue(httpResponse(response()));
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(httpResponse(response()))
+      .mockResolvedValueOnce(httpResponse(response()));
     vi.stubGlobal('fetch', fetch);
     const result = await generateScenarioInterpretation('secret-token', 'd5f2390b-d610-4c5d-9b6c-7153f8a89fbf', 142, request);
 
     expect(result.assessment.state).toBe('GENERATED');
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
     const [path, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(path).toBe('/api/scenarios/v1/sessions/d5f2390b-d610-4c5d-9b6c-7153f8a89fbf/shipments/142/interpretation');
     expect(init.method).toBe('POST');
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer secret-token');
     expect(init.cache).toBe('no-store');
     expect(JSON.parse(String(init.body))).toEqual(request);
+    const [retrievalPath, retrievalInit] = fetch.mock.calls[1] as unknown as [string, RequestInit];
+    expect(retrievalPath).toBe(`/api/scenarios/v1/sessions/d5f2390b-d610-4c5d-9b6c-7153f8a89fbf/shipments/142/assessments/${assessment.assessmentId}`);
+    expect(retrievalInit.method).toBe('GET');
+    expect(retrievalInit.cache).toBe('no-store');
   });
 
   it('rejects response identity mismatches and malformed transient AI envelopes', async () => {
