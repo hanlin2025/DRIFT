@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../signup/api';
-import { recordRecommendationDecision, type RecommendationDecision, type RecommendationDecisionOutcome, type ShipmentRecommendation } from './api';
+import { recordRecommendationDecision, type RecommendationDecision, type RecommendationDecisionOutcome, type RecommendationImpact, type ShipmentRecommendation } from './api';
 import { IMPACT_NOT_RETURNED, RECOMMENDATION_CODES, RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 import { formatWhen } from './ShipmentForm';
 
@@ -68,6 +68,9 @@ export function RecommendationDecisionPanel({ token, shipmentId, recommendation,
             <p className="intro">{live.unavailable}</p>
           </>
         )}
+      <dl className="recommendation-impact">
+        <div><dt>Impact</dt><dd>{impactCopy(live.impact)}</dd></div>
+      </dl>
       {decision ? <CurrentDecision decision={decision} /> : null}
       {live.available && !archived && !blocked
         ? (
@@ -146,6 +149,21 @@ function outcomeCopy(outcome: RecommendationDecisionOutcome) {
       return 'The recommendation was set aside';
     default: {
       const unexpected: never = outcome;
+      return unexpected;
+    }
+  }
+}
+
+function impactCopy(impact: RecommendationImpact) {
+  switch (impact.outcome) {
+    case 'AFFECTS_CONSTRAINTS':
+      return "Affects the importer's constraints";
+    case 'NO_PREDICTED_IMPACT':
+      return "Does not affect the importer's constraints";
+    case 'UNAVAILABLE':
+      return impact.detail;
+    default: {
+      const unexpected: never = impact;
       return unexpected;
     }
   }
