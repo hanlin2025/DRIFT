@@ -341,6 +341,26 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .track-toggle button { flex: 1; }
   .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
 }
+.recommendation-decision { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
+.recommendation-decision .eyebrow { margin: 0; }
+.recommendation-decision h3 { margin: 6px 0 0; font-size: 18px; }
+.recommendation-decision .intro { margin: 8px 0 0; font-size: 13px; line-height: 1.55; }
+.current-decision { margin: 14px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fcfcf8; }
+.current-decision-outcome { margin: 0 0 10px; font-size: 13px; font-weight: 750; }
+.current-decision dl { display: grid; gap: 10px; margin: 0; }
+.current-decision dt { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.current-decision dd { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.current-decision dd strong { display: block; }
+.current-decision dd span { display: block; margin-top: 2px; font-weight: 500; }
+.recommendation-decision-controls { margin: 14px 0 0; display: grid; gap: 12px; }
+.recommendation-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.recommendation-decision-actions .primary-button,
+.recommendation-decision-actions .quiet-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; }
+.recommendation-modify { display: grid; gap: 8px; }
+.recommendation-modify label { font-size: 12px; font-weight: 650; }
+.recommendation-modify select { width: 100%; max-width: 360px; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 10px 12px; color: var(--ink); font: inherit; font-size: 12px; min-height: 40px; }
+.recommendation-modify .secondary-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; justify-self: start; }
+.recommendation-decision .error-notice { margin: 12px 0 0; }
 .change-history { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
 .change-history h3 { margin: 0; font-size: 14px; color: var(--ink); }
 .change-history .error-notice { margin: 10px 0 0; }

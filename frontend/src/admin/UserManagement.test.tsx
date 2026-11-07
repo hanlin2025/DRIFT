@@ -195,6 +195,19 @@ describe('user management', () => {
       arrivalComparison: null,
     });
     vi.mocked(getShipmentTracking).mockResolvedValue({ motherVesselName: 'Ever Steady', motherVessel: null, motherVesselNameWarning: null, feederVesselName: 'Straits Feeder', feederVessel: null, feederVesselNameWarning: null });
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+    vi.mocked(getVesselTrack).mockResolvedValue({
+      vessel: 'MOTHER',
+      vesselName: null,
+      mmsi: null,
+      windowHours: 24,
+      from: '2026-10-04T03:00:00Z',
+      to: '2026-10-05T03:00:00Z',
+      slowdownThresholdKnots: 3,
+      pointLimit: 500,
+      truncated: false,
+      points: [],
+    });
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/15']}><AppRoutes /><Location /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'HBL-15' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments/15');

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationImpact, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { RecommendationDecisionPanel } from './RecommendationDecisionPanel';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
@@ -203,12 +204,14 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord token={token} shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
                   setRefreshCount(value => value + 1);
                 }}
+                onDecision={recorded => setShipment(current => current ? { ...current, recommendationDecision: recorded } : current)}
+                onSessionEnded={onSessionEnded}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
@@ -265,13 +268,16 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ token, shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, onDecision, onSessionEnded, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+  token: string;
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
+  onDecision: (decision: RecommendationDecision) => void;
+  onSessionEnded: () => void;
   canEdit: boolean;
   onEdit: () => void;
   action: ReactNode;
@@ -349,6 +355,9 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+      <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+        decision={shipment.recommendationDecision} archived={shipment.status === 'ARCHIVED'}
+        onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       {changeHistory}
     </>
   );

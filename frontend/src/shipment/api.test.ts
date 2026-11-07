@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, linkShipmentImporter, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, searchImporterOrganisations } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -775,5 +775,110 @@ describe('shipment change history API', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Unauthorized' }, 401)));
     await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+const noAction = {
+  available: true,
+  unavailable: null,
+  response: { code: 'NO_ACTION', ...RECOMMENDATION_RESPONSES.NO_ACTION },
+  riskLevel: 'LOW',
+  riskExplanation: 'At least 24 hours to transfer cargo between vessels.',
+  impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+};
+
+const approved = {
+  outcome: 'APPROVED',
+  recommendationName: 'No action',
+  recommendationWording: RECOMMENDATION_RESPONSES.NO_ACTION.wording,
+  selectedResponseName: null,
+  selectedResponseWording: null,
+  decidedByUserId: 4,
+  decidedByName: 'Ada Lee',
+  decidedAt: '2026-10-28T06:00:00Z',
+};
+
+describe('recommendation decision API', () => {
+  it('reads a missing recommendation and decision as null', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendation: null,
+      recommendationDecision: null,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ recommendation: null, recommendationDecision: null }]);
+  });
+
+  it('keeps an unavailable recommendation that names why it was not selected', async () => {
+    const unavailable = {
+      available: false,
+      unavailable: 'A recommendation is not available because the connection risk is not assessed.',
+      response: null,
+      riskLevel: null,
+      riskExplanation: null,
+      impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk: null, recommendation: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: unavailable });
+  });
+
+  it('keeps a completed recommendation that no action is needed and a stored decision', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'LOW', explanation: noAction.riskExplanation },
+      recommendation: noAction,
+      recommendationDecision: approved,
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendation: noAction,
+      recommendationDecision: approved,
+    });
+  });
+
+  it('rejects a recommendation that does not match the risk on the same read', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: 'Less than 12 hours to transfer cargo between vessels.' },
+      recommendation: noAction,
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('rejects a modification that looks like the original recommendation was accepted', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendationDecision: { ...approved, outcome: 'MODIFIED', selectedResponseName: 'No action', selectedResponseWording: RECOMMENDATION_RESPONSES.NO_ACTION.wording },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('records an approval, a modification, and a dismissal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(approved)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'APPROVED' })).resolves.toEqual(approved);
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/recommendation-decision', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ outcome: 'APPROVED' }),
+    }));
+
+    const modified = {
+      ...approved,
+      outcome: 'MODIFIED',
+      selectedResponseName: 'Monitor',
+      selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(modified)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'MODIFIED', selectedResponse: 'MONITOR_CONSTRAINTS' }))
+      .resolves.toEqual(modified);
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/recommendation-decision', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ outcome: 'MODIFIED', selectedResponse: 'MONITOR_CONSTRAINTS' }),
+    }));
+  });
+
+  it('passes on the API message when an unavailable recommendation is refused', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'An unavailable recommendation is not stored.' }, 409)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'DISMISSED' }))
+      .rejects.toMatchObject({ status: 409, message: 'An unavailable recommendation is not stored.' });
+    expect(IMPACT_NOT_RETURNED).toContain('impact assessment has not been returned');
   });
 });
