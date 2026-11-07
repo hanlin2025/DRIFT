@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentTracking, getVesselTrack, type ArrivalComparison, type Cdg201ArrivalEvidence, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { RecommendationDecisionPanel } from './RecommendationDecisionPanel';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { ShipmentStatusAction } from './ShipmentStatusAction';
 import { RouteMap } from './RouteMap';
+import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { TrackHistory } from './TrackHistory';
@@ -146,12 +148,16 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
         setProblem({ kind: 'forbidden', message: reason.message });
       }
     });
-    getCdg201ArrivalEvidence(token, shipmentId).then(found => {
-      if (active && requestId === requestSeq.current) setCdg201Evidence(found);
-    }).catch(() => {
-      // Evidence replay is additive: a replay outage must not block shipment detail.
-      if (active && requestId === requestSeq.current) setCdg201Evidence(null);
-    });
+    // Evidence replay is additive. A rejected call, or a call that does not return a
+    // response, must not unmount the shipment the viewer already opened.
+    void Promise.resolve()
+      .then(() => getCdg201ArrivalEvidence(token, shipmentId))
+      .then(found => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(found ?? null);
+      })
+      .catch(() => {
+        if (active && requestId === requestSeq.current) setCdg201Evidence(null);
+      });
     return () => {
       active = false;
       requestSeq.current += 1;
@@ -198,12 +204,14 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord token={token} shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking();
                   void reloadHistory();
                   setRefreshCount(value => value + 1);
                 }}
+                onDecision={recorded => setShipment(current => current ? { ...current, recommendationDecision: recorded } : current)}
+                onSessionEnded={onSessionEnded}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
@@ -237,7 +245,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 22;
+const FACT_ROWS = 24;
 
 function ShipmentSkeleton() {
   return (
@@ -260,13 +268,16 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+function ShipmentRecord({ token, shipment, tracking, cdg201Evidence, refreshing, refreshNote, onRefresh, onDecision, onSessionEnded, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, changeHistory }: {
+  token: string;
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
+  onDecision: (decision: RecommendationDecision) => void;
+  onSessionEnded: () => void;
   canEdit: boolean;
   onEdit: () => void;
   action: ReactNode;
@@ -338,17 +349,54 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, refreshing, refres
             </dd>
           </div>
           <div><dt>Risk</dt>{shipment.risk
-            ? <dd><span className={`risk-badge risk-${shipment.risk.level.toLowerCase()}`}>{RISK_LABELS[shipment.risk.level]}</span> {shipment.risk.explanation}</dd>
-            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
+            : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+      <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+        decision={shipment.recommendationDecision} archived={shipment.status === 'ARCHIVED'}
+        onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       {changeHistory}
     </>
   );
 }
 
-const RISK_LABELS: Record<RiskLevel, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
+  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
+  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
+};
+
+function recommendationFact(recommendation: Shipment['recommendation']) {
+  if (!recommendation) return null;
+  const risk = recommendation.riskLevel && recommendation.riskExplanation
+    ? { level: recommendation.riskLevel, explanation: recommendation.riskExplanation }
+    : null;
+  return (
+    <div>
+      <dt>Recommendation</dt>
+      <dd>
+        {recommendation.available ? recommendation.response.label : recommendation.unavailable}
+        <dl className="arrival-comparison">
+          {recommendation.available && <div><dt>Response</dt><dd>{recommendation.response.wording}</dd></div>}
+          {risk && (
+            <div>
+              <dt>Connection risk</dt>
+              <dd><RiskBadge risk={risk} /> {risk.explanation}</dd>
+            </div>
+          )}
+          <div><dt>Impact</dt><dd>{impactOutcome(recommendation.impact)}</dd></div>
+        </dl>
+      </dd>
+    </div>
+  );
+}
+
+function impactOutcome(impact: RecommendationImpact) {
+  if (impact.outcome === 'UNAVAILABLE') return impact.detail;
+  return IMPACT_OUTCOMES[impact.outcome];
+}
 
 function ArrivalComparisonFacts({ comparison }: { comparison: ArrivalComparison }) {
   if (comparison.unavailableReason) {

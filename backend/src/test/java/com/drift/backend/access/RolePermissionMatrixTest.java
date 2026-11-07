@@ -91,7 +91,11 @@ class RolePermissionMatrixTest {
 			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/tracking")).isEmpty();
 			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/track-history")).isEmpty();
 			assertThat(RolePermissionMatrix.denial(role, true, "GET", "/api/shipments/8/history")).isEmpty();
+			assertThat(RolePermissionMatrix.denial(role, true, "PATCH", "/api/shipments/8/recommendation-decision"))
+					.isEmpty();
 		}
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, false, "PATCH", "/api/shipments/8/recommendation-decision"))
+				.contains(ShipmentAccessForbiddenException.MESSAGE);
 		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, false, "POST", "/api/shipments"))
 				.contains(ShipmentCreationForbiddenException.MESSAGE);
 	}
@@ -110,6 +114,14 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/risk")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("PUT", "/api/shipments/4")).isFalse();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/abc")).isFalse();
+		assertThat(RolePermissionMatrix.isRecommendationDecision("PATCH", "/api/shipments/4/recommendation-decision"))
+				.isTrue();
+		assertThat(RolePermissionMatrix.isRecommendationDecision("PATCH",
+				"/api/shipments/4/recommendation-decision?ignored=1")).isTrue();
+		assertThat(RolePermissionMatrix.isRecommendationDecision("GET", "/api/shipments/4/recommendation-decision"))
+				.isFalse();
+		assertThat(RolePermissionMatrix.isRecommendationDecision("PATCH", "/api/shipments/4/status")).isFalse();
+		assertThat(RolePermissionMatrix.isShipmentRead("PATCH", "/api/shipments/4/recommendation-decision")).isFalse();
 	}
 
 	@Test

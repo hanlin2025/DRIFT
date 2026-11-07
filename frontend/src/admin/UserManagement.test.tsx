@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession, login } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { getShipment, getShipmentHistory, getShipmentTracking, listShipments } from '../shipment/api';
+import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, removeUser } from './api';
 
@@ -63,6 +63,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
+    from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
+    slowdownThresholdKnots: 3, pointLimit: 500, truncated: false, points: [],
+  });
   vi.mocked(loadSession).mockImplementation(async token => ({ ...(token === admin.token ? admin : forwarder), token }));
   vi.mocked(login).mockResolvedValue(admin);
   vi.mocked(listShipments).mockResolvedValue([]);
@@ -189,6 +195,19 @@ describe('user management', () => {
       arrivalComparison: null,
     });
     vi.mocked(getShipmentTracking).mockResolvedValue({ motherVesselName: 'Ever Steady', motherVessel: null, motherVesselNameWarning: null, feederVesselName: 'Straits Feeder', feederVessel: null, feederVesselNameWarning: null });
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+    vi.mocked(getVesselTrack).mockResolvedValue({
+      vessel: 'MOTHER',
+      vesselName: null,
+      mmsi: null,
+      windowHours: 24,
+      from: '2026-10-04T03:00:00Z',
+      to: '2026-10-05T03:00:00Z',
+      slowdownThresholdKnots: 3,
+      pointLimit: 500,
+      truncated: false,
+      points: [],
+    });
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/15']}><AppRoutes /><Location /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'HBL-15' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments/15');
