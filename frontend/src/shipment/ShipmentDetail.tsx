@@ -604,9 +604,10 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
             identityName: playbackVesselName,
           } : undefined} />
       </div>
-      <Cdg201EvidencePanel evidence={cdg201Evidence} />
-      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
-      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
+      <section className="shipment-assessment-summary" aria-label="Backend-calculated shipment assessment">
+        <h3>Shipment and backend assessment</h3>
+        <p>Shipment schedule, risk, recommendation and impact below are calculated by DRIFT. The AI interpretation is shown separately and does not approve or apply a change.</p>
+      </section>
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}
@@ -657,6 +658,9 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+      <Cdg201EvidencePanel evidence={cdg201Evidence} />
+      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       {changeHistory}
     </>
   );

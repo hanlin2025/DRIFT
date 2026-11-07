@@ -399,6 +399,11 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     if (!handle) return;
     for (const marker of handle.markers.values()) marker.remove();
     handle.markers.clear();
+    // A controlled-scenario revision can arrive before MapLibre has finished
+    // loading its style (or after an offline style failure). The text and
+    // scenario facts remain usable, but style-backed sources/layers cannot be
+    // touched until the map is ready.
+    if (!mapReadyRef.current || handle.map.isStyleLoaded() !== true) return;
     placeTrack(handle, null);
     markSelected(handle, null);
   }, [contextKey, shipment.id]);

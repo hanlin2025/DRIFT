@@ -14,6 +14,14 @@ export type ScenarioInterpretationRequest = Readonly<{
   expectedSimulationCutoffUtc: string;
 }>;
 
+/** Snapshot provenance used to bind the response without expanding the POST contract. */
+export type ScenarioInterpretationProvenance = Readonly<{
+  scenarioId: string;
+  scenarioVersion: string;
+  scenarioShipmentReference: string;
+  stage: string;
+}>;
+
 export type ScenarioInterpretationResponse = Readonly<{
   sessionId: string;
   epochId: string;
@@ -230,7 +238,8 @@ function parseAssessment(value: unknown): MaritimeAiAssessment | null {
 }
 
 export function decodeScenarioInterpretationResponse(value: unknown,
-  sessionId: string, shipmentId: number, request: ScenarioInterpretationRequest): ScenarioInterpretationResponse | null {
+  sessionId: string, shipmentId: number, request: ScenarioInterpretationRequest,
+  expectedProvenance: ScenarioInterpretationProvenance): ScenarioInterpretationResponse | null {
   if (!record(value) || value.sessionId !== sessionId || value.epochId !== request.expectedEpochId
     || value.snapshotId !== request.expectedSnapshotId || value.revision !== request.expectedRevision
     || value.simulationCutoffUtc !== request.expectedSimulationCutoffUtc || value.shipmentId !== shipmentId
@@ -241,6 +250,8 @@ export function decodeScenarioInterpretationResponse(value: unknown,
     || typeof value.shipmentId !== 'number' || !Number.isSafeInteger(value.shipmentId) || value.shipmentId <= 0) return null;
   const assessment = parseAssessment(value.assessment);
   if (!assessment || !uuid(assessment.assessmentId) || assessment.assessmentCutoffUtc !== request.expectedSimulationCutoffUtc
+    || value.scenarioId !== expectedProvenance.scenarioId || value.scenarioVersion !== expectedProvenance.scenarioVersion
+    || value.scenarioShipmentReference !== expectedProvenance.scenarioShipmentReference || value.stage !== expectedProvenance.stage
     || !nonempty(value.scenarioId) || !nonempty(value.scenarioVersion) || !nonempty(value.scenarioShipmentReference)
     || !nonempty(value.stage) || !text(value.evidenceHash) || !/^[0-9a-f]{64}$/.test(value.evidenceHash)
     || !text(value.contextHash) || !/^[0-9a-f]{64}$/.test(value.contextHash)) return null;
@@ -253,7 +264,8 @@ export function decodeScenarioInterpretationResponse(value: unknown,
 }
 
 export async function generateScenarioInterpretation(token: string, sessionId: string, shipmentId: number,
-  request: ScenarioInterpretationRequest, signal?: AbortSignal): Promise<ScenarioInterpretationResponse> {
+  request: ScenarioInterpretationRequest, expectedProvenance: ScenarioInterpretationProvenance,
+  signal?: AbortSignal): Promise<ScenarioInterpretationResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), 15_000);
   const abort = () => controller.abort(signal?.reason);
@@ -274,9 +286,16 @@ export async function generateScenarioInterpretation(token: string, sessionId: s
         : apiError?.message ?? 'Scenario interpretation could not be completed.', response.status,
       apiError?.code ?? null, apiError?.retryable ?? false);
     }
-    const decoded = decodeScenarioInterpretationResponse(data, sessionId, shipmentId, request);
+    const decoded = decodeScenarioInterpretationResponse(data, sessionId, shipmentId, request, expectedProvenance);
     if (!decoded) throw new ScenarioAiApiError('DRIFT returned a malformed or mismatched scenario interpretation.', 502, 'INVALID_SCENARIO_AI_RESPONSE');
-    return retrieveScenarioInterpretation(token, sessionId, shipmentId, decoded.assessment.assessmentId!, request, signal);
+    const assessmentId = decoded.assessment.assessmentId;
+    if (!assessmentId) throw new ScenarioAiApiError('DRIFT returned a scenario interpretation without a persisted assessment ID.', 502, 'INVALID_SCENARIO_AI_RESPONSE');
+    const persisted = await retrieveScenarioInterpretation(token, sessionId, shipmentId,
+      assessmentId, request, expectedProvenance, signal);
+    if (!sameScenarioResponseIdentity(decoded, persisted)) {
+      throw new ScenarioAiApiError('DRIFT returned a mismatched saved scenario interpretation.', 502, 'INVALID_SCENARIO_AI_RESPONSE');
+    }
+    return persisted;
   } catch (error) {
     if (error instanceof ScenarioAiApiError) throw error;
     if (controller.signal.aborted) {
@@ -291,8 +310,20 @@ export async function generateScenarioInterpretation(token: string, sessionId: s
   }
 }
 
+function sameScenarioResponseIdentity(left: ScenarioInterpretationResponse, right: ScenarioInterpretationResponse): boolean {
+  return left.assessment.assessmentId === right.assessment.assessmentId
+    && left.sessionId === right.sessionId && left.epochId === right.epochId && left.snapshotId === right.snapshotId
+    && left.revision === right.revision && left.simulationCutoffUtc === right.simulationCutoffUtc
+    && left.scenarioShipmentKey === right.scenarioShipmentKey && left.shipmentId === right.shipmentId
+    && left.scenarioId === right.scenarioId && left.scenarioVersion === right.scenarioVersion
+    && left.scenarioShipmentReference === right.scenarioShipmentReference && left.stage === right.stage
+    && left.evidenceHash === right.evidenceHash && left.contextHash === right.contextHash;
+}
+
 export async function retrieveScenarioInterpretation(token: string, sessionId: string, shipmentId: number,
-  assessmentId: string, request: ScenarioInterpretationRequest, signal?: AbortSignal): Promise<ScenarioInterpretationResponse> {
+  assessmentId: string, request: ScenarioInterpretationRequest, expectedProvenance: ScenarioInterpretationProvenance,
+  signal?: AbortSignal): Promise<ScenarioInterpretationResponse> {
+  if (!uuid(assessmentId)) throw new ScenarioAiApiError('The saved scenario assessment ID is malformed.', 502, 'INVALID_SCENARIO_AI_RESPONSE');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), 15_000);
   const abort = () => controller.abort(signal?.reason);
@@ -311,7 +342,7 @@ export async function retrieveScenarioInterpretation(token: string, sessionId: s
         : apiError?.message ?? 'The saved scenario interpretation could not be retrieved.', response.status,
       apiError?.code ?? null, apiError?.retryable ?? false);
     }
-    const decoded = decodeScenarioInterpretationResponse(data, sessionId, shipmentId, request);
+    const decoded = decodeScenarioInterpretationResponse(data, sessionId, shipmentId, request, expectedProvenance);
     if (!decoded || decoded.assessment.assessmentId !== assessmentId) {
       throw new ScenarioAiApiError('DRIFT returned a malformed or mismatched saved scenario interpretation.', 502, 'INVALID_SCENARIO_AI_RESPONSE');
     }

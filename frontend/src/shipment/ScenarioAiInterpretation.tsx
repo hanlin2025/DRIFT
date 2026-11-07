@@ -25,7 +25,9 @@ export function ScenarioAiInterpretation({ enabled, viewer, anchor, authContextG
   const contextKey = useMemo(() => JSON.stringify([
     viewer.id, viewer.company?.id ?? null, authContextGeneration, anchor.id,
     snapshot.sessionId, snapshot.epochId, snapshot.snapshotId, snapshot.revision,
-    snapshot.selectedShipment.scenarioShipmentKey, snapshot.simulationCutoffUtc,
+    snapshot.scenarioId, snapshot.scenarioContractVersion, snapshot.stage,
+    snapshot.selectedShipment.scenarioShipmentKey, snapshot.selectedShipment.sourceShipmentId,
+    snapshot.selectedShipment.scenarioShipmentReference, snapshot.simulationCutoffUtc,
   ]), [viewer.id, viewer.company?.id, authContextGeneration, anchor.id, snapshot]);
   const currentKey = useRef(contextKey);
   currentKey.current = contextKey;
@@ -43,7 +45,10 @@ export function ScenarioAiInterpretation({ enabled, viewer, anchor, authContextG
     return () => abortRef.current?.abort();
   }, [contextKey]);
 
-  if (!enabled) return null;
+  if (!enabled) return <section className="notice maritime-ai-disabled" aria-label="Scenario AI interpretation">
+    <p><strong>AI interpretation is not enabled for this environment.</strong></p>
+    <p>Backend-calculated scenario facts and source evidence remain available. No AI request was made.</p>
+  </section>;
   const assessment = result?.contextKey === contextKey ? result.assessment : null;
   const error = failure?.contextKey === contextKey ? failure.message : null;
   const generating = loadingKey === contextKey;
@@ -62,6 +67,11 @@ export function ScenarioAiInterpretation({ enabled, viewer, anchor, authContextG
         expectedRevision: snapshot.revision,
         expectedSnapshotId: snapshot.snapshotId,
         expectedSimulationCutoffUtc: snapshot.simulationCutoffUtc,
+      }, {
+        scenarioId: snapshot.scenarioId,
+        scenarioVersion: snapshot.scenarioContractVersion,
+        scenarioShipmentReference: snapshot.selectedShipment.scenarioShipmentReference,
+        stage: snapshot.stage,
       }, controller.signal);
       if (currentKey.current !== contextKey || controller.signal.aborted) return;
       setResult({ contextKey, assessment: response.assessment });
