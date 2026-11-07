@@ -45,7 +45,7 @@ create_owned_database() {
 	local database="$1"
 	local token
 	token="$(openssl rand -hex 16)"
-	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison|198_activation_(service|concurrency|race)|279|289)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
+	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison|198_(migration|activation_(service|concurrency|race))|279|289)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
 		echo "Generated database name failed the ownership guard: $database" >&2
 		return 1
 	fi
@@ -106,6 +106,15 @@ if [[ -f "$activation_test_dir/ShipmentRiskAlertActivationServiceIntegrationTest
 	configure_database DRIFT_CDG198_ACTIVATION_SERVICE drift_cdg198_activation_service DRIFT_CDG198_ACTIVATION
 	configure_database DRIFT_CDG198_ACTIVATION_CONCURRENCY drift_cdg198_activation_concurrency DRIFT_CDG198_ACTIVATION
 	configure_database DRIFT_CDG198_ACTIVATION_RACE drift_cdg198_activation_race DRIFT_CDG198_ACTIVATION
+fi
+
+# The V24-to-V25 activation migration test is opt-in and mutates its target. Give it a
+# separate owned database so the complete CI suite can run it without touching shared data.
+if [[ -f "$activation_test_dir/ShipmentRiskAlertActivationMigrationIntegrationTest.java" ]]; then
+	configure_database DRIFT_CDG198_MIGRATION drift_cdg198_migration DRIFT_CDG198_MIGRATION
+	export CDG198_MIGRATION_DATABASE_URL="$DRIFT_CDG198_MIGRATION_JDBC_URL"
+	export CDG198_MIGRATION_DATABASE_USERNAME="$DRIFT_CDG198_MIGRATION_DB_USERNAME"
+	export CDG198_MIGRATION_DATABASE_PASSWORD="$DRIFT_CDG198_MIGRATION_DB_PASSWORD"
 fi
 
 if [[ -f "$activation_test_dir/SyntheticDisruptionScenarioIntegrationTests.java" ]]; then
