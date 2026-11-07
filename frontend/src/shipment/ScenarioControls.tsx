@@ -3,6 +3,8 @@ import type { ScenarioSnapshotController } from './useScenarioSnapshot';
 
 export type ScenarioControlsProps = Readonly<{ controller: ScenarioSnapshotController }>;
 
+const SCENARIO_STAGES = ['BASELINE', 'CHANGE', 'WORSENED'] as const;
+
 /** Presentation only. Capabilities and confirmed facts come from the coordinator. */
 export function ScenarioControls({ controller }: ScenarioControlsProps) {
   const id = useId();
@@ -10,6 +12,7 @@ export function ScenarioControls({ controller }: ScenarioControlsProps) {
   const enabled = !!session?.capabilities.canRead && !busy && !pendingAction && status === 'ready';
   const current = session?.state === 'UNSTARTED' ? 'UNSTARTED — no scenario snapshot.'
     : session && snapshot ? `${session.state} — ${snapshot.stage}` : 'No confirmed scenario state.';
+  const confirmedStageOrder = snapshot?.stageOrder ?? null;
   return (
     <section aria-label="Controlled scenario" aria-describedby={`${id}-description`} aria-busy={busy}>
       <p id={`${id}-description`}>Controlled scenario. Actions affect A and B in this session together. Reset returns this session to UNSTARTED.</p>
@@ -24,6 +27,20 @@ export function ScenarioControls({ controller }: ScenarioControlsProps) {
         {session && !busy && !pendingAction && !error && !session.capabilities.canStart
           && !session.capabilities.canAdvance && !session.capabilities.canReset && <p>Scenario actions are unavailable for this session.</p>}
       </div>
+      <ol className="scenario-stage-progress" aria-label="Scenario stage progression">
+        {SCENARIO_STAGES.map((stage, index) => {
+          const isCurrent = snapshot?.stage === stage;
+          const isComplete = confirmedStageOrder !== null && confirmedStageOrder > index;
+          const stateLabel = isCurrent ? 'Current' : isComplete ? 'Completed' : 'Upcoming';
+          const classes = ['scenario-stage-step', isCurrent ? 'is-current' : '', isComplete ? 'is-complete' : '']
+            .filter(Boolean).join(' ');
+          return <li className={classes} key={stage} aria-current={isCurrent ? 'step' : undefined}>
+            <span className="scenario-stage-order" aria-hidden="true">{index + 1}</span>
+            <span className="scenario-stage-name"><strong>{stage}</strong><span>{stateLabel}</span></span>
+          </li>;
+        })}
+      </ol>
+      <p className="scenario-stage-guidance">Progress reflects the last server-confirmed stage. Start creates BASELINE; Next advances through CHANGE to WORSENED.</p>
       {error && <p role="alert">{error.message}</p>}
       <div role="group" aria-label="Scenario actions">
         <button type="button" disabled={!enabled || !session?.capabilities.canStart} onClick={() => void controller.start()}>Start</button>

@@ -160,6 +160,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .maritime-ai-evidence, .maritime-ai-schedule, .maritime-ai-uncertainty { border-top: 1px solid #d5e0cc; margin-top: 14px; padding-top: 4px; }
 .maritime-ai-observation { border-left: 2px solid #92ac8c; margin: 10px 0 12px; padding-left: 12px; }
 .maritime-ai-observation p { margin: 4px 0; overflow-wrap: anywhere; }
+.maritime-ai-review-note { margin: 12px 0; padding: 9px 12px; border-left: 3px solid var(--accent); background: #f8efd8; color: var(--ink); }
+.maritime-ai-citations { margin: 4px 0 8px; color: var(--muted); font-size: 11px !important; line-height: 1.5; overflow-wrap: anywhere; }
 .maritime-ai-risk { background: #f6f7f0; border: 1px solid #c8d9bf; border-radius: 4px; margin: 16px 0 10px; padding: 4px 14px 12px; }
 .maritime-ai-risk dl { margin: 8px 0 10px; }
 .maritime-ai-implications { border-left: 3px solid #78916f; margin: 12px 0 16px; padding: 2px 12px; }
@@ -228,6 +230,9 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .shipment-title h2 { margin: 0; }
 .detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.shipment-assessment-summary { margin: 18px 0 8px; padding: 12px 14px; border-left: 3px solid var(--green); border-radius: 4px; background: #f3f5ef; }
+.shipment-assessment-summary h3 { margin: 0 0 4px; font-size: 15px; }
+.shipment-assessment-summary p { max-width: 78ch; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .scenario-entry-callout,
 .scenario-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 16px 0; padding: 16px; border: 1px solid #9aad9f; border-left: 4px solid var(--green); border-radius: 6px; background: #f5f7f1; }
 .scenario-entry-callout p { margin: 4px 0 0; }
@@ -242,6 +247,19 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .scenario-view-notice { margin: 8px 0; padding: 10px 12px; border-left: 3px solid #9a6d0b; background: #fff9e8; }
 .scenario-facts > p:not(.eyebrow) { max-width: 82ch; }
 .scenario-facts .arrival-comparison { margin: 6px 0; }
+.scenario-facts-context { padding: 10px 12px; border-left: 3px solid var(--green); background: #f3f5ef; line-height: 1.5; }
+.scenario-stage-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.scenario-stage-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 5px; background: #f8f6ed; }
+.scenario-stage-step.is-current { border-color: var(--green); background: #e8ede2; box-shadow: inset 0 0 0 1px var(--green); }
+.scenario-stage-order { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #dfe5da; color: var(--ink); font-size: 10px; font-weight: 800; }
+.scenario-stage-step.is-current .scenario-stage-order,
+.scenario-stage-step.is-complete .scenario-stage-order { background: var(--green); color: #fffefa; }
+.scenario-stage-name { min-width: 0; }
+.scenario-stage-name strong,
+.scenario-stage-name span { display: block; overflow-wrap: anywhere; }
+.scenario-stage-name strong { font-size: 11px; }
+.scenario-stage-name span { color: var(--muted); font-size: 10px; }
+.scenario-stage-guidance { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 @media (max-width: 760px) {
   .scenario-entry-callout,
   .scenario-detail-heading { align-items: stretch; flex-direction: column; }
@@ -393,6 +411,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
   .workspace-main { padding: 32px 16px 48px; }
+  .shipment-title { align-items: flex-start; flex-direction: column; }
+  .detail-actions { width: 100%; justify-content: flex-start; }
   .session-facts div, .shipment-record dl div { display: block; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .maritime-ai-uncertainty { grid-template-columns: 1fr; gap: 0; }

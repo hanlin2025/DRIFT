@@ -39,6 +39,10 @@ describe('ScenarioControls', () => {
     expect(region).toHaveAccessibleDescription(/Actions affect A and B/);
     expect(within(region).getByRole('group', { name: 'Scenario actions' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('UNSTARTED — no scenario snapshot.');
+    const progression = within(region).getByRole('list', { name: 'Scenario stage progression' });
+    expect(within(progression).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(progression).getAllByText('Upcoming')).toHaveLength(3);
+    expect(within(progression).queryByRole('listitem', { current: 'step' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
@@ -53,6 +57,11 @@ describe('ScenarioControls', () => {
     const model = controller(session(stage));
     render(<ScenarioControls controller={model} />);
     expect(screen.getByRole('status')).toHaveTextContent(`${model.session?.state} — ${stage}`);
+    const progression = screen.getByRole('list', { name: 'Scenario stage progression' });
+    const currentStep = within(progression).getByRole('listitem', { current: 'step' });
+    expect(within(currentStep).getByText(stage)).toBeInTheDocument();
+    expect(within(currentStep).getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText('Progress reflects the last server-confirmed stage. Start creates BASELINE; Next advances through CHANGE to WORSENED.')).toBeInTheDocument();
     expect(screen.getByText('2026-10-01T04:00:00Z')).toHaveAttribute('datetime', '2026-10-01T04:00:00Z');
     expect(screen.getByRole('button', { name: 'Start' })).toBeDisabled();
     const next = screen.getByRole('button', { name: 'Next' });
@@ -122,7 +131,9 @@ describe('ScenarioControls', () => {
     const reset = { ...session(), epochId: '4618e3c7-2006-4901-a211-01fbbaf8186c' };
     rerender(<ScenarioControls controller={controller(reset)} />);
     expect(screen.getByRole('status')).toHaveTextContent('UNSTARTED — no scenario snapshot.');
-    expect(screen.queryByText(/CHANGE/)).not.toBeInTheDocument();
+    const progression = screen.getByRole('list', { name: 'Scenario stage progression' });
+    expect(within(progression).queryByRole('listitem', { current: 'step' })).not.toBeInTheDocument();
+    expect(within(progression).getAllByText('Upcoming')).toHaveLength(3);
     expect(screen.queryByText(/Snapshot cutoff/)).not.toBeInTheDocument();
   });
   it('makes no network or provider request while rendering or rerendering', () => {
