@@ -1612,13 +1612,19 @@ describe('recommendation decision on the shipment page', () => {
   });
 
   it('shows the stored approval after the viewer accepts the recommendation', async () => {
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
-    vi.mocked(recordRecommendationDecision).mockResolvedValue(approved);
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: approved })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return approved;
+    });
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Approve' }));
     expect(recordRecommendationDecision).toHaveBeenCalledWith('forwarder-token', 7, { outcome: 'APPROVED' });
-    const decision = screen.getByRole('region', { name: 'Current decision' });
+    const decision = await screen.findByRole('region', { name: 'Current decision' });
     expect(decision).toHaveTextContent('Approved');
     expect(decision).toHaveTextContent('No action');
     expect(decision).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
@@ -1634,8 +1640,14 @@ describe('recommendation decision on the shipment page', () => {
       selectedResponseName: 'Monitor',
       selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
     };
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
-    vi.mocked(recordRecommendationDecision).mockResolvedValue(modified);
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: modified })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return modified;
+    });
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
     await user.selectOptions(await screen.findByLabelText('Modify with a different response'), 'MONITOR_CONSTRAINTS');
@@ -1644,7 +1656,7 @@ describe('recommendation decision on the shipment page', () => {
       outcome: 'MODIFIED',
       selectedResponse: 'MONITOR_CONSTRAINTS',
     });
-    const decision = screen.getByRole('region', { name: 'Current decision' });
+    const decision = await screen.findByRole('region', { name: 'Current decision' });
     expect(decision).toHaveTextContent('Modified');
     expect(decision).toHaveTextContent('Chosen response');
     expect(decision).toHaveTextContent('Monitor');
@@ -1653,8 +1665,15 @@ describe('recommendation decision on the shipment page', () => {
   });
 
   it('shows that a dismissal set the recommendation aside and leaves it visible', async () => {
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
-    vi.mocked(recordRecommendationDecision).mockResolvedValue({ ...approved, outcome: 'DISMISSED' });
+    const dismissed = { ...approved, outcome: 'DISMISSED' as const };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: dismissed })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return dismissed;
+    });
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
@@ -1739,12 +1758,20 @@ describe('recommendation decision on the shipment page', () => {
   });
 
   it('replaces the stored decision with a later dismissal and does not change the shipment', async () => {
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation({ recommendationDecision: approved }));
-    vi.mocked(recordRecommendationDecision).mockResolvedValue({ ...approved, outcome: 'DISMISSED', decidedByName: 'Other User' });
+    const dismissed = { ...approved, outcome: 'DISMISSED' as const, decidedByName: 'Other User' };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => withRecommendation({
+      recommendationDecision: written ? dismissed : approved,
+    }));
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return dismissed;
+    });
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
     expect(await screen.findByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByText('Other User')).toBeInTheDocument();
     const decision = screen.getByRole('region', { name: 'Current decision' });
     expect(decision).toHaveTextContent('The recommendation was set aside');
     expect(decision).toHaveTextContent('Other User');
@@ -1772,7 +1799,7 @@ describe('recommendation decision on the shipment page', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
-  it('shows history in the order returned and keeps the persisted decision after a write', async () => {
+  it('shows history in the order returned and keeps the current decision from the refresh', async () => {
     const sameTime = '2026-10-28T06:00:00Z';
     const persisted: RecommendationDecision = { ...approved, decidedAt: sameTime, decidedByName: 'Ada Lee' };
     const newest: RecommendationDecisionHistoryEntry = {
@@ -1805,10 +1832,10 @@ describe('recommendation decision on the shipment page', () => {
     expect(screen.queryByRole('region', { name: 'Decision history' })).not.toBeInTheDocument();
     await userEvent.setup().click(approve);
     const current = await screen.findByRole('region', { name: 'Current decision' });
-    expect(current).toHaveTextContent('Ada Lee');
-    expect(current).toHaveTextContent(formatWhen(sameTime));
-    expect(current).not.toHaveTextContent('Renamed User');
-    expect(current).not.toHaveTextContent(formatWhen('2026-10-28T09:00:00Z'));
+    expect(await within(current).findByText('Renamed User')).toBeInTheDocument();
+    expect(current).toHaveTextContent(formatWhen('2026-10-28T09:00:00Z'));
+    expect(current).not.toHaveTextContent('Ada Lee');
+    expect(current).not.toHaveTextContent(formatWhen(sameTime));
     const history = await screen.findByRole('region', { name: 'Decision history' });
     const items = within(history).getAllByRole('listitem');
     expect(items).toHaveLength(2);
@@ -1834,8 +1861,16 @@ describe('recommendation decision on the shipment page', () => {
 
   it('does not send a second decision while the first write is still running', async () => {
     let finish: (value: RecommendationDecision) => void = () => {};
-    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
-    vi.mocked(recordRecommendationDecision).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: approved })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockReturnValue(new Promise(resolve => {
+      finish = value => {
+        written = true;
+        resolve(value);
+      };
+    }));
     open(forwarder, '/freight-forwarder/shipments/7');
     const approve = await screen.findByRole('button', { name: 'Approve' });
     fireEvent.click(approve);

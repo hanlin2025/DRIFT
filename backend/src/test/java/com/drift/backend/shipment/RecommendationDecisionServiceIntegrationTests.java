@@ -60,7 +60,7 @@ class RecommendationDecisionServiceIntegrationTests {
 	}
 
 	@Test
-	void currentReadStoresNothingWhenTheImpactHasNotBeenReturned() {
+	void anUnavailableComparisonStoresNothing() {
 		Shipment before = snapshot();
 
 		assertThatThrownBy(() -> decisions.approve(shipment, actor, decidedAt))

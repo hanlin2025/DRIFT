@@ -17,8 +17,11 @@ class ShipmentDetailAssembler {
 	}
 
 	ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment), deadline(shipment),
-				decisions.current(shipment.getId()), decisions.history(shipment.getId()), decisions.currentImpact());
+		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(shipment);
+		TransshipmentArrivalDeadlineResponse recorded = deadline(shipment);
+		return ShipmentDetailResponse.from(shipment, connection, recorded,
+				decisions.current(shipment.getId()), decisions.history(shipment.getId()),
+				decisions.impactFor(connection.arrivalComparison(), recorded));
 	}
 
 	private TransshipmentArrivalDeadlineResponse deadline(Shipment shipment) {

@@ -42,7 +42,7 @@ public final class RecommendationDecisionBrowserApplication {
 		}
 
 		@Override
-		ShipmentRecommendationImpact current() {
+		ShipmentRecommendationImpact fromComparison(DelayComparison comparison) {
 			return impact;
 		}
 

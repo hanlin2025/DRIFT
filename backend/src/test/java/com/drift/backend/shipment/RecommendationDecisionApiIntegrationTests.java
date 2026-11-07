@@ -702,7 +702,7 @@ class RecommendationDecisionApiIntegrationTests {
 		}
 
 		@Override
-		ShipmentRecommendationImpact current() {
+		ShipmentRecommendationImpact fromComparison(DelayComparison comparison) {
 			return impact;
 		}
 

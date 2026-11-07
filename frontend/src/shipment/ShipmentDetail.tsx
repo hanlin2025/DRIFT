@@ -295,9 +295,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setShipment(current => current ? { ...current, recommendationDecision: recorded } : current);
                   void getShipment(token, shipmentId).then(fresh => {
                     if (seq !== decisionSeq.current) return;
-                    setShipment(current => current && current.id === fresh.id
-                      ? { ...fresh, recommendationDecision: recorded }
-                      : current);
+                  setShipment(current => current && current.id === fresh.id ? fresh : current);
                   }).catch((reason: unknown) => {
                     if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
                   });

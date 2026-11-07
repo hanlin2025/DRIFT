@@ -2,6 +2,7 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +36,7 @@ class RecommendationDecisionService {
 	private final RecommendationDecisionRepository decisions;
 	private final RecommendationDecisionHistoryRepository history;
 	private final ShipmentConnectionRisk connectionRisk;
+	private final ShipmentImporterConstraintRepository constraints;
 	private final ShipmentRecommendationImpactSource impacts;
 	private final UserAccountRepository users;
 	private final ShipmentAccessPolicy access;
@@ -43,12 +45,14 @@ class RecommendationDecisionService {
 
 	RecommendationDecisionService(ShipmentRepository shipments, RecommendationDecisionRepository decisions,
 			RecommendationDecisionHistoryRepository history, ShipmentConnectionRisk connectionRisk,
-			ShipmentRecommendationImpactSource impacts, UserAccountRepository users, ShipmentAccessPolicy access,
+			ShipmentImporterConstraintRepository constraints, ShipmentRecommendationImpactSource impacts,
+			UserAccountRepository users, ShipmentAccessPolicy access,
 			EntityManager entityManager, ObjectProvider<Clock> clocks) {
 		this.shipments = shipments;
 		this.decisions = decisions;
 		this.history = history;
 		this.connectionRisk = connectionRisk;
+		this.constraints = constraints;
 		this.impacts = impacts;
 		this.users = users;
 		this.access = access;
@@ -56,8 +60,8 @@ class RecommendationDecisionService {
 		this.clock = clocks.getIfAvailable(Clock::systemUTC);
 	}
 
-	ShipmentRecommendationImpact currentImpact() {
-		return impacts.current();
+	ShipmentRecommendationImpact impactFor(ArrivalEstimate estimate, TransshipmentArrivalDeadlineResponse recorded) {
+		return impacts.fromComparison(DelayComparison.of(estimate, recorded));
 	}
 
 	@Transactional
@@ -108,18 +112,18 @@ class RecommendationDecisionService {
 
 	@Transactional
 	public RecommendationDecision approve(Shipment shipment, UserAccount actor, Instant decidedAt) {
-		return approve(shipment, actor, decidedAt, impacts.current());
+		return approve(shipment, actor, decidedAt, null);
 	}
 
 	@Transactional
 	public RecommendationDecision modify(Shipment shipment, UserAccount actor, Instant decidedAt,
 			ShipmentRecommendedResponse.Code selectedResponse) {
-		return modify(shipment, actor, decidedAt, selectedResponse, impacts.current());
+		return modify(shipment, actor, decidedAt, selectedResponse, null);
 	}
 
 	@Transactional
 	public RecommendationDecision dismiss(Shipment shipment, UserAccount actor, Instant decidedAt) {
-		return dismiss(shipment, actor, decidedAt, impacts.current());
+		return dismiss(shipment, actor, decidedAt, null);
 	}
 
 	@Transactional
@@ -150,11 +154,14 @@ class RecommendationDecisionService {
 		if (current.getStatus() == ShipmentStatus.ARCHIVED) {
 			throw new RecommendationDecisionRejectedException(RecommendationDecisionRejectedException.ARCHIVED);
 		}
-		ShipmentRecommendation recommendation = ShipmentRecommendation.of(connectionRisk.assess(current).risk(), impact);
+		ShipmentConnectionRisk.Snapshot connection = connectionRisk.assess(current);
+		ShipmentRecommendationImpact assessed = impact != null ? impact
+				: impactFor(connection.arrivalComparison(), deadline(current));
+		ShipmentRecommendation recommendation = ShipmentRecommendation.of(connection.risk(), assessed);
 		if (!recommendation.available()) {
 			throw new RecommendationDecisionRejectedException(RecommendationDecisionRejectedException.UNAVAILABLE);
 		}
-		Instant recordedAt = decidedAt != null ? decidedAt : clock.instant();
+		Instant recordedAt = (decidedAt != null ? decidedAt : clock.instant()).truncatedTo(ChronoUnit.MICROS);
 		if (actor == null || actor.getId() == null) {
 			throw new IllegalArgumentException("Actor is required");
 		}
@@ -207,6 +214,15 @@ class RecommendationDecisionService {
 			throw new InvalidShipmentRequestException(Map.of("selectedResponse",
 					"A selected response is stored only for a modification"));
 		}
+	}
+
+	private TransshipmentArrivalDeadlineResponse deadline(Shipment shipment) {
+		if (shipment.getImporterCompany() == null || shipment.getImporterCompany().getId() == null) {
+			return null;
+		}
+		return constraints.findByShipmentIdAndImporterCompanyId(shipment.getId(), shipment.getImporterCompany().getId())
+				.map(constraint -> TransshipmentArrivalDeadlineResponse.from(shipment, constraint))
+				.orElse(null);
 	}
 
 	private static boolean selectionRequired(RecommendationDecisionOutcome outcome) {

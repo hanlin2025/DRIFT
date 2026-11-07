@@ -95,7 +95,7 @@ class RecommendationDecisionDefaultImpactIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.recommendation.available").value(false))
 				.andExpect(jsonPath("$.recommendation.impact.outcome").value("UNAVAILABLE"))
-				.andExpect(jsonPath("$.recommendation.impact.detail").value(ShipmentRecommendationImpact.NOT_RETURNED))
+				.andExpect(jsonPath("$.recommendation.impact.detail").value(DelayComparison.MISSING_PREDICTION_MESSAGE))
 				.andExpect(jsonPath("$.recommendationDecision").value(nullValue()))
 				.andExpect(jsonPath("$.recommendationDecisionHistory").isEmpty());
 

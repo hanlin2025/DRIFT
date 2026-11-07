@@ -46,7 +46,7 @@ public record ShipmentDetailResponse(
 		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
-		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
+		@Schema(description = "Recommended response from the connection risk on this read and the delay comparison on this read. A completed comparison that meets the recorded deadline has no predicted impact. A completed comparison that exceeds that deadline affects the importer's constraints. A missing, stale, or incompatible comparison leaves the impact unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
 		ShipmentRecommendation recommendation,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
