@@ -95,6 +95,19 @@ beforeEach(() => {
       feederVesselNameWarning: null,
     };
   });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER',
+    vesselName: null,
+    mmsi: null,
+    windowHours: 24,
+    from: '2026-10-04T03:00:00Z',
+    to: '2026-10-05T03:00:00Z',
+    slowdownThresholdKnots: 3,
+    pointLimit: 500,
+    truncated: false,
+    points: [],
+  });
 });
 
 function Location() {

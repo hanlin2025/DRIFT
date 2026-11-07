@@ -61,9 +61,8 @@ public record ShipmentRecommendation(
 	}
 
 	/**
-	 * Selects the recorded response from the connection risk already calculated for this read.
-	 * A null risk has not been assessed. The shipment detail passes
-	 * {@link ShipmentRecommendationImpact#notReturned()} because this read does not carry an impact assessment.
+	 * Selects the recorded response from the connection risk and the delay comparison on this read.
+	 * A null risk has not been assessed. A missing, stale, or incompatible comparison stays unavailable.
 	 */
 	static ShipmentRecommendation of(ShipmentRisk risk, ShipmentRecommendationImpact impact) {
 		if (impact == null) {

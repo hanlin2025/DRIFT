@@ -14,6 +14,8 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } },
   ],
   webServer: {
-    command: 'npm run dev', url: baseURL, reuseExistingServer: !process.env.CI,
+    command: `npm run dev -- --port ${webPort}`,
+    url: baseURL,
+    reuseExistingServer: !process.env.CI && webPort === '5173',
   },
 });
