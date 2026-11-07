@@ -218,6 +218,7 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 	@Test
 	@Transactional(propagation = Propagation.NOT_SUPPORTED)
 	void invalidAndAbstainedLaterGenerationsAppendWithoutChangingPriorSuccesses() throws Exception {
+		long initialAssessmentCount = jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class);
 		Harness harness = harness();
 		UUID failedSession = UUID.randomUUID();
 		JsonNode change = startAtChange(harness, failedSession, harness.shipmentAId());
@@ -225,9 +226,15 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 		JsonNode worsened = scenarioCommand(failedSession, harness.managerToken(), "next", change, "next-invalid", 200);
 		JsonNode invalid = generate(harness, failedSession, worsened, "A", harness.shipmentAId(), "INVALID");
 		assertThat(invalid.at("/assessment/state").asText()).isEqualTo("FAILED");
-		assertThat(invalid.at("/assessment/validationStatus").asText()).isEqualTo("UNSUPPORTED_CARGO_ASSERTION");
+		assertThat(invalid.at("/assessment/validationStatus").asText()).isEqualTo("SCENARIO_PROSE_MISMATCH");
 		assertThat(invalid.at("/assessment/interpretation").isMissingNode()
 				|| invalid.at("/assessment/interpretation").isNull()).isTrue();
+		String invalidAssessmentId = invalid.at("/assessment/assessmentId").asText();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+				String.class, invalidAssessmentId)).isEqualTo("FAILED");
+		JsonNode invalidStored = json.readTree(jdbc.queryForObject(
+				"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, invalidAssessmentId));
+		assertThat(invalidStored.path("interpretation").isMissingNode() || invalidStored.path("interpretation").isNull()).isTrue();
 		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?", String.class,
 				priorSuccess.at("/assessment/assessmentId").asText())).isEqualTo("GENERATED");
 
@@ -240,9 +247,47 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 		assertThat(abstained.at("/assessment/validationStatus").asText()).isEqualTo("INSUFFICIENT_MODEL_EVIDENCE");
 		assertThat(abstained.at("/assessment/interpretation").isMissingNode()
 				|| abstained.at("/assessment/interpretation").isNull()).isTrue();
+		String abstainedAssessmentId = abstained.at("/assessment/assessmentId").asText();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+				String.class, abstainedAssessmentId)).isEqualTo("ABSTAINED");
+		JsonNode abstainedStored = json.readTree(jdbc.queryForObject(
+				"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, abstainedAssessmentId));
+		assertThat(abstainedStored.path("interpretation").isMissingNode() || abstainedStored.path("interpretation").isNull()).isTrue();
 		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?", String.class,
 				secondSuccess.at("/assessment/assessmentId").asText())).isEqualTo("GENERATED");
-		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class)).isEqualTo(4L);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class))
+				.isEqualTo(initialAssessmentCount + 4);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void refusalAndIncompleteOutputsPersistAsFailuresWhileProviderUnavailableRemainsAbstained() throws Exception {
+		long initialAssessmentCount = jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class);
+		Harness harness = harness();
+		List<ExpectedProviderResult> cases = List.of(
+				new ExpectedProviderResult("REFUSAL", "FAILED", "PROVIDER_REFUSAL"),
+				new ExpectedProviderResult("INCOMPLETE", "FAILED", "INCOMPLETE_PROVIDER_OUTPUT"),
+				new ExpectedProviderResult("UNAVAILABLE", "ABSTAINED", "MODEL_UNAVAILABLE"));
+		for (ExpectedProviderResult expected : cases) {
+			UUID sessionId = UUID.randomUUID();
+			JsonNode change = startAtChange(harness, sessionId, harness.shipmentAId());
+			JsonNode result = generate(harness, sessionId, change, "A", harness.shipmentAId(), expected.mode());
+			assertThat(result.at("/assessment/state").asText()).isEqualTo(expected.state());
+			assertThat(result.at("/assessment/validationStatus").asText()).isEqualTo(expected.validationStatus());
+			assertThat(result.at("/assessment/interpretation").isMissingNode()
+					|| result.at("/assessment/interpretation").isNull()).isTrue();
+			String assessmentId = result.at("/assessment/assessmentId").asText();
+			assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+					String.class, assessmentId)).isEqualTo(expected.state());
+			assertThat(jdbc.queryForObject("SELECT validation_status FROM maritime_ai_assessments WHERE assessment_id = ?",
+					String.class, assessmentId)).isEqualTo(expected.validationStatus());
+			JsonNode stored = json.readTree(jdbc.queryForObject(
+					"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId));
+			assertThat(stored.path("interpretation").isMissingNode() || stored.path("interpretation").isNull()).isTrue();
+		}
+		assertThat(STUB_CALLS.get()).isEqualTo(3);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class))
+				.isEqualTo(initialAssessmentCount + 3);
 	}
 
 	private Harness harness() throws Exception {
@@ -338,20 +383,24 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 	}
 	private static String bearer(String token) { return "Bearer " + token; }
 
-	private static MaritimeAiInterpretation output(MaritimeAiEvidencePackage input, String mode) {
-		if ("INVALID".equals(mode)) {
-			MaritimeEvidence evidence = input.evidence().getFirst();
-			return new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
-					List.of(new MaritimeAiClaim("The cargo is delayed.", List.of(evidence.evidenceId()), "REGIONAL_CONTEXT")),
-					List.of(), List.of(), true, null);
+	private static String scenarioOutput(MaritimeAiEvidencePackage input, String mode) {
+		if ("REFUSAL".equals(mode) || "INCOMPLETE".equals(mode)) return "{\"assessment\":null}";
+		if ("ABSTAIN".equals(mode)) return "{\"assessment\":null}";
+		String valid = ScenarioQualityStubClient.fixtureOutputText(input);
+		if (!"INVALID".equals(mode)) return valid;
+		try {
+			ObjectNode output = (ObjectNode) new ObjectMapper().readTree(valid);
+			ObjectNode risk = (ObjectNode) output.at("/assessment/risk");
+			risk.put("statement", risk.path("statement").asString() + " The shipment is urgent.");
+			return new ObjectMapper().writeValueAsString(output);
+		} catch (Exception failure) {
+			throw new IllegalStateException("The offline v1.6 persistence fixture could not be built.", failure);
 		}
-		if ("ABSTAIN".equals(mode)) return new MaritimeAiInterpretation(
-				"The synthetic evidence is insufficient for an interpretation.", List.of(), List.of(), List.of(), false, null);
-		return new ScenarioQualityStubClient().interpret(input).interpretation();
 	}
 
 	private record Harness(long forwarderCompanyId, long otherCompanyId, long managerUserId, String managerToken,
 			String otherTenantToken, long shipmentAId, long shipmentBId) { }
+	private record ExpectedProviderResult(String mode, String state, String validationStatus) { }
 
 	@TestConfiguration
 	static class TestAiConfiguration {
@@ -359,13 +408,27 @@ class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
 		@Bean @Primary Clock scenarioClock() { return TEST_CLOCK; }
 		@Bean @Primary MaritimeContextService scenarioContext() { return SCENARIO.contextForClock(TEST_CLOCK); }
 		@Bean @Primary ConfiguredMaritimeAiClient scenarioStub(ObjectMapper json) {
-			return new ConfiguredMaritimeAiClient("offline-json-stub", "cdg289-test", "local-only", "https://stub.invalid",
-					true, 20, 800, json, (request, body) -> {
-						STUB_CALLS.incrementAndGet();
-						String mode = RESPONSE_MODE.getAndSet("VALID");
-						MaritimeAiEvidencePackage input = json.readValue(body, MaritimeAiEvidencePackage.class);
-						return new ConfiguredMaritimeAiClient.TransportResponse(200, json.writeValueAsString(output(input, mode)));
-					});
+			return new ConfiguredMaritimeAiClient("openai-responses", "cdg289-test", "offline-only-key",
+					"https://stub.invalid/v1/responses", true, 20, 800, json,
+					(request, body) -> { throw new AssertionError("The offline v1.6 persistence fixture must not use HTTP."); }) {
+				@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
+					STUB_CALLS.incrementAndGet();
+					String mode = RESPONSE_MODE.getAndSet("VALID");
+					String version = ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION;
+					return switch (mode) {
+						case "REFUSAL" -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, "The Responses API refused the controlled-scenario request.", null,
+								"refusal", "PROVIDER_REFUSAL");
+						case "INCOMPLETE" -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, "The Responses API did not complete its assistant message.", "{\"assessment\":null}",
+								"incomplete_message", "INCOMPLETE_PROVIDER_OUTPUT");
+						case "UNAVAILABLE" -> new MaritimeAiClientResult("UNCONFIGURED", "", version,
+								null, "Inference gateway returned HTTP 503.", null, "http_error", null);
+						default -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, null, scenarioOutput(input, mode), "completed", null);
+					};
+				}
+			};
 		}
 	}
 

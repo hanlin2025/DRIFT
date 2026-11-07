@@ -66,6 +66,77 @@ final class MaritimeAiResponseValidator {
 			Map.entry("nine", 9L), Map.entry("ten", 10L));
 	private MaritimeAiResponseValidator() { }
 
+	record ScenarioValidation(String validationStatus, String fieldPath, MaritimeAiInterpretation interpretation) {
+		boolean valid() { return "VALID".equals(validationStatus); }
+		boolean abstained() { return "INSUFFICIENT_MODEL_EVIDENCE".equals(validationStatus)
+				|| "INSUFFICIENT_SCENARIO_CONTEXT".equals(validationStatus); }
+	}
+
+	/** Dedicated v1.6 validator. It validates typed meaning and whole authored sentences before projection. */
+	static ScenarioValidation validateScenarioV16(String outputText, MaritimeAiEvidencePackage input) {
+		String preflightField = ScenarioMaritimeAiOutput.preflightFailureField(input);
+		if (preflightField != null) return new ScenarioValidation("INSUFFICIENT_SCENARIO_CONTEXT", preflightField, null);
+		ScenarioMaritimeAiOutput output;
+		try { output = ScenarioMaritimeAiOutput.parse(outputText); }
+		catch (RuntimeException invalid) { return new ScenarioValidation("INVALID_SCENARIO_OUTPUT", "output", null); }
+		if (output.assessment() == null)
+			return new ScenarioValidation("INSUFFICIENT_MODEL_EVIDENCE", "assessment", null);
+		var assessment = output.assessment();
+		var risk = input.shipmentContext().connectionRisk();
+		var expectedRisk = expectedRiskReview(risk);
+		if (resolveEligibleScenarioEvidence(assessment.risk().evidenceRef(), input) == null)
+			return new ScenarioValidation("SCENARIO_EVIDENCE_MISMATCH", "assessment.risk.evidenceRef", null);
+		if (resolveEligibleScenarioEvidence(assessment.deadline().evidenceRef(), input) == null)
+			return new ScenarioValidation("SCENARIO_EVIDENCE_MISMATCH", "assessment.deadline.evidenceRef", null);
+		var claimedRisk = assessment.risk().riskReview();
+		if (!risk.riskLevel().name().equals(claimedRisk.severity()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.severity", null);
+		if (!risk.riskBasis().name().equals(claimedRisk.selectedWindowBasis()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.selectedWindowBasis", null);
+		if (!expectedRisk.selectedWindowState().name().equals(claimedRisk.selectedWindowState()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.selectedWindowState", null);
+		if (!risk.arrivalEstimate().state().name().equals(claimedRisk.estimateFreshness()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.estimateFreshness", null);
+		var comparison = input.shipmentContext().businessContext().comparison();
+		if (!comparison.outcome().name().equals(assessment.deadline().outcome()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.deadline.outcome", null);
+
+		if (!ScenarioMaritimeAiProse.matchesRisk(assessment.risk().statement(), expectedRisk.severity(),
+				expectedRisk.selectedWindowState()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.risk.statement", null);
+		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(), comparison.outcome()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadline.statement", null);
+		if (!ScenarioMaritimeAiProse.matchesUncertainty(assessment.uncertainty()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.uncertainty", null);
+		if (!ScenarioMaritimeAiProse.matchesEtaCheck(assessment.etaCheck()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.etaCheck", null);
+		if (!ScenarioMaritimeAiProse.matchesDeadlineCheck(assessment.deadlineCheck()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadlineCheck", null);
+
+		var allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		for (String reference : MaritimeAiCanonicalFactReferences.riskReferences(input)) {
+			if (!allowed.contains(reference))
+				return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.factReferences", null);
+		}
+		for (String reference : List.of(MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY,
+				MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT)) {
+			if (!allowed.contains(reference))
+				return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.deadline.factReferences", null);
+		}
+		return new ScenarioValidation("VALID", null, ScenarioMaritimeAiOutput.project(output, input));
+	}
+
+	private static MaritimeEvidence resolveEligibleScenarioEvidence(String reference, MaritimeAiEvidencePackage input) {
+		List<MaritimeEvidence> matches = ScenarioMaritimeAiOutput.eligibleRevisionChoices(input).stream()
+				.filter(item -> ("evidence:" + item.evidenceId()).equals(reference)).toList();
+		return matches.size() == 1 ? matches.getFirst() : null;
+	}
+
 	static String validate(MaritimeAiInterpretation output, MaritimeAiEvidencePackage input) {
 		if (output != null && output.formalRecommendationCode() != null) return "FORMAL_RECOMMENDATION_NOT_OWNED_BY_CDG247";
 		if (output == null || output.summary() == null || output.summary().isBlank() || output.claims() == null
@@ -391,7 +462,7 @@ final class MaritimeAiResponseValidator {
 			case STALE_PREDICTION -> containsAny(statement, "stale", "outdated");
 		};
 	}
-	private static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
+	static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
 		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
 		if (risk.assessed() && risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
 				&& risk.remainingWindow() != null) {
