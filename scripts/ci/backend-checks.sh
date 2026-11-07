@@ -45,7 +45,7 @@ create_owned_database() {
 	local database="$1"
 	local token
 	token="$(openssl rand -hex 16)"
-	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
+	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison|198_activation_(service|concurrency|race)|279|289)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
 		echo "Generated database name failed the ownership guard: $database" >&2
 		return 1
 	fi
@@ -92,6 +92,29 @@ configure_database DRIFT_CDG152 drift_cdg152_coverage DRIFT_CDG152
 configure_database DRIFT_CDG168 drift_cdg168_pagesort DRIFT_CDG168
 configure_database DRIFT_CDG203 drift_cdg203_deadline DRIFT_CDG203
 configure_database DRIFT_CDG206 drift_cdg206_comparison DRIFT_CDG206 55433
+
+# The controlled-demo branch adds tests that require dedicated empty databases. Provision
+# those targets only when their test sources are present in the checked-out branch.
+activation_test_dir="$backend_dir/src/test/java/com/drift/backend/shipment"
+if [[ -f "$activation_test_dir/ShipmentRiskAlertActivationServiceIntegrationTests.java" ]]; then
+	for test_class in ShipmentRiskAlertActivationServiceIntegrationTests ShipmentRiskAlertActivationConcurrencyIntegrationTests ShipmentRiskAlertActivationShipmentCreationRaceIntegrationTests; do
+		if [[ ! -f "$activation_test_dir/$test_class.java" ]]; then
+			echo "Expected CDG-198 activation test $test_class is missing from this branch." >&2
+			exit 1
+		fi
+	done
+	configure_database DRIFT_CDG198_ACTIVATION_SERVICE drift_cdg198_activation_service DRIFT_CDG198_ACTIVATION
+	configure_database DRIFT_CDG198_ACTIVATION_CONCURRENCY drift_cdg198_activation_concurrency DRIFT_CDG198_ACTIVATION
+	configure_database DRIFT_CDG198_ACTIVATION_RACE drift_cdg198_activation_race DRIFT_CDG198_ACTIVATION
+fi
+
+if [[ -f "$activation_test_dir/SyntheticDisruptionScenarioIntegrationTests.java" ]]; then
+	configure_database DRIFT_CDG279 drift_cdg279 DRIFT_CDG279
+fi
+
+if [[ -f "$backend_dir/src/test/java/com/drift/backend/maritimeai/MaritimeAiScenarioAssessmentPersistenceIntegrationTests.java" ]]; then
+	configure_database DRIFT_CDG289 drift_cdg289 DRIFT_CDG289
+fi
 
 # Migration tests create their own marker-guarded databases through these disposable admin URLs.
 # This migration test deliberately refuses the default 5432 port as a shared target.
