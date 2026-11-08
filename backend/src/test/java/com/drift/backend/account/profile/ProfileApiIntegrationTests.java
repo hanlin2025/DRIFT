@@ -1,6 +1,8 @@
 package com.drift.backend.account.profile;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,9 +16,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -33,11 +40,13 @@ import com.jayway.jsonpath.JsonPath;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+@Import(ProfileApiIntegrationTests.MailDouble.class)
 class ProfileApiIntegrationTests {
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired PasswordEncoder passwords;
+	@Autowired JavaMailSender mailSender;
 
 	private Long companyId;
 	private String email;
@@ -95,6 +104,24 @@ class ProfileApiIntegrationTests {
 				.andExpect(jsonPath("$.email").value(email))
 				.andExpect(jsonPath("$.riskEmailNotificationsEnabled").value(true))
 				.andExpect(jsonPath("$.minimumRiskNotificationLevel").value("MEDIUM"));
+	}
+
+	@Test
+	void savingTheRiskChoiceDoesNotSendMailOrCreateADelivery() throws Exception {
+		String bearer = token(email);
+		Long before = jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_alert_deliveries", Long.class);
+
+		mvc.perform(patch("/api/profile").header("Authorization", "Bearer " + bearer)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"riskEmailNotificationsEnabled":true,"minimumRiskNotificationLevel":"CRITICAL"}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.riskEmailNotificationsEnabled").value(true))
+				.andExpect(jsonPath("$.minimumRiskNotificationLevel").value("CRITICAL"));
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_alert_deliveries", Long.class)).isEqualTo(before);
+		verifyNoInteractions(mailSender);
 	}
 
 	@Test
@@ -406,5 +433,10 @@ class ProfileApiIntegrationTests {
 		return """
 				{"email":"%s","password":"%s"}
 				""".formatted(accountEmail, password);
+	}
+
+	@TestConfiguration
+	static class MailDouble {
+		@Bean @Primary JavaMailSender mailSender() { return mock(JavaMailSender.class); }
 	}
 }
