@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import com.drift.backend.account.Role;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
+import com.drift.backend.importerauthorisation.ImporterAuthorisationForbiddenException;
 import com.drift.backend.organisation.exception.OrganisationAccessForbiddenException;
 import com.drift.backend.shipment.csvimport.BulkImportForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
@@ -50,6 +51,9 @@ public final class RolePermissionMatrix {
 			}
 			return Optional.empty();
 		}
+		if (importerAuthorisation(normalized)) {
+			return importerAuthorisation(role, activeCompany, method);
+		}
 		if ("PATCH".equals(method) && normalized.matches("/api/shipments/\\d+/link-importer")) {
 			if (!activeCompany) {
 				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
@@ -80,6 +84,27 @@ public final class RolePermissionMatrix {
 				return Optional.of(ShipmentCreationForbiddenException.MESSAGE);
 			}
 			return Optional.empty();
+		}
+		return Optional.empty();
+	}
+
+	private static boolean importerAuthorisation(String path) {
+		return path.equals("/api/importer-authorisations")
+				|| path.matches("/api/importer-authorisations/\\d+/end");
+	}
+
+	private static Optional<String> importerAuthorisation(Role role, boolean activeCompany, String method) {
+		if (!activeCompany) {
+			return Optional.of(ImporterAuthorisationForbiddenException.ACTIVE_COMPANY);
+		}
+		if ("GET".equals(method)) {
+			if (role == Role.ADMIN || role == Role.FREIGHT_FORWARDER) {
+				return Optional.empty();
+			}
+			return Optional.of(ImporterAuthorisationForbiddenException.VIEW);
+		}
+		if (role != Role.ADMIN) {
+			return Optional.of(ImporterAuthorisationForbiddenException.CHANGE);
 		}
 		return Optional.empty();
 	}
