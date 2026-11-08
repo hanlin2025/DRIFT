@@ -4,6 +4,8 @@ export const TRACK_WINDOWS: readonly TrackWindow[] = [6, 24, 72];
 export const DEFAULT_TRACK_WINDOW: TrackWindow = 24;
 
 export const MIN_TRACK_POINTS = 2;
+/** A longer gap is shown as missing coverage instead of a straight connecting segment. */
+export const MAX_TRACK_GAP_MS = 60 * 60 * 1000;
 export const INSUFFICIENT_HISTORY = 'Insufficient history to draw a track for this window.';
 
 type Position = [number, number];
@@ -42,6 +44,7 @@ export function trackSegments(points: readonly TrackPoint[], threshold: number) 
   for (let index = 1; index < points.length; index += 1) {
     const start = points[index - 1];
     const end = points[index];
+    if (!isContinuous(start, end)) continue;
     features.push({
       type: 'Feature',
       properties: { slow: isSlowSegment(start, end, threshold) },
@@ -63,7 +66,7 @@ export function trackPoints(points: readonly TrackPoint[], threshold: number) {
 export function slowdownCount(points: readonly TrackPoint[], threshold: number) {
   let count = 0;
   for (let index = 1; index < points.length; index += 1) {
-    if (isSlowSegment(points[index - 1], points[index], threshold)) count += 1;
+    if (isContinuous(points[index - 1], points[index]) && isSlowSegment(points[index - 1], points[index], threshold)) count += 1;
   }
   return count;
 }
@@ -76,4 +79,10 @@ export function formatSpeed(knots: number | null) {
 
 function lngLat(point: TrackPoint): Position {
   return [point.longitude, point.latitude];
+}
+
+function isContinuous(start: TrackPoint, end: TrackPoint) {
+  const from = Date.parse(start.ingestedAt);
+  const to = Date.parse(end.ingestedAt);
+  return Number.isFinite(from) && Number.isFinite(to) && to >= from && to - from <= MAX_TRACK_GAP_MS;
 }

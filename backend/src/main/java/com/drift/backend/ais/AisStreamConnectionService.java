@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -41,6 +42,7 @@ public class AisStreamConnectionService {
 
 	private volatile WebSocket webSocket;
 
+	@Autowired
 	public AisStreamConnectionService(AisStreamProperties properties, ObjectMapper objectMapper,
 			AisPositionParser positionParser, LatestAisPositions latestPositions) {
 		this(properties, objectMapper, positionParser, latestPositions, HttpClient.newHttpClient());

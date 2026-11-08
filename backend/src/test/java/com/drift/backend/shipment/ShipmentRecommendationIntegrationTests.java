@@ -283,7 +283,7 @@ class ShipmentRecommendationIntegrationTests {
 		Integer tables = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM information_schema.tables
 				WHERE table_schema = 'public' AND table_name ILIKE '%recommend%'
-					AND table_name <> 'recommendation_decisions'
+					AND table_name NOT IN ('recommendation_decisions', 'recommendation_decision_history')
 				""", Integer.class);
 		return columns + tables;
 	}

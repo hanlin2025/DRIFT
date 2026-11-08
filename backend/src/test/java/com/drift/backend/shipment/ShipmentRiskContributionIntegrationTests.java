@@ -197,7 +197,7 @@ class ShipmentRiskContributionIntegrationTests {
 				.andReturn().getResponse().getContentAsString());
 		assertThat(listed).hasSize(1);
 		assertThat(listed.get(0).has("riskContributions")).isFalse();
-		assertThat(listed.get(0).has("risk")).isFalse();
+		assertThat(listed.get(0).get("risk")).isEqualTo(owner.get("risk"));
 	}
 
 	private void assertRemaining(Duration remaining, String level, String explanation, String duration) throws Exception {

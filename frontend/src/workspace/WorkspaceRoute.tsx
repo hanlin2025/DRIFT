@@ -4,7 +4,7 @@ import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, shipmentDetailPath, shipmentListPath, writeSession, type Session } from '../session/session';
 import { type ShipmentArchive } from '../shipment/archiveAccess';
 import { listShipments, type Shipment } from '../shipment/api';
-import { ShipmentDetail } from '../shipment/ShipmentDetail';
+import { ShipmentDetailEntry } from '../shipment/ShipmentDetailEntry';
 import { ShipmentForm } from '../shipment/ShipmentForm';
 import { ShipmentImportPage } from '../shipment/ShipmentImportPage';
 import { applyShipmentFilters, EMPTY_SHIPMENT_FILTERS, hasShipmentFilters, shipmentFiltersFromSearchParams, type ShipmentFilters } from '../shipment/shipmentFilters';
@@ -67,6 +67,7 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   const copy = workspaceCopy(account.role);
   const canRegister = account.role === 'FREIGHT_FORWARDER';
   const canEdit = account.role === 'FREIGHT_FORWARDER' || account.role === 'IMPORTER';
+  const controlledScenarioEnabled = import.meta.env.VITE_CONTROLLED_SCENARIO_ENABLED === 'true';
   const listPath = shipmentListPath(account.role);
   const linkBase = account.role === 'ADMIN' ? '/admin' : listPath;
   const viewer = { role: account.role, companyId: account.company?.id ?? null };
@@ -111,7 +112,10 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
         {page === 'import'
           ? <ShipmentImportPage token={account.token} basePath={listPath} jobId={jobId} onSessionEnded={onSessionEnded} />
           : shipmentId
-          ? <ShipmentDetail token={account.token} shipmentId={shipmentId} basePath={listPath} onSessionEnded={onSessionEnded} canEdit={canEdit} viewerCompanyId={account.company?.id ?? null} archive={{ ...archive, onRemoved: message => navigate(listPath, { state: { shipmentRemoved: message } }) }} />
+          ? <ShipmentDetailEntry key={`${account.id}:${account.company?.id ?? 'none'}:${shipmentId}`} viewer={account}
+              shipmentId={shipmentId} basePath={listPath} onSessionEnded={onSessionEnded} canEdit={canEdit}
+              archive={{ ...archive, onRemoved: message => navigate(listPath, { state: { shipmentRemoved: message } }) }}
+              controlledScenarioEnabled={controlledScenarioEnabled} />
           : <>
             <p className="eyebrow">{copy.eyebrow}</p>
             <h2>{copy.title}</h2>

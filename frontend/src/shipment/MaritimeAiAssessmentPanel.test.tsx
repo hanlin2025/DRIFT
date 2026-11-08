@@ -67,8 +67,8 @@ function withBusinessSnapshot(snapshot: MaritimeAiBusinessSnapshot = availableBu
   };
 }
 
-function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn()) {
-  return { ...render(<MaritimeAiAssessmentPanel assessments={[value]} unavailable={false} generating={false} onGenerate={onGenerate} />), onGenerate };
+function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn(), scenarioMode = false) {
+  return { ...render(<MaritimeAiAssessmentPanel assessments={[value]} unavailable={false} generating={false} onGenerate={onGenerate} scenarioMode={scenarioMode} />), onGenerate };
 }
 
 describe('MaritimeAiAssessmentPanel', () => {
@@ -79,11 +79,33 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(within(evidence).getByText((_, node) => node?.tagName === 'P' && node.textContent === 'MPA vessel-arrival revision · Expected Arrival')).toBeInTheDocument();
     expect(within(evidence).getByText('2026-10-29T01:00:00+08:00 → 2026-10-29T02:00:00+08:00')).toBeInTheDocument();
     expect(within(evidence).getByText('The observed mother-arrival revision is recorded for schedule review.')).toBeInTheDocument();
+    expect(within(evidence).getByText(/Source citations: MPA vessel-arrival revision · Expected Arrival \(evidence mpa-approved\): approved MPA citation/)).toBeInTheDocument();
     expect(within(risk).getByText('The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.')).toBeInTheDocument();
+    expect(within(risk).getByText(/Backend facts: Backend risk calculation/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'AI maritime interpretation' }))
+      .toHaveTextContent('Human review: Verify any cited source alongside the separate backend facts before changing a plan.');
     const details = screen.getByText('Assessment and evidence details').closest('details');
     expect(details).not.toBeNull();
     expect(within(details!).getByText('Generic orientation only; it does not describe business impact.')).toBeInTheDocument();
     expect(screen.queryByText(/What changed|Why it matters/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['ABSTAINED', 'INSUFFICIENT_MODEL_EVIDENCE', 'The assessment abstained; no AI interpretation is shown.'],
+    ['FAILED', 'PROVIDER_UNAVAILABLE', 'AI generation failed; no interpretation is shown.'],
+    ['GENERATED', 'UNSUPPORTED_RESPONSE', 'The generated response did not pass validation; no interpretation is shown.'],
+  ] as const)('explains the %s state without showing an interpretation', (state, validationStatus, explanation) => {
+    const result: MaritimeAiAssessment = {
+      ...assessment,
+      state,
+      validationStatus,
+      interpretation: null,
+      limitation: 'No safe interpretation is available.',
+    };
+    renderPanel(result);
+    expect(screen.getByRole('region', { name: 'No validated interpretation' })).toHaveTextContent(explanation);
+    expect(screen.getByRole('region', { name: 'No validated interpretation' })).toHaveTextContent('No safe interpretation is available.');
+    expect(screen.queryByText(/Provider-generated assessment/)).not.toBeInTheDocument();
   });
 
   it('renders the persisted planned-window snapshot at assessment time with a valid duration', () => {
@@ -239,6 +261,18 @@ describe('MaritimeAiAssessmentPanel', () => {
     expect(within(details).getByText(/business:TRANSSHIPMENT_ARRIVAL_DEADLINE/)).toBeInTheDocument();
     expect(within(details).getByText(/comparison:DELAY_OUTCOME/)).toBeInTheDocument();
     expect(within(details).getByText(/the shipment’s current deadline is not substituted/)).toBeInTheDocument();
+  });
+
+  it('labels a synthetic deadline as scenario-defined instead of importer-confirmed', () => {
+    renderPanel(withBusinessSnapshot(), vi.fn(), true);
+    const business = screen.getByRole('region', { name: 'Business implications' });
+    expect(within(business).getByText('Validated scenario deadline comparison')).toBeInTheDocument();
+    expect(within(business).getByText(/deadline defined for the selected synthetic scenario snapshot/)).toBeInTheDocument();
+    expect(within(business).queryByText('Validated importer deadline comparison')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Scenario business context' });
+    expect(within(details).getByText('Scenario-defined transshipment port')).toBeInTheDocument();
+    expect(within(details).queryByText('Importer-confirmed transshipment port')).not.toBeInTheDocument();
   });
 
   it('displays NO_PREDICTED_IMPACT only when the saved comparison is available with that outcome', () => {
