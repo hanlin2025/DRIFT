@@ -61,6 +61,7 @@ class ShipmentCreationIntegrationTests {
 	@Autowired PlatformTransactionManager transactionManager;
 
 	private String email;
+	private String unassignedEmail;
 	private Long companyId;
 	private Long otherCompanyId;
 	private String companyCode;
@@ -83,30 +84,34 @@ class ShipmentCreationIntegrationTests {
 
 	@AfterEach
 	void cleanUpFixture() {
-		if (companyId == null || otherCompanyId == null) {
-			return;
-		}
 		if (TestTransaction.isActive()) {
 			TestTransaction.flagForRollback();
 			TestTransaction.end();
 		}
-		jdbc.update("""
+		if (companyId != null && otherCompanyId != null) {
+			jdbc.update("""
 				DELETE FROM shipment_risk_alert_deliveries
 				WHERE transition_id IN (
 					SELECT transition.id FROM shipment_risk_transitions transition
 					JOIN shipments shipment ON shipment.id = transition.shipment_id
 					WHERE shipment.company_id IN (?, ?)
 				)
-				""", companyId, otherCompanyId);
-		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
-				companyId, otherCompanyId);
-		jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
-				companyId, otherCompanyId);
-		jdbc.update("DELETE FROM shipments WHERE company_id IN (?, ?)", companyId, otherCompanyId);
-		jdbc.update("DELETE FROM forwarder_importer_relationships WHERE forwarder_company_id IN (?, ?) OR importer_company_id IN (?, ?)",
-				companyId, otherCompanyId, companyId, otherCompanyId);
-		jdbc.update("DELETE FROM users WHERE company_id IN (?, ?) OR email LIKE 'cdg75-unassigned-%'", companyId, otherCompanyId);
-		jdbc.update("DELETE FROM companies WHERE id IN (?, ?)", companyId, otherCompanyId);
+			""", companyId, otherCompanyId);
+			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
+					companyId, otherCompanyId);
+			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
+					companyId, otherCompanyId);
+			jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
+					companyId, otherCompanyId);
+			jdbc.update("DELETE FROM shipments WHERE company_id IN (?, ?)", companyId, otherCompanyId);
+			jdbc.update("DELETE FROM forwarder_importer_relationships WHERE forwarder_company_id IN (?, ?) OR importer_company_id IN (?, ?)",
+					companyId, otherCompanyId, companyId, otherCompanyId);
+			jdbc.update("DELETE FROM users WHERE company_id IN (?, ?)", companyId, otherCompanyId);
+			jdbc.update("DELETE FROM companies WHERE id IN (?, ?)", companyId, otherCompanyId);
+		}
+		if (unassignedEmail != null) {
+			jdbc.update("DELETE FROM users WHERE email = ?", unassignedEmail);
+		}
 	}
 
 	@Test
@@ -248,14 +253,14 @@ class ShipmentCreationIntegrationTests {
 
 	@Test
 	void rejectsAuthenticatedAccountsWithoutACompany() throws Exception {
-		String unassigned = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
+		unassignedEmail = "cdg75-unassigned-" + UUID.randomUUID() + "@example.com";
 		jdbc.update("""
 				INSERT INTO users (full_name, email, password_hash, role_id)
 				SELECT 'Unassigned User', ?, ?, id
 				FROM roles WHERE code = 'FREIGHT_FORWARDER'
-				""", unassigned, passwords.encode("Example123"));
+		""", unassignedEmail, passwords.encode("Example123"));
 
-		create(tokenFor(unassigned), shipment("HBL-2026-005"))
+		create(tokenFor(unassignedEmail), shipment("HBL-2026-005"))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ShipmentCreationForbiddenException.MESSAGE));
 		assertThat(countShipments()).isZero();

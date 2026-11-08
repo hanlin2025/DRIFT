@@ -97,6 +97,8 @@ class ShipmentImporterAccessIntegrationTests {
 				""", forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
 		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?, ?))",
 				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?, ?))",
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
 		jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?, ?))",
 				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
 		jdbc.update("DELETE FROM shipments WHERE company_id IN (?, ?, ?)", forwarderCompanyId, importerCompanyId, unrelatedCompanyId);

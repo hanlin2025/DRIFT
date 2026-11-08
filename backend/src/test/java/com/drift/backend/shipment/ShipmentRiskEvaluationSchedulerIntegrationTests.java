@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -39,12 +42,15 @@ class ShipmentRiskEvaluationSchedulerIntegrationTests {
 
 	private Company company;
 	private UserAccount creator;
+	private Long creatorId;
+	private final List<Long> shipmentIds = new ArrayList<>();
 	private boolean originalEnabled;
 	private int originalBatchSize;
 
 	@BeforeEach
 	void activateRiskAlerts() {
-		cleanupTestData();
+		shipmentIds.clear();
+		creatorId = null;
 		originalEnabled = properties.isEnabled();
 		originalBatchSize = properties.getBatchSize();
 		properties.setEnabled(false);
@@ -55,6 +61,7 @@ class ShipmentRiskEvaluationSchedulerIntegrationTests {
 			creator = users.save(new UserAccount("Sweep creator", "sweep-" + UUID.randomUUID() + "@example.test",
 					"hash", role, company));
 		});
+		creatorId = creator.getId();
 		activation.activate();
 	}
 
@@ -103,7 +110,7 @@ class ShipmentRiskEvaluationSchedulerIntegrationTests {
 	}
 
 	private Long createShipment(boolean archived, ShipmentRiskBaselineMode baselineMode) {
-		return transactions.execute(status -> {
+		Long shipmentId = transactions.execute(status -> {
 			OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
 			Shipment shipment = shipments.saveAndFlush(new Shipment(company, creator, "CDG198-SWEEP-" + UUID.randomUUID(),
 					"A", "B", "C", "Mother", arrival, "Feeder", arrival.plusHours(25)));
@@ -111,21 +118,27 @@ class ShipmentRiskEvaluationSchedulerIntegrationTests {
 			states.saveAndFlush(new ShipmentRiskState(shipment, baselineMode, 1, Instant.now()));
 			return shipment.getId();
 		});
+		shipmentIds.add(shipmentId);
+		return shipmentId;
 	}
 
 	private void cleanupTestData() {
-		String shipmentPattern = "CDG198-SWEEP-%";
-		jdbc.update("""
+		if (!shipmentIds.isEmpty()) {
+			String placeholders = String.join(", ", Collections.nCopies(shipmentIds.size(), "?"));
+			Object[] ids = shipmentIds.toArray();
+			jdbc.update("""
 				DELETE FROM shipment_risk_alert_deliveries
 				WHERE transition_id IN (
 					SELECT transition.id FROM shipment_risk_transitions transition
-					JOIN shipments shipment ON shipment.id = transition.shipment_id
-					WHERE shipment.shipment_reference LIKE ?
+				WHERE transition.shipment_id IN (%s)
 				)
-				""", shipmentPattern);
-		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)",
-				shipmentPattern);
-		jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE ?", shipmentPattern);
-		jdbc.update("DELETE FROM users WHERE email LIKE 'sweep-%@example.test'");
+			""".formatted(placeholders), ids);
+			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (" + placeholders + ")", ids);
+			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN (" + placeholders + ")", ids);
+			jdbc.update("DELETE FROM shipments WHERE id IN (" + placeholders + ")", ids);
+		}
+		if (creatorId != null) {
+			jdbc.update("DELETE FROM users WHERE id = ?", creatorId);
+		}
 	}
 }
