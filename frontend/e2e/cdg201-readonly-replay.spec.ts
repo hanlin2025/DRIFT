@@ -95,7 +95,6 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   for (const key of ['plannedMotherArrivalAt', 'plannedFeederDepartureAt', 'connectionWindow', 'remainingConnectionWindow', 'risk', 'version']) {
     expect(afterBody[key]).toEqual(before[key]);
   }
-
   const noReplay = await request.get(`/api/shipments/${other.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${owner.token}` } });
   expect(noReplay.status()).toBe(200);
   expect((await noReplay.json()).evidence).toBeNull();
@@ -108,6 +107,7 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   expect(await unknown.json()).toEqual({ message: 'Shipment not found' });
 
   await signIn(page, owner);
+  await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
   await page.getByRole('link', { name: `CDG201-KOTA-${suffix}` }).click();
   const panel = page.getByRole('article', { name: 'CDG-201 external arrival evidence' });
   await expect(panel).toBeVisible();
@@ -118,5 +118,23 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   await expect(panel).toContainText('PILOT EAST BOARD GRD A');
   await expect(panel).toContainText('Derived category (display-only): PILOT_GROUND');
   await expect(panel).toContainText('780 → 600 minutes');
+  await expect(panel).toContainText('Illustrative classification:');
   await expect(panel).toContainText('Not the production shipment risk.');
+  const revision = page.getByText('KOTA LARIS, IMO 9351048, has a recorded expected-arrival revision from 2026-10-28 23:00:00 to 2026-10-29 02:00:00, 180 minutes later. This recorded revision is not an actual arrival.');
+  await expect(revision).toBeVisible();
+  await expect(revision).not.toContainText('780');
+  await expect(revision).not.toContainText('booking');
+  const risk = before.risk as { level: string; explanation: string } | null;
+  const riskLabel: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+  if (risk) {
+    await expect(page.getByText(`The connection risk to act on is the one already on this shipment: ${riskLabel[risk.level]}. ${risk.explanation}`)).toBeVisible();
+    await expect(page.getByRole('article', { name: `Shipment CDG201-KOTA-${suffix}` })).toContainText(risk.explanation);
+  } else {
+    await expect(page.getByText('The connection risk on this shipment is not assessed.')).toBeVisible();
+  }
+
+  await page.goto(owner.home);
+  await page.getByRole('link', { name: `CDG201-OTHER-${suffix}` }).click();
+  await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
+  await expect(page.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveCount(0);
 });

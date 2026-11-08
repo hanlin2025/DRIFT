@@ -205,6 +205,8 @@ describe('workspace shipment retrieval', () => {
     expect(listShipments).toHaveBeenCalledWith('session-token');
     expect(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' })).toHaveAttribute('href', '/freight-forwarder/shipments/1');
     expect(screen.queryByRole('figure', { name: 'Planned route' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Recorded arrival change')).not.toBeInTheDocument();
+    expect(screen.queryByText(/recorded expected-arrival revision/)).not.toBeInTheDocument();
     const user = userEvent.setup();
     await user.click(within(rows[0]).getByRole('link', { name: 'HBL-OLDER' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/1');
