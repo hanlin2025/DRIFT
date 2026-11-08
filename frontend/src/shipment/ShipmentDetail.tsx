@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackPoint, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackPoint, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { RecommendationDecisionPanel } from './RecommendationDecisionPanel';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
 import { MaritimeAiAssessmentPanel } from './MaritimeAiAssessmentPanel';
@@ -79,6 +80,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
+  const decisionSeq = useRef(0);
   const refreshNonce = useRef(0);
   const contextKey = `${shipmentId}:${viewerCompanyId ?? ''}:${token}`;
   const [context, setContext] = useState(contextKey);
@@ -453,6 +455,16 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   void reloadHistory();
                   setRefreshCount(value => value + 1);
                 }}
+                onDecision={recorded => {
+                  const seq = ++decisionSeq.current;
+                  setShipment(current => current ? { ...current, recommendationDecision: recorded } : current);
+                  void getShipment(token, shipmentId).then(fresh => {
+                    if (seq !== decisionSeq.current) return;
+                  setShipment(current => current && current.id === fresh.id ? fresh : current);
+                  }).catch((reason: unknown) => {
+                    if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
+                  });
+                }}
                 canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
@@ -520,7 +532,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, trackMode, trackVessel, recordedCutoff, playbackPoints, playbackState, playbackMessage, playbackContext, playbackVesselName, mapContextKey, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, trackMode, trackVessel, recordedCutoff, playbackPoints, playbackState, playbackMessage, playbackContext, playbackVesselName, mapContextKey, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
@@ -533,6 +545,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   refreshing: boolean;
   refreshNote: string | null;
   onRefresh: () => void;
+  onDecision: (decision: RecommendationDecision) => void;
   canEdit: boolean;
   onEdit: () => void;
   action: ReactNode;
@@ -658,6 +671,10 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
+<RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+        decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
+        archived={shipment.status === 'ARCHIVED'}
+        onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
       <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />

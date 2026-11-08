@@ -111,13 +111,13 @@ class SyntheticMultiSourceMaritimeFixtureTest {
 		return new ShipmentDetailResponse(200L, 99L, "DEMO-CONTROLLED-TEST", "Synthetic origin", "Synthetic destination", "Synthetic Multi-source Port",
 				"Synthetic Multi-source Vessel", OffsetDateTime.parse("2026-10-01T05:00:00+08:00"), "9000002", null, null,
 				"Synthetic Multi-source Feeder", OffsetDateTime.parse("2026-10-01T14:00:00+08:00"), null, null, null,
-				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE);
+				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE, null, java.util.List.of());
 	}
 	private static ShipmentDetailResponse unrelatedShipment() { return shipment("9000003", "Synthetic Multi-source Port"); }
 	private static ShipmentDetailResponse shipment(String imo, String port) {
 		return new ShipmentDetailResponse(199L, 99L, "SYNTHETIC-MULTI", "Synthetic origin", "Synthetic destination", port,
 				"Synthetic Multi-source Vessel", OffsetDateTime.parse("2026-10-01T05:00:00+08:00"), imo, null, null,
 				"Synthetic Multi-source Feeder", OffsetDateTime.parse("2026-10-01T14:00:00+08:00"), null, null, null,
-				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE);
+				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE, null, java.util.List.of());
 	}
 }
