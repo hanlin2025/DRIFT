@@ -187,12 +187,14 @@ class ShipmentRecommendationIntegrationTests {
 		assertThat(body.get("remainingConnectionWindow").isNull()).isTrue();
 		JsonNode recommendation = body.get("recommendation");
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.BOTH_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.BOTH_UNAVAILABLE + body.get("delayComparison").get("message").asText());
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").isNull()).isTrue();
 		assertThat(recommendation.get("riskExplanation").isNull()).isTrue();
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText())
+				.isEqualTo(body.get("delayComparison").get("message").asText());
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 		assertThat(body.get("riskContributions").get("assessed").asBoolean()).isFalse();
 		if (mother) {
@@ -209,13 +211,14 @@ class ShipmentRecommendationIntegrationTests {
 
 	private static void assertNotReturned(JsonNode body) {
 		JsonNode recommendation = body.get("recommendation");
+		String detail = body.get("delayComparison").get("message").asText();
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + detail);
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").asText()).isEqualTo(body.get("risk").get("level").asText());
 		assertThat(recommendation.get("riskExplanation").asText()).isEqualTo(body.get("risk").get("explanation").asText());
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(detail);
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 	}
 

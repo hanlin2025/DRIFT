@@ -1,6 +1,9 @@
 import { ApiError } from '../signup/api';
+import { RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 import { shipmentFilterSearchParams, type ShipmentFilters } from './shipmentFilters';
 import { type ShipmentFields } from './validation';
+
+export { IMPACT_NOT_RETURNED, RECOMMENDATION_CODES, RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 
 export type ConnectionWindow = {
   duration: string;
@@ -194,16 +197,6 @@ export type RiskContributions = {
   contributions: [];
 };
 
-export type RecommendationCode =
-  | 'NO_ACTION'
-  | 'MONITOR_CONSTRAINTS'
-  | 'NOTE_TIMING'
-  | 'REVIEW_PLAN'
-  | 'WATCH_CONNECTION'
-  | 'PREPARE_INTERVENTION'
-  | 'CONFIRM_CONNECTION'
-  | 'ACT_ON_CONNECTION';
-
 export type RecommendationImpact = {
   outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT';
   detail: null;
@@ -233,6 +226,47 @@ export type ShipmentRecommendation = {
   riskExplanation: string | null;
   impact: RecommendationImpact;
 };
+
+export type LateArrivalChance = {
+  available: true;
+  probability: number;
+  display: string;
+  label: string;
+  arrivalUsed: string;
+  plannedFeederDepartureUsed: string;
+  plannedWindowInvalid: boolean;
+  unavailableReason: null;
+} | {
+  available: false;
+  probability: null;
+  display: null;
+  label: null;
+  arrivalUsed: null;
+  plannedFeederDepartureUsed: null;
+  plannedWindowInvalid: null;
+  unavailableReason: { code: string; message: string };
+};
+
+export type RecommendationDecisionOutcome = 'APPROVED' | 'MODIFIED' | 'DISMISSED';
+
+export type RecommendationDecision = {
+  outcome: RecommendationDecisionOutcome;
+  recommendationName: string;
+  recommendationWording: string;
+  selectedResponseName: string | null;
+  selectedResponseWording: string | null;
+  decidedByUserId: number;
+  decidedByName: string;
+  decidedAt: string;
+};
+
+export type RecommendationDecisionHistoryEntry = RecommendationDecision & {
+  id: number;
+};
+
+export type RecommendationDecisionRequest =
+  | { outcome: 'APPROVED' | 'DISMISSED' }
+  | { outcome: 'MODIFIED'; selectedResponse: RecommendationCode };
 
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
@@ -374,6 +408,7 @@ export type Shipment = {
   risk: ShipmentRisk | null;
   riskContributions?: RiskContributions | null;
   recommendation?: ShipmentRecommendation | null;
+  lateArrivalChance?: LateArrivalChance | null;
   status: ShipmentStatus | null;
   motherVesselPosition: VesselPosition | null;
   feederVesselPosition: VesselPosition | null;
@@ -395,6 +430,8 @@ export type Shipment = {
   portConditionComparison?: PortConditionComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
+  recommendationDecision?: RecommendationDecision | null;
+  recommendationDecisionHistory?: RecommendationDecisionHistoryEntry[];
 };
 
 export type Cdg201ArrivalEvidence = {
@@ -464,6 +501,24 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   const shipment = asShipment(data);
   if (!shipment) throw new ApiError(UNEXPECTED, 502);
   return shipment;
+}
+
+export async function recordRecommendationDecision(
+  token: string,
+  shipmentId: number,
+  request: RecommendationDecisionRequest,
+): Promise<RecommendationDecision> {
+  const body = request.outcome === 'MODIFIED'
+    ? { outcome: request.outcome, selectedResponse: request.selectedResponse }
+    : { outcome: request.outcome };
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/recommendation-decision`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const decision = parseRecommendationDecision(data);
+  if (!decision) throw new ApiError(UNEXPECTED, 502);
+  return decision;
 }
 
 export async function updateTransshipmentArrivalDeadline(token: string, shipmentId: number, body: {
@@ -829,101 +884,10 @@ function isRiskLevel(value: unknown): value is RiskLevel {
 
 export function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
-    && RISK_LEVELS.includes(value.level)
+    && isRiskLevel(value.level)
     && typeof value.explanation === 'string'
     && value.explanation.trim().length > 0;
 }
-
-const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
-  WINDOW_IN_USE: 'Window in use',
-  REMAINING_DURATION: 'Remaining duration',
-  MISSED_BY: 'Missed by',
-  PLANNED_DURATION: 'Planned duration',
-  PLANNED_WINDOW: 'Planned window',
-  ESTIMATE_NOT_USED: 'Estimate not used',
-};
-
-const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
-  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
-];
-
-function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
-  if (!('riskContributions' in value) || value.riskContributions == null) return null;
-  return parseRiskContributions(value.riskContributions);
-}
-
-function parseRiskContributions(value: unknown): RiskContributions | undefined {
-  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
-  if (value.assessed) {
-    if (value.notAssessed != null) return undefined;
-    const contributions = value.contributions.map(parseContribution);
-    if (contributions.some(contribution => contribution === undefined)) return undefined;
-    const parsed = contributions as RiskContribution[];
-    if (!contributionSet(parsed)) return undefined;
-    return { assessed: true, notAssessed: null, contributions: parsed };
-  }
-  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
-    return undefined;
-  }
-  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
-}
-
-function parseContribution(value: unknown): RiskContribution | undefined {
-  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
-  const code = value.code as RiskContributionCode;
-  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
-    return undefined;
-  }
-  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
-    return undefined;
-  }
-  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
-  return { code, label: value.label, value: value.value };
-}
-
-function contributionSet(contributions: RiskContribution[]): boolean {
-  const codes = contributions.map(contribution => contribution.code);
-  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
-  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
-  if (measured.length !== 1) return false;
-  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
-  return codes.includes('ESTIMATE_NOT_USED') === planned;
-}
-
-const RECOMMENDATION_RESPONSES: Record<RecommendationCode, { label: string; wording: string }> = {
-  NO_ACTION: {
-    label: 'No action',
-    wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
-  },
-  MONITOR_CONSTRAINTS: {
-    label: 'Monitor',
-    wording: 'Monitor the shipment. The connection risk is low, and the prediction affects the importer\'s constraints.',
-  },
-  NOTE_TIMING: {
-    label: 'Note the timing',
-    wording: 'Note the connection timing. The connection risk is medium, and the prediction does not affect the importer\'s constraints.',
-  },
-  REVIEW_PLAN: {
-    label: 'Review the plan',
-    wording: 'Review the transfer plan. The connection risk is medium, and the prediction affects the importer\'s constraints.',
-  },
-  WATCH_CONNECTION: {
-    label: 'Watch the connection',
-    wording: 'Watch the connection. The connection risk is high, and the prediction does not affect the importer\'s constraints.',
-  },
-  PREPARE_INTERVENTION: {
-    label: 'Prepare an intervention',
-    wording: 'Prepare an intervention. The connection risk is high, and the prediction affects the importer\'s constraints.',
-  },
-  CONFIRM_CONNECTION: {
-    label: 'Confirm the connection',
-    wording: 'Confirm the connection plan. The connection risk is critical, and the prediction does not affect the importer\'s constraints.',
-  },
-  ACT_ON_CONNECTION: {
-    label: 'Act on the connection',
-    wording: 'Act on this connection. The connection risk is critical, and the prediction affects the importer\'s constraints.',
-  },
-};
 
 const RECOMMENDATION_FOR: Record<RiskLevel, Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', RecommendationCode>> = {
   LOW: { AFFECTS_CONSTRAINTS: 'MONITOR_CONSTRAINTS', NO_PREDICTED_IMPACT: 'NO_ACTION' },
@@ -984,6 +948,122 @@ function parseRecommendedResponse(value: unknown): RecommendedResponse | undefin
   const expected = RECOMMENDATION_RESPONSES[code];
   if (value.label !== expected.label || value.wording !== expected.wording) return undefined;
   return { code, label: expected.label, wording: expected.wording };
+}
+
+function recommendationDecisionOf(value: Record<string, unknown>): RecommendationDecision | null | undefined {
+  if (!('recommendationDecision' in value) || value.recommendationDecision == null) return null;
+  return parseRecommendationDecision(value.recommendationDecision);
+}
+
+function recommendationDecisionHistoryOf(value: Record<string, unknown>): RecommendationDecisionHistoryEntry[] | undefined {
+  if (!('recommendationDecisionHistory' in value) || value.recommendationDecisionHistory == null) return [];
+  if (!Array.isArray(value.recommendationDecisionHistory)) return undefined;
+  const history: RecommendationDecisionHistoryEntry[] = [];
+  for (const entry of value.recommendationDecisionHistory) {
+    const parsed = parseRecommendationDecisionHistory(entry);
+    if (parsed === undefined) return undefined;
+    history.push(parsed);
+  }
+  return history;
+}
+
+function parseRecommendationDecisionHistory(value: unknown): RecommendationDecisionHistoryEntry | undefined {
+  if (!isRecord(value) || !isFiniteNumber(value.id) || value.id <= 0) return undefined;
+  const decision = parseRecommendationDecision(value);
+  if (decision === undefined) return undefined;
+  return { id: value.id, ...decision };
+}
+
+function parseRecommendationDecision(value: unknown): RecommendationDecision | undefined {
+  if (!isRecord(value)) return undefined;
+  const outcome = value.outcome;
+  if (outcome !== 'APPROVED' && outcome !== 'MODIFIED' && outcome !== 'DISMISSED') return undefined;
+  if (!isPresentText(value.recommendationName) || !isPresentText(value.recommendationWording)) return undefined;
+  if (!isFiniteNumber(value.decidedByUserId) || value.decidedByUserId <= 0) return undefined;
+  if (!isPresentText(value.decidedByName) || !isPresentText(value.decidedAt)) return undefined;
+  const selectedName = value.selectedResponseName;
+  const selectedWording = value.selectedResponseWording;
+  if (outcome === 'MODIFIED') {
+    if (!isPresentText(selectedName) || !isPresentText(selectedWording)) return undefined;
+    if (selectedName.trim() === value.recommendationName.trim()) return undefined;
+    return {
+      outcome,
+      recommendationName: value.recommendationName,
+      recommendationWording: value.recommendationWording,
+      selectedResponseName: selectedName,
+      selectedResponseWording: selectedWording,
+      decidedByUserId: value.decidedByUserId,
+      decidedByName: value.decidedByName,
+      decidedAt: value.decidedAt,
+    };
+  }
+  if (selectedName != null || selectedWording != null) return undefined;
+  return {
+    outcome,
+    recommendationName: value.recommendationName,
+    recommendationWording: value.recommendationWording,
+    selectedResponseName: null,
+    selectedResponseWording: null,
+    decidedByUserId: value.decidedByUserId,
+    decidedByName: value.decidedByName,
+    decidedAt: value.decidedAt,
+  };
+}
+
+const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
+  WINDOW_IN_USE: 'Window in use',
+  REMAINING_DURATION: 'Remaining duration',
+  MISSED_BY: 'Missed by',
+  PLANNED_DURATION: 'Planned duration',
+  PLANNED_WINDOW: 'Planned window',
+  ESTIMATE_NOT_USED: 'Estimate not used',
+};
+
+const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
+  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
+];
+
+function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
+  if (!('riskContributions' in value) || value.riskContributions == null) return null;
+  return parseRiskContributions(value.riskContributions);
+}
+
+function parseRiskContributions(value: unknown): RiskContributions | undefined {
+  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
+  if (value.assessed) {
+    if (value.notAssessed != null) return undefined;
+    const contributions = value.contributions.map(parseContribution);
+    if (contributions.some(contribution => contribution === undefined)) return undefined;
+    const parsed = contributions as RiskContribution[];
+    if (!contributionSet(parsed)) return undefined;
+    return { assessed: true, notAssessed: null, contributions: parsed };
+  }
+  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
+    return undefined;
+  }
+  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
+}
+
+function parseContribution(value: unknown): RiskContribution | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
+  const code = value.code as RiskContributionCode;
+  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
+    return undefined;
+  }
+  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
+    return undefined;
+  }
+  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
+  return { code, label: value.label, value: value.value };
+}
+
+function contributionSet(contributions: RiskContribution[]): boolean {
+  const codes = contributions.map(contribution => contribution.code);
+  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
+  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
+  if (measured.length !== 1) return false;
+  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
+  return codes.includes('ESTIMATE_NOT_USED') === planned;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -1157,6 +1237,8 @@ function asShipment(value: unknown): Shipment | null {
   if (aisFeed === undefined) return null;
   const arrivalComparison = arrivalComparisonOf(value);
   if (arrivalComparison === undefined) return null;
+  const lateArrivalChance = lateArrivalChanceOf(value, arrivalComparison);
+  if (lateArrivalChance === undefined) return null;
   const transshipmentArrivalDeadline = deadlineOf(value);
   if (transshipmentArrivalDeadline === undefined) return null;
   const delayComparison = delayComparisonOf(value);
@@ -1166,6 +1248,10 @@ function asShipment(value: unknown): Shipment | null {
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
+  const recommendationDecision = recommendationDecisionOf(value);
+  if (recommendationDecision === undefined) return null;
+  const recommendationDecisionHistory = recommendationDecisionHistoryOf(value);
+  if (recommendationDecisionHistory === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -1183,7 +1269,7 @@ function asShipment(value: unknown): Shipment | null {
     remainingConnectionWindow,
     risk: risk ?? null,
     riskContributions,
-    recommendation,
+    lateArrivalChance,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
@@ -1205,6 +1291,9 @@ function asShipment(value: unknown): Shipment | null {
     portConditionComparison,
     updatedAt,
     updatedByName,
+    recommendation,
+    recommendationDecision,
+    recommendationDecisionHistory,
   };
 }
 
@@ -1450,6 +1539,51 @@ function availableComparison(value: Record<string, unknown>): ArrivalComparison 
     possiblyOutdated: value.possiblyOutdated,
     unavailableReason: null,
   };
+}
+
+const CHANCE_FIELDS = ['probability', 'display', 'label', 'arrivalUsed', 'plannedFeederDepartureUsed', 'plannedWindowInvalid'] as const;
+
+// The chance is shown as returned. The arrival and departure it used must be the ones on this same response,
+// otherwise the page would show a chance next to times it was not calculated from.
+function lateArrivalChanceOf(value: Record<string, unknown>, arrivalComparison: ArrivalComparison | null): LateArrivalChance | null | undefined {
+  if (!('lateArrivalChance' in value) || value.lateArrivalChance == null) return null;
+  const chance = value.lateArrivalChance;
+  if (!isRecord(chance) || typeof chance.available !== 'boolean') return undefined;
+  if (!chance.available) {
+    const reason = chance.unavailableReason;
+    if (!CHANCE_FIELDS.every(field => chance[field] == null) || !isUnavailableReason(reason)) return undefined;
+    return {
+      available: false,
+      probability: null,
+      display: null,
+      label: null,
+      arrivalUsed: null,
+      plannedFeederDepartureUsed: null,
+      plannedWindowInvalid: null,
+      unavailableReason: { code: reason.code, message: reason.message },
+    };
+  }
+  if (chance.unavailableReason !== null || !isFiniteNumber(chance.probability) || chance.probability < 0 || chance.probability > 1
+    || !isChanceDisplay(chance.display) || !isPresentText(chance.label) || !isPresentText(chance.arrivalUsed)
+    || !isPresentText(chance.plannedFeederDepartureUsed) || typeof chance.plannedWindowInvalid !== 'boolean') return undefined;
+  if (chance.arrivalUsed !== arrivalComparison?.estimatedArrivalAt) return undefined;
+  if (chance.plannedFeederDepartureUsed !== value.plannedFeederDepartureAt) return undefined;
+  return {
+    available: true,
+    probability: chance.probability,
+    display: chance.display,
+    label: chance.label,
+    arrivalUsed: chance.arrivalUsed,
+    plannedFeederDepartureUsed: chance.plannedFeederDepartureUsed,
+    plannedWindowInvalid: chance.plannedWindowInvalid,
+    unavailableReason: null,
+  };
+}
+
+function isChanceDisplay(value: unknown): value is string {
+  if (value === '<5%' || value === '>95%') return true;
+  const percent = typeof value === 'string' ? /^([1-9][0-9]?)%$/.exec(value) : null;
+  return percent !== null && Number(percent[1]) % 5 === 0;
 }
 
 function isUnavailableReason(value: unknown): value is { code: string; message: string } {
