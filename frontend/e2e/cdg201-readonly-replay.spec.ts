@@ -95,9 +95,11 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   for (const key of ['plannedMotherArrivalAt', 'plannedFeederDepartureAt', 'connectionWindow', 'remainingConnectionWindow', 'risk', 'version']) {
     expect(afterBody[key]).toEqual(before[key]);
   }
-  const noReplay = await request.get(`/api/shipments/${other.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${owner.token}` } });
-  expect(noReplay.status()).toBe(200);
-  expect((await noReplay.json()).evidence).toBeNull();
+  const noReplayEnvelope = await request.get(`/api/shipments/${other.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${owner.token}` } });
+  expect(noReplayEnvelope.status()).toBe(200);
+  const noReplayBody = await noReplayEnvelope.json() as { readOnlyReplay: boolean; evidence: unknown };
+  expect(noReplayBody.readOnlyReplay).toBe(true);
+  expect(noReplayBody.evidence).toBeNull();
 
   const forbidden = await request.get(`/api/shipments/${kota.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${outsider.token}` } });
   expect(forbidden.status()).toBe(403);
@@ -105,6 +107,12 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   const unknown = await request.get('/api/shipments/999999999/cdg201-arrival-evidence', { headers: { Authorization: `Bearer ${owner.token}` } });
   expect(unknown.status()).toBe(404);
   expect(await unknown.json()).toEqual({ message: 'Shipment not found' });
+
+  const storedBeforeOpen = {
+    states: sql('SELECT COUNT(*) FROM shipment_risk_states'),
+    transitions: sql('SELECT COUNT(*) FROM shipment_risk_transitions'),
+    deliveries: sql('SELECT COUNT(*) FROM shipment_risk_alert_deliveries'),
+  };
 
   await signIn(page, owner);
   await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
@@ -137,4 +145,10 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   await page.getByRole('link', { name: `CDG201-OTHER-${suffix}` }).click();
   await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
   await expect(page.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveCount(0);
+
+  const opened = await request.get(`/api/shipments/${kota.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+  expect((await opened.json() as Record<string, unknown>).risk).toEqual(before.risk);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_states')).toBe(storedBeforeOpen.states);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_transitions')).toBe(storedBeforeOpen.transitions);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_alert_deliveries')).toBe(storedBeforeOpen.deliveries);
 });
