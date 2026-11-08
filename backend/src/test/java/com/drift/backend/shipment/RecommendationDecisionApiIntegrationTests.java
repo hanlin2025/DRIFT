@@ -330,6 +330,7 @@ class RecommendationDecisionApiIntegrationTests {
 		assertThat(decisionCount(shipmentId)).isEqualTo(1);
 
 		Long importerId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, "STRAITS_FRESH_DEMO");
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -547,6 +548,7 @@ class RecommendationDecisionApiIntegrationTests {
 				.isEqualTo(JsonPath.<String>read(stored, "$.recommendationDecisionHistory[0].decidedAt"));
 
 		Long importerId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, "STRAITS_FRESH_DEMO");
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

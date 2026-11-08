@@ -12,8 +12,11 @@ import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
+import com.drift.backend.company.ForwarderImporterRelationship;
+import com.drift.backend.company.ForwarderImporterRelationshipRepository;
 import com.drift.backend.shipment.exception.InvalidImporterOrganisationException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.UnauthorizedImporterLinkException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.history.ShipmentHistoryRecorder;
@@ -26,15 +29,18 @@ public class ShipmentLinkService {
 	private final ShipmentRepository shipments;
 	private final UserAccountRepository users;
 	private final CompanyRepository companies;
+	private final ForwarderImporterRelationshipRepository relationships;
 	private final ShipmentDetailAssembler details;
 	private final EntityManager entityManager;
 	private final ShipmentHistoryRecorder history;
 
 	public ShipmentLinkService(ShipmentRepository shipments, UserAccountRepository users, CompanyRepository companies,
-			ShipmentDetailAssembler details, EntityManager entityManager, ShipmentHistoryRecorder history) {
+			ForwarderImporterRelationshipRepository relationships, ShipmentDetailAssembler details,
+			EntityManager entityManager, ShipmentHistoryRecorder history) {
 		this.shipments = shipments;
 		this.users = users;
 		this.companies = companies;
+		this.relationships = relationships;
 		this.details = details;
 		this.entityManager = entityManager;
 		this.history = history;
@@ -83,10 +89,14 @@ public class ShipmentLinkService {
 		if (importerCompanyId == null) {
 			return null;
 		}
-		return companies.findById(importerCompanyId)
+		Company importer = companies.findById(importerCompanyId)
 				.filter(Company::isActive)
 				.filter(company -> !company.getId().equals(ownerId))
 				.orElseThrow(InvalidImporterOrganisationException::new);
+		relationships.findByPairForUpdate(ownerId, importer.getId())
+				.filter(ForwarderImporterRelationship::isActive)
+				.orElseThrow(UnauthorizedImporterLinkException::new);
+		return importer;
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {

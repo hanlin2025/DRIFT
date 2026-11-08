@@ -107,6 +107,13 @@ test('an importer saves, reloads, updates, and clears a transshipment arrival de
     expect(created.status(), await created.text()).toBe(201);
     const shipmentId = (await created.json()).id as number;
     const importerCompanyId = Number(sql("SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO'"));
+    sql(`INSERT INTO forwarder_importer_relationships
+      (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+    SELECT shipment.company_id, ${importerCompanyId}, TRUE, NOW(), actor.id, NOW(), actor.id
+    FROM shipments shipment JOIN users actor ON actor.company_id = shipment.company_id
+    WHERE shipment.id = ${shipmentId} ORDER BY actor.id LIMIT 1
+    ON CONFLICT (forwarder_company_id, importer_company_id)
+    DO UPDATE SET active = TRUE, updated_at = NOW(), updated_by_user_id = EXCLUDED.updated_by_user_id;`);
     const linked = await request.patch(`/api/shipments/${shipmentId}/link-importer`, {
       headers: { Authorization: `Bearer ${forwarder.token}` },
       data: { importerCompanyId },

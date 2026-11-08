@@ -226,6 +226,7 @@ class PortConditionComparisonIntegrationTests {
 		assertThat(count("shipment_risk_alert_deliveries")).isEqualTo(deliveries);
 		assertThat(count("shipment_risk_transitions")).isEqualTo(transitions);
 
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, id, importerCompanyId);
 		JsonNode linked = json.readTree(mvc.perform(patch("/api/shipments/" + id + "/link-importer")
 				.header("Authorization", "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)
