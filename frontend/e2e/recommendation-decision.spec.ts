@@ -307,7 +307,12 @@ test('a linked importer sees the same current decision', {
     const shipment = await createShipment(request, owner.token);
     await signIn(page, owner.email, '/freight-forwarder');
     await openShipment(page, 'freight-forwarder', shipment);
+    const recorded = page.waitForResponse(response =>
+      response.request().method() === 'PATCH' && response.url().includes('/recommendation-decision'));
     await page.getByRole('button', { name: 'Approve' }).click();
+    const response = await recorded;
+    expect(response.status(), await response.text()).toBe(200);
+    expect(response.request().postDataJSON()).toEqual({ outcome: 'APPROVED' });
     const decision = page.getByRole('region', { name: 'Current decision' });
     await expect(decision.getByText('Approved', { exact: true })).toBeVisible();
     const when = await decision.locator('time').getAttribute('datetime');

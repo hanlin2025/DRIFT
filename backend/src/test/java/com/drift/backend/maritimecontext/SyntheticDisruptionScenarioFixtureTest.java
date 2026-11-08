@@ -232,8 +232,27 @@ class SyntheticDisruptionScenarioFixtureTest {
 		return new ShipmentDetailResponse(1L, 1L, request.shipmentReference(), request.origin(), request.destination(), request.transshipmentPort(),
 				request.motherVessel(), request.plannedMotherArrivalAt(), request.motherVesselImo(), request.motherVesselMmsi(), request.motherVesselOperator(),
 				request.feederVessel(), request.plannedFeederDepartureAt(), request.feederVesselImo(), request.feederVesselMmsi(), request.feederVesselOperator(),
-				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				null, null, null, null, ShipmentStatus.ACTIVE, null, java.util.List.of());
+				Instant.EPOCH, 0L,
+				null, // connectionWindow
+				null, // remainingConnectionWindow
+				null, // risk
+				null, // assessmentExplanation
+				null, // riskContributions
+				null, // recommendation
+				null, // lateArrivalChance
+				null, // motherVesselPosition
+				null, // motherVesselNameWarning
+				null, // feederVesselPosition
+				null, // feederVesselNameWarning
+				null, // motherOperationalState
+				null, // feederOperationalState
+				null, // aisFeed
+				null, // portConditionComparison
+				null, // arrivalComparison
+				null, // transshipmentArrivalDeadline
+				null, // delayComparison
+				null, // importer
+				ShipmentStatus.ACTIVE, null, List.of());
 	}
 
 	private static ShipmentDetailResponse withReference(ShipmentDetailResponse detail, String reference) {
@@ -241,7 +260,7 @@ class SyntheticDisruptionScenarioFixtureTest {
 				detail.motherVessel(), detail.plannedMotherArrivalAt(), detail.motherVesselImo(), detail.motherVesselMmsi(), detail.motherVesselOperator(),
 				detail.feederVessel(), detail.plannedFeederDepartureAt(), detail.feederVesselImo(), detail.feederVesselMmsi(), detail.feederVesselOperator(),
 				detail.createdAt(), detail.version(), detail.connectionWindow(), detail.remainingConnectionWindow(), detail.risk(), detail.assessmentExplanation(),
-				detail.riskContributions(), detail.recommendation(), detail.motherVesselPosition(), detail.motherVesselNameWarning(),
+				detail.riskContributions(), detail.recommendation(), detail.lateArrivalChance(), detail.motherVesselPosition(), detail.motherVesselNameWarning(),
 				detail.feederVesselPosition(), detail.feederVesselNameWarning(), detail.motherOperationalState(), detail.feederOperationalState(),
 				detail.aisFeed(), detail.portConditionComparison(), detail.arrivalComparison(), detail.transshipmentArrivalDeadline(), detail.delayComparison(),
 				detail.importer(), detail.status(), detail.recommendationDecision(), detail.recommendationDecisionHistory());
