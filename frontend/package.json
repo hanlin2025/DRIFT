@@ -18,6 +18,7 @@
     "test:e2e:import": "node ../scripts/run-shipment-import.mjs",
     "test:e2e:assignment": "node ../scripts/run-assignment-isolation.mjs",
     "test:e2e:detail": "node ../scripts/run-shipment-detail.mjs",
+    "test:e2e:recommendation-decision": "node ../scripts/run-recommendation-decision.mjs",
     "test:e2e:archive": "node ../scripts/run-shipment-archive.mjs",
     "test:e2e:profile": "node ../scripts/run-profile.mjs",
     "test:e2e:vessel-details": "node ../scripts/run-vessel-details.mjs",
@@ -28,7 +29,8 @@
     "test:e2e:account-reactivation": "node ../scripts/run-account-reactivation.mjs",
     "test:e2e:deadline": "node ../scripts/run-transshipment-arrival-deadline.mjs",
     "test:e2e:delay-comparison": "node ../scripts/run-delay-comparison.mjs",
-    "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
+    "test:e2e:history": "node ../scripts/run-shipment-history.mjs",
+    "test:e2e:late-arrival-chance": "node ../scripts/run-late-arrival-chance.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
