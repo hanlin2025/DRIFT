@@ -71,8 +71,10 @@ public class Invitation {
 		consumedAt = now;
 	}
 
+	public Long getId() { return id; }
 	public String getEmail() { return email; }
 	public Company getCompany() { return company; }
 	public Role getRole() { return role; }
 	public Instant getExpiresAt() { return expiresAt; }
+	public InvitationStatus getStatus() { return status; }
 }

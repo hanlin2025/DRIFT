@@ -5,6 +5,7 @@ import { clearSession, endSession, homePath, isExpired, readSession, sessionHasE
 import { ApiError } from '../signup/api';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
 import { InviteColleague } from './InviteColleague';
+import { PendingInvitations } from './PendingInvitations';
 import { ReactivateUser } from './ReactivateUser';
 import { RemoveUser } from './RemoveUser';
 
@@ -218,6 +219,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
           </form>
         ) : null}
         {users !== null ? <InviteColleague token={account.token} organisations={organisations} roles={roles} onSessionEnded={onSessionEnded} /> : null}
+        {users !== null ? <PendingInvitations token={account.token} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
         {users !== null ? <RemovalHistory removals={removals} /> : null}
       </main>

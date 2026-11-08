@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -57,6 +58,15 @@ public class AdminInvitationService {
 		this.ttl = ttl;
 	}
 
+	@Transactional(readOnly = true)
+	public List<ManagedInvitationResponse> pending(com.drift.backend.account.authentication.AuthenticatedUser principal) {
+		UserAccount admin = managingAdmin(principal);
+		Instant now = clock.instant();
+		return invitations.findPendingByCompany(admin.getCompany().getId()).stream()
+				.map(invitation -> ManagedInvitationResponse.from(invitation, now))
+				.toList();
+	}
+
 	@Transactional
 	public InvitationIssuedResponse invite(com.drift.backend.account.authentication.AuthenticatedUser principal,
 			InviteColleagueRequest request) {
@@ -98,6 +108,18 @@ public class AdminInvitationService {
 			throw new InvitationDeliveryException();
 		}
 		return InvitationIssuedResponse.from(invitation);
+	}
+
+	private UserAccount managingAdmin(com.drift.backend.account.authentication.AuthenticatedUser principal) {
+		UserAccount admin = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		if (admin.getRole() != Role.ADMIN) {
+			throw new com.drift.backend.account.admin.exception.AssignmentForbiddenException();
+		}
+		Company organisation = admin.getCompany();
+		if (organisation == null || !organisation.isActive()) {
+			throw new InvitationManagementForbiddenException();
+		}
+		return admin;
 	}
 
 	private static Role role(String code) {

@@ -7,3 +7,5 @@ The message is sent through the local Mailpit mailbox (`localhost:1025`, web vie
 An invitation lasts seven days unless `INVITATION_TTL` is set. `INVITATION_LINK_BASE_URL` defaults to `http://localhost:5173/signup`, and `INVITATION_FROM` defaults to `noreply@localhost`.
 
 Someone who is not an administrator, or an administrator choosing another organisation, cannot send the invitation. An expired, revoked, or already used code cannot register an account.
+
+The same administrator can list the pending invitations for that organisation. The list shows the invited email, role, organisation and expiry. An invitation that is still pending after its expiry is shown as expired. Consumed invitations, invitations for another organisation, and the invitation code are omitted. An administrator who cannot send, someone who is not an administrator, and a signed-out caller cannot load the list. An authenticated refusal is 403. An organisation with nothing pending is an empty list. Retrying a failed load does not change an invitation.
