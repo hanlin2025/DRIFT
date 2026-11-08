@@ -42,10 +42,13 @@ public class ShipmentController {
 
 	private final ShipmentService shipmentService;
 	private final VesselTrackService vesselTracks;
+	private final RecommendationDecisionService decisions;
 
-	public ShipmentController(ShipmentService shipmentService, VesselTrackService vesselTracks) {
+	public ShipmentController(ShipmentService shipmentService, VesselTrackService vesselTracks,
+			RecommendationDecisionService decisions) {
 		this.shipmentService = shipmentService;
 		this.vesselTracks = vesselTracks;
+		this.decisions = decisions;
 	}
 
 	@GetMapping("/api/shipments")
@@ -100,10 +103,16 @@ public class ShipmentController {
 			+ "and the latest retained AIS position for each vessel name. "
 			+ "Risk uses the remaining window when the estimate can be used, and otherwise the planned window. "
 			+ "The same read returns the contributions that produced that risk. They are not stored, and reading them does not send an alert. "
+			+ "The current recommendation decision is included when one has been recorded. "
+			+ "recommendationDecisionHistory lists every accepted decision for that shipment, newest decidedAt first and then highest id, "
+			+ "including the recommendation snapshot, the selected response when modified, the actor id, the actor name at that time, and the server time. "
+			+ "It is empty when no decision is stored. A company that cannot view the shipment receives no history. "
 			+ "The same read includes the evidence, the assumptions, and the confidence for that risk. They stay distinct from the contributions, they are calculated when the shipment is read and are not stored, and reading them does not send an alert. "
 			+ "An assessment with no risk names the missing planned time and does not include a limited confidence. "
-			+ "The same read returns one recommendation from that connection risk and the impact on this read. "
-			+ "The impact assessment is not returned here, so the recommendation is unavailable and names that reason. "
+			+ "The same read returns one recommendation from that connection risk and the delay comparison on this read. "
+			+ "A completed comparison that meets the recorded deadline has no predicted impact. "
+			+ "A completed comparison that exceeds that deadline affects the importer's constraints. "
+			+ "A missing, stale, or incompatible comparison leaves the impact unavailable and names that reason. "
 			+ "It is not stored. Reading it does not send an alert and does not perform the response. "
 			+ "An archived shipment the viewer can open receives the same recommendation. "
 			+ "The same read returns the port-condition comparison for the mother vessel at the transshipment port, using that vessel's latest retained report and its own earlier reports near that port. "
@@ -309,6 +318,63 @@ public class ShipmentController {
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(shipmentService.update(user, shipmentId, body));
+	}
+
+	@PatchMapping("/api/shipments/{shipmentId}/recommendation-decision")
+	@Operation(summary = "Record the current recommendation decision", description = "Accepts approval, modification, or dismissal of the recommendation on this read. "
+			+ "The stored decision replaces any current decision for the shipment and keeps the outcome, the recommendation it was made against, the actor, and the time. "
+			+ "The same accepted decision appends one history row with that persisted snapshot, the decision-time actor name, and the same server time. "
+			+ "A repeated outcome appends another row. A rejected submission leaves the current row and the history unchanged. "
+			+ "A modification also stores the chosen response, which is another response from the recommendation set. "
+			+ "An unknown shipment is not found. An unavailable recommendation is rejected and stores nothing. "
+			+ "A client-supplied time is ignored. "
+			+ "Anyone who can view the shipment may decide, including a linked importer. A company that cannot view it is forbidden, and nothing is stored. "
+			+ "This endpoint does not perform the recommended action and does not send mail.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+				@ApiResponse(responseCode = "200", description = "Current decision recorded", content = @Content(
+						mediaType = "application/json", schema = @Schema(implementation = RecommendationDecisionResponse.class), examples = @ExampleObject(value = """
+								{"outcome":"APPROVED","recommendationName":"No action","recommendationWording":"No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.","selectedResponseName":null,"selectedResponseWording":null,"decidedByUserId":4,"decidedByName":"Ada Lee","decidedAt":"2026-10-28T06:00:00Z"}
+								"""))),
+				@ApiResponse(responseCode = "400", description = "Outcome is missing or unknown, a modification has no selected response, or an approval or dismissal includes one", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment information is missing or invalid","errors":{"selectedResponse":"A modification needs the selected response"}}
+								"""))),
+				@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Your session has ended. Log in again."}
+								"""))),
+				@ApiResponse(responseCode = "403", description = "Account has no active company, or the company cannot view this shipment", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "No active company", value = """
+										{"message":"Your account must belong to an active company to view shipments"}
+										"""),
+								@ExampleObject(name = "Another company", value = """
+										{"message":"You do not have access to this shipment"}
+										""") })),
+				@ApiResponse(responseCode = "404", description = "No shipment with this id", content = @Content(
+						mediaType = "application/json", examples = @ExampleObject(value = """
+								{"message":"Shipment not found"}
+								"""))),
+				@ApiResponse(responseCode = "409", description = "The recommendation is unavailable, or the shipment is archived", content = @Content(
+						mediaType = "application/json", examples = {
+								@ExampleObject(name = "Unavailable", value = """
+										{"message":"An unavailable recommendation is not stored."}
+										"""),
+								@ExampleObject(name = "Archived", value = """
+										{"message":"An archived shipment does not accept a new decision."}
+										""") })) })
+	public ResponseEntity<RecommendationDecisionResponse> decide(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Identifier of the shipment", example = "42") @PathVariable Long shipmentId,
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = RecommendationDecisionRequest.class)))
+			@Valid @RequestBody RecommendationDecisionRequest request) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+				.body(decisions.decide(user, shipmentId, request));
 	}
 
 	@PatchMapping("/api/shipments/{shipmentId}/status")
