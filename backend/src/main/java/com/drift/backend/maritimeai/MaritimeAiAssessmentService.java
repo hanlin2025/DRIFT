@@ -128,8 +128,10 @@ public class MaritimeAiAssessmentService {
 					MaritimeAiClient.MaritimeAiClientResult.unavailable("BASELINE has no model interpretation."),
 					"The baseline snapshot intentionally has no AI interpretation.");
 		}
-		if (!(client instanceof ConfiguredMaritimeAiClient)) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
-				"REAL_PROVIDER_REQUIRED", null, "A configured real inference provider is required for scenario interpretation.");
+		boolean explicitOfflineScenarioStub = client instanceof ControlledScenarioReplayAiClient;
+		if (!(client instanceof ConfiguredMaritimeAiClient) && !explicitOfflineScenarioStub) return scenarioResult(
+				MaritimeAiGenerationState.ABSTAINED, "REAL_PROVIDER_REQUIRED", null,
+				"A configured inference provider or the explicitly enabled controlled scenario stub is required.");
 		if (input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
 			return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "SYNTHETIC_EVIDENCE_REQUIRED", null,
 					"Only synthetic scenario evidence can be sent for this interpretation.");
@@ -140,6 +142,13 @@ public class MaritimeAiAssessmentService {
 		if (eligible.isEmpty()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"INSUFFICIENT_EVIDENCE", MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved evidence."),
 				"No sufficient, current synthetic evidence is available for inference.");
+		if (explicitOfflineScenarioStub
+				&& ((ControlledScenarioReplayAiClient) client).lacksRevisionForAvailableComparison(eligibleInput)) {
+			return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE",
+					MaritimeAiClient.MaritimeAiClientResult.unavailable(
+							"The controlled scenario lacks the eligible schedule revision needed to ground its available comparison."),
+					"The controlled scenario lacks eligible schedule revision evidence; no interpretation is generated.");
+		}
 		boolean scenarioV16 = client instanceof ConfiguredMaritimeAiClient configured
 				&& configured.usesScenarioV16(eligibleInput);
 		if (scenarioV16) {
