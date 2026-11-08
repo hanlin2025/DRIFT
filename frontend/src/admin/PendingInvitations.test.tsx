@@ -39,7 +39,7 @@ describe('pending invitations', () => {
     expect(screen.getByText('Pending')).toBeInTheDocument();
     expect(screen.getByText('late@example.com')).toBeInTheDocument();
     expect(screen.getByText('Expired')).toBeInTheDocument();
-    expect(screen.getByText(/Expires/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Expires/)).toHaveLength(2);
     expect(document.body.textContent).not.toContain('plain-invitation-token');
   });
 
