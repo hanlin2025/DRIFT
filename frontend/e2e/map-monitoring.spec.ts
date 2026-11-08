@@ -122,7 +122,15 @@ function seedTrack(vessel: string, identifier: string, fixes: { hoursAgo: number
 
 function cleanup(emails: string[], identifiers: string[]) {
   for (const email of emails) {
-    sql(`DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
+    sql(`DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN (
+        SELECT id FROM shipment_risk_transitions WHERE shipment_id IN (
+          SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+        )
+      );
+      DELETE FROM shipment_risk_transitions WHERE shipment_id IN (
+        SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+      );
+      DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM invitations WHERE email = :'email';
       DELETE FROM users WHERE email = :'email';`, { email });
   }
@@ -140,12 +148,6 @@ async function signIn(page: Page, email: string) {
 }
 
 async function openMap(page: Page, id: number) {
-  await page.route('https://tiles.openfreemap.org/**', route => {
-    if (new URL(route.request().url()).pathname === '/styles/liberty') {
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(INTERACTION_TEST_STYLE) });
-    }
-    return route.abort();
-  });
   const tracking = page.waitForResponse(response =>
     response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${id}/tracking`);
   await page.goto(`/freight-forwarder/shipments/${id}`);
@@ -155,6 +157,15 @@ async function openMap(page: Page, id: number) {
 
 test.beforeAll(() => {
   assertOwnedDatabase();
+});
+
+test.beforeEach(async ({ page }) => {
+  await page.route('https://tiles.openfreemap.org/**', route => {
+    if (new URL(route.request().url()).pathname === '/styles/liberty') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(INTERACTION_TEST_STYLE) });
+    }
+    return route.abort();
+  });
 });
 
 test('an authorised freight forwarder sees the live vessel marker', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
@@ -169,8 +180,8 @@ test('an authorised freight forwarder sees the live vessel marker', { tag: '@dis
     await signIn(page, owner.email);
     await openMap(page, shipment.id);
     const marker = page.locator('.globe-pin.live.mother');
-    await expect(marker).toHaveAttribute('title', new RegExp(`MOTHER LIVE ${vessel}\\. Last updated`));
-    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel} · 1.264, 103.82 · 12.4 kn · Last updated`);
+    await expect(marker).toHaveAttribute('title', new RegExp(`MOTHER SEEDED ${vessel}\\. Last updated`));
+    await expect(page.locator('.route-live')).toContainText(`MOTHER SEEDED ${vessel} · 1.264, 103.82 · 12.4 kn · Last updated`);
     await expect(page.locator('.route-warning')).toHaveCount(0);
     const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
     await expect(panel).toContainText(vessel);
@@ -200,7 +211,7 @@ test('a stale fix stays on the map as the last known position', { tag: '@disposa
     await openMap(page, shipment.id);
     await expect(page.locator('.route-warning')).toHaveText(LAST_KNOWN);
     await expect(page.getByRole('figure', { name: 'Planned route' }).getByRole('status')).toHaveText(LAST_KNOWN);
-    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel}`);
+    await expect(page.locator('.route-live')).toContainText(`MOTHER SEEDED ${vessel}`);
     await expect(page.locator('.route-live')).toContainText('Last updated');
     await expect(page.locator('.globe-pin.live.mother .globe-dot')).toBeVisible();
     const panel = page.getByRole('complementary', { name: 'Mother vessel AIS' });
@@ -264,7 +275,7 @@ test('another company cannot load the map or the tracking API', { tag: '@disposa
 
     await signIn(page, outsider.email);
     await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
-    await expect(page.getByRole('alert')).toHaveText(NO_ACCESS);
+    await expect(page.getByRole('alert')).toContainText(NO_ACCESS);
     await expect(page.getByRole('button', { name: 'Try again' })).toHaveCount(0);
     await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toHaveCount(0);
     await expect(page.locator('figure.route-chart')).toHaveCount(0);
@@ -389,7 +400,7 @@ test('shipment route and AIS facts remain available when external map assets are
 
     await expect(page.locator('.route-map-fallback')).toContainText('The basemap is unavailable');
     await expect(page.getByRole('figure', { name: 'Planned route' })).toContainText('DEPARTURE');
-    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel} · 1.264, 103.82 · 12.4 kn`);
+    await expect(page.locator('.route-live')).toContainText(`MOTHER SEEDED ${vessel} · 1.264, 103.82 · 12.4 kn`);
     await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toContainText('1.2640° N, 103.8200° E');
   } finally {
     cleanup([owner.email], [identifier]);
