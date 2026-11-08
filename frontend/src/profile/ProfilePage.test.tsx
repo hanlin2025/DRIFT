@@ -64,6 +64,11 @@ describe('profile page', () => {
     expect(screen.getByLabelText('Role')).toHaveValue('Freight forwarder');
     expect(screen.getByLabelText('Role')).toHaveAttribute('readonly');
     expect(screen.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' })).not.toBeChecked();
+    expect(screen.getByText(/Saving this page does not send an email\./)).toBeInTheDocument();
+    expect(screen.getByText(/A later rise sends the existing risk email when a shipment you can view reaches the saved level\./)).toBeInTheDocument();
+    expect(screen.getByText('HIGH means HIGH and CRITICAL.')).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is emailed from this page/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The choice is stored only/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('Minimum risk level')).toHaveValue('HIGH');
     expect(screen.getByRole('list', { name: 'Password requirements' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/photo/i)).not.toBeInTheDocument();
