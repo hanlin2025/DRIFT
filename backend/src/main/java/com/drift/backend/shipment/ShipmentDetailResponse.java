@@ -48,6 +48,8 @@ public record ShipmentDetailResponse(
 		ShipmentRiskContributions riskContributions,
 		@Schema(description = "Recommended response from the connection risk on this read and the delay comparison on this read. A completed comparison that meets the recorded deadline has no predicted impact. A completed comparison that exceeds that deadline affects the importer's constraints. A missing, stale, or incompatible comparison leaves the impact unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
 		ShipmentRecommendation recommendation,
+		@Schema(description = "Chance that the mother vessel arrives after the planned feeder departure, from the arrival estimate on this read. Calculated when the shipment is read and not stored. It is not the risk level and does not change the risk, the remaining window, or alerts. The parameters are not calibrated, so it is a rough estimate. With the handling threshold at 0 hours it only means arriving after the planned feeder departure, not a confirmed missed transshipment. An archived shipment the viewer can open receives the same chance.")
+		LateArrivalChance lateArrivalChance,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -126,6 +128,7 @@ public record ShipmentDetailResponse(
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRecommendation.of(risk, impact == null ? ShipmentRecommendationImpact.notReturned() : impact),
+				connection.lateArrivalChance(),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				mother.state(),
