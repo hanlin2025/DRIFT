@@ -31,6 +31,15 @@ class TestMaturation(unittest.TestCase):
         status, *_ = classify_candidate(eta,[actual()])
         self.assertEqual(status,"invalid")
 
+    def test_reported_event_at_or_before_cutoff_is_not_a_future_label(self):
+        eta = {**ETA, "latest_collection_utc":"2026-10-27T05:00:00+00:00"}
+        # 13:00 SGT is exactly 05:00 UTC.  A later API retrieval cannot turn
+        # this already-occurred event into an outcome for the cutoff.
+        status, _, _, _, _, reason = classify_candidate(
+            eta, [actual(arrived_time="2026-10-27 13:00:00", collection_utc="2026-10-27T06:00:00+00:00")])
+        self.assertEqual(status, "ambiguous")
+        self.assertEqual(reason, "context_match_not_after_prediction_cutoff")
+
 
 if __name__ == "__main__":
     unittest.main()

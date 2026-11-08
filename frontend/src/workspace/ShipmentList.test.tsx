@@ -1,11 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { archiveShipment, getShipment, getShipmentHistory, getShipmentTracking, listShipments, restoreShipment, type Shipment } from '../shipment/api';
+import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
@@ -71,6 +71,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   clearSession();
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
+    from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
+    slowdownThresholdKnots: 3, pointLimit: 500, truncated: false, points: [],
+  });
   vi.mocked(loadSession).mockImplementation(async token => ({ ...account('FREIGHT_FORWARDER'), token }));
   vi.mocked(listShipments).mockResolvedValue([newer, older]);
   vi.mocked(getShipment).mockImplementation(async (_token, id) => {
@@ -88,6 +94,19 @@ beforeEach(() => {
       feederVessel: null,
       feederVesselNameWarning: null,
     };
+  });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER',
+    vesselName: null,
+    mmsi: null,
+    windowHours: 24,
+    from: '2026-10-04T03:00:00Z',
+    to: '2026-10-05T03:00:00Z',
+    slowdownThresholdKnots: 3,
+    pointLimit: 500,
+    truncated: false,
+    points: [],
   });
 });
 
@@ -337,7 +356,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
+      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Mother-vessel arrival deadline', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
     ]);
 
     cleanup();
@@ -351,7 +370,9 @@ describe('workspace shipment retrieval', () => {
     vi.mocked(getShipment).mockResolvedValue({ ...newer, transshipmentPort: '  ' });
     openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/2');
     const details = await screen.findByRole('article', { name: 'Shipment HBL-NEWER' });
-    expect(within(details).getByText('Not recorded')).toHaveClass('is-missing');
+    const port = within(details).getByText('Transshipment port').closest('div');
+    expect(port).not.toBeNull();
+    expect(within(port as HTMLElement).getByText('Not recorded')).toHaveClass('is-missing');
     expect(screen.getByText('TRANSSHIPMENT Not recorded')).toBeInTheDocument();
   });
 
@@ -396,7 +417,8 @@ describe('workspace shipment retrieval', () => {
     openWorkspace();
     expect(await screen.findByText('Loading shipments...')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    resolveList([newer]);
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(1));
+    await act(async () => resolveList([newer]));
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.queryByText('Loading shipments...')).not.toBeInTheDocument();
   });

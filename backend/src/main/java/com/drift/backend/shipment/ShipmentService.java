@@ -69,12 +69,13 @@ public class ShipmentService {
 	private final Clock clock;
 	private final ApplicationEventPublisher events;
 	private final ShipmentRiskAlertActivationStore activation;
+	private final ShipmentDetailAssembler details;
 
 	public ShipmentService(ShipmentRepository shipments, ShipmentRiskStateRepository riskStates, UserAccountRepository users,
 			ShipmentConnectionRisk connectionRisk, Validator validator,
 			ShipmentAccessPolicy accessPolicy, ObjectMapper objectMapper, ObjectProvider<Clock> clocks,
 			ApplicationEventPublisher events, ShipmentRiskAlertActivationStore activation,
-			ShipmentHistoryRecorder history) {
+			ShipmentHistoryRecorder history, ShipmentDetailAssembler details) {
 		this.shipments = shipments;
 		this.riskStates = riskStates;
 		this.users = users;
@@ -86,6 +87,7 @@ public class ShipmentService {
 		this.events = events;
 		this.activation = activation;
 		this.history = history;
+		this.details = details;
 	}
 
 	@Transactional(readOnly = true)
@@ -156,6 +158,20 @@ public class ShipmentService {
 				.orElseThrow(() -> shipments.existsById(shipmentId)
 						? new ShipmentDetailForbiddenException()
 						: new ShipmentNotFoundException());
+	}
+
+	/** Checks the same shipment visibility as {@link #get} without calculating live connection risk. */
+	// Pessimistic history visibility locking requires a writable PostgreSQL transaction.
+	@Transactional
+	public ShipmentViewAuthorization authorizeView(AuthenticatedUser principal, Long shipmentId) {
+		Company company = activeCompany(principal);
+		Shipment shipment = shipments.findByIdVisibleToCompanyIdForAssessmentHistory(shipmentId, company.getId())
+				.filter(visible -> accessPolicy.canView(company, visible))
+				.orElseThrow(() -> shipments.existsById(shipmentId)
+						? new ShipmentDetailForbiddenException()
+						: new ShipmentNotFoundException());
+		Long importerCompanyId = shipment.getImporterCompany() == null ? null : shipment.getImporterCompany().getId();
+		return new ShipmentViewAuthorization(company.getId(), shipment.getCompany().getId(), importerCompanyId);
 	}
 
 	@Transactional(readOnly = true)
@@ -407,7 +423,7 @@ public class ShipmentService {
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connectionRisk.assess(shipment));
+		return details.detail(shipment);
 	}
 
 	private Company activeCompany(AuthenticatedUser principal) {

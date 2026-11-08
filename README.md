@@ -26,7 +26,7 @@ DRIFT/
 │       ├── application.yaml
 │       └── db/migration/    # Flyway migrations go here
 ├── frontend/                # React + TypeScript signup interface
-├── docker-compose.yml       # Local PostgreSQL
+├── docker-compose.yml       # Local PostgreSQL and Mailpit
 └── README.md
 ```
 
@@ -61,7 +61,7 @@ Start in the repository root (`DRIFT/`). Keep Docker Desktop running with WSL in
 for your Ubuntu distribution enabled.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres mailpit
 docker compose exec -T postgres pg_isready -U drift -d drift
 ```
 
@@ -116,8 +116,8 @@ against the separate `drift_test` database. In `frontend/`, run `npm test` and
 `npm run build`. Playwright is optional for running the app.
 
 Stop frontend and backend with Ctrl+C in their respective terminals. Only after stopping
-them, use `docker compose down` if you also want to stop PostgreSQL. Do not add `-v`
-unless you intend to delete its database volume.
+them, use `docker compose down` if you also want to stop PostgreSQL and Mailpit. Do not add `-v`
+unless you intend to delete the database volume.
 
 ### Native Windows development
 
@@ -164,6 +164,34 @@ All schema changes must go through Flyway.
   `pg_isready` to report `accepting connections`.
 - **`./mvnw: Permission denied`**: use `bash ./mvnw ...` in `backend/`.
 - **PowerShell does not recognise `mvnw.cmd`**: use `.\mvnw.cmd` in `backend/`.
+
+## Risk-alert email
+
+The shipment-risk email is the message CDG-49 already sends. It stays off until this terminal turns it on. Mailpit is the mailbox started with Postgres above: SMTP port `1025`, which `spring.mail` already uses, and a web view at http://localhost:8025.
+
+`RISK_ALERTS_FROM` defaults to `noreply@localhost`. `RISK_ALERTS_FRONTEND_BASE_URL` defaults to `http://localhost:5173`. Both match the local password-reset values and can be overridden in this terminal. Do not commit either value. The link is built from that origin plus the existing role path. It is not hardcoded in the mail composer.
+
+`RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server.
+
+```bash
+export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
+export RISK_ALERTS_ACTIVATION_COMMAND=true
+cd backend
+bash ./mvnw spring-boot:run
+```
+
+Wait until that process exits. Then start the server with the two mail switches together:
+
+```bash
+unset RISK_ALERTS_ACTIVATION_COMMAND
+export RISK_ALERTS_MAIL_ENABLED=true
+export RISK_ALERTS_DISPATCH_ENABLED=true
+bash ./mvnw spring-boot:run
+```
+
+With those unset, a due delivery is suppressed as "Risk alert mail is disabled" and is not retried. Dispatch disabled does not open an SMTP connection.
+
+On Windows, set the same two switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'` and `$env:RISK_ALERTS_DISPATCH_ENABLED = 'true'`, and clear the activation command with `Remove-Item Env:RISK_ALERTS_ACTIVATION_COMMAND` before the server you want to keep.
 
 ## Account Registration
 

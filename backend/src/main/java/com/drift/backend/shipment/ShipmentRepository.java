@@ -29,6 +29,11 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 	@Query("SELECT shipment FROM Shipment shipment WHERE shipment.id = :shipmentId")
 	Optional<Shipment> findByIdForRiskEvaluation(@Param("shipmentId") Long shipmentId);
 
+	/** Locks the shipment row so a port check and constraint change cannot overlap a route edit. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT shipment FROM Shipment shipment WHERE shipment.id = :shipmentId")
+	Optional<Shipment> findByIdForUpdate(@Param("shipmentId") Long shipmentId);
+
 	/** Loads the importer and last editor with each shipment so the list response does not query them per row. */
 	@Override
 	@EntityGraph(attributePaths = { "importerCompany", "updatedBy" })
@@ -55,6 +60,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 				AND (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)
 			""")
 	Optional<Shipment> findByIdVisibleToCompanyId(
+			@Param("shipmentId") Long shipmentId,
+			@Param("companyId") Long companyId);
+
+	/** Locks current company visibility while historical assessment rows are selected. */
+	@Lock(LockModeType.PESSIMISTIC_READ)
+	@Query("""
+			SELECT shipment FROM Shipment shipment
+			WHERE shipment.id = :shipmentId
+				AND (shipment.company.id = :companyId OR shipment.importerCompany.id = :companyId)
+			""")
+	Optional<Shipment> findByIdVisibleToCompanyIdForAssessmentHistory(
 			@Param("shipmentId") Long shipmentId,
 			@Param("companyId") Long companyId);
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, linkShipmentImporter, listShipments, restoreShipment, searchImporterOrganisations } from './api';
+import { archiveShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, linkShipmentImporter, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
+import type { MaritimeAiAssessment } from './api';
 import { ApiError } from '../signup/api';
 
 const shipment = {
@@ -237,6 +238,42 @@ describe('CDG-201 arrival-evidence replay API', () => {
 
 });
 
+describe('CDG-246 maritime-context API', () => {
+  const evidence = {
+    sourceType: 'MPA_ETA_REVISION', sourceMode: 'RECORDED_REPLAY', evidenceId: 'replay-1', title: 'Recorded MPA expected-arrival revision',
+    sourceIdentifier: 'MPA OCEANS-X Vessels Due to Arrive', sourceUrl: '', citation: 'manifest.json',
+    sourceEventAt: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-26T15:46:03Z', retrievedAtUtc: '2026-10-26T15:46:03Z', freshness: 'RECORDED_REPLAY',
+    previousValue: '2026-10-28 23:00:00', currentValue: '2026-10-29 02:00:00', changeMagnitude: '+180 minutes',
+    activityCompatibility: 'UNKNOWN', locationCompatibility: 'UNKNOWN', timeCompatibility: 'COMPATIBLE', compatibilityState: 'UNKNOWN',
+    evidenceSufficient: true, humanReviewRequired: true, shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Replay only.',
+  };
+
+  it('preserves a multi-source bundle without treating unavailable weather as a live observation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RECORDED_REPLAY', assessmentCutoffUtc: '2026-10-28T00:00:00Z',
+      shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Human review required.', evidence: [evidence, { ...evidence, sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceId: 'weather-none', title: 'NEA weather context unavailable', evidenceSufficient: false }], notices: [], aiExplanation: null, suggestedActions: null,
+    })));
+    const context = await getMaritimeContext('token', '9');
+    expect(context.evidence).toHaveLength(2);
+    expect(context.evidence[1]).toMatchObject({ sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', evidenceSufficient: false });
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/maritime-context', expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer token' }) }));
+  });
+
+  it('accepts a clearly labelled retrospective-analysis bundle', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: true, sourceMode: 'RETROSPECTIVE_ANALYSIS', assessmentCutoffUtc: '2026-10-28T00:00:00Z',
+      shipmentAssociationConfidence: 'UNVERIFIED_IMO_ONLY', limitation: 'Historical replay only.', evidence: [{ ...evidence, sourceMode: 'RETROSPECTIVE_ANALYSIS', timeCompatibility: 'UNKNOWN' }], notices: [], aiExplanation: null, suggestedActions: null,
+    })));
+
+    await expect(getMaritimeContext('token', '9')).resolves.toMatchObject({ sourceMode: 'RETROSPECTIVE_ANALYSIS' });
+  });
+
+  it('rejects a context bundle that omits its assessment cutoff', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ enabled: true, sourceMode: 'RECORDED_REPLAY', evidence: [], notices: [], aiExplanation: null, suggestedActions: null })));
+    await expect(getMaritimeContext('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
+});
+
 describe('shipment tracking', () => {
   it('reads an explicit null warning as a clear and rejects a non-text warning', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
@@ -335,6 +372,63 @@ describe('restoreShipment', () => {
   ] as const)('returns the server message for status %s', async (status, message) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message }, status)));
     await expect(restoreShipment('token-1', 7)).rejects.toMatchObject({ status, message });
+  });
+});
+
+describe('maritime AI assessment API', () => {
+  const businessAssessment: MaritimeAiAssessment = {
+    assessmentId: 'assessment-business-1', state: 'GENERATED', validationStatus: 'VALID',
+    bundleVersion: 'cdg246.maritime-evidence-bundle.v1', bundleHash: 'b'.repeat(64),
+    assessmentCutoffUtc: '2026-11-01T09:00:00Z', provider: 'controlled-context-stub', model: 'offline',
+    promptVersion: 'cdg252.business-context.v1', generatedAtUtc: '2026-11-01T09:00:01Z',
+    interpretation: { summary: 'Synthetic comparison.', claims: [{
+      statement: 'The predicted arrival exceeds the saved transshipment-arrival deadline.', evidenceIds: ['mpa-approved'],
+      applicability: 'CONTEXTUAL', factReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+      relationshipType: 'DELAY_COMPARISON_REVIEW',
+    }], uncertainties: [], followUpConsiderations: [], evidenceSufficient: true, formalRecommendationCode: null },
+    limitation: null,
+    deterministicSummary: {
+      summaryVersion: 'cdg247.deterministic-facts.v4.business-risk-snapshots', label: 'Backend-owned snapshot.',
+      shipmentScheduleFacts: [], evidenceFacts: [], limitations: [],
+      businessContext: {
+        context: {
+          deadline: { state: 'RECORDED', instant: '2026-11-01T10:00:00Z', recordedTransshipmentPort: 'Singapore', applicableToCurrentPort: true },
+          comparison: { state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null, estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: '2026-11-01T10:00:00Z', recordedTransshipmentPort: 'Singapore' },
+        },
+        canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_PORT', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY', 'comparison:DELAY_OUTCOME'],
+      },
+    },
+  };
+
+  it('preserves typed business context from assessment history and generation responses', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json([businessAssessment]))
+      .mockResolvedValueOnce(json(businessAssessment)));
+
+    const [listed] = await listMaritimeAiAssessments('token', '9');
+    const generated = await generateMaritimeAiAssessment('token', '9');
+
+    expect(listed.deterministicSummary?.businessContext).toEqual(businessAssessment.deterministicSummary?.businessContext);
+    expect(generated.deterministicSummary?.businessContext?.context?.comparison).toMatchObject({
+      state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null,
+    });
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/shipments/9/maritime-ai-assessments', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/shipments/9/maritime-ai-assessments', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('keeps historical assessment payloads without a business snapshot readable', async () => {
+    const legacySummary = { ...businessAssessment.deterministicSummary! };
+    delete legacySummary.businessContext;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{
+      ...businessAssessment,
+      interpretation: { ...businessAssessment.interpretation!, claims: businessAssessment.interpretation!.claims.filter(claim => claim.relationshipType !== 'DELAY_COMPARISON_REVIEW') },
+      deterministicSummary: legacySummary,
+    }])));
+
+    const [legacy] = await listMaritimeAiAssessments('token', '9');
+    expect(legacy.deterministicSummary?.businessContext).toBeUndefined();
   });
 });
 
@@ -479,6 +573,89 @@ describe('arrival comparison parsing', () => {
       ...shipment,
       risk: { level: 'HIGH', explanation },
       recommendation: unavailable,
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('keeps a port-condition comparison that agrees with the same report and rejects one that does not', async () => {
+    const position = {
+      mmsi: '563000111',
+      vesselName: 'EVER STEADY',
+      latitude: 1.264,
+      longitude: 103.84,
+      speedOverGroundKnots: 8,
+      courseOverGroundDegrees: null,
+      trueHeadingDegrees: null,
+      ingestedAt: '2026-11-01T00:00:00Z',
+      source: 'AIS_STREAM' as const,
+    };
+    const state = {
+      label: 'Under way',
+      description: 'Under way near Singapore',
+      unreliable: false,
+      ingestedAt: '2026-11-01T00:00:00Z',
+    };
+    const match = {
+      outcome: 'MATCHES_NORMAL' as const,
+      reason: null,
+      message: 'The mother vessel\'s movement matches its own retained reports near this port. This is not a measured congestion index.',
+      vessel: 'MOTHER' as const,
+      vesselName: 'MV Ever Steady',
+      transshipmentPort: 'Singapore',
+      knownPort: 'Singapore' as const,
+      latitude: 1.264,
+      longitude: 103.84,
+      speedOverGroundKnots: 8,
+      navigationalStatus: 0,
+      ingestedAt: '2026-11-01T00:00:00Z',
+      source: 'AIS_STREAM' as const,
+      earlierReportCount: 1,
+      slowestOwnSpeedKnots: 4,
+    };
+    const detail = {
+      ...shipment,
+      motherVesselPosition: position,
+      motherOperationalState: state,
+      portConditionComparison: match,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(detail)));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ portConditionComparison: match });
+
+    const unavailable = {
+      ...match,
+      outcome: null,
+      reason: 'NO_BASELINE' as const,
+      message: 'This vessel has no earlier report near this port, so normal conditions are not defined.',
+      earlierReportCount: 0,
+      slowestOwnSpeedKnots: null,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...detail, portConditionComparison: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ portConditionComparison: unavailable });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ portConditionComparison: null }]);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      portConditionComparison: { ...match, message: 'The port is congested.' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      portConditionComparison: { ...match, message: null },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      portConditionComparison: { ...match, speedOverGroundKnots: 3, slowestOwnSpeedKnots: 4 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...detail,
+      motherOperationalState: { ...state, unreliable: true },
     })));
     await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
@@ -706,6 +883,126 @@ describe('vessel track history API', () => {
   });
 });
 
+describe('transshipment arrival deadline API client', () => {
+  it('reads a deadline from the detail and ignores its absence on the list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      transshipmentArrivalDeadline: {
+        deadline: '2026-10-28T16:00:00.123456789Z',
+        transshipmentPort: 'Singapore',
+        applicable: true,
+      },
+    })));
+    const detail = await getShipment('token', '9');
+    expect(detail.transshipmentArrivalDeadline).toEqual({
+      deadline: '2026-10-28T16:00:00.123456789Z',
+      transshipmentPort: 'Singapore',
+      applicable: true,
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    const listed = await listShipments('token');
+    expect(listed[0].transshipmentArrivalDeadline).toBeNull();
+  });
+
+  it('rejects a malformed deadline and sends an object when clearing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      transshipmentArrivalDeadline: { deadline: '2026-10-28T16:00:00Z' },
+    })));
+    await expect(getShipment('token', '9')).rejects.toThrow('unexpected response');
+
+    const fetchMock = vi.fn().mockResolvedValue(json({ ...shipment, transshipmentArrivalDeadline: null }));
+    vi.stubGlobal('fetch', fetchMock);
+    const cleared = await updateTransshipmentArrivalDeadline('token', 9, {
+      transshipmentArrivalDeadline: null,
+      expectedTransshipmentPort: 'Singapore',
+    });
+    expect(cleared.transshipmentArrivalDeadline).toBeNull();
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body).toEqual({ transshipmentArrivalDeadline: null, expectedTransshipmentPort: 'Singapore' });
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/transshipment-arrival-deadline', expect.objectContaining({ method: 'PATCH' }));
+  });
+});
+
+const NO_IMPACT = 'No predicted impact on the recorded mother-vessel transshipment-arrival deadline.';
+const EXCEEDS = 'The predicted arrival exceeds the recorded mother-vessel transshipment-arrival deadline.';
+
+function delayComparison(overrides: Record<string, unknown> = {}) {
+  return {
+    outcome: 'NO_PREDICTED_IMPACT',
+    reason: null,
+    message: NO_IMPACT,
+    estimatedArrivalAt: '2026-10-28T15:00:00Z',
+    deadline: '2026-10-28T16:00:00Z',
+    recordedTransshipmentPort: 'Singapore',
+    ...overrides,
+  };
+}
+
+describe('delay comparison API client', () => {
+  it('reads both completed outcomes and keeps a missing assessment null', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: delayComparison() })));
+    expect((await getShipment('token', '9')).delayComparison).toEqual(delayComparison());
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      delayComparison: delayComparison({ outcome: 'EXCEEDS_DEADLINE', message: EXCEEDS }),
+    })));
+    expect((await getShipment('token', '9')).delayComparison?.outcome).toBe('EXCEEDS_DEADLINE');
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: null })));
+    expect((await getShipment('token', '9')).delayComparison).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));
+    const listed = await listShipments('token');
+    expect(listed[0].delayComparison).toBeNull();
+    expect(JSON.stringify(listed[0])).not.toContain('NO_PREDICTED_IMPACT');
+  });
+
+  it('reads each unavailable reason and the inputs the server included', async () => {
+    const reasons = [
+      ['INCOMPATIBLE_MILESTONE', 'The recorded deadline is for a different transshipment port.', '2026-10-28T15:00:00Z', '2026-10-28T16:00:00Z', 'Singapore'],
+      ['MISSING_PREDICTION', 'The mother-vessel transshipment-arrival estimate is unavailable.', null, '2026-10-28T16:00:00Z', 'Singapore'],
+      ['MISSING_CONSTRAINT', 'No mother-vessel transshipment-arrival deadline is recorded for the current importer.', '2026-10-28T15:00:00Z', null, null],
+      ['STALE_PREDICTION', 'The mother-vessel transshipment-arrival estimate uses an AIS position received more than six hours ago.', '2026-10-28T15:00:00Z', '2026-10-28T16:00:00Z', 'Singapore'],
+    ] as const;
+    for (const [reason, message, estimatedArrivalAt, deadline, recordedTransshipmentPort] of reasons) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+        ...shipment,
+        delayComparison: delayComparison({
+          outcome: null, reason, message, estimatedArrivalAt, deadline, recordedTransshipmentPort,
+        }),
+      })));
+      expect((await getShipment('token', '9')).delayComparison).toMatchObject({ outcome: null, reason, message });
+    }
+  });
+
+  it('rejects an unknown, combined, or incomplete assessment', async () => {
+    const rejected = [
+      delayComparison({ outcome: 'ON_SCHEDULE' }),
+      delayComparison({ outcome: 'NO_PREDICTED_IMPACT', reason: 'STALE_PREDICTION' }),
+      delayComparison({ outcome: null, reason: null }),
+      delayComparison({ reason: 'LATE' }),
+      delayComparison({ message: ' ' }),
+      delayComparison({ deadline: null }),
+      delayComparison({ recordedTransshipmentPort: ' ' }),
+      delayComparison({ estimatedArrivalAt: 1 }),
+      delayComparison({ estimatedArrivalAt: 'not-a-date' }),
+      delayComparison({ deadline: 'not-a-date' }),
+      delayComparison({ outcome: null, reason: 'MISSING_PREDICTION', estimatedArrivalAt: 'not-a-date' }),
+      delayComparison({ outcome: null, reason: 'STALE_PREDICTION', deadline: '2026-13-40T99:99:99Z' }),
+      delayComparison({ outcome: null, reason: 'STALE_PREDICTION', deadline: 1 }),
+      delayComparison({ estimatedArrivalAt: 'not-a-date' }),
+      delayComparison({ deadline: '2026-13-40T99:99:99Z' }),
+    ];
+    for (const comparison of rejected) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, delayComparison: comparison })));
+      await expect(getShipment('token', '9')).rejects.toThrow('unexpected response');
+    }
+  });
+});
+
 describe('shipment change history API', () => {
   const history = {
     shipmentId: 7,
@@ -775,5 +1072,138 @@ describe('shipment change history API', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Unauthorized' }, 401)));
     await expect(getShipmentHistory('token', '7')).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+const noAction = {
+  available: true,
+  unavailable: null,
+  response: { code: 'NO_ACTION', ...RECOMMENDATION_RESPONSES.NO_ACTION },
+  riskLevel: 'LOW',
+  riskExplanation: 'At least 24 hours to transfer cargo between vessels.',
+  impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+};
+
+const approved = {
+  outcome: 'APPROVED',
+  recommendationName: 'No action',
+  recommendationWording: RECOMMENDATION_RESPONSES.NO_ACTION.wording,
+  selectedResponseName: null,
+  selectedResponseWording: null,
+  decidedByUserId: 4,
+  decidedByName: 'Ada Lee',
+  decidedAt: '2026-10-28T06:00:00Z',
+};
+
+describe('recommendation decision API', () => {
+  it('reads a missing recommendation and decision as null', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(shipment)));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendation: null,
+      recommendationDecision: null,
+      recommendationDecisionHistory: [],
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([{ ...shipment }])));
+    await expect(listShipments('token')).resolves.toMatchObject([{ recommendation: null, recommendationDecision: null }]);
+  });
+
+  it('keeps an unavailable recommendation that names why it was not selected', async () => {
+    const unavailable = {
+      available: false,
+      unavailable: 'A recommendation is not available because the connection risk is not assessed.',
+      response: null,
+      riskLevel: null,
+      riskExplanation: null,
+      impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...shipment, risk: null, recommendation: unavailable })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({ recommendation: unavailable });
+  });
+
+  it('keeps a completed recommendation that no action is needed and a stored decision', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'LOW', explanation: noAction.riskExplanation },
+      recommendation: noAction,
+      recommendationDecision: approved,
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendation: noAction,
+      recommendationDecision: approved,
+    });
+  });
+
+  it('rejects a recommendation that does not match the risk on the same read', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      risk: { level: 'HIGH', explanation: 'Less than 12 hours to transfer cargo between vessels.' },
+      recommendation: noAction,
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('rejects a modification that looks like the original recommendation was accepted', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendationDecision: { ...approved, outcome: 'MODIFIED', selectedResponseName: 'No action', selectedResponseWording: RECOMMENDATION_RESPONSES.NO_ACTION.wording },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('records an approval, a modification, and a dismissal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(approved)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'APPROVED' })).resolves.toEqual(approved);
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/recommendation-decision', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ outcome: 'APPROVED' }),
+    }));
+
+    const modified = {
+      ...approved,
+      outcome: 'MODIFIED',
+      selectedResponseName: 'Monitor',
+      selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(modified)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'MODIFIED', selectedResponse: 'MONITOR_CONSTRAINTS' }))
+      .resolves.toEqual(modified);
+    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/recommendation-decision', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ outcome: 'MODIFIED', selectedResponse: 'MONITOR_CONSTRAINTS' }),
+    }));
+  });
+
+  it('passes on the API message when an unavailable recommendation is refused', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'An unavailable recommendation is not stored.' }, 409)));
+    await expect(recordRecommendationDecision('token', 9, { outcome: 'DISMISSED' }))
+      .rejects.toMatchObject({ status: 409, message: 'An unavailable recommendation is not stored.' });
+    expect(IMPACT_NOT_RETURNED).toContain('impact assessment has not been returned');
+  });
+
+  it('keeps server history order when decision times are equal', async () => {
+    const dismissed = {
+      id: 9,
+      ...approved,
+      outcome: 'DISMISSED',
+      decidedAt: '2026-10-28T06:00:00Z',
+      decidedByName: 'Bo Chen',
+    };
+    const earlierApproval = { id: 4, ...approved };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendation: noAction,
+      risk: { level: 'LOW', explanation: noAction.riskExplanation },
+      recommendationDecision: approved,
+      recommendationDecisionHistory: [dismissed, earlierApproval],
+    })));
+    await expect(getShipment('token', '9')).resolves.toMatchObject({
+      recommendationDecisionHistory: [dismissed, earlierApproval],
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...shipment,
+      recommendationDecisionHistory: { id: 1 },
+    })));
+    await expect(getShipment('token', '9')).rejects.toMatchObject({ status: 502 });
   });
 });

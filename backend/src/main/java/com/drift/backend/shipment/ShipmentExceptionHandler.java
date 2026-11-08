@@ -21,6 +21,8 @@ import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
 import com.drift.backend.shipment.exception.InvalidShipmentIdException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentConstraintEditForbiddenException;
+import com.drift.backend.shipment.exception.ShipmentConstraintPortConflictException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyActiveException;
 import com.drift.backend.shipment.exception.ShipmentAlreadyArchivedException;
 import com.drift.backend.shipment.exception.ShipmentArchiveForbiddenException;
@@ -28,10 +30,11 @@ import com.drift.backend.shipment.exception.ShipmentRestoreForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotEditableException;
+import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
-@RestControllerAdvice(assignableTypes = ShipmentController.class)
+@RestControllerAdvice(assignableTypes = { ShipmentController.class, ShipmentConstraintController.class })
 public class ShipmentExceptionHandler {
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
@@ -67,6 +70,12 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
+	@ExceptionHandler(ShipmentConstraintPortConflictException.class)
+	public ResponseEntity<Map<String, String>> handlePortConflict(ShipmentConstraintPortConflictException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
 	@ExceptionHandler(StaleShipmentVersionException.class)
 	public ResponseEntity<Map<String, String>> handleStaleVersion(StaleShipmentVersionException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
@@ -84,10 +93,17 @@ public class ShipmentExceptionHandler {
 			ShipmentDetailForbiddenException.class,
 			ShipmentArchiveForbiddenException.class,
 			ShipmentRestoreForbiddenException.class,
-			ShipmentNotEditableException.class
+			ShipmentNotEditableException.class,
+			ShipmentConstraintEditForbiddenException.class
 	})
 	public ResponseEntity<Map<String, String>> handleAccessForbidden(RuntimeException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(RecommendationDecisionRejectedException.class)
+	public ResponseEntity<Map<String, String>> handleDecisionRejected(RecommendationDecisionRejectedException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
 	}
 

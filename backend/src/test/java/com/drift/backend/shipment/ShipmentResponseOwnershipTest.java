@@ -51,7 +51,12 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(listedJson.has("riskContributions")).isFalse();
 		assertThat(listedJson.has("recommendation")).isFalse();
+		assertThat(listedJson.has("portConditionComparison")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
+		assertThat(listedJson.has("delayComparison")).isFalse();
+		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
+		assertThat(detailJson.get("delayComparison").get("outcome").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
 		assertThat(detailJson.get("riskContributions").get("assessed").asBoolean()).isTrue();
 		assertThat(detailJson.get("riskContributions").get("contributions").get(0).get("value").asText())
 				.isEqualTo("Planned connection window");
@@ -67,6 +72,18 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("recommendation").get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
 		assertThat(detailJson.get("recommendation").get("impact").get("detail").asText())
 				.isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(detailJson.get("portConditionComparison").get("vessel").asText()).isEqualTo("MOTHER");
+		assertThat(detailJson.get("portConditionComparison").get("outcome").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("reason").asText()).isEqualTo("NO_REPORT");
+		assertThat(detailJson.get("portConditionComparison").get("message").asText())
+				.isEqualTo(PortConditionComparison.NO_REPORT_MESSAGE);
+		assertThat(detailJson.get("portConditionComparison").get("knownPort").asText()).isEqualTo("Singapore");
+		assertThat(detailJson.get("portConditionComparison").get("earlierReportCount").asInt()).isZero();
+		assertThat(detailJson.get("portConditionComparison").get("slowestOwnSpeedKnots").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("ingestedAt").isNull()).isTrue();
+		assertThat(detailJson.get("motherOperationalState").get("ingestedAt").isNull()).isTrue();
+		assertThat(detailJson.get("portConditionComparison").get("message").asText())
+				.isNotEqualTo(detailJson.get("motherOperationalState").get("description").asText());
 		assertThat(detailJson.has("remainingConnectionWindow")).isTrue();
 		assertThat(detailJson.get("remainingConnectionWindow").isNull()).isTrue();
 		assertThat(listedJson.get("updatedByName").asString()).isEqualTo("Ada");
@@ -92,6 +109,9 @@ class ShipmentResponseOwnershipTest {
 				"At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
 		assertThat(detailJson.get("assessmentExplanation").get("confidence").asString())
 				.isEqualTo(detail.assessmentExplanation().confidence());
+		assertThat(detail.transshipmentArrivalDeadline()).isNull();
+		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
+		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
 	}
 
 	@Test
@@ -109,7 +129,12 @@ class ShipmentResponseOwnershipTest {
 		assertThat(detailJson.get("status").asString()).isEqualTo("ACTIVE");
 		assertThat(detailJson.get("risk").get("level").asString()).isEqualTo("LOW");
 		assertThat(detailJson.get("importer").isNull()).isTrue();
+		assertThat(detailJson.get("transshipmentArrivalDeadline").isNull()).isTrue();
+		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
+		assertThat(detailJson.get("delayComparison").get("deadline").isNull()).isTrue();
 		assertThat(detailJson.has("assessmentExplanation")).isTrue();
+		assertThat(detailJson.has("riskContributions")).isTrue();
+		assertThat(detailJson.has("recommendation")).isTrue();
 	}
 
 	@Test
@@ -126,6 +151,7 @@ class ShipmentResponseOwnershipTest {
 				"No AIS position has been received for the mother vessel.");
 		assertThat(detail.assessmentExplanation().confidence())
 				.isEqualTo("Confidence is limited because the planned connection window is being used.");
+		assertThat(detail.transshipmentArrivalDeadline()).isNull();
 	}
 
 	@Test
@@ -145,7 +171,7 @@ class ShipmentResponseOwnershipTest {
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
-		return ShipmentDetailResponse.from(shipment, connection(shipment));
+		return ShipmentDetailResponse.from(shipment, connection(shipment), null);
 	}
 
 	/** The snapshot both the list and the detail page are built from, here with no AIS position. */

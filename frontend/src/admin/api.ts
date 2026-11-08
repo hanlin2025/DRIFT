@@ -169,6 +169,11 @@ export async function removeUser(token: string, userId: number): Promise<AdminUs
   return userOf(data);
 }
 
+export async function reactivateUser(token: string, userId: number): Promise<AdminUser> {
+  const data = await send(`/api/admin/users/${userId}/reactivate`, token, { method: 'PATCH' });
+  return userOf(data);
+}
+
 export async function listAccountStatusAudits(token: string): Promise<AccountStatusAudit[]> {
   const data = await send('/api/admin/account-status-audits', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
