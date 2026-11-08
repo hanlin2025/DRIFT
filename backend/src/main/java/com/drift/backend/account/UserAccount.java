@@ -131,6 +131,10 @@ public class UserAccount {
 		this.fullName = trimmed;
 	}
 
+	public void endSessions() {
+		sessionGeneration++;
+	}
+
 	public void replacePasswordHash(String passwordHash) {
 		if (passwordHash == null || passwordHash.isBlank()) {
 			throw new IllegalArgumentException("Password hash is required");

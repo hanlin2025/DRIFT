@@ -14,6 +14,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.drift.backend.access.RolePermissionFilter;
 import com.drift.backend.access.ShipmentVisibilityFilter;
 import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.authentication.CookieCsrfFilter;
 import com.drift.backend.account.authentication.JwtSessionTokens;
 import com.drift.backend.account.authentication.SessionAuthenticationFilter;
 import com.drift.backend.account.exception.SessionEndedException;
@@ -28,6 +29,7 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtSessionTokens tokens, UserAccountRepository users,
 			ShipmentVisibilityLookup shipments, ShipmentAccessPolicy access, ObjectMapper json) throws Exception {
+		CookieCsrfFilter csrf = new CookieCsrfFilter();
 		SessionAuthenticationFilter sessions = new SessionAuthenticationFilter(tokens, users);
 		RolePermissionFilter permissions = new RolePermissionFilter(users);
 		ShipmentVisibilityFilter visibility = new ShipmentVisibilityFilter(users, shipments, access, json);
@@ -44,7 +46,8 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
 						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))
-				.addFilterBefore(sessions, UsernamePasswordAuthenticationFilter.class)
+				.addFilterBefore(csrf, UsernamePasswordAuthenticationFilter.class)
+				.addFilterAfter(sessions, CookieCsrfFilter.class)
 				.addFilterAfter(permissions, SessionAuthenticationFilter.class)
 				.addFilterAfter(visibility, RolePermissionFilter.class);
 		return http.build();

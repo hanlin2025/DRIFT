@@ -38,10 +38,14 @@ server:
 app:
   jwt:
     secret: ${JWT_SECRET}
-    expiration-ms: 3600000
+    expiration-ms: ${JWT_EXPIRATION_MS:28800000}
   # Operator-only gate for the one-time first administrator. Leave unset to keep setup closed.
   setup:
     token: ${DRIFT_SETUP_TOKEN:}
+  session:
+    cookie:
+      # Local HTTP stays usable. Set SESSION_COOKIE_SECURE=true when the site is served only over HTTPS.
+      secure: ${SESSION_COOKIE_SECURE:false}
   password-reset:
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
     ttl: ${PASSWORD_RESET_TTL:1h}

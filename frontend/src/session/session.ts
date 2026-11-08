@@ -1,5 +1,6 @@
 const KEY = 'drift.session';
 const ENDED = 'drift.session.ended';
+const PROFILE = 'drift.profile';
 
 export type Role = 'IMPORTER' | 'FREIGHT_FORWARDER' | 'ADMIN' | 'LOGISTICS_MANAGER';
 export type Company = { id: number; code: string; name: string };
@@ -13,8 +14,7 @@ export type Session = {
   company: Company | null;
 };
 
-export function readSession(): Session | null {
-  const raw = sessionStorage.getItem(KEY);
+function parse(raw: string | null): Session | null {
   if (!raw) return null;
   try {
     const value: unknown = JSON.parse(raw);
@@ -25,13 +25,36 @@ export function readSession(): Session | null {
   }
 }
 
+export function readSession(): Session | null {
+  return parse(sessionStorage.getItem(KEY)) ?? parse(localStorage.getItem(PROFILE));
+}
+
 export function writeSession(session: Session) {
   sessionStorage.setItem(KEY, JSON.stringify(session));
+  if (!session.token) localStorage.setItem(PROFILE, JSON.stringify(session));
 }
 
 export function clearSession() {
   sessionStorage.removeItem(KEY);
   sessionStorage.removeItem(ENDED);
+  localStorage.removeItem(PROFILE);
+}
+
+export async function signOut() {
+  const current = readSession();
+  const headers = new Headers({ 'X-DRIFT-Request': '1' });
+  if (current?.token) headers.set('Authorization', `Bearer ${current.token}`);
+  try {
+    await fetch('/api/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    // The browser copy is removed even when the server cannot be reached.
+  }
+  clearSession();
 }
 
 export function endSession() {

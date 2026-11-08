@@ -59,7 +59,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const session = await login(email.trim(), password);
-      writeSession(session);
+      writeSession({ ...session, token: '' });
       setPassword('');
       navigate(homePath(session.role), { replace: true });
     } catch (reason) {

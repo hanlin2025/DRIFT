@@ -206,6 +206,7 @@ http://localhost:5173/setup. The credential is not stored in the repository or t
 After that one administrator exists, setup refuses a second account. Colleagues still join
 by invitation. See [first administrator setup](docs/first-administrator.md).
 An administrator then invites a colleague from User management. See [administrator invitations](docs/admin-invitation.md).
+A signed-in browser stays signed in across tabs for eight hours, until sign-out. See [browser sessions](docs/browser-session.md).
 
 ## Frontend
 

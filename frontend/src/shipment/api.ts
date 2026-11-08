@@ -716,7 +716,8 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   try {
     response = await fetch(path, {
       ...init,
-      headers: { ...init.headers, Authorization: `Bearer ${token}` },
+      credentials: token ? init.credentials : 'include',
+      headers: { ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }) },
       signal: AbortSignal.timeout(15000),
       cache: 'no-store',
     });

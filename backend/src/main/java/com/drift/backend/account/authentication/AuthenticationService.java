@@ -38,6 +38,12 @@ public class AuthenticationService {
 		return LoginResponse.of(account, tokens.issue(account));
 	}
 
+	@Transactional
+	public void logout(AuthenticatedUser principal) {
+		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
+		account.endSessions();
+	}
+
 	@Transactional(readOnly = true)
 	public SessionView current(AuthenticatedUser principal) {
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);

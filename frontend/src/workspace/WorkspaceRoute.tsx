@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, shipmentDetailPath, shipmentListPath, writeSession, type Session } from '../session/session';
+import { endSession, homePath, isExpired, readSession, sessionHasEnded, shipmentDetailPath, shipmentListPath, signOut, writeSession, type Session } from '../session/session';
 import { type ShipmentArchive } from '../shipment/archiveAccess';
 import { listShipments, type Shipment } from '../shipment/api';
 import { ShipmentDetail } from '../shipment/ShipmentDetail';
@@ -203,7 +203,7 @@ export function WorkspaceRoute({ role, page = 'portfolio' }: { role: Session['ro
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <WorkspacePage account={account} page={page} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
+  return <WorkspacePage account={account} page={page} onSignOut={() => { void signOut().then(() => navigate('/login', { replace: true })); }} onSessionEnded={sessionEnded} />;
 }
 
 function CompanyShipments({ token, basePath, refreshKey, filters, onClearFilters, onSessionEnded, archive }: {

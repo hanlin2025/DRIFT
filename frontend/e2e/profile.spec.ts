@@ -91,15 +91,6 @@ async function openProfile(page: Page) {
   await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
 }
 
-async function sessionToken(page: Page) {
-  return page.evaluate(() => {
-    const saved = sessionStorage.getItem('drift.session');
-    if (!saved) return '';
-    const parsed = JSON.parse(saved) as { token?: string };
-    return parsed.token ?? '';
-  });
-}
-
 test.beforeAll(() => {
   assertOwnedDatabase();
 });
@@ -259,7 +250,7 @@ test('one signed-in user cannot open or change another user profile', { tag: '@d
     await expect(page.locator('input[name="userId"], input[name="email"]:not([readonly])')).toHaveCount(0);
 
     const forbidden = await page.request.patch('/api/profile', {
-      headers: { Authorization: `Bearer ${await sessionToken(page)}` },
+      headers: { 'X-DRIFT-Request': '1' },
       data: { userId: owner.id, fullName: 'Hijacked Name' },
     });
     expect(forbidden.status()).toBe(403);
