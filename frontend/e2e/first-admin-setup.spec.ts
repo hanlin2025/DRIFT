@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -7,8 +7,12 @@ const database = process.env.DRIFT_E2E_DATABASE ?? 'drift';
 const credential = process.env.DRIFT_SETUP_TOKEN ?? '';
 
 function sql(query: string) {
-  return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', '-U', 'drift', '-d', database,
-    '-v', 'ON_ERROR_STOP=1', '-At', '-c', query], { cwd: root, encoding: 'utf8' }).trim();
+  const common = ['-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', query];
+  const named = spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', 'drift-postgres'], { encoding: 'utf8' });
+  const command = named.status === 0 && named.stdout.trim() === 'true'
+    ? ['exec', '-i', 'drift-postgres', 'psql', ...common]
+    : ['compose', 'exec', '-T', 'postgres', 'psql', ...common];
+  return execFileSync('docker', command, { cwd: root, encoding: 'utf8' }).trim();
 }
 
 test.beforeAll(() => {

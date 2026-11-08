@@ -22,6 +22,10 @@ const useDocker = dockerCompose();
 
 function psql(database, statement) {
   const common = ['-U', 'drift', '-d', database, '-v', 'ON_ERROR_STOP=1', '-At', '-c', statement];
+  const named = spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', 'drift-postgres'], { encoding: 'utf8' });
+  if (named.status === 0 && named.stdout.trim() === 'true') {
+    return execFileSync('docker', ['exec', '-i', 'drift-postgres', 'psql', ...common], { encoding: 'utf8' });
+  }
   if (useDocker) {
     return execFileSync('docker', ['compose', 'exec', '-T', 'postgres', 'psql', ...common],
       { cwd: root, encoding: 'utf8' });
