@@ -26,7 +26,7 @@ DRIFT/
 │       ├── application.yaml
 │       └── db/migration/    # Flyway migrations go here
 ├── frontend/                # React + TypeScript signup interface
-├── docker-compose.yml       # Local PostgreSQL
+├── docker-compose.yml       # Local PostgreSQL and Mailpit
 └── README.md
 ```
 
@@ -61,7 +61,7 @@ Start in the repository root (`DRIFT/`). Keep Docker Desktop running with WSL in
 for your Ubuntu distribution enabled.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres mailpit
 docker compose exec -T postgres pg_isready -U drift -d drift
 ```
 
@@ -164,6 +164,36 @@ All schema changes must go through Flyway.
   `pg_isready` to report `accepting connections`.
 - **`./mvnw: Permission denied`**: use `bash ./mvnw ...` in `backend/`.
 - **PowerShell does not recognise `mvnw.cmd`**: use `.\mvnw.cmd` in `backend/`.
+
+## Risk-alert email
+
+The shipment-risk email is the message already sent for a risk rise. It stays off until this terminal turns it on. Mailpit is the mailbox started with Postgres above: SMTP port `1025`, which `spring.mail` already uses, and a web view at http://localhost:8025.
+
+`RISK_ALERTS_FROM` and `RISK_ALERTS_FRONTEND_BASE_URL` are blank until this terminal sets them. A blank sender is suppressed as "Risk alert sender address is not configured". A blank or unusable frontend origin is suppressed as "Risk alert frontend base URL is not configured". For this machine, export the same local sender as password reset and the frontend origin. The link is that origin plus the existing role path. Do not commit either value.
+
+`RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server. The command baselines the current connection risk of every active shipment, suppresses unsent deliveries from an older generation with "Suppressed during risk-alert activation", sets the activation generation to 1, and then the process exits. A normal startup does not create a generation. A delivery recorded under another generation is suppressed as "Risk alert delivery predates the active activation generation" and is not sent. Turning the mail switches on does not activate the gate.
+
+```bash
+export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
+export RISK_ALERTS_ACTIVATION_COMMAND=true
+cd backend
+bash ./mvnw spring-boot:run
+```
+
+Wait until that process exits. Then start the server with the mail switches. `RISK_ALERTS_EVALUATION_ENABLED` stays unset on a server that should not sweep. The 15-minute sweep runs only when that switch is set and the activation gate is already active. Creating a shipment, importing one, or changing the planned arrival or feeder departure still evaluates after the write commits. An AIS position does not start an evaluation.
+
+```bash
+unset RISK_ALERTS_ACTIVATION_COMMAND
+export RISK_ALERTS_MAIL_ENABLED=true
+export RISK_ALERTS_DISPATCH_ENABLED=true
+export RISK_ALERTS_FROM='noreply@localhost'
+export RISK_ALERTS_FRONTEND_BASE_URL='http://localhost:5173'
+bash ./mvnw spring-boot:run
+```
+
+With the mail switches unset, a due delivery is suppressed as "Risk alert mail is disabled" and is not retried. Dispatch disabled does not open an SMTP connection.
+
+On Windows, set the same switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'`, `$env:RISK_ALERTS_DISPATCH_ENABLED = 'true'`, `$env:RISK_ALERTS_FROM = 'noreply@localhost'`, and `$env:RISK_ALERTS_FRONTEND_BASE_URL = 'http://localhost:5173'`, and clear the activation command with `Remove-Item Env:RISK_ALERTS_ACTIVATION_COMMAND` before the server you want to keep.
 
 ## Account Registration
 
