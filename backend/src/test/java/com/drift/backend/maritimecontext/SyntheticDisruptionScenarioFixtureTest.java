@@ -233,7 +233,7 @@ class SyntheticDisruptionScenarioFixtureTest {
 				request.motherVessel(), request.plannedMotherArrivalAt(), request.motherVesselImo(), request.motherVesselMmsi(), request.motherVesselOperator(),
 				request.feederVessel(), request.plannedFeederDepartureAt(), request.feederVesselImo(), request.feederVesselMmsi(), request.feederVesselOperator(),
 				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-				null, null, null, null, ShipmentStatus.ACTIVE);
+				null, null, null, null, ShipmentStatus.ACTIVE, null, java.util.List.of());
 	}
 
 	private static ShipmentDetailResponse withReference(ShipmentDetailResponse detail, String reference) {
@@ -244,6 +244,6 @@ class SyntheticDisruptionScenarioFixtureTest {
 				detail.riskContributions(), detail.recommendation(), detail.motherVesselPosition(), detail.motherVesselNameWarning(),
 				detail.feederVesselPosition(), detail.feederVesselNameWarning(), detail.motherOperationalState(), detail.feederOperationalState(),
 				detail.aisFeed(), detail.portConditionComparison(), detail.arrivalComparison(), detail.transshipmentArrivalDeadline(), detail.delayComparison(),
-				detail.importer(), detail.status());
+				detail.importer(), detail.status(), detail.recommendationDecision(), detail.recommendationDecisionHistory());
 	}
 }
