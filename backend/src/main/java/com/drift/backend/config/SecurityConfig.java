@@ -38,8 +38,9 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/setup/status").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/register", "/api/invitations/resolve", "/api/login",
-								"/api/auth/forgot-password").permitAll()
+								"/api/auth/forgot-password", "/api/setup/administrator").permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
 						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))

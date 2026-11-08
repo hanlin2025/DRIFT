@@ -6,6 +6,7 @@ import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
 import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
+import { SetupPage } from './setup/SetupPage';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
 
@@ -26,6 +27,7 @@ function HomeRedirect() {
 export function AppRoutes() {
   return <Routes>
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
+    <Route path="/setup" element={<AuthLayout><SetupPage /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
     <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
