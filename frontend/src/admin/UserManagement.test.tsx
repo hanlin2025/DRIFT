@@ -23,6 +23,7 @@ vi.mock('./api', () => ({
   listAccountStatusAudits: vi.fn(),
   inviteColleague: vi.fn(),
   listPendingInvitations: vi.fn(),
+  withdrawInvitation: vi.fn(),
 }));
 
 const admin: Session = {

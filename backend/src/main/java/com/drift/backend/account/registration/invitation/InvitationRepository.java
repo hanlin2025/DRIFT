@@ -22,6 +22,10 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
 			""")
 	Optional<Invitation> findPendingForUpdate(@Param("email") String email);
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select invitation from Invitation invitation where invitation.id = :id")
+	Optional<Invitation> findForWithdrawal(@Param("id") Long id);
+
 	@Query("""
 			select invitation from Invitation invitation
 			join fetch invitation.company
