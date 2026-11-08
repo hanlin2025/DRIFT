@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +53,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 
 	@BeforeEach
 	void setUp() {
+		cleanupTestData();
 		jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'");
 		company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 		AccountRole role = entityManager.createQuery("SELECT role FROM AccountRole role WHERE role.code = :code", AccountRole.class)
@@ -63,6 +65,15 @@ class ShipmentRiskEvaluatorIntegrationTests {
 		TestTransaction.end();
 		activation.activate();
 		TestTransaction.start();
+	}
+
+	@AfterEach
+	void cleanUp() {
+		if (TestTransaction.isActive()) {
+			TestTransaction.flagForRollback();
+			TestTransaction.end();
+		}
+		cleanupTestData();
 	}
 
 	@Test
@@ -215,6 +226,22 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	private ShipmentRiskTransition onlyTransition(Shipment shipment) {
 		entityManager.clear();
 		return transitions.findByShipmentIdOrderBySequenceAsc(shipment.getId()).getFirst();
+	}
+
+	private void cleanupTestData() {
+		String shipmentPattern = "RISK-EVAL-%";
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.shipment_reference LIKE ?
+				)
+				""", shipmentPattern);
+		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)",
+				shipmentPattern);
+		jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE ?", shipmentPattern);
+		jdbc.update("DELETE FROM users WHERE email LIKE 'risk-evaluator-%@example.com'");
 	}
 
 	private void setWindow(Shipment shipment, int durationHours) {

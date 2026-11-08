@@ -14,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,17 +62,51 @@ class ShipmentCreationIntegrationTests {
 
 	private String email;
 	private Long companyId;
+	private Long otherCompanyId;
+	private String companyCode;
+	private String otherCompanyCode;
 	private Long accountId;
 	private String token;
 
 	@BeforeEach
 	void account() throws Exception {
 		email = "cdg75-" + UUID.randomUUID() + "@example.com";
-		companyId = companyId("HARBOURLINE_DEMO");
+		companyCode = "CDG314-F-" + UUID.randomUUID().toString().replace("-", "");
+		otherCompanyCode = "CDG314-O-" + UUID.randomUUID().toString().replace("-", "");
+		companyId = createCompany(companyCode, "CDG-314 shipment creation forwarder");
+		otherCompanyId = createCompany(otherCompanyCode, "CDG-314 shipment creation other company");
 		createAccount(email, companyId);
 		accountId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
 		token = tokenFor(email);
 		latestPositions.clear();
+	}
+
+	@AfterEach
+	void cleanUpFixture() {
+		if (companyId == null || otherCompanyId == null) {
+			return;
+		}
+		if (TestTransaction.isActive()) {
+			TestTransaction.flagForRollback();
+			TestTransaction.end();
+		}
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.company_id IN (?, ?)
+				)
+				""", companyId, otherCompanyId);
+		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
+				companyId, otherCompanyId);
+		jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?))",
+				companyId, otherCompanyId);
+		jdbc.update("DELETE FROM shipments WHERE company_id IN (?, ?)", companyId, otherCompanyId);
+		jdbc.update("DELETE FROM forwarder_importer_relationships WHERE forwarder_company_id IN (?, ?) OR importer_company_id IN (?, ?)",
+				companyId, otherCompanyId, companyId, otherCompanyId);
+		jdbc.update("DELETE FROM users WHERE company_id IN (?, ?) OR email LIKE 'cdg75-unassigned-%'", companyId, otherCompanyId);
+		jdbc.update("DELETE FROM companies WHERE id IN (?, ?)", companyId, otherCompanyId);
 	}
 
 	@Test
@@ -205,7 +241,7 @@ class ShipmentCreationIntegrationTests {
 		create(token, shipment("HBL-2026-004")).andExpect(status().isCreated());
 
 		String otherEmail = "cdg75-other-" + UUID.randomUUID() + "@example.com";
-		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		createAccount(otherEmail, otherCompanyId);
 		create(tokenFor(otherEmail), shipment("hbl-2026-004")).andExpect(status().isCreated());
 		assertThat(countShipments()).isEqualTo(2);
 	}
@@ -239,7 +275,7 @@ class ShipmentCreationIntegrationTests {
 		jdbc.update("UPDATE shipments SET created_at = created_at - INTERVAL '1 hour' WHERE shipment_reference = 'HBL-OLDER'");
 
 		String otherEmail = "cdg56-other-" + UUID.randomUUID() + "@example.com";
-		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		createAccount(otherEmail, otherCompanyId);
 		create(tokenFor(otherEmail), shipment("HBL-OTHER")).andExpect(status().isCreated());
 
 		list(token)
@@ -407,7 +443,7 @@ class ShipmentCreationIntegrationTests {
 	@Test
 	void forbidsAnotherCompanysShipmentAndHidesUnknownIds() throws Exception {
 		String otherEmail = "cdg24-other-" + UUID.randomUUID() + "@example.com";
-		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		createAccount(otherEmail, otherCompanyId);
 		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-2026-008")).andExpect(status().isCreated()).andReturn();
 		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
@@ -507,7 +543,7 @@ class ShipmentCreationIntegrationTests {
 	@Test
 	void hidesTrackingForAnotherCompanyAndRejectsAnInactiveCompany() throws Exception {
 		String otherEmail = "cdg102-other-" + UUID.randomUUID() + "@example.com";
-		createAccount(otherEmail, companyId("STRAITS_FRESH_DEMO"));
+		createAccount(otherEmail, otherCompanyId);
 		MvcResult created = create(tokenFor(otherEmail), shipment("HBL-TRACK-OTHER")).andExpect(status().isCreated()).andReturn();
 		Number otherShipmentId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 
@@ -569,8 +605,14 @@ class ShipmentCreationIntegrationTests {
 		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
 	}
 
+	private Long createCompany(String code, String name) {
+		jdbc.update("INSERT INTO companies (code, name, active) VALUES (?, ?, TRUE)", code, name);
+		return companyId(code);
+	}
+
 	private int countShipments() {
-		return jdbc.queryForObject("SELECT COUNT(*) FROM shipments", Integer.class);
+		return jdbc.queryForObject("SELECT COUNT(*) FROM shipments WHERE company_id IN (?, ?)", Integer.class,
+				companyId, otherCompanyId);
 	}
 
 	private static AisPosition position(String mmsi, String name, String latitude, String longitude, String speed) {

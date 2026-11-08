@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.util.Locale;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +56,8 @@ class ShipmentImporterAccessIntegrationTests {
 	private Long forwarderCompanyId;
 	private Long importerCompanyId;
 	private Long unrelatedCompanyId;
+	private String forwarderCompanyCode;
+	private String importerCompanyCode;
 	private String unrelatedCompanyCode;
 	private String forwarderEmail;
 	private String importerEmail;
@@ -61,14 +66,49 @@ class ShipmentImporterAccessIntegrationTests {
 
 	@BeforeEach
 	void setUp() throws Exception {
-		forwarderCompanyId = companyId("HARBOURLINE_DEMO");
-		importerCompanyId = companyId("STRAITS_FRESH_DEMO");
+		forwarderCompanyCode = "CDG314-F-" + UUID.randomUUID().toString().replace("-", "");
+		importerCompanyCode = "CDG314-I-" + UUID.randomUUID().toString().replace("-", "");
+		forwarderCompanyId = createCompany(forwarderCompanyCode);
+		importerCompanyId = createCompany(importerCompanyCode);
 		unrelatedCompanyCode = "CDG129" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 		unrelatedCompanyId = createCompany(unrelatedCompanyCode);
 		forwarderEmail = account("FREIGHT_FORWARDER", forwarderCompanyId);
 		importerEmail = account("IMPORTER", importerCompanyId);
 		forwarderToken = tokenFor(forwarderEmail);
 		importerToken = tokenFor(importerEmail);
+	}
+
+	@AfterEach
+	void cleanUpFixture() {
+		if (forwarderCompanyId == null || importerCompanyId == null || unrelatedCompanyId == null) {
+			return;
+		}
+		if (TestTransaction.isActive()) {
+			TestTransaction.flagForRollback();
+			TestTransaction.end();
+		}
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.company_id IN (?, ?, ?)
+				)
+				""", forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?, ?))",
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN (SELECT id FROM shipments WHERE company_id IN (?, ?, ?))",
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM shipments WHERE company_id IN (?, ?, ?)", forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("""
+				DELETE FROM forwarder_importer_relationships
+				WHERE forwarder_company_id IN (?, ?, ?) OR importer_company_id IN (?, ?, ?)
+				""", forwarderCompanyId, importerCompanyId, unrelatedCompanyId,
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM users WHERE company_id IN (?, ?, ?)",
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
+		jdbc.update("DELETE FROM companies WHERE id IN (?, ?, ?)",
+				forwarderCompanyId, importerCompanyId, unrelatedCompanyId);
 	}
 
 	@Test
@@ -121,7 +161,7 @@ class ShipmentImporterAccessIntegrationTests {
 	void activeRelationshipsAuthorizeExactCompanyCodesAndDeactivationOnlyBlocksNewLinks() {
 		Long relationshipActorId = accountId(forwarderEmail);
 		createRelationship(forwarderCompanyId, importerCompanyId, relationshipActorId, true);
-		ShipmentImportRow row = row("STRAITS_FRESH_DEMO");
+		ShipmentImportRow row = row(importerCompanyCode);
 
 		ImporterOrganisationResolution resolved = importerAuthorizer.resolveAuthorizedImporter(
 				entityManager.getReference(Company.class, forwarderCompanyId), row);
@@ -130,7 +170,7 @@ class ShipmentImporterAccessIntegrationTests {
 		assertThat(importerAuthorizer.resolveAuthorizedImporter(entityManager.getReference(Company.class, forwarderCompanyId),
 				row(null)).importerCompany()).isNull();
 		assertThat(importerAuthorizer.resolveAuthorizedImporter(entityManager.getReference(Company.class, forwarderCompanyId),
-				row("straits_fresh_demo")).error().code()).isEqualTo("UNKNOWN_IMPORTER_ORGANISATION");
+				row(importerCompanyCode.toLowerCase(Locale.ROOT))).error().code()).isEqualTo("UNKNOWN_IMPORTER_ORGANISATION");
 		assertThat(importerAuthorizer.resolveAuthorizedImporter(entityManager.getReference(Company.class, forwarderCompanyId),
 				row("UNKNOWN")).error().code()).isEqualTo("UNKNOWN_IMPORTER_ORGANISATION");
 		assertThat(importerAuthorizer.resolveAuthorizedImporter(entityManager.getReference(Company.class, forwarderCompanyId),
