@@ -161,7 +161,7 @@ class ShipmentRecommendationIntegrationTests {
 				.andReturn().getResponse().getContentAsString());
 		assertThat(listed).hasSize(1);
 		assertThat(listed.get(0).has("recommendation")).isFalse();
-		assertThat(listed.get(0).has("risk")).isFalse();
+		assertThat(listed.get(0).get("risk").get("level").asText()).isEqualTo("LOW");
 	}
 
 	private void assertAssessed(Duration remaining, String level, String explanation) throws Exception {
@@ -187,12 +187,14 @@ class ShipmentRecommendationIntegrationTests {
 		assertThat(body.get("remainingConnectionWindow").isNull()).isTrue();
 		JsonNode recommendation = body.get("recommendation");
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.BOTH_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.BOTH_UNAVAILABLE + body.get("delayComparison").get("message").asText());
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").isNull()).isTrue();
 		assertThat(recommendation.get("riskExplanation").isNull()).isTrue();
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText())
+				.isEqualTo(body.get("delayComparison").get("message").asText());
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 		assertThat(body.get("riskContributions").get("assessed").asBoolean()).isFalse();
 		if (mother) {
@@ -209,13 +211,14 @@ class ShipmentRecommendationIntegrationTests {
 
 	private static void assertNotReturned(JsonNode body) {
 		JsonNode recommendation = body.get("recommendation");
+		String detail = body.get("delayComparison").get("message").asText();
 		assertThat(recommendation.get("available").asBoolean()).isFalse();
-		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+		assertThat(recommendation.get("unavailable").asText()).isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + detail);
 		assertThat(recommendation.get("response").isNull()).isTrue();
 		assertThat(recommendation.get("riskLevel").asText()).isEqualTo(body.get("risk").get("level").asText());
 		assertThat(recommendation.get("riskExplanation").asText()).isEqualTo(body.get("risk").get("explanation").asText());
 		assertThat(recommendation.get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
-		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(recommendation.get("impact").get("detail").asText()).isEqualTo(detail);
 		assertThat(recommendation.toString()).doesNotContain("NO_ACTION");
 	}
 
@@ -274,14 +277,16 @@ class ShipmentRecommendationIntegrationTests {
 		jdbc.execute("ALTER TABLE shipments ALTER COLUMN planned_feeder_departure_at DROP NOT NULL");
 	}
 
+	// Persisted human decisions are separate from the calculated recommendation output.
 	private int recommendationColumns() {
 		Integer columns = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM information_schema.columns
-				WHERE table_schema = 'public' AND column_name ILIKE '%recommend%'
+				WHERE table_schema = 'public' AND table_name = 'shipments' AND column_name ILIKE '%recommend%'
 				""", Integer.class);
 		Integer tables = jdbc.queryForObject("""
 				SELECT COUNT(*) FROM information_schema.tables
 				WHERE table_schema = 'public' AND table_name ILIKE '%recommend%'
+					AND table_name NOT IN ('recommendation_decisions', 'recommendation_decision_history')
 				""", Integer.class);
 		return columns + tables;
 	}

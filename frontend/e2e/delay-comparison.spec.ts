@@ -23,7 +23,7 @@ type Detail = {
 };
 
 function assertOwnedDatabase() {
-  if (blocked.has(database) || !/^drift_cdg207_comparison_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken) || container !== 'drift-cdg207-pg') {
+  if (blocked.has(database) || !/^drift_cdg207_comparison_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken) || container !== 'drift-cdg252-delay-ui-pg') {
     throw new Error('Run this spec through npm run test:e2e:delay-comparison. A database name is not proof that this run created the database.');
   }
   const current = sql('SELECT current_database();');

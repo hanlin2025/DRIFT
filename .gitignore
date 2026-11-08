@@ -2,6 +2,10 @@
 backend/target/
 *.class
 
+# Python runtime cache
+__pycache__/
+*.pyc
+
 # IDE
 .idea/
 *.iml

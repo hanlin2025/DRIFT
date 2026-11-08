@@ -1,12 +1,5 @@
-// Browser check for the CDG-207 deadline assessment.
-//
-// This frontend branch does not contain the CDG-206 backend. Pass a clean checkout of
-// commit 0900d30b68ad545c68b2ce8a3310cf9e0d084427, for example:
-//
-//   DRIFT_CDG207_BACKEND=/path/to/cdg-206/backend npm run test:e2e:delay-comparison
-//
-// The runner prints the frontend and backend commits, refuses another backend commit,
-// and refuses a dirty backend checkout. It does not modify that checkout.
+// Browser check for CDG-207's deadline comparison against this integrated checkout.
+// The runner starts this branch's backend and a fresh, owned local PostgreSQL database.
 
 import { randomBytes } from 'node:crypto';
 import { spawn, execFileSync, spawnSync } from 'node:child_process';
@@ -15,9 +8,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = path.join(root, 'frontend');
-const container = 'drift-cdg207-pg';
+const backendDir = path.join(root, 'backend');
+const container = 'drift-cdg252-delay-ui-pg';
 const hostPort = '55434';
-const requiredBackend = '0900d30b68ad545c68b2ce8a3310cf9e0d084427';
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const ownedName = /^drift_cdg207_comparison_[0-9]{14}_[a-f0-9]{12}$/;
 let activeBackend = null;
@@ -28,29 +21,16 @@ function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-function verifyBackend() {
-  const backendDir = process.env.DRIFT_CDG207_BACKEND;
-  if (!backendDir) {
-    throw new Error('Set DRIFT_CDG207_BACKEND to a clean checkout of the CDG-206 backend. This runner will not start the backend in this frontend worktree.');
+function verifyIntegratedBackend() {
+  const comparison = path.join(backendDir, 'src/main/java/com/drift/backend/shipment/DelayComparison.java');
+  const migration = path.join(backendDir, 'src/main/resources/db/migration/V30__create_shipment_importer_constraints.sql');
+  if (!git(root, ['ls-files', '--error-unmatch', 'backend/src/main/java/com/drift/backend/shipment/DelayComparison.java'])
+      || !git(root, ['ls-files', '--error-unmatch', 'backend/src/main/resources/db/migration/V32__widen_maritime_ai_validation_status.sql'])) {
+    throw new Error(`Refusing this checkout because the integrated deadline and AI migration contracts are missing (${comparison}, ${migration}).`);
   }
-  const backendRoot = path.resolve(backendDir);
-  const comparison = path.join(backendRoot, 'src/main/java/com/drift/backend/shipment/DelayComparison.java');
-  const listed = git(backendRoot, ['ls-files', '--error-unmatch', 'src/main/java/com/drift/backend/shipment/DelayComparison.java']);
-  if (listed !== 'src/main/java/com/drift/backend/shipment/DelayComparison.java') {
-    throw new Error(`Refusing backend ${backendRoot} because ${comparison} is not the CDG-206 comparison source.`);
-  }
-  const head = git(backendRoot, ['rev-parse', 'HEAD']);
-  const dirty = git(backendRoot, ['status', '--porcelain']);
-  const frontendHead = git(root, ['rev-parse', 'HEAD']);
-  console.log(`DelayComparisonFrontend commit=${frontendHead}`);
-  console.log(`DelayComparisonBackend commit=${head} path=${backendRoot} clean=${dirty.length === 0}`);
-  if (head !== requiredBackend) {
-    throw new Error(`Backend commit ${head} is not the verified CDG-206 commit ${requiredBackend}.`);
-  }
-  if (dirty.length > 0) {
-    throw new Error(`Refusing dirty CDG-206 checkout ${backendRoot}.`);
-  }
-  return backendRoot;
+  const head = git(root, ['rev-parse', 'HEAD']);
+  console.log(`DelayComparisonIntegratedCheckout commit=${head} backend=${backendDir}`);
+  return backendDir;
 }
 
 function psql(database, statement) {
@@ -116,7 +96,7 @@ function createOwnedDatabase() {
 
 function backendEnv(owned) {
   const url = `jdbc:postgresql://127.0.0.1:${hostPort}/${owned.name}`;
-  return {
+  const environment = {
     ...process.env,
     JWT_SECRET: randomBytes(48).toString('base64url'),
     AIS_ENABLED: 'false',
@@ -132,7 +112,17 @@ function backendEnv(owned) {
     SPRING_FLYWAY_USER: 'drift',
     SPRING_FLYWAY_PASSWORD: 'drift',
     SPRING_FLYWAY_OUT_OF_ORDER: 'false',
+    MARITIME_AI_ENABLED: 'false',
+    MARITIME_AI_EXTERNAL_REQUESTS_APPROVED: 'false',
+    MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED: 'false',
+    MARITIME_CONTEXT_DEMO_ENABLED: 'false',
   };
+  for (const name of [
+    'MARITIME_AI_API_KEY', 'MARITIME_AI_PROVIDER', 'MARITIME_AI_MODEL', 'MARITIME_AI_ENDPOINT',
+    'MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED',
+    'MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED', 'CDG257_RUN_REAL_AUTHENTIC_SMOKE',
+  ]) delete environment[name];
+  return environment;
 }
 
 function waitForBackend(child, owned) {
@@ -190,15 +180,25 @@ function assertListenerIsOurs(child) {
 }
 
 function runPlaywright(owned) {
+  const environment = {
+    ...process.env,
+    MARITIME_AI_ENABLED: 'false',
+    MARITIME_AI_EXTERNAL_REQUESTS_APPROVED: 'false',
+    MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED: 'false',
+    MARITIME_CONTEXT_DEMO_ENABLED: 'false',
+    DRIFT_E2E_DATABASE: owned.name,
+    DRIFT_E2E_OWNER_TOKEN: owned.token,
+    DRIFT_E2E_CONTAINER: container,
+    DRIFT_API_ORIGIN: 'http://127.0.0.1:8080',
+  };
+  for (const name of [
+    'MARITIME_AI_API_KEY', 'MARITIME_AI_PROVIDER', 'MARITIME_AI_MODEL', 'MARITIME_AI_ENDPOINT',
+    'MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED',
+    'MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED', 'CDG257_RUN_REAL_AUTHENTIC_SMOKE',
+  ]) delete environment[name];
   const child = spawn('npx', ['playwright', 'test', 'e2e/delay-comparison.spec.ts', '--project=desktop'], {
     cwd: frontendDir,
-    env: {
-      ...process.env,
-      DRIFT_E2E_DATABASE: owned.name,
-      DRIFT_E2E_OWNER_TOKEN: owned.token,
-      DRIFT_E2E_CONTAINER: container,
-      DRIFT_API_ORIGIN: 'http://127.0.0.1:8080',
-    },
+    env: environment,
     stdio: 'inherit',
   });
   activePlaywright = child;
@@ -267,7 +267,7 @@ function stopForSignal() {
 }
 
 async function main() {
-  const backendDir = verifyBackend();
+  const backendDir = verifyIntegratedBackend();
   assertPortsAvailable();
   ensureDatabaseServer();
   const owned = createOwnedDatabase();

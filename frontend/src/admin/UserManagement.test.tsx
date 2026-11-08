@@ -8,7 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
-import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, removeUser } from './api';
+import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, reactivateUser, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
@@ -19,6 +19,7 @@ vi.mock('./api', () => ({
   listAssignmentAudits: vi.fn(),
   assignUser: vi.fn(),
   removeUser: vi.fn(),
+  reactivateUser: vi.fn(),
   listAccountStatusAudits: vi.fn(),
 }));
 
@@ -78,6 +79,7 @@ beforeEach(() => {
   vi.mocked(listAssignmentAudits).mockResolvedValue([]);
   vi.mocked(assignUser).mockResolvedValue({ ...users[0], role: 'IMPORTER', organisation: organisations[1] });
   vi.mocked(removeUser).mockResolvedValue({ ...users[0], status: 'REMOVED' });
+  vi.mocked(reactivateUser).mockResolvedValue({ ...users[2], status: 'ACTIVE' });
   vi.mocked(listAccountStatusAudits).mockResolvedValue([]);
 });
 
@@ -195,6 +197,19 @@ describe('user management', () => {
       arrivalComparison: null,
     });
     vi.mocked(getShipmentTracking).mockResolvedValue({ motherVesselName: 'Ever Steady', motherVessel: null, motherVesselNameWarning: null, feederVesselName: 'Straits Feeder', feederVessel: null, feederVesselNameWarning: null });
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+    vi.mocked(getVesselTrack).mockResolvedValue({
+      vessel: 'MOTHER',
+      vesselName: null,
+      mmsi: null,
+      windowHours: 24,
+      from: '2026-10-04T03:00:00Z',
+      to: '2026-10-05T03:00:00Z',
+      slowdownThresholdKnots: 3,
+      pointLimit: 500,
+      truncated: false,
+      points: [],
+    });
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/15']}><AppRoutes /><Location /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'HBL-15' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments/15');
@@ -301,11 +316,13 @@ describe('account removal', () => {
 
     await user.click(screen.getByRole('radio', { name: /Ben Ong/ }));
     expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reactivate Ben Ong' })).toBeInTheDocument();
     expect(screen.getByLabelText('Role')).toBeDisabled();
     expect(screen.getByRole('button', { name: /Save assignment/ })).toBeDisabled();
 
     await user.click(screen.getByRole('radio', { name: /Alice Tan/ }));
     expect(screen.getByRole('button', { name: 'Remove Alice Tan' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Reactivate/ })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Role')).toBeEnabled();
   });
 
@@ -318,7 +335,7 @@ describe('account removal', () => {
     vi.mocked(listAccountStatusAudits).mockImplementation(async () => removed ? [removal] : []);
     renderPage();
     const user = userEvent.setup();
-    expect(await screen.findByText('No account removals yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No account status changes yet.')).toBeInTheDocument();
     await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
     await user.click(screen.getByRole('button', { name: 'Remove Alice Tan' }));
 
@@ -334,10 +351,10 @@ describe('account removal', () => {
     expect(screen.queryByRole('button', { name: 'Remove Alice Tan' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Role')).toBeDisabled();
     expect(screen.getByRole('button', { name: /Save assignment/ })).toBeDisabled();
-    const history = screen.getByRole('region', { name: 'Removal history' });
+    const history = screen.getByRole('region', { name: 'Account status history' });
     expect(await within(history).findByText('Active → Removed')).toBeInTheDocument();
     expect(history).toHaveTextContent('Amina Rahman removed Alice Tan');
-    expect(screen.queryByText('No account removals yet.')).not.toBeInTheDocument();
+    expect(screen.queryByText('No account status changes yet.')).not.toBeInTheDocument();
     expect(assignUser).not.toHaveBeenCalled();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin');
   });
@@ -385,7 +402,95 @@ describe('account removal', () => {
 
   it('shows an empty removal history', async () => {
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Removal history' })).toBeInTheDocument();
-    expect(screen.getByText('No account removals yet.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Account status history' })).toBeInTheDocument();
+    expect(screen.getByText('No account status changes yet.')).toBeInTheDocument();
+  });
+});
+
+describe('account reactivation', () => {
+  const reactivation = {
+    id: 2,
+    recordedAt: '2026-10-11T01:15:00Z',
+    operator: { id: 9, fullName: 'Amina Rahman', email: 'amina@example.com' },
+    target: { id: 5, fullName: 'Ben Ong', email: 'ben@example.com' },
+    organisationId: 1,
+    previousStatus: 'REMOVED' as const,
+    newStatus: 'ACTIVE' as const,
+  };
+
+  function renderPage() {
+    writeSession(admin);
+    render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
+  }
+
+  it('filters to removed accounts, confirms reactivation, and shows the audit row', async () => {
+    let reactivated = false;
+    vi.mocked(reactivateUser).mockImplementation(async () => {
+      reactivated = true;
+      return { ...users[2], status: 'ACTIVE' };
+    });
+    vi.mocked(listAccountStatusAudits).mockImplementation(async () => reactivated ? [reactivation] : []);
+    renderPage();
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Show'), 'Removed');
+    await user.click(screen.getByRole('radio', { name: /Ben Ong.*Removed/ }));
+    await user.click(screen.getByRole('button', { name: 'Reactivate Ben Ong' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Reactivate user' });
+    expect(dialog).toHaveTextContent('Ben Ong (ben@example.com)');
+    expect(dialog).toHaveTextContent('existing password');
+    expect(dialog).toHaveTextContent('organisation and role stay the same');
+    await user.click(within(dialog).getByRole('button', { name: 'Reactivate' }));
+
+    expect(reactivateUser).toHaveBeenCalledWith('admin-token', 5);
+    expect(removeUser).not.toHaveBeenCalled();
+    expect(assignUser).not.toHaveBeenCalled();
+    expect(await screen.findByText("Ben Ong's account was reactivated.")).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Ben Ong/ })).not.toBeInTheDocument();
+    expect(screen.getByText('No users match this status.')).toBeInTheDocument();
+    const history = screen.getByRole('region', { name: 'Account status history' });
+    expect(await within(history).findByText('Removed → Active')).toBeInTheDocument();
+    expect(history).toHaveTextContent('Amina Rahman reactivated Ben Ong');
+    expect(screen.queryByRole('button', { name: /Reactivate/ })).not.toBeInTheDocument();
+  });
+
+  it('leaves the account removed when reactivation is cancelled', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Show'), 'Removed');
+    await user.click(screen.getByRole('radio', { name: /Ben Ong/ }));
+    await user.click(screen.getByRole('button', { name: 'Reactivate Ben Ong' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Reactivate user' })).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(reactivateUser).not.toHaveBeenCalled();
+    expect(screen.getByRole('radio', { name: /Ben Ong.*Removed/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reactivate Ben Ong' })).toHaveFocus();
+  });
+
+  it('shows the API error and keeps the account removed', async () => {
+    vi.mocked(reactivateUser).mockRejectedValueOnce(new ApiError('This account is already active.', 409));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('radio', { name: /Ben Ong/ }));
+    await user.click(screen.getByRole('button', { name: 'Reactivate Ben Ong' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Reactivate user' })).getByRole('button', { name: 'Reactivate' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This account is already active.');
+    expect(screen.getByRole('radio', { name: /Ben Ong.*Removed/ })).toBeInTheDocument();
+    expect(screen.queryByText("Ben Ong's account was reactivated.")).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('ends the session when reactivation returns 401', async () => {
+    vi.mocked(reactivateUser).mockRejectedValueOnce(new ApiError('Your session has ended. Log in again.', 401));
+    renderPage();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('radio', { name: /Ben Ong/ }));
+    await user.click(screen.getByRole('button', { name: 'Reactivate Ben Ong' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Reactivate user' })).getByRole('button', { name: 'Reactivate' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
   });
 });

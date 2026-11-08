@@ -50,6 +50,15 @@ class MaritimeContextServiceTest {
 		assertThat(response.sourceMode()).isEqualTo("UNAVAILABLE");
 	}
 
+	@Test
+	void recordedEvidenceCannotPromoteItselfToVerifiedAssociation() {
+		MaritimeEvidence recordedClaimingVerification = new MaritimeEvidence("MPA_ETA_REVISION", "RECORDED_REPLAY", "recorded", "Recorded", "MPA", "", "", null, null, null,
+				"FRESH", "", "", "", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN", true, true, "VERIFIED", "Recorded sources are not a shipment booking.");
+		MaritimeContextResponse response = new MaritimeContextService(true, List.of((shipment, cutoff) -> List.of(recordedClaimingVerification)), Clock.systemUTC())
+				.forShipment(TestShipments.withImo("9351048"));
+		assertThat(response.shipmentAssociationConfidence()).isEqualTo("UNAVAILABLE");
+	}
+
 	private static MaritimeContextService service(boolean enabled) {
 		return new MaritimeContextService(enabled,
 				List.of(new RecordedMpaRevisionEvidenceAdapter(), new SyntheticNoticeEvidenceAdapter(), new UnavailableNeaWeatherEvidenceAdapter()),
@@ -62,8 +71,9 @@ class MaritimeContextServiceTest {
 					1L, 1L, "DEMO", "SG", "ID", "SG", "KOTA LARIS", null,
 					imo, null, null, null, null, null, null, null,
 					Instant.EPOCH, 0L,
-					null, null, null, null, null, null, null,
-					null, null, null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE);
+					null, null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, null, null, null, ShipmentStatus.ACTIVE, null,
+					java.util.List.of());
 		}
 	}
 }

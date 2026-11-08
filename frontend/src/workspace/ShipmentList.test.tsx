@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -94,6 +94,19 @@ beforeEach(() => {
       feederVessel: null,
       feederVesselNameWarning: null,
     };
+  });
+  vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getVesselTrack).mockResolvedValue({
+    vessel: 'MOTHER',
+    vesselName: null,
+    mmsi: null,
+    windowHours: 24,
+    from: '2026-10-04T03:00:00Z',
+    to: '2026-10-05T03:00:00Z',
+    slowdownThresholdKnots: 3,
+    pointLimit: 500,
+    truncated: false,
+    points: [],
   });
 });
 
@@ -404,7 +417,8 @@ describe('workspace shipment retrieval', () => {
     openWorkspace();
     expect(await screen.findByText('Loading shipments...')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    resolveList([newer]);
+    await waitFor(() => expect(listShipments).toHaveBeenCalledTimes(1));
+    await act(async () => resolveList([newer]));
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(screen.queryByText('Loading shipments...')).not.toBeInTheDocument();
   });

@@ -25,7 +25,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
-@Tag(name = "Account removal", description = "Administrator removal of user accounts and the account status audit.")
+@Tag(name = "Account removal", description = "Administrator removal and reactivation of user accounts, and the account status audit.")
 public class AccountRemovalController {
 
 	private final AccountRemovalService removals;
@@ -35,9 +35,9 @@ public class AccountRemovalController {
 	}
 
 	@GetMapping("/api/admin/account-status-audits")
-	@Operation(summary = "List account status changes", description = "Lists saved account removals for the administrator's own organisation, newest first. "
+	@Operation(summary = "List account status changes", description = "Lists saved account status changes for the administrator's own organisation, newest first. "
 			+ "Each entry records the administrator, the user, the organisation, the previous and new status, and the time. "
-			+ "A rejected removal does not add an entry.",
+			+ "A rejected removal or reactivation does not add an entry.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "200", description = "Account status changes, possibly empty", content = @Content(
@@ -107,5 +107,51 @@ public class AccountRemovalController {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(removals.remove(user, userId));
+	}
+
+	@PatchMapping("/api/admin/users/{userId}/reactivate")
+	@Operation(summary = "Reactivate a removed user account", description = "Marks one removed user account in the administrator's own organisation as active. "
+			+ "The same account is kept. Its organisation, role, and password stay as they are. "
+			+ "The call does not open a session. "
+			+ "The administrator's organisation must be active. "
+			+ "A user from another organisation is reported as not found. "
+			+ "An account that is already active cannot be reactivated again. "
+			+ "A reactivation that overlaps another change to the same account is rejected. "
+			+ "A rejected reactivation leaves the account unchanged and writes no audit row.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Account reactivated", content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class))),
+			@ApiResponse(responseCode = "400", description = "The administrator's organisation is missing or inactive", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(name = "Organisation missing or inactive", value = """
+							{"message":"Your organisation is missing or inactive."}
+							"""))),
+			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Your session has ended. Log in again."}
+							"""))),
+			@ApiResponse(responseCode = "403", description = "Authenticated account is not an administrator", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Only an administrator can assign users"}
+							"""))),
+			@ApiResponse(responseCode = "404", description = "No user in the administrator's organisation exists with this id", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"User not found."}
+							"""))),
+			@ApiResponse(responseCode = "409", description = "The account is already active, or it was changed by someone else during the reactivation", content = @Content(
+					mediaType = "application/json", examples = {
+							@ExampleObject(name = "Already active", value = """
+									{"message":"This account is already active."}
+									"""),
+							@ExampleObject(name = "Changed concurrently", value = """
+									{"message":"This account was changed by someone else. Reload and try again."}
+									""") })) })
+	public ResponseEntity<AdminUserResponse> reactivate(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable Long userId) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(removals.reactivate(user, userId));
 	}
 }

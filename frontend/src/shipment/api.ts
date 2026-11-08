@@ -1,6 +1,9 @@
 import { ApiError } from '../signup/api';
+import { RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 import { shipmentFilterSearchParams, type ShipmentFilters } from './shipmentFilters';
 import { type ShipmentFields } from './validation';
+
+export { IMPACT_NOT_RETURNED, RECOMMENDATION_CODES, RECOMMENDATION_RESPONSES, type RecommendationCode } from './recommendationCatalog';
 
 export type ConnectionWindow = {
   duration: string;
@@ -31,14 +34,144 @@ export type ShipmentRisk = {
 export type MaritimeNoticeEvidence = { noticeId: string; title: string; officialSourceUrl: string; citation: string; publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null; supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN'; evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; activityEvidence: string[]; locationEvidence: string[]; limitation: string; };
 export type MaritimeEvidence = {
   sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
-  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
+  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
   evidenceId: string; title: string; sourceIdentifier: string; sourceUrl: string; citation: string;
   sourceEventAt: string | null; observedAt: string | null; retrievedAtUtc: string | null; freshness: string;
   previousValue: string; currentValue: string; changeMagnitude: string;
   activityCompatibility: string; locationCompatibility: string; timeCompatibility: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
+  vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
-export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW' | 'DELAY_COMPARISON_REVIEW';
+export type MaritimeAiRiskSeverity = RiskLevel;
+export type MaritimeAiRiskBasis = 'PLANNED_SHIPMENT_SCHEDULE' | 'AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE';
+export type MaritimeAiEstimateFreshness = 'AVAILABLE' | 'STALE' | 'UNAVAILABLE' | 'UNKNOWN';
+export type MaritimeAiRiskReviewWindowState = 'AVAILABLE' | 'NO_REMAINING_WINDOW' | 'INVALID' | 'INCOMPLETE';
+export type MaritimeAiRiskSnapshotWindowState = 'AVAILABLE' | 'MISSED' | 'INVALID' | 'INCOMPLETE';
+
+export type MaritimeAiRiskReview = {
+  severity: MaritimeAiRiskSeverity | null;
+  selectedWindowBasis: MaritimeAiRiskBasis | null;
+  selectedWindowState: MaritimeAiRiskReviewWindowState | null;
+  estimateFreshness: MaritimeAiEstimateFreshness | null;
+};
+
+export type MaritimeAiClaim = {
+  statement: string;
+  evidenceIds: string[];
+  applicability: string;
+  vesselRole?: 'MOTHER' | 'FEEDER' | null;
+  observationType?: string | null;
+  associationScope?: string | null;
+  factReferences?: string[];
+  relationshipType?: MaritimeAiRelationshipType | null;
+  riskReview?: MaritimeAiRiskReview | null;
+};
+
+export type MaritimeAiFact = {
+  factReference: string;
+  factType: string;
+  subject: string | null;
+  eventType: string | null;
+  timestamp: string | null;
+  previousValue: string | null;
+  currentValue: string | null;
+  evidenceId: string | null;
+  sourceType: string;
+  sourceMode: string;
+  associationScope: string;
+  citation: string;
+  observedAt?: string | null;
+  retrievedAtUtc?: string | null;
+};
+
+export type MaritimeAiRiskSnapshot = {
+  assessed: boolean;
+  severity: MaritimeAiRiskSeverity | null;
+  selectedWindowBasis: MaritimeAiRiskBasis | null;
+  selectedWindowState: MaritimeAiRiskSnapshotWindowState;
+  windowSeconds: number | null;
+  missedBySeconds: number | null;
+  estimateFreshness: MaritimeAiEstimateFreshness;
+  estimateUnavailableCode: string | null;
+  unavailableReason: string | null;
+  calculationLimitations: string[];
+  canonicalFactReferences: string[];
+};
+
+export type MaritimeAiDeadlineState = 'RECORDED' | 'NOT_RECORDED' | 'UNKNOWN';
+export type MaritimeAiComparisonState = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN';
+export type MaritimeAiComparisonOutcome = 'NO_PREDICTED_IMPACT' | 'EXCEEDS_DEADLINE';
+export type MaritimeAiComparisonUnavailableReason =
+  | 'INCOMPATIBLE_MILESTONE'
+  | 'MISSING_PREDICTION'
+  | 'MISSING_CONSTRAINT'
+  | 'STALE_PREDICTION';
+
+export type MaritimeAiBusinessDeadline = {
+  state: MaritimeAiDeadlineState;
+  instant: string | null;
+  recordedTransshipmentPort: string | null;
+  applicableToCurrentPort: boolean | null;
+};
+
+type MaritimeAiBusinessComparisonFacts = {
+  estimatedArrivalAt: string | null;
+  comparedDeadline: string | null;
+  recordedTransshipmentPort: string | null;
+};
+
+export type MaritimeAiBusinessComparison =
+  | (MaritimeAiBusinessComparisonFacts & { state: 'AVAILABLE'; outcome: MaritimeAiComparisonOutcome; unavailableReason: null })
+  | (MaritimeAiBusinessComparisonFacts & { state: 'UNAVAILABLE'; outcome: null; unavailableReason: MaritimeAiComparisonUnavailableReason | null })
+  | (MaritimeAiBusinessComparisonFacts & { state: 'UNKNOWN'; outcome: null; unavailableReason: null });
+
+export type MaritimeAiBusinessContext = {
+  deadline: MaritimeAiBusinessDeadline | null;
+  comparison: MaritimeAiBusinessComparison | null;
+};
+
+export type MaritimeAiBusinessSnapshot = {
+  context: MaritimeAiBusinessContext | null;
+  canonicalFactReferences: string[];
+};
+
+export type MaritimeAiDeterministicSummary = {
+  summaryVersion: string;
+  label: string;
+  shipmentScheduleFacts: MaritimeAiFact[];
+  evidenceFacts: MaritimeAiFact[];
+  limitations: string[];
+  /** Absent on historical assessments created before CDG-259. */
+  connectionRisk?: MaritimeAiRiskSnapshot | null;
+  /** Absent on historical assessments created before business-context snapshots were added. */
+  businessContext?: MaritimeAiBusinessSnapshot | null;
+};
+
+export type MaritimeAiAssessment = {
+  assessmentId: string | null;
+  state: 'GENERATED' | 'ABSTAINED' | 'FAILED';
+  validationStatus: string;
+  bundleVersion: string;
+  bundleHash: string;
+  assessmentCutoffUtc: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  generatedAtUtc: string | null;
+  interpretation: {
+    summary: string;
+    claims: MaritimeAiClaim[];
+    uncertainties: string[];
+    followUpConsiderations: string[];
+    evidenceSufficient: boolean;
+    formalRecommendationCode: string | null;
+  } | null;
+  limitation: string | null;
+  /** Absent on historical assessments created before CDG-256. */
+  deterministicSummary?: MaritimeAiDeterministicSummary | null;
+};
 
 export type RiskContributionCode =
   | 'WINDOW_IN_USE'
@@ -63,16 +196,6 @@ export type RiskContributions = {
   notAssessed: string;
   contributions: [];
 };
-
-export type RecommendationCode =
-  | 'NO_ACTION'
-  | 'MONITOR_CONSTRAINTS'
-  | 'NOTE_TIMING'
-  | 'REVIEW_PLAN'
-  | 'WATCH_CONNECTION'
-  | 'PREPARE_INTERVENTION'
-  | 'CONFIRM_CONNECTION'
-  | 'ACT_ON_CONNECTION';
 
 export type RecommendationImpact = {
   outcome: 'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT';
@@ -103,6 +226,27 @@ export type ShipmentRecommendation = {
   riskExplanation: string | null;
   impact: RecommendationImpact;
 };
+
+export type RecommendationDecisionOutcome = 'APPROVED' | 'MODIFIED' | 'DISMISSED';
+
+export type RecommendationDecision = {
+  outcome: RecommendationDecisionOutcome;
+  recommendationName: string;
+  recommendationWording: string;
+  selectedResponseName: string | null;
+  selectedResponseWording: string | null;
+  decidedByUserId: number;
+  decidedByName: string;
+  decidedAt: string;
+};
+
+export type RecommendationDecisionHistoryEntry = RecommendationDecision & {
+  id: number;
+};
+
+export type RecommendationDecisionRequest =
+  | { outcome: 'APPROVED' | 'DISMISSED' }
+  | { outcome: 'MODIFIED'; selectedResponse: RecommendationCode };
 
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
@@ -194,6 +338,38 @@ export type DelayComparison = {
   recordedTransshipmentPort: string | null;
 };
 
+export type PortConditionOutcome = 'MATCHES_NORMAL' | 'SLOWER_THAN_OWN_REPORTS';
+
+export type PortConditionReason =
+  | 'NO_REPORT'
+  | 'MISSING_PORT'
+  | 'PORT_NOT_DEFINED'
+  | 'UNUSABLE_POSITION'
+  | 'NOT_NEAR_PORT'
+  | 'UNRELIABLE_REPORT'
+  | 'POSITION_TOO_OLD'
+  | 'MISSING_SPEED'
+  | 'NO_BASELINE'
+  | 'BASELINE_TRUNCATED';
+
+export type PortConditionComparison = {
+  outcome: PortConditionOutcome | null;
+  reason: PortConditionReason | null;
+  message: string;
+  vessel: 'MOTHER';
+  vesselName: string | null;
+  transshipmentPort: string | null;
+  knownPort: 'Singapore' | 'Tanjung Pelepas' | null;
+  latitude: number | null;
+  longitude: number | null;
+  speedOverGroundKnots: number | null;
+  navigationalStatus: number | null;
+  ingestedAt: string | null;
+  source: 'AIS_STREAM' | 'SEEDED' | null;
+  earlierReportCount: number;
+  slowestOwnSpeedKnots: number | null;
+};
+
 export type Shipment = {
   id: number;
   shipmentReference: string;
@@ -230,8 +406,11 @@ export type Shipment = {
   arrivalComparison: ArrivalComparison | null;
   transshipmentArrivalDeadline?: TransshipmentArrivalDeadline | null;
   delayComparison?: DelayComparison | null;
+  portConditionComparison?: PortConditionComparison | null;
   updatedAt?: string | null;
   updatedByName?: string | null;
+  recommendationDecision?: RecommendationDecision | null;
+  recommendationDecisionHistory?: RecommendationDecisionHistoryEntry[];
 };
 
 export type Cdg201ArrivalEvidence = {
@@ -303,6 +482,24 @@ export async function getShipment(token: string, shipmentId: string): Promise<Sh
   return shipment;
 }
 
+export async function recordRecommendationDecision(
+  token: string,
+  shipmentId: number,
+  request: RecommendationDecisionRequest,
+): Promise<RecommendationDecision> {
+  const body = request.outcome === 'MODIFIED'
+    ? { outcome: request.outcome, selectedResponse: request.selectedResponse }
+    : { outcome: request.outcome };
+  const data = await send(`/api/shipments/${encodeURIComponent(String(shipmentId))}/recommendation-decision`, token, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const decision = parseRecommendationDecision(data);
+  if (!decision) throw new ApiError(UNEXPECTED, 502);
+  return decision;
+}
+
 export async function updateTransshipmentArrivalDeadline(token: string, shipmentId: number, body: {
   transshipmentArrivalDeadline: string | null;
   expectedTransshipmentPort: string;
@@ -329,12 +526,28 @@ export async function getCdg201ArrivalEvidence(token: string, shipmentId: string
 
 export async function getMaritimeContext(token: string, shipmentId: string): Promise<MaritimeContext> {
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-context`, token);
-  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
+  if (!isRecord(data) || !isPresentText(data.contractVersion) || typeof data.enabled !== 'boolean' || !['DISABLED', 'RECORDED_REPLAY', 'RETROSPECTIVE_ANALYSIS', 'SYNTHETIC_DEMONSTRATION', 'UNAVAILABLE'].includes(String(data.sourceMode)) || !isPresentText(data.assessmentCutoffUtc) || !isPresentText(data.shipmentAssociationConfidence) || !isPresentText(data.limitation) || !Array.isArray(data.evidence) || !Array.isArray(data.notices) || data.aiExplanation !== null || data.suggestedActions !== null) throw new ApiError(UNEXPECTED, 502);
   const evidence = data.evidence as MaritimeEvidence[];
   if (evidence.some(item => !isRecord(item) || !isPresentText(item.sourceType) || !isPresentText(item.sourceMode) || !isPresentText(item.evidenceId) || !isPresentText(item.title) || !isPresentText(item.shipmentAssociationConfidence) || !isPresentText(item.limitation))) throw new ApiError(UNEXPECTED, 502);
   const notices = data.notices as MaritimeNoticeEvidence[];
   const sourceMode = data.sourceMode as MaritimeContext['sourceMode'];
   return { contractVersion: data.contractVersion, enabled: data.enabled, sourceMode, assessmentCutoffUtc: data.assessmentCutoffUtc, shipmentAssociationConfidence: data.shipmentAssociationConfidence, limitation: data.limitation, evidence, notices, aiExplanation: null, suggestedActions: null };
+}
+
+export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(asMaritimeAiAssessment);
+}
+
+export async function generateMaritimeAiAssessment(token: string, shipmentId: string): Promise<MaritimeAiAssessment> {
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-ai-assessments`, token, { method: 'POST' });
+  return asMaritimeAiAssessment(data);
+}
+
+function asMaritimeAiAssessment(value: unknown): MaritimeAiAssessment {
+  if (!isRecord(value) || !isPresentText(value.state) || !isPresentText(value.validationStatus) || !isPresentText(value.bundleVersion) || !isPresentText(value.bundleHash) || !isPresentText(value.assessmentCutoffUtc) || !isPresentText(value.provider) || !isPresentText(value.promptVersion)) throw new ApiError(UNEXPECTED, 502);
+  return value as MaritimeAiAssessment;
 }
 
 export type ShipmentTracking = {
@@ -636,101 +849,10 @@ function isRiskLevel(value: unknown): value is RiskLevel {
 
 function isRisk(value: unknown): value is ShipmentRisk {
   return isRecord(value)
-    && RISK_LEVELS.includes(value.level)
+    && isRiskLevel(value.level)
     && typeof value.explanation === 'string'
     && value.explanation.trim().length > 0;
 }
-
-const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
-  WINDOW_IN_USE: 'Window in use',
-  REMAINING_DURATION: 'Remaining duration',
-  MISSED_BY: 'Missed by',
-  PLANNED_DURATION: 'Planned duration',
-  PLANNED_WINDOW: 'Planned window',
-  ESTIMATE_NOT_USED: 'Estimate not used',
-};
-
-const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
-  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
-];
-
-function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
-  if (!('riskContributions' in value) || value.riskContributions == null) return null;
-  return parseRiskContributions(value.riskContributions);
-}
-
-function parseRiskContributions(value: unknown): RiskContributions | undefined {
-  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
-  if (value.assessed) {
-    if (value.notAssessed != null) return undefined;
-    const contributions = value.contributions.map(parseContribution);
-    if (contributions.some(contribution => contribution === undefined)) return undefined;
-    const parsed = contributions as RiskContribution[];
-    if (!contributionSet(parsed)) return undefined;
-    return { assessed: true, notAssessed: null, contributions: parsed };
-  }
-  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
-    return undefined;
-  }
-  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
-}
-
-function parseContribution(value: unknown): RiskContribution | undefined {
-  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
-  const code = value.code as RiskContributionCode;
-  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
-    return undefined;
-  }
-  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
-    return undefined;
-  }
-  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
-  return { code, label: value.label, value: value.value };
-}
-
-function contributionSet(contributions: RiskContribution[]): boolean {
-  const codes = contributions.map(contribution => contribution.code);
-  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
-  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
-  if (measured.length !== 1) return false;
-  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
-  return codes.includes('ESTIMATE_NOT_USED') === planned;
-}
-
-const RECOMMENDATION_RESPONSES: Record<RecommendationCode, { label: string; wording: string }> = {
-  NO_ACTION: {
-    label: 'No action',
-    wording: 'No action is needed. The connection risk is low, and the prediction does not affect the importer\'s constraints.',
-  },
-  MONITOR_CONSTRAINTS: {
-    label: 'Monitor',
-    wording: 'Monitor the shipment. The connection risk is low, and the prediction affects the importer\'s constraints.',
-  },
-  NOTE_TIMING: {
-    label: 'Note the timing',
-    wording: 'Note the connection timing. The connection risk is medium, and the prediction does not affect the importer\'s constraints.',
-  },
-  REVIEW_PLAN: {
-    label: 'Review the plan',
-    wording: 'Review the transfer plan. The connection risk is medium, and the prediction affects the importer\'s constraints.',
-  },
-  WATCH_CONNECTION: {
-    label: 'Watch the connection',
-    wording: 'Watch the connection. The connection risk is high, and the prediction does not affect the importer\'s constraints.',
-  },
-  PREPARE_INTERVENTION: {
-    label: 'Prepare an intervention',
-    wording: 'Prepare an intervention. The connection risk is high, and the prediction affects the importer\'s constraints.',
-  },
-  CONFIRM_CONNECTION: {
-    label: 'Confirm the connection',
-    wording: 'Confirm the connection plan. The connection risk is critical, and the prediction does not affect the importer\'s constraints.',
-  },
-  ACT_ON_CONNECTION: {
-    label: 'Act on the connection',
-    wording: 'Act on this connection. The connection risk is critical, and the prediction affects the importer\'s constraints.',
-  },
-};
 
 const RECOMMENDATION_FOR: Record<RiskLevel, Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', RecommendationCode>> = {
   LOW: { AFFECTS_CONSTRAINTS: 'MONITOR_CONSTRAINTS', NO_PREDICTED_IMPACT: 'NO_ACTION' },
@@ -791,6 +913,122 @@ function parseRecommendedResponse(value: unknown): RecommendedResponse | undefin
   const expected = RECOMMENDATION_RESPONSES[code];
   if (value.label !== expected.label || value.wording !== expected.wording) return undefined;
   return { code, label: expected.label, wording: expected.wording };
+}
+
+function recommendationDecisionOf(value: Record<string, unknown>): RecommendationDecision | null | undefined {
+  if (!('recommendationDecision' in value) || value.recommendationDecision == null) return null;
+  return parseRecommendationDecision(value.recommendationDecision);
+}
+
+function recommendationDecisionHistoryOf(value: Record<string, unknown>): RecommendationDecisionHistoryEntry[] | undefined {
+  if (!('recommendationDecisionHistory' in value) || value.recommendationDecisionHistory == null) return [];
+  if (!Array.isArray(value.recommendationDecisionHistory)) return undefined;
+  const history: RecommendationDecisionHistoryEntry[] = [];
+  for (const entry of value.recommendationDecisionHistory) {
+    const parsed = parseRecommendationDecisionHistory(entry);
+    if (parsed === undefined) return undefined;
+    history.push(parsed);
+  }
+  return history;
+}
+
+function parseRecommendationDecisionHistory(value: unknown): RecommendationDecisionHistoryEntry | undefined {
+  if (!isRecord(value) || !isFiniteNumber(value.id) || value.id <= 0) return undefined;
+  const decision = parseRecommendationDecision(value);
+  if (decision === undefined) return undefined;
+  return { id: value.id, ...decision };
+}
+
+function parseRecommendationDecision(value: unknown): RecommendationDecision | undefined {
+  if (!isRecord(value)) return undefined;
+  const outcome = value.outcome;
+  if (outcome !== 'APPROVED' && outcome !== 'MODIFIED' && outcome !== 'DISMISSED') return undefined;
+  if (!isPresentText(value.recommendationName) || !isPresentText(value.recommendationWording)) return undefined;
+  if (!isFiniteNumber(value.decidedByUserId) || value.decidedByUserId <= 0) return undefined;
+  if (!isPresentText(value.decidedByName) || !isPresentText(value.decidedAt)) return undefined;
+  const selectedName = value.selectedResponseName;
+  const selectedWording = value.selectedResponseWording;
+  if (outcome === 'MODIFIED') {
+    if (!isPresentText(selectedName) || !isPresentText(selectedWording)) return undefined;
+    if (selectedName.trim() === value.recommendationName.trim()) return undefined;
+    return {
+      outcome,
+      recommendationName: value.recommendationName,
+      recommendationWording: value.recommendationWording,
+      selectedResponseName: selectedName,
+      selectedResponseWording: selectedWording,
+      decidedByUserId: value.decidedByUserId,
+      decidedByName: value.decidedByName,
+      decidedAt: value.decidedAt,
+    };
+  }
+  if (selectedName != null || selectedWording != null) return undefined;
+  return {
+    outcome,
+    recommendationName: value.recommendationName,
+    recommendationWording: value.recommendationWording,
+    selectedResponseName: null,
+    selectedResponseWording: null,
+    decidedByUserId: value.decidedByUserId,
+    decidedByName: value.decidedByName,
+    decidedAt: value.decidedAt,
+  };
+}
+
+const CONTRIBUTION_LABELS: Record<RiskContributionCode, string> = {
+  WINDOW_IN_USE: 'Window in use',
+  REMAINING_DURATION: 'Remaining duration',
+  MISSED_BY: 'Missed by',
+  PLANNED_DURATION: 'Planned duration',
+  PLANNED_WINDOW: 'Planned window',
+  ESTIMATE_NOT_USED: 'Estimate not used',
+};
+
+const MEASURED_CONTRIBUTIONS: readonly RiskContributionCode[] = [
+  'REMAINING_DURATION', 'MISSED_BY', 'PLANNED_DURATION', 'PLANNED_WINDOW',
+];
+
+function riskContributionsOf(value: Record<string, unknown>): RiskContributions | null | undefined {
+  if (!('riskContributions' in value) || value.riskContributions == null) return null;
+  return parseRiskContributions(value.riskContributions);
+}
+
+function parseRiskContributions(value: unknown): RiskContributions | undefined {
+  if (!isRecord(value) || typeof value.assessed !== 'boolean' || !Array.isArray(value.contributions)) return undefined;
+  if (value.assessed) {
+    if (value.notAssessed != null) return undefined;
+    const contributions = value.contributions.map(parseContribution);
+    if (contributions.some(contribution => contribution === undefined)) return undefined;
+    const parsed = contributions as RiskContribution[];
+    if (!contributionSet(parsed)) return undefined;
+    return { assessed: true, notAssessed: null, contributions: parsed };
+  }
+  if (typeof value.notAssessed !== 'string' || value.notAssessed.trim().length === 0 || value.contributions.length > 0) {
+    return undefined;
+  }
+  return { assessed: false, notAssessed: value.notAssessed, contributions: [] };
+}
+
+function parseContribution(value: unknown): RiskContribution | undefined {
+  if (!isRecord(value) || typeof value.code !== 'string' || !(value.code in CONTRIBUTION_LABELS)) return undefined;
+  const code = value.code as RiskContributionCode;
+  if (value.label !== CONTRIBUTION_LABELS[code] || typeof value.value !== 'string' || value.value.trim().length === 0) {
+    return undefined;
+  }
+  if (code === 'WINDOW_IN_USE' && value.value !== 'Remaining connection window' && value.value !== 'Planned connection window') {
+    return undefined;
+  }
+  if (code === 'PLANNED_WINDOW' && value.value !== 'The planned connection window is not positive.') return undefined;
+  return { code, label: value.label, value: value.value };
+}
+
+function contributionSet(contributions: RiskContribution[]): boolean {
+  const codes = contributions.map(contribution => contribution.code);
+  if (new Set(codes).size !== codes.length || !codes.includes('WINDOW_IN_USE') || contributions.length === 0) return false;
+  const measured = codes.filter(code => MEASURED_CONTRIBUTIONS.includes(code));
+  if (measured.length !== 1) return false;
+  const planned = measured[0] === 'PLANNED_DURATION' || measured[0] === 'PLANNED_WINDOW';
+  return codes.includes('ESTIMATE_NOT_USED') === planned;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -948,9 +1186,15 @@ function asShipment(value: unknown): Shipment | null {
   if (transshipmentArrivalDeadline === undefined) return null;
   const delayComparison = delayComparisonOf(value);
   if (delayComparison === undefined) return null;
+  const portConditionComparison = portConditionOf(value, motherVesselPosition ?? null, motherOperationalState ?? null, risk ?? null);
+  if (portConditionComparison === undefined) return null;
   const updatedAt = optionalIdentity(value, 'updatedAt');
   const updatedByName = optionalIdentity(value, 'updatedByName');
   if (updatedAt === undefined || updatedByName === undefined) return null;
+  const recommendationDecision = recommendationDecisionOf(value);
+  if (recommendationDecision === undefined) return null;
+  const recommendationDecisionHistory = recommendationDecisionHistoryOf(value);
+  if (recommendationDecisionHistory === undefined) return null;
   return {
     id: value.id,
     shipmentReference: value.shipmentReference as string,
@@ -968,7 +1212,6 @@ function asShipment(value: unknown): Shipment | null {
     remainingConnectionWindow,
     risk: risk ?? null,
     riskContributions,
-    recommendation,
     status: shipmentStatusOf(value.status),
     motherVesselPosition: motherVesselPosition ?? null,
     feederVesselPosition: feederVesselPosition ?? null,
@@ -987,13 +1230,144 @@ function asShipment(value: unknown): Shipment | null {
     arrivalComparison,
     transshipmentArrivalDeadline,
     delayComparison,
+    portConditionComparison,
     updatedAt,
     updatedByName,
+    recommendation,
+    recommendationDecision,
+    recommendationDecisionHistory,
   };
 }
 
 const ARRIVAL_CLASSIFICATIONS: readonly ArrivalClassification[] = ['AHEAD_OF_PLAN', 'ON_SCHEDULE', 'BEHIND_PLAN'];
 const ARRIVAL_FIELDS = ['estimatedArrivalAt', 'limitation', 'speedOverGroundKnots', 'classification', 'difference', 'differenceSeconds', 'differenceNanos', 'lastReceivedAt', 'possiblyOutdated'] as const;
+
+const PORT_OUTCOMES: readonly PortConditionOutcome[] = ['MATCHES_NORMAL', 'SLOWER_THAN_OWN_REPORTS'];
+const PORT_REASONS: readonly PortConditionReason[] = [
+  'NO_REPORT', 'MISSING_PORT', 'PORT_NOT_DEFINED', 'UNUSABLE_POSITION', 'NOT_NEAR_PORT',
+  'UNRELIABLE_REPORT', 'POSITION_TOO_OLD', 'MISSING_SPEED', 'NO_BASELINE', 'BASELINE_TRUNCATED',
+];
+const PORT_KNOWN = ['Singapore', 'Tanjung Pelepas'] as const;
+const PORT_MESSAGES = {
+  MATCHES_NORMAL: 'The mother vessel\'s movement matches its own retained reports near this port. This is not a measured congestion index.',
+  SLOWER_THAN_OWN_REPORTS: 'The mother vessel is moving slower than its own retained reports near this port. This is not a measured congestion index.',
+  NO_REPORT: 'The mother vessel has no retained AIS report.',
+  MISSING_PORT: 'The transshipment port is missing.',
+  PORT_NOT_DEFINED: 'Normal conditions are not defined for this port.',
+  UNUSABLE_POSITION: 'The mother vessel\'s coordinates cannot be used.',
+  NOT_NEAR_PORT: 'The mother vessel is not within 25 nautical miles of the transshipment port, so current port conditions are not observed.',
+  UNRELIABLE_REPORT: 'The latest report is unreliable because a stopped status was reported above 1 knot.',
+  POSITION_TOO_OLD: 'The mother vessel\'s position is more than six hours old.',
+  MISSING_SPEED: 'The mother vessel\'s speed is missing, so it cannot be compared with its own reports.',
+  NO_BASELINE: 'This vessel has no earlier report near this port, so normal conditions are not defined.',
+  BASELINE_TRUNCATED: 'This vessel has more retained reports than this comparison reads, so normal conditions are not defined from a partial history.',
+} as const;
+
+function portConditionOf(
+  value: Record<string, unknown>,
+  position: VesselPosition | null,
+  state: OperationalState | null,
+  risk: ShipmentRisk | null,
+): PortConditionComparison | null | undefined {
+  if (!('portConditionComparison' in value) || value.portConditionComparison == null) return null;
+  const comparison = parsePortCondition(value.portConditionComparison);
+  if (!comparison || !portConditionAgrees(comparison, position, state, risk)) return undefined;
+  return comparison;
+}
+
+function parsePortCondition(value: unknown): PortConditionComparison | undefined {
+  if (!isRecord(value) || value.vessel !== 'MOTHER') return undefined;
+  const fields = ['outcome', 'reason', 'message', 'vesselName', 'transshipmentPort', 'knownPort', 'latitude',
+    'longitude', 'speedOverGroundKnots', 'navigationalStatus', 'ingestedAt', 'source', 'earlierReportCount',
+    'slowestOwnSpeedKnots'] as const;
+  if (!fields.every(field => field in value)) return undefined;
+  if (typeof value.message !== 'string') return undefined;
+  const vesselName = optionalPort(value.vesselName);
+  const transshipmentPort = optionalPort(value.transshipmentPort);
+  if (vesselName === undefined || transshipmentPort === undefined) return undefined;
+  if (value.knownPort != null && !PORT_KNOWN.some(port => port === value.knownPort)) return undefined;
+  const knownPort = value.knownPort == null ? null : value.knownPort as 'Singapore' | 'Tanjung Pelepas';
+  if (!isOptionalFiniteNumber(value.latitude) || !isOptionalFiniteNumber(value.longitude)) return undefined;
+  if ((value.latitude == null) !== (value.longitude == null)) return undefined;
+  if (!isOptionalFiniteNumber(value.speedOverGroundKnots) || !isOptionalFiniteNumber(value.slowestOwnSpeedKnots)) return undefined;
+  if (!isOptionalStatus(value.navigationalStatus)) return undefined;
+  const ingestedAt = optionalInstant(value.ingestedAt);
+  if (ingestedAt === undefined) return undefined;
+  if (value.source != null && value.source !== 'AIS_STREAM' && value.source !== 'SEEDED') return undefined;
+  if (!isWholeCount(value.earlierReportCount)) return undefined;
+  const latitude = value.latitude ?? null;
+  const longitude = value.longitude ?? null;
+  const speedOverGroundKnots = value.speedOverGroundKnots ?? null;
+  const slowestOwnSpeedKnots = value.slowestOwnSpeedKnots ?? null;
+  const source = value.source == null ? null : value.source;
+  if (latitude != null && source == null) return undefined;
+  if (isPortOutcome(value.outcome) && value.reason == null) {
+    if (value.message !== PORT_MESSAGES[value.outcome]) return undefined;
+    if (value.earlierReportCount < 1 || slowestOwnSpeedKnots == null || speedOverGroundKnots == null
+      || ingestedAt == null || knownPort == null || latitude == null || source == null) return undefined;
+    if (value.outcome === 'MATCHES_NORMAL' && speedOverGroundKnots < slowestOwnSpeedKnots) return undefined;
+    if (value.outcome === 'SLOWER_THAN_OWN_REPORTS' && speedOverGroundKnots >= slowestOwnSpeedKnots) return undefined;
+    return {
+      outcome: value.outcome, reason: null, message: value.message, vessel: 'MOTHER', vesselName, transshipmentPort,
+      knownPort, latitude, longitude, speedOverGroundKnots, navigationalStatus: value.navigationalStatus ?? null,
+      ingestedAt, source, earlierReportCount: value.earlierReportCount, slowestOwnSpeedKnots,
+    };
+  }
+  if (value.outcome != null || !isPortReason(value.reason) || value.message !== PORT_MESSAGES[value.reason]) return undefined;
+  if (value.earlierReportCount !== 0 || slowestOwnSpeedKnots != null) return undefined;
+  return {
+    outcome: null, reason: value.reason, message: value.message, vessel: 'MOTHER', vesselName, transshipmentPort,
+    knownPort, latitude, longitude, speedOverGroundKnots, navigationalStatus: value.navigationalStatus ?? null,
+    ingestedAt, source, earlierReportCount: 0, slowestOwnSpeedKnots: null,
+  };
+}
+
+function portConditionAgrees(
+  comparison: PortConditionComparison,
+  position: VesselPosition | null,
+  state: OperationalState | null,
+  risk: ShipmentRisk | null,
+): boolean {
+  if (risk != null && comparison.message === risk.explanation) return false;
+  if (position == null) {
+    if (comparison.latitude != null) return false;
+  } else if (comparison.latitude == null || comparison.longitude == null) {
+    return false;
+  } else if (comparison.latitude !== position.latitude || comparison.longitude !== position.longitude
+    || comparison.speedOverGroundKnots !== position.speedOverGroundKnots
+    || comparison.ingestedAt !== position.ingestedAt || comparison.source !== (position.source ?? null)) {
+    return false;
+  }
+  if (state == null) return comparison.ingestedAt == null;
+  if (comparison.ingestedAt !== state.ingestedAt) return false;
+  if (comparison.message === state.description || comparison.message === state.label) return false;
+  if (comparison.outcome != null) {
+    return !state.unreliable && state.description.endsWith(` near ${comparison.knownPort}`);
+  }
+  if (comparison.reason === 'UNRELIABLE_REPORT') return state.unreliable;
+  if (comparison.reason === 'NOT_NEAR_PORT') return !state.unreliable && state.description.endsWith(', far from port');
+  if (comparison.reason === 'NO_REPORT' || comparison.reason === 'MISSING_PORT'
+    || comparison.reason === 'PORT_NOT_DEFINED' || comparison.reason === 'UNUSABLE_POSITION') {
+    return state.description === state.label;
+  }
+  return !state.unreliable && comparison.knownPort != null && state.description.endsWith(` near ${comparison.knownPort}`);
+}
+
+function isPortOutcome(value: unknown): value is PortConditionOutcome {
+  return PORT_OUTCOMES.some(outcome => outcome === value);
+}
+
+function isPortReason(value: unknown): value is PortConditionReason {
+  return PORT_REASONS.some(reason => reason === value);
+}
+
+function isOptionalStatus(value: unknown): value is number | null {
+  return value == null || (typeof value === 'number' && Number.isInteger(value));
+}
+
+function isWholeCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
 
 const DELAY_OUTCOMES: readonly DelayComparisonOutcome[] = ['NO_PREDICTED_IMPACT', 'EXCEEDS_DEADLINE'];
 const DELAY_REASONS: readonly DelayComparisonReason[] = [

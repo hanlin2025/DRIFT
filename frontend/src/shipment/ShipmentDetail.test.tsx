@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,13 +6,30 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeContext, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn(), updateTransshipmentArrivalDeadline: vi.fn() }));
+vi.mock('../shipment/api', async importOriginal => ({
+  ...await importOriginal<typeof import('./api')>(),
+  createShipment: vi.fn(),
+  updateShipment: vi.fn(),
+  listShipments: vi.fn(),
+  getShipment: vi.fn(),
+  getShipmentTracking: vi.fn(),
+  getCdg201ArrivalEvidence: vi.fn(),
+  getMaritimeContext: vi.fn(),
+  listMaritimeAiAssessments: vi.fn(),
+  generateMaritimeAiAssessment: vi.fn(),
+  archiveShipment: vi.fn(),
+  restoreShipment: vi.fn(),
+  getVesselTrack: vi.fn(),
+  getShipmentHistory: vi.fn(),
+  recordRecommendationDecision: vi.fn(),
+  updateTransshipmentArrivalDeadline: vi.fn(),
+}));
 
 const importer: Session = {
   token: 'importer-token',
@@ -138,13 +155,41 @@ beforeEach(() => {
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
+  vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
+  vi.mocked(generateMaritimeAiAssessment).mockResolvedValue({ assessmentId: 'assessment-1', state: 'ABSTAINED', validationStatus: 'FEATURE_DISABLED', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'Disabled.' });
   vi.mocked(getVesselTrack).mockResolvedValue(track);
 });
 
 describe('connection window on the shipment detail', () => {
-  it('keeps shipment detail visible when additive evidence clients throw or return no response', async () => {
+
+  it('lets the viewer request an advisory without changing shipment detail state', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
+    expect(await screen.findByText('Disabled.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
+
+  it('shows a loading state and keeps shipment detail available when generation fails', async () => {
+    let resolveGeneration!: (value: MaritimeAiAssessment) => void;
+    vi.mocked(generateMaritimeAiAssessment).mockReturnValue(new Promise(resolve => { resolveGeneration = resolve; }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    expect(screen.getByRole('button', { name: 'Generating advisory…' })).toBeDisabled();
+    await act(async () => resolveGeneration({ assessmentId: null, state: 'ABSTAINED', validationStatus: 'INSUFFICIENT_EVIDENCE', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'No sufficient evidence.' }));
+    expect(await screen.findByText('No sufficient evidence.')).toBeInTheDocument();
+
+    vi.mocked(generateMaritimeAiAssessment).mockRejectedValueOnce(new Error('provider unavailable'));
+    await user.click(screen.getByRole('button', { name: 'Generate new interpretation' }));
+    expect(await screen.findByText('AI maritime interpretation is unavailable. Maritime evidence remains available.')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+  });
+  it('keeps shipment detail visible when additive maritime clients throw or return no response', async () => {
     vi.mocked(getCdg201ArrivalEvidence).mockImplementation((() => { throw new Error('replay unavailable'); }) as never);
     vi.mocked(getMaritimeContext).mockReturnValue(undefined as never);
+    vi.mocked(listMaritimeAiAssessments).mockImplementation((() => { throw new Error('assessment unavailable'); }) as never);
 
     open(forwarder, '/freight-forwarder/shipments/7');
 
@@ -183,6 +228,67 @@ describe('connection window on the shipment detail', () => {
     await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
+  });
+
+  it('shows the current saved deadline and deterministic comparison beside the assessment-time AI business interpretation', async () => {
+    const currentDeadline = '2026-11-03T10:00:00Z';
+    const assessmentDeadline = '2026-11-01T10:00:00Z';
+    const businessShipment: Shipment = {
+      ...shipment,
+      importer: { id: 17, code: 'IMPORTER-17', name: 'Importer 17' },
+      transshipmentArrivalDeadline: { deadline: currentDeadline, transshipmentPort: 'Singapore', applicable: true },
+      delayComparison: {
+        outcome: 'NO_PREDICTED_IMPACT', reason: null,
+        message: 'No predicted impact on the recorded mother-vessel transshipment-arrival deadline.',
+        estimatedArrivalAt: '2026-11-02T12:00:00Z', deadline: currentDeadline, recordedTransshipmentPort: 'Singapore',
+      },
+    };
+    const businessClaim = 'The saved assessment comparison exceeded the importer-confirmed transshipment-arrival deadline.';
+    const assessment: MaritimeAiAssessment = {
+      assessmentId: 'assessment-business-1', state: 'GENERATED', validationStatus: 'VALID',
+      bundleVersion: 'cdg247.evidence.v1', bundleHash: 'business-hash', assessmentCutoffUtc: '2026-11-01T12:00:00Z',
+      provider: 'openai-responses', model: 'gpt-4.1-mini', promptVersion: 'cdg247.evidence.v13.cdg252-provisional-business-context.2',
+      generatedAtUtc: '2026-11-01T12:00:00Z', limitation: null,
+      interpretation: {
+        summary: 'Review the grounded interpretation and limitations.',
+        claims: [{ statement: businessClaim, evidenceIds: ['mpa-expected-revision-9351048-20261026T154603'],
+          applicability: 'UNCERTAIN', vesselRole: 'MOTHER', observationType: 'EXPECTED_ARRIVAL', associationScope: 'VESSEL_OBSERVATION',
+          factReferences: ['evidence:mpa-expected-revision-9351048-20261026T154603', 'business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+          relationshipType: 'DELAY_COMPARISON_REVIEW', riskReview: null }],
+        uncertainties: [], followUpConsiderations: [], evidenceSufficient: true, formalRecommendationCode: null,
+      },
+      deterministicSummary: {
+        summaryVersion: 'cdg247.deterministic-facts.v4.business-risk-snapshots', label: 'Backend-owned facts.',
+        shipmentScheduleFacts: [], evidenceFacts: [], limitations: [],
+        businessContext: {
+          context: {
+            deadline: { state: 'RECORDED', instant: assessmentDeadline, recordedTransshipmentPort: 'Singapore', applicableToCurrentPort: true },
+            comparison: { state: 'AVAILABLE', outcome: 'EXCEEDS_DEADLINE', unavailableReason: null,
+              estimatedArrivalAt: '2026-11-01T11:00:00Z', comparedDeadline: assessmentDeadline, recordedTransshipmentPort: 'Singapore' },
+          },
+          canonicalFactReferences: ['business:TRANSSHIPMENT_ARRIVAL_DEADLINE', 'comparison:DELAY_OUTCOME'],
+        },
+      },
+    };
+    vi.mocked(getShipment).mockResolvedValue(businessShipment);
+    vi.mocked(listMaritimeAiAssessments).mockResolvedValue([assessment]);
+
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(record.querySelector(`time[datetime="${currentDeadline}"]`)).toBeInTheDocument();
+    expect(within(record).getByText(/No predicted impact on the recorded mother-vessel transshipment-arrival deadline/)).toBeInTheDocument();
+
+    const business = screen.getByRole('region', { name: 'Business implications' });
+    expect(within(business).getByText(businessClaim)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Observed maritime evidence' })).not.toHaveTextContent(businessClaim);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Assessment and evidence details'));
+    const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
+    expect(within(details).getAllByText(assessmentDeadline)).toHaveLength(2);
+    expect(within(details).getByText('Exceeds Deadline')).toBeInTheDocument();
+    expect(within(details).getByText('2026-11-01T11:00:00Z')).toBeInTheDocument();
+    expect(within(details).queryByText(currentDeadline)).not.toBeInTheDocument();
   });
 
   it('shows when the shipment has no planned connection window', async () => {
@@ -438,7 +544,7 @@ describe('connection window on the shipment detail', () => {
     });
     const portfolio = open(forwarder, '/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
-    expect(listShipments).toHaveBeenCalledWith('forwarder-token');
+    await waitFor(() => expect(listShipments).toHaveBeenCalledWith('forwarder-token'));
     expect(screen.queryByText('HL-1001')).not.toBeInTheDocument();
     expect(screen.queryByText('Remaining connection window')).not.toBeInTheDocument();
     portfolio.unmount();
@@ -484,6 +590,10 @@ describe('connection window on the shipment detail', () => {
     expect(screen.queryByText('Risk')).not.toBeInTheDocument();
     expect(screen.queryByText('Recommendation')).not.toBeInTheDocument();
     expect(screen.queryByText('No action')).not.toBeInTheDocument();
+    expect(screen.queryByText('Port conditions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(screen.queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Loading shipment...')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'Mother vessel AIS' })).not.toBeInTheDocument();
@@ -1319,7 +1429,7 @@ describe('change history on the shipment detail', () => {
 
 const PREPARE_WORDING = "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints.";
 const NO_ACTION_WORDING = "No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.";
-const IMPACT_NOT_RETURNED = 'The impact assessment has not been returned.';
+const IMPACT_DETAIL = 'The impact assessment has not been returned.';
 const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact assessment has not been returned.';
 
 const prepareRecommendation: ShipmentRecommendation = {
@@ -1346,7 +1456,7 @@ const unavailableRecommendation: ShipmentRecommendation = {
   response: null,
   riskLevel: 'HIGH',
   riskExplanation: prepareRecommendation.riskExplanation,
-  impact: { outcome: 'UNAVAILABLE', detail: IMPACT_NOT_RETURNED },
+  impact: { outcome: 'UNAVAILABLE', detail: IMPACT_DETAIL },
 };
 
 describe('recommendation on the shipment detail', () => {
@@ -1388,7 +1498,7 @@ describe('recommendation on the shipment detail', () => {
 
     const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
     expect(factValue(record, 'Recommendation')).toHaveTextContent(UNAVAILABLE_RECOMMENDATION);
-    expect(factValue(record, 'Impact')).toHaveTextContent(IMPACT_NOT_RETURNED);
+    expect(factValue(record, 'Impact')).toHaveTextContent(IMPACT_DETAIL);
     expect(factValue(record, 'Connection risk')).toHaveTextContent(`High ${unavailableRecommendation.riskExplanation}`);
     expect(factValue(record, 'Risk')).toHaveTextContent(`High ${unavailableRecommendation.riskExplanation}`);
     expect(screen.queryByText('No action')).not.toBeInTheDocument();
@@ -1434,6 +1544,7 @@ describe('recommendation on the shipment detail', () => {
     open(forwarder, '/freight-forwarder/shipments/7');
 
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: 'Recommendation' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
   });
 
@@ -1445,5 +1556,454 @@ describe('recommendation on the shipment detail', () => {
     expect(within(record).queryByText('Recommendation')).not.toBeInTheDocument();
     expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
     expect(screen.queryByText(NO_ACTION_WORDING)).not.toBeInTheDocument();
+  });
+});
+
+const noAction: ShipmentRecommendation = {
+  available: true,
+  unavailable: null,
+  response: { code: 'NO_ACTION', label: RECOMMENDATION_RESPONSES.NO_ACTION.label, wording: RECOMMENDATION_RESPONSES.NO_ACTION.wording },
+  riskLevel: 'LOW',
+  riskExplanation: shipment.risk!.explanation,
+  impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+};
+
+const approved: RecommendationDecision = {
+  outcome: 'APPROVED',
+  recommendationName: 'No action',
+  recommendationWording: RECOMMENDATION_RESPONSES.NO_ACTION.wording,
+  selectedResponseName: null,
+  selectedResponseWording: null,
+  decidedByUserId: 4,
+  decidedByName: 'Ada Lee',
+  decidedAt: '2026-10-28T06:00:00Z',
+};
+
+function withRecommendation(overrides: Partial<Shipment> = {}): Shipment {
+  return { ...shipment, recommendation: noAction, status: 'ACTIVE', ...overrides };
+}
+
+describe('recommendation decision on the shipment page', () => {
+  it('names an unavailable recommendation and offers no controls', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('article', { name: 'Recommendation' });
+    expect(panel).toHaveTextContent(IMPACT_NOT_RETURNED);
+    expect(within(panel).getByRole('heading', { name: 'Unavailable' })).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Modify' })).not.toBeInTheDocument();
+    expect(within(panel).queryByText(RECOMMENDATION_RESPONSES.NO_ACTION.wording)).not.toBeInTheDocument();
+    expect(within(panel).queryByText('The recommendation was set aside')).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('region', { name: 'Decision history' })).not.toBeInTheDocument();
+  });
+
+  it('lets the viewer approve, modify, or dismiss a completed recommendation', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('article', { name: 'Recommendation' });
+    expect(within(panel).getByRole('heading', { name: 'No action' })).toBeInTheDocument();
+    expect(panel).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+    expect(within(panel).getByText("Does not affect the importer's constraints")).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Modify' })).toBeDisabled();
+    expect(within(panel).queryByRole('option', { name: 'No action' })).not.toBeInTheDocument();
+    expect(within(panel).getByRole('option', { name: 'Monitor' })).toBeInTheDocument();
+  });
+
+  it('shows the stored approval after the viewer accepts the recommendation', async () => {
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: approved })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return approved;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(recordRecommendationDecision).toHaveBeenCalledWith('forwarder-token', 7, { outcome: 'APPROVED' });
+    const decision = await screen.findByRole('region', { name: 'Current decision' });
+    expect(decision).toHaveTextContent('Approved');
+    expect(decision).toHaveTextContent('No action');
+    expect(decision).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+    expect(decision).toHaveTextContent('Ada Lee');
+    expect(decision).toHaveTextContent(formatWhen(approved.decidedAt));
+    expect(screen.getByRole('heading', { name: 'No action' })).toBeInTheDocument();
+  });
+
+  it('shows the chosen response when the viewer modifies the recommendation', async () => {
+    const modified: RecommendationDecision = {
+      ...approved,
+      outcome: 'MODIFIED',
+      selectedResponseName: 'Monitor',
+      selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
+    };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: modified })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return modified;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByLabelText('Modify with a different response'), 'MONITOR_CONSTRAINTS');
+    await user.click(screen.getByRole('button', { name: 'Modify' }));
+    expect(recordRecommendationDecision).toHaveBeenCalledWith('forwarder-token', 7, {
+      outcome: 'MODIFIED',
+      selectedResponse: 'MONITOR_CONSTRAINTS',
+    });
+    const decision = await screen.findByRole('region', { name: 'Current decision' });
+    expect(decision).toHaveTextContent('Modified');
+    expect(decision).toHaveTextContent('Chosen response');
+    expect(decision).toHaveTextContent('Monitor');
+    expect(decision).toHaveTextContent(RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording);
+    expect(decision).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+  });
+
+  it('shows that a dismissal set the recommendation aside and leaves it visible', async () => {
+    const dismissed = { ...approved, outcome: 'DISMISSED' as const };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: dismissed })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return dismissed;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    expect(recordRecommendationDecision).toHaveBeenCalledWith('forwarder-token', 7, { outcome: 'DISMISSED' });
+    const panel = screen.getByRole('article', { name: 'Recommendation' });
+    expect(within(panel).getByRole('heading', { name: 'No action' })).toBeInTheDocument();
+    expect(panel).toHaveTextContent(RECOMMENDATION_RESPONSES.NO_ACTION.wording);
+    expect(within(panel).getByText("Does not affect the importer's constraints")).toBeInTheDocument();
+    expect(screen.getAllByText(shipment.risk!.explanation).length).toBeGreaterThan(0);
+    expect(within(panel).getByRole('region', { name: 'Current decision' })).toHaveTextContent('The recommendation was set aside');
+  });
+
+  it('shows the current stored decision when the shipment is opened again', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({ recommendationDecision: approved }));
+    open(importer, '/importer/shipments/7');
+    const decision = await screen.findByRole('region', { name: 'Current decision' });
+    expect(decision).toHaveTextContent('Approved');
+    expect(decision).toHaveTextContent('Ada Lee');
+    expect(recordRecommendationDecision).not.toHaveBeenCalled();
+  });
+
+  it('shows a stored decision on an archived shipment and offers no new decision', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({ status: 'ARCHIVED', recommendationDecision: approved }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('article', { name: 'Recommendation' });
+    expect(within(panel).getByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    expect(within(panel).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: 'Modify' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a logistics manager who can view the shipment able to decide', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
+    open(manager, '/logistics-manager/shipments/7');
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
+  });
+
+  it('stays on the access denied page when the shipment cannot be viewed', async () => {
+    vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
+    open(importer, '/importer/shipments/8');
+    expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Recommendation' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the page and the stored decision when a write is forbidden', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({ recommendationDecision: approved }));
+    vi.mocked(recordRecommendationDecision).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('You do not have access to this shipment');
+    expect(screen.queryByRole('heading', { name: 'Access denied' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modify' })).not.toBeInTheDocument();
+  });
+
+  it('names an API unavailable recommendation, keeps a stored decision, and offers no controls', async () => {
+    const unavailable: ShipmentRecommendation = {
+      available: false,
+      unavailable: 'A recommendation is not available because the connection risk is not assessed.',
+      response: null,
+      riskLevel: null,
+      riskExplanation: null,
+      impact: { outcome: 'NO_PREDICTED_IMPACT', detail: null },
+    };
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({
+      risk: null,
+      recommendation: unavailable,
+      recommendationDecision: approved,
+    }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const panel = await screen.findByRole('article', { name: 'Recommendation' });
+    expect(within(panel).getByRole('heading', { name: 'Unavailable' })).toBeInTheDocument();
+    expect(within(panel).queryByRole('heading', { name: 'No action' })).not.toBeInTheDocument();
+    expect(panel).toHaveTextContent('A recommendation is not available because the connection risk is not assessed.');
+    expect(within(panel).getByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    expect(within(panel).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(within(panel).queryByText('The recommendation was set aside')).not.toBeInTheDocument();
+  });
+
+  it('replaces the stored decision with a later dismissal and does not change the shipment', async () => {
+    const dismissed = { ...approved, outcome: 'DISMISSED' as const, decidedByName: 'Other User' };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => withRecommendation({
+      recommendationDecision: written ? dismissed : approved,
+    }));
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return dismissed;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    expect(await screen.findByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByText('Other User')).toBeInTheDocument();
+    const decision = screen.getByRole('region', { name: 'Current decision' });
+    expect(decision).toHaveTextContent('The recommendation was set aside');
+    expect(decision).toHaveTextContent('Other User');
+    expect(decision).not.toHaveTextContent('Ada Lee');
+    expect(updateShipment).not.toHaveBeenCalled();
+    expect(archiveShipment).not.toHaveBeenCalled();
+    expect(restoreShipment).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored decision and hides the controls when a new decision is refused', async () => {
+    const stored: RecommendationDecisionHistoryEntry = { ...approved, id: 1 };
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation({
+      recommendationDecision: approved,
+      recommendationDecisionHistory: [stored],
+    }));
+    vi.mocked(recordRecommendationDecision).mockRejectedValue(new ApiError('An unavailable recommendation is not stored.', 409));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('An unavailable recommendation is not stored.');
+    expect(screen.getByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+    const history = screen.getByRole('region', { name: 'Decision history' });
+    expect(within(history).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(history).getByText('Ada Lee')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  });
+
+  it('shows history in the order returned and keeps the current decision from the refresh', async () => {
+    const sameTime = '2026-10-28T06:00:00Z';
+    const persisted: RecommendationDecision = { ...approved, decidedAt: sameTime, decidedByName: 'Ada Lee' };
+    const newest: RecommendationDecisionHistoryEntry = {
+      ...persisted,
+      id: 9,
+      outcome: 'DISMISSED',
+      decidedByName: 'Bo Chen',
+    };
+    const older: RecommendationDecisionHistoryEntry = {
+      ...approved,
+      id: 4,
+      outcome: 'MODIFIED',
+      selectedResponseName: 'Monitor',
+      selectedResponseWording: RECOMMENDATION_RESPONSES.MONITOR_CONSTRAINTS.wording,
+      decidedAt: sameTime,
+    };
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({
+        recommendationDecision: { ...persisted, decidedByName: 'Renamed User', decidedAt: '2026-10-28T09:00:00Z' },
+        recommendationDecisionHistory: [newest, older],
+      })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockImplementation(async () => {
+      written = true;
+      return persisted;
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    expect(screen.queryByRole('region', { name: 'Decision history' })).not.toBeInTheDocument();
+    await userEvent.setup().click(approve);
+    const current = await screen.findByRole('region', { name: 'Current decision' });
+    expect(await within(current).findByText('Renamed User')).toBeInTheDocument();
+    expect(current).toHaveTextContent(formatWhen('2026-10-28T09:00:00Z'));
+    expect(current).not.toHaveTextContent('Ada Lee');
+    expect(current).not.toHaveTextContent(formatWhen(sameTime));
+    const history = await screen.findByRole('region', { name: 'Decision history' });
+    const items = within(history).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('The recommendation was set aside');
+    expect(items[0]).toHaveTextContent('Bo Chen');
+    expect(items[1]).toHaveTextContent('Modified');
+    expect(items[1]).toHaveTextContent('Chosen response');
+    expect(items[1]).toHaveTextContent('Monitor');
+    expect(items[0]).toHaveTextContent(formatWhen(sameTime));
+    expect(items[1]).toHaveTextContent(formatWhen(sameTime));
+    expect(screen.getByRole('heading', { name: 'Change history' })).toBeInTheDocument();
+  });
+
+  it('ends the session when recording a decision is rejected', async () => {
+    vi.mocked(getShipment).mockResolvedValue(withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockRejectedValue(new ApiError('Your session has ended. Log in again.', 401));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome to DRIFT.' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(sessionStorage.getItem('drift.session')).toBeNull();
+  });
+
+  it('does not send a second decision while the first write is still running', async () => {
+    let finish: (value: RecommendationDecision) => void = () => {};
+    let written = false;
+    vi.mocked(getShipment).mockImplementation(async () => written
+      ? withRecommendation({ recommendationDecision: approved })
+      : withRecommendation());
+    vi.mocked(recordRecommendationDecision).mockReturnValue(new Promise(resolve => {
+      finish = value => {
+        written = true;
+        resolve(value);
+      };
+    }));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    expect(recordRecommendationDecision).toHaveBeenCalledTimes(1);
+    finish(approved);
+    expect(await screen.findByRole('region', { name: 'Current decision' })).toHaveTextContent('Approved');
+  });
+});
+
+const MATCHES_WORDING = "The mother vessel's movement matches its own retained reports near this port. This is not a measured congestion index.";
+const SLOWER_WORDING = 'The mother vessel is moving slower than its own retained reports near this port. This is not a measured congestion index.';
+const NO_REPORT_WORDING = 'The mother vessel has no retained AIS report.';
+
+function completedPort(outcome: NonNullable<PortConditionComparison['outcome']>): PortConditionComparison {
+  const slower = outcome === 'SLOWER_THAN_OWN_REPORTS';
+  return {
+    outcome,
+    reason: null,
+    message: slower ? SLOWER_WORDING : MATCHES_WORDING,
+    vessel: 'MOTHER',
+    vesselName: 'Ever Steady',
+    transshipmentPort: 'Singapore',
+    knownPort: 'Singapore',
+    latitude: 1.264,
+    longitude: 103.84,
+    speedOverGroundKnots: slower ? 3.9 : 8,
+    navigationalStatus: 0,
+    ingestedAt: '2026-10-05T03:00:00Z',
+    source: 'AIS_STREAM',
+    earlierReportCount: 2,
+    slowestOwnSpeedKnots: 4,
+  };
+}
+
+function unavailablePort(reason: PortConditionReason, message: string, extras: Partial<PortConditionComparison> = {}): PortConditionComparison {
+  return {
+    outcome: null,
+    reason,
+    message,
+    vessel: 'MOTHER',
+    vesselName: 'Ever Steady',
+    transshipmentPort: 'Singapore',
+    knownPort: 'Singapore',
+    latitude: null,
+    longitude: null,
+    speedOverGroundKnots: null,
+    navigationalStatus: null,
+    ingestedAt: null,
+    source: null,
+    earlierReportCount: 0,
+    slowestOwnSpeedKnots: null,
+    ...extras,
+  };
+}
+
+describe('port-condition comparison on the shipment detail', () => {
+  it('shows a match beside the mother operational state without calling it congestion', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'Under way using engine', description: 'Under way using engine near Singapore', unreliable: false, ingestedAt: '2026-10-05T03:00:00Z' },
+      portConditionComparison: completedPort('MATCHES_NORMAL'),
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const operation = within(record).getByText('Mother vessel operation', { exact: true, selector: 'dt' }).closest('div');
+    const comparison = within(record).getByText('Port conditions', { exact: true, selector: 'dt' }).closest('div');
+    expect(operation?.nextElementSibling).toBe(comparison);
+    expect(factValue(record, 'Mother vessel operation')).toHaveTextContent('Under way using engine near Singapore');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Matches own reports');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(MATCHES_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Mother · Ever Steady');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Singapore');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('8 knots');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('4 knots');
+    expect(factValue(record, 'Earlier reports')).toHaveTextContent('2');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Under way using engine near Singapore');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('High');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Low');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument();
+    expect(createShipment).not.toHaveBeenCalled();
+    expect(updateShipment).not.toHaveBeenCalled();
+  });
+
+  it('shows a slower result without using the operational-state label or a risk badge', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherOperationalState: { label: 'At anchor', description: 'At anchor near Singapore', unreliable: false, ingestedAt: '2026-10-05T03:00:00Z' },
+      portConditionComparison: completedPort('SLOWER_THAN_OWN_REPORTS'),
+    });
+    open(importer, '/importer/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Slower than own reports');
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(SLOWER_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('3.9 knots');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('At anchor');
+    expect(factValue(record, 'Port conditions')).not.toHaveTextContent('Matches own reports');
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(factValue(record, 'Mother vessel operation')).toHaveTextContent('At anchor near Singapore');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+  });
+
+  it('names why the comparison is unavailable and does not treat a missing report as a match', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      motherVesselPosition: null,
+      portConditionComparison: unavailablePort('NO_REPORT', NO_REPORT_WORDING),
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(factValue(record, 'Port conditions')).toHaveTextContent(NO_REPORT_WORDING);
+    expect(factValue(record, 'Port conditions')).toHaveTextContent('Mother · Ever Steady');
+    expect(within(record).queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Slower than own reports')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Earlier reports')).not.toBeInTheDocument();
+    expect(screen.queryByText(/congested/i)).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+  });
+
+  it('hides the comparison when the shipment response does not include one', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, portConditionComparison: null });
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText('Port conditions')).not.toBeInTheDocument();
+    expect(within(record).queryByText('Matches own reports')).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
   });
 });
