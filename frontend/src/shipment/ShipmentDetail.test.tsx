@@ -1239,7 +1239,7 @@ describe('vessel track history on the shipment detail', () => {
     const user = userEvent.setup();
     const history = await screen.findByRole('region', { name: 'Track history' });
 
-    expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24);
+    await waitFor(() => expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24));
     expect(within(history).getByRole('button', { name: 'Mother vessel' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(history).getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
     expect(await within(history).findByText('3 positions in the last 24 hours · 1 slowdown segment')).toBeInTheDocument();

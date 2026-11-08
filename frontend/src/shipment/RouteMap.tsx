@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Shipment, ShipmentTracking, VesselPosition, VesselTrack } from './api';
 import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
 import { trackingNotice } from './positionNotice';
@@ -206,6 +207,7 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
   const stops = stopsFor(shipment);
   const fixes = liveFixes(tracking);
   const notice = trackingNotice(tracking);
+  const [mapUnavailable, setMapUnavailable] = useState(false);
   fixesRef.current = fixes;
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
 
@@ -215,12 +217,19 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     let disposed = false;
     let created: { remove: () => void } | undefined;
     mapReadyRef.current = false;
+
+    if (typeof WebGL2RenderingContext === 'undefined') {
+      setMapUnavailable(true);
+      return;
+    }
+
     const plotted = stops.filter((stop): stop is Stop & { at: LngLat } => stop.at !== null);
     const line = track(stops);
     const ports = plotted.map(stop => stop.at);
 
     void import('maplibre-gl').then(maplibre => {
       if (disposed) return;
+      maplibre.setWorkerUrl(maplibreWorkerUrl);
       const globe = new maplibre.Map({
         container: node,
         style: 'https://tiles.openfreemap.org/styles/liberty',
@@ -233,8 +242,12 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
       created = globe;
       const handle: LiveGlobe = { map: globe, maplibre, markers: [], ports, framed: false, liveFramed: false };
       globeRef.current = handle;
+      globe.on('error', () => {
+        if (!disposed) setMapUnavailable(true);
+      });
       globe.on('load', () => {
         if (disposed) return;
+        setMapUnavailable(false);
         mapReadyRef.current = true;
         globe.setProjection({ type: 'globe' });
         if (line.length > 1) {
@@ -263,7 +276,9 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
         markSelected(handle, selectedRef.current);
         placeLive(handle, fixesRef.current);
       });
-    }).catch(() => undefined);
+    }).catch(() => {
+      if (!disposed) setMapUnavailable(true);
+    });
 
     return () => {
       disposed = true;
@@ -294,6 +309,11 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
   return (
     <figure className="route-chart" aria-label="Planned route">
       <div ref={stage} className="route-chart-stage" />
+      {mapUnavailable && (
+        <p className="route-map-fallback" role="status">
+          The basemap is unavailable. Shipment route and AIS facts remain available below.
+        </p>
+      )}
       <ol className="sr-only">
         {stops.map(stop => <li key={stop.id}>{stop.kicker} {stop.name}</li>)}
       </ol>

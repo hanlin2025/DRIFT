@@ -10,13 +10,19 @@ const mapCalls = vi.hoisted(() => ({
   setData: vi.fn(),
   setFilter: vi.fn(),
   layerHandlers: new Map<string, (event: unknown) => void>(),
+  errorHandlers: [] as (() => void)[],
+  mapInstances: 0,
 }));
 
 vi.mock('maplibre-gl', () => ({
+  setWorkerUrl: vi.fn(),
   Map: class Map {
+    constructor() { mapCalls.mapInstances += 1; }
     on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
-      if (typeof layerOrCallback === 'function') layerOrCallback();
-      else if (handler) mapCalls.layerHandlers.set(`${event}:${layerOrCallback}`, handler);
+      if (typeof layerOrCallback === 'function') {
+        if (event === 'load') layerOrCallback();
+        if (event === 'error') mapCalls.errorHandlers.push(layerOrCallback);
+      } else if (handler) mapCalls.layerHandlers.set(`${event}:${layerOrCallback}`, handler);
     }
     setProjection() {}
     addSource() {}
@@ -86,12 +92,15 @@ const loneTracking: ShipmentTracking = {
 
 describe('shipment route display', () => {
   beforeEach(() => {
+    vi.stubGlobal('WebGL2RenderingContext', class WebGL2RenderingContext {});
     mapCalls.jumpTo.mockClear();
     mapCalls.fitBounds.mockClear();
     mapCalls.addLayer.mockClear();
     mapCalls.setData.mockClear();
     mapCalls.setFilter.mockClear();
     mapCalls.layerHandlers.clear();
+    mapCalls.errorHandlers.length = 0;
+    mapCalls.mapInstances = 0;
   });
 
   it('lists the stored route in connection order', () => {
@@ -104,6 +113,26 @@ describe('shipment route display', () => {
       'DESTINATION Jakarta, ID',
     ]);
     expect(screen.queryByText(/Not placed on the globe/)).not.toBeInTheDocument();
+  });
+
+  it('keeps route and position facts readable when WebGL2 is unavailable', () => {
+    vi.stubGlobal('WebGL2RenderingContext', undefined);
+    render(<RouteMap shipment={shipment} tracking={loneTracking} />);
+
+    expect(screen.getByText(/The basemap is unavailable/)).toBeInTheDocument();
+    expect(routeText()).toContain('DEPARTURE Shanghai, CN');
+    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(mapCalls.mapInstances).toBe(0);
+  });
+
+  it('keeps shipment facts readable when the basemap reports an asset error', async () => {
+    render(<RouteMap shipment={shipment} tracking={loneTracking} />);
+    await waitFor(() => expect(mapCalls.errorHandlers).toHaveLength(1));
+    mapCalls.errorHandlers[0]();
+
+    expect(await screen.findByText(/The basemap is unavailable/)).toBeInTheDocument();
+    expect(routeText()).toContain('DEPARTURE Shanghai, CN');
+    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
   });
 
   it('marks a blank stop as not recorded and an unknown place as off the globe', () => {

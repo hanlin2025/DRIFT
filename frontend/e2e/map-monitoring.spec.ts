@@ -13,6 +13,11 @@ const NO_POSITION = 'No live AIS position for this shipment.';
 const NO_ACCESS = 'You do not have access to this shipment';
 const NOT_FOUND = 'Shipment not found';
 const SESSION_ENDED = 'Your session has ended. Log in again.';
+const INTERACTION_TEST_STYLE = {
+  version: 8,
+  sources: {},
+  layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#e8ece8' } }],
+};
 
 function assertOwnedDatabase() {
   if (blocked.has(database) || !/^drift_cdg106_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken)) {
@@ -135,6 +140,12 @@ async function signIn(page: Page, email: string) {
 }
 
 async function openMap(page: Page, id: number) {
+  await page.route('https://tiles.openfreemap.org/**', route => {
+    if (new URL(route.request().url()).pathname === '/styles/liberty') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(INTERACTION_TEST_STYLE) });
+    }
+    return route.abort();
+  });
   const tracking = page.waitForResponse(response =>
     response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${id}/tracking`);
   await page.goto(`/freight-forwarder/shipments/${id}`);
@@ -355,6 +366,31 @@ test('drag and ctrl-wheel move the map without reloading the shipment', { tag: '
     await expect(page.getByRole('heading', { name: shipment.shipmentReference })).toBeVisible();
     await expect(page).toHaveURL(url);
     expect(navigations.count).toBe(0);
+  } finally {
+    cleanup([owner.email], [identifier]);
+  }
+});
+
+test('shipment route and AIS facts remain available when external map assets are offline', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The offline map fallback is covered once on desktop.');
+  test.setTimeout(90_000);
+  const owner = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  const vessel = `Ever Steady ${randomBytes(3).toString('hex')}`;
+  const identifier = mmsi();
+  const shipment = await createShipment(request, owner.token, vessel);
+  seedObservation(vessel, identifier, false);
+  try {
+    await page.route('https://tiles.openfreemap.org/**', route => route.abort());
+    await signIn(page, owner.email);
+    const tracking = page.waitForResponse(response =>
+      response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/shipments/${shipment.id}/tracking`);
+    await page.goto(`/freight-forwarder/shipments/${shipment.id}`);
+    expect((await tracking).status()).toBe(200);
+
+    await expect(page.locator('.route-map-fallback')).toContainText('The basemap is unavailable');
+    await expect(page.getByRole('figure', { name: 'Planned route' })).toContainText('DEPARTURE');
+    await expect(page.locator('.route-live')).toContainText(`MOTHER LIVE ${vessel} · 1.264, 103.82 · 12.4 kn`);
+    await expect(page.getByRole('complementary', { name: 'Mother vessel AIS' })).toContainText('1.2640° N, 103.8200° E');
   } finally {
     cleanup([owner.email], [identifier]);
   }
