@@ -2,7 +2,6 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,7 +117,7 @@ public class ShipmentService {
 			throw new IllegalArgumentException("Filter criteria and sort are required.");
 		}
 		Company company = activeCompany(principal);
-		if (sort.computed() || criteria.atRisk()) {
+		if (sort.computed() || criteria.computed()) {
 			List<ShipmentResponse> all = ranked(company, criteria, sort);
 			int from = Math.min(all.size(), (page - 1) * PAGE_SIZE);
 			return new ShipmentPage(all.subList(from, Math.min(all.size(), from + PAGE_SIZE)), page, PAGE_SIZE,
@@ -132,7 +131,7 @@ public class ShipmentService {
 
 	/**
 	 * Every authorised shipment matching the filters, in the requested order. Risk depends on live AIS and is not
-	 * stored, so the at-risk filter and the risk sort run on the mapped rows after the authorised,
+	 * stored, so the at-risk and exceeds-deadline filters and the risk sort run on the mapped rows after the authorised,
 	 * filtered query, and a page is cut only after ranking. That keeps paging correct at the cost of reading the
 	 * caller's whole filtered portfolio, whose AIS positions come from one batched lookup.
 	 */
@@ -142,6 +141,9 @@ public class ShipmentService {
 				ShipmentSpecifications.matching(company.getId(), criteria), order));
 		if (criteria.atRisk()) {
 			rows = rows.stream().filter(row -> ShipmentFilterCriteria.isAtRisk(row.risk())).toList();
+		}
+		if (criteria.exceedsDeadline()) {
+			rows = rows.stream().filter(row -> ShipmentSort.exceedsDeadline(row.delayComparison())).toList();
 		}
 		if (sort.computed()) {
 			rows = rows.stream().sorted(sort.comparator()).toList();
@@ -399,17 +401,11 @@ public class ShipmentService {
 	}
 
 	private ShipmentResponse respond(Shipment shipment) {
-		return ShipmentResponse.from(shipment, connectionRisk.assess(shipment));
+		return details.row(shipment);
 	}
 
-	/** Builds list rows with one batched AIS lookup, so each row's risk matches its detail page without a query per row. */
 	private List<ShipmentResponse> respondAll(List<Shipment> listed) {
-		List<ShipmentConnectionRisk.Snapshot> connections = connectionRisk.assessAll(listed);
-		List<ShipmentResponse> responses = new ArrayList<>(listed.size());
-		for (int i = 0; i < listed.size(); i++) {
-			responses.add(ShipmentResponse.from(listed.get(i), connections.get(i)));
-		}
-		return responses;
+		return details.rows(listed);
 	}
 
 	private Shipment visibleShipment(AuthenticatedUser principal, Long shipmentId) {

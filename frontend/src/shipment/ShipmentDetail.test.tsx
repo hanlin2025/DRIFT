@@ -1502,8 +1502,8 @@ describe('change history on the shipment detail', () => {
 
 const PREPARE_WORDING = "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints.";
 const NO_ACTION_WORDING = "No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.";
-const IMPACT_DETAIL = 'The impact assessment has not been returned.';
-const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact assessment has not been returned.';
+const IMPACT_DETAIL = 'The delay comparison is unavailable.';
+const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact comparison is unavailable.';
 
 const prepareRecommendation: ShipmentRecommendation = {
   available: true,

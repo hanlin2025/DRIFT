@@ -16,7 +16,7 @@ export function ShipmentFilterControls() {
 
   useEffect(() => {
     setDraft(applied);
-  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate, applied.status, applied.sort, applied.atRisk]);
+  }, [applied.reference, applied.vessel, applied.customer, applied.arrivalDate, applied.status, applied.sort, applied.atRisk, applied.exceedsDeadline]);
 
   function update(field: keyof ShipmentFilters, value: string) {
     setDraft(current => ({ ...current, [field]: value }));
@@ -69,12 +69,17 @@ export function ShipmentFilterControls() {
               <option value="">Newest first</option>
               <option value="risk">Risk level (Critical first)</option>
             </select>
-            <p className="field-hint" id="shipment-sort-hint">Risk level puts Critical first, then the soonest feeder departure. Unassessed shipments come last.</p>
+            <p className="field-hint" id="shipment-sort-hint">Risk level puts Critical first. Within a level, shipments that exceed the importer's deadline come first, then the soonest feeder departure. Unassessed shipments come last.</p>
           </div>
           <div className="field field-checkbox">
             <input id="shipment-filter-at-risk" type="checkbox" checked={draft.atRisk === 'true'} onChange={event => update('atRisk', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-at-risk-hint" />
             <label htmlFor="shipment-filter-at-risk">At-risk only</label>
             <p className="field-hint" id="shipment-filter-at-risk-hint">Shows High and Critical shipments.</p>
+          </div>
+          <div className="field field-checkbox">
+            <input id="shipment-filter-exceeds-deadline" type="checkbox" checked={draft.exceedsDeadline === 'true'} onChange={event => update('exceedsDeadline', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-exceeds-deadline-hint" />
+            <label htmlFor="shipment-filter-exceeds-deadline">Exceeds importer deadline only</label>
+            <p className="field-hint" id="shipment-filter-exceeds-deadline-hint">Shows shipments whose predicted arrival is after the importer's recorded deadline.</p>
           </div>
         </div>
         <div className="shipment-filter-actions">
