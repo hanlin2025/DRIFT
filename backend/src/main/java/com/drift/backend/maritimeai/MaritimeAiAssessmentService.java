@@ -142,6 +142,13 @@ public class MaritimeAiAssessmentService {
 		if (eligible.isEmpty()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"INSUFFICIENT_EVIDENCE", MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved evidence."),
 				"No sufficient, current synthetic evidence is available for inference.");
+		if (explicitOfflineScenarioStub
+				&& ((ControlledScenarioReplayAiClient) client).lacksRevisionForAvailableComparison(eligibleInput)) {
+			return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE",
+					MaritimeAiClient.MaritimeAiClientResult.unavailable(
+							"The controlled scenario lacks the eligible schedule revision needed to ground its available comparison."),
+					"The controlled scenario lacks eligible schedule revision evidence; no interpretation is generated.");
+		}
 		boolean scenarioV16 = client instanceof ConfiguredMaritimeAiClient configured
 				&& configured.usesScenarioV16(eligibleInput);
 		if (scenarioV16) {

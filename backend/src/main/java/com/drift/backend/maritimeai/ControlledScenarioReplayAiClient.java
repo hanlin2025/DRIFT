@@ -23,6 +23,15 @@ class ControlledScenarioReplayAiClient implements MaritimeAiClient {
 	private static final String NEA = "demo-synthetic-nea-rainfall-001";
 	private static final Set<String> REQUIRED = Set.of(MPA, NOTICE, NEA);
 
+	boolean lacksRevisionForAvailableComparison(MaritimeAiEvidencePackage input) {
+		if (input.shipmentContext() == null || input.shipmentContext().scenario() == null
+				|| input.shipmentContext().businessContext() == null
+				|| input.shipmentContext().businessContext().comparison() == null
+				|| input.shipmentContext().businessContext().comparison().state()
+						!= MaritimeAiBusinessContext.ComparisonState.AVAILABLE) return false;
+		return input.evidence().stream().noneMatch(item -> SCENARIO_REVISION.equals(item.evidenceId()));
+	}
+
 	@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
 		if (input.shipmentContext() != null && input.shipmentContext().scenario() != null) {
 			return interpretControlledScenario(input);

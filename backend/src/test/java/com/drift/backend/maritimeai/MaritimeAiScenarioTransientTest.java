@@ -178,11 +178,11 @@ class MaritimeAiScenarioTransientTest {
 			}
 			MaritimeAiAssessmentResponse response = service.generateScenarioTransient(sample, true);
 			assertThat(response.state()).isEqualTo("ABSTAINED");
-			assertThat(response.validationStatus()).isEqualTo("MODEL_UNAVAILABLE");
+			assertThat(response.validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
 			assertThat(response.interpretation()).isNull();
-			assertThat(response.limitation()).contains("without the eligible schedule revision evidence");
+			assertThat(response.limitation()).contains("lacks eligible schedule revision evidence");
 		}
-		assertThat(calls).hasValue(4);
+		assertThat(calls).hasValue(2);
 	}
 
 	@Test
