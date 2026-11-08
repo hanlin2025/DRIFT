@@ -103,11 +103,12 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     const row = page.locator('tbody tr');
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('cell').nth(0)).toHaveText(shipment.shipmentReference);
-    await expect(row.getByRole('cell').nth(3)).toHaveText(shipment.origin);
-    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.destination);
-    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.transshipmentPort);
-    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.motherVessel);
-    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.feederVessel);
+    await expect(row.getByRole('cell').nth(3)).toHaveText('Not compared');
+    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.origin);
+    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.destination);
+    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.transshipmentPort);
+    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.motherVessel);
+    await expect(row.getByRole('cell').nth(8)).toHaveText(shipment.feederVessel);
 
     const reloadedList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.reload();
@@ -119,11 +120,12 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     expect(creates).toEqual([201]);
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('cell').nth(0)).toHaveText(shipment.shipmentReference);
-    await expect(row.getByRole('cell').nth(3)).toHaveText(shipment.origin);
-    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.destination);
-    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.transshipmentPort);
-    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.motherVessel);
-    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.feederVessel);
+    await expect(row.getByRole('cell').nth(3)).toHaveText('Not compared');
+    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.origin);
+    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.destination);
+    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.transshipmentPort);
+    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.motherVessel);
+    await expect(row.getByRole('cell').nth(8)).toHaveText(shipment.feederVessel);
   } finally {
     sql(`${deleteShipmentsCreatedByEmail}
       DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';`, { email });
@@ -222,7 +224,7 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     const critical = atRiskRows.find(item => item.shipmentReference === reference('CRITICAL'))!;
     await page.getByRole('link', { name: reference('CRITICAL') }).click();
     const record = page.getByRole('article', { name: `Shipment ${reference('CRITICAL')}` });
-    const riskDetail = record.locator('dd').filter({ has: page.locator('.risk-badge') });
+    const riskDetail = record.getByText('Risk', { exact: true }).locator('..');
     await expect(riskDetail.locator('.risk-badge')).toHaveText('Critical');
     await expect(riskDetail).toContainText(critical.risk!.explanation);
   } finally {

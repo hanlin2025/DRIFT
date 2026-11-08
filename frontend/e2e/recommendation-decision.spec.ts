@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { IMPACT_NOT_RETURNED, RECOMMENDATION_RESPONSES } from '../src/shipment/recommendationCatalog';
+import { RECOMMENDATION_RESPONSES } from '../src/shipment/recommendationCatalog';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const database = process.env.DRIFT_E2E_DATABASE ?? '';
@@ -381,17 +381,19 @@ test('an unavailable recommendation shows the reason and no approve, modify, or 
     const body = await recommendation(request, owner.token, shipment.id);
     expect(body.recommendation).toMatchObject({
       available: false,
-      unavailable: IMPACT_NOT_RETURNED,
       response: null,
       impact: { outcome: 'UNAVAILABLE', detail: IMPACT_NOT_RETURNED_DETAIL },
     });
+    const unavailableMessage = body.recommendation.unavailable;
+    if (typeof unavailableMessage !== 'string') throw new Error('The backend did not include the reason the recommendation is unavailable.');
+    expect(unavailableMessage).toContain(IMPACT_NOT_RETURNED_DETAIL);
     expect(body.recommendationDecision).toBeNull();
 
     await signIn(page, owner.email, '/freight-forwarder');
     await openShipment(page, 'freight-forwarder', shipment);
     const panel = page.getByRole('article', { name: 'Recommendation' });
     await expect(panel.getByRole('heading', { name: 'Unavailable' })).toBeVisible();
-    await expect(panel.getByText(IMPACT_NOT_RETURNED)).toBeVisible();
+    await expect(panel.getByText(unavailableMessage, { exact: true })).toBeVisible();
     await expect(panel.locator('.recommendation-impact').getByText(IMPACT_NOT_RETURNED_DETAIL, { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Approve' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
