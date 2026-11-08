@@ -174,6 +174,32 @@ export async function reactivateUser(token: string, userId: number): Promise<Adm
   return userOf(data);
 }
 
+export type ImporterAuthorisation = { id: number; importer: AdminOrganisation; active: boolean };
+
+function authorisationOf(value: unknown): ImporterAuthorisation {
+  if (!isRecord(value) || typeof value.id !== 'number' || typeof value.active !== 'boolean') throw new ApiError(UNEXPECTED, 502);
+  const importer = organisationOf(value.importer);
+  if (!importer) throw new ApiError(UNEXPECTED, 502);
+  return { id: value.id, importer, active: value.active };
+}
+
+export async function listImporterAuthorisations(token: string): Promise<ImporterAuthorisation[]> {
+  const data = await send('/api/importer-authorisations', token);
+  if (!isRecord(data) || !Array.isArray(data.authorisations)) throw new ApiError(UNEXPECTED, 502);
+  return data.authorisations.map(authorisationOf);
+}
+
+export async function grantImporterAuthorisation(token: string, importerCompanyId: number): Promise<ImporterAuthorisation> {
+  return authorisationOf(await send('/api/importer-authorisations', token, {
+    method: 'POST',
+    body: JSON.stringify({ importerCompanyId }),
+  }));
+}
+
+export async function endImporterAuthorisation(token: string, authorisationId: number): Promise<ImporterAuthorisation> {
+  return authorisationOf(await send(`/api/importer-authorisations/${authorisationId}/end`, token, { method: 'POST' }));
+}
+
 export async function listAccountStatusAudits(token: string): Promise<AccountStatusAudit[]> {
   const data = await send('/api/admin/account-status-audits', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);

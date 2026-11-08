@@ -265,6 +265,7 @@ test('a freight forwarder links a shipment and the importer dashboard shows it a
   const shipment = await createShipment(request, forwarder.token, `Ever Steady ${suffix}`);
   const forwarderPage = await browser.newPage();
   try {
+    authoriseImporter(shipment.id, companyId('STRAITS_FRESH_DEMO'));
     const found = await searchImporters(request, forwarder.token, 'Straits Fresh');
     const straitsOrg = found.items.find(item => item.code === 'STRAITS_FRESH_DEMO');
     expect(straitsOrg?.name).toBe('Straits Fresh Imports (Demo)');
@@ -372,14 +373,14 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
   const second = await createShipment(request, forwarder.token, `Feeder North ${suffix}`);
   const forwarderPage = await browser.newPage();
   try {
+    authoriseImporter(first.id, companyId('STRAITS_FRESH_DEMO'));
+    authoriseImporter(first.id, companyId(pacificCode));
     const straitsOrg = (await searchImporters(request, forwarder.token, 'Straits Fresh')).items
       .find(item => item.code === 'STRAITS_FRESH_DEMO');
     const pacificOrg = (await searchImporters(request, forwarder.token, pacificName)).items
       .find(item => item.code === pacificCode);
     expect(straitsOrg).toBeTruthy();
     expect(pacificOrg).toBeTruthy();
-    authoriseImporter(first.id, straitsOrg!.id);
-    authoriseImporter(first.id, pacificOrg!.id);
 
     await signIn(forwarderPage, forwarder.email, '/freight-forwarder');
     await linkThroughEditor(forwarderPage, first.id, 'Straits', 'Straits Fresh Imports (Demo)');

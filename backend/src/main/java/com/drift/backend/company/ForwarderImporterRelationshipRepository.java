@@ -3,6 +3,8 @@ package com.drift.backend.company;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -42,4 +44,23 @@ public interface ForwarderImporterRelationshipRepository extends JpaRepository<F
 			order by importer.name asc, importer.id asc
 			""")
 	List<ForwarderImporterRelationship> findActiveByForwarderCompanyId(@Param("forwarderCompanyId") Long forwarderCompanyId);
+
+	@Query(value = """
+			SELECT importer FROM ForwarderImporterRelationship relationship
+			JOIN relationship.importerCompany importer
+			WHERE relationship.forwarderCompany.id = :companyId
+			  AND relationship.active = true
+			  AND importer.active = true
+			  AND (:name = '' OR LOCATE(LOWER(:name), LOWER(importer.name)) > 0)
+			ORDER BY importer.name ASC, importer.id ASC
+			""", countQuery = """
+			SELECT COUNT(importer) FROM ForwarderImporterRelationship relationship
+			JOIN relationship.importerCompany importer
+			WHERE relationship.forwarderCompany.id = :companyId
+			  AND relationship.active = true
+			  AND importer.active = true
+			  AND (:name = '' OR LOCATE(LOWER(:name), LOWER(importer.name)) > 0)
+			""")
+	Page<Company> findActiveAuthorisedImporters(@Param("companyId") Long companyId, @Param("name") String name,
+			Pageable pageable);
 }
