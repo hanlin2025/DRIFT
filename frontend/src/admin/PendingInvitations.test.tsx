@@ -72,7 +72,7 @@ describe('pending invitations', () => {
     expect(screen.getByText('guest@example.com')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Withdraw invitation for guest@example.com' }));
-    await user.click(screen.getByRole('button', { name: 'Withdraw', exact: true }));
+    await user.click(screen.getByRole('button', { name: /^Withdraw$/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('still pending');
     expect(screen.getByText('guest@example.com')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe('pending invitations', () => {
     const user = userEvent.setup();
     render(<PendingInvitations token="token" roles={roles} onSessionEnded={vi.fn()} />);
     await user.click(await screen.findByRole('button', { name: 'Withdraw invitation for late@example.com' }));
-    await user.click(screen.getByRole('button', { name: 'Withdraw', exact: true }));
+    await user.click(screen.getByRole('button', { name: /^Withdraw$/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('This invitation has expired.');
     expect(screen.getByText('Expired')).toBeInTheDocument();
     expect(screen.getByText('late@example.com')).toBeInTheDocument();
