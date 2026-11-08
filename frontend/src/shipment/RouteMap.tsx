@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Shipment, ShipmentTracking, VesselPosition, VesselTrack } from './api';
 import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
 import { trackingNotice } from './positionNotice';
@@ -336,8 +337,13 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     let disposed = false;
     let created: { remove: () => void } | undefined;
     mapReadyRef.current = false;
+    if (typeof WebGL2RenderingContext === 'undefined') {
+      setMapState('failed');
+      return;
+    }
     void import('maplibre-gl').then(maplibre => {
       if (disposed) return;
+      maplibre.setWorkerUrl(maplibreWorkerUrl);
       const globe = new maplibre.Map({
         container: node,
         style: 'https://tiles.openfreemap.org/styles/liberty',

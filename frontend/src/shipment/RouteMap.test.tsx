@@ -18,6 +18,7 @@ const mapCalls = vi.hoisted(() => ({
 }));
 
 vi.mock('maplibre-gl', () => ({
+  setWorkerUrl() {},
   Map: class Map {
     constructor() { mapCalls.mapInstances += 1; }
     on(event: string, layerOrCallback: string | (() => void), handler?: (event: unknown) => void) {
@@ -101,6 +102,7 @@ const loneTracking: ShipmentTracking = {
 
 describe('shipment route display', () => {
   beforeEach(() => {
+    vi.stubGlobal('WebGL2RenderingContext', class WebGL2RenderingContext {});
     mapCalls.jumpTo.mockClear();
     mapCalls.fitBounds.mockClear();
     mapCalls.addLayer.mockClear();
@@ -124,6 +126,16 @@ describe('shipment route display', () => {
       'DESTINATION Jakarta, ID',
     ]);
     expect(screen.queryByText(/Not placed on the globe/)).not.toBeInTheDocument();
+  });
+
+  it('keeps route and position facts readable when WebGL2 is unavailable', async () => {
+    vi.stubGlobal('WebGL2RenderingContext', undefined);
+    render(<RouteMap shipment={shipment} tracking={loneTracking} />);
+
+    expect(await screen.findByText(/The basemap is unavailable/)).toBeInTheDocument();
+    expect(routeText()).toContain('DEPARTURE Shanghai, CN');
+    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(mapCalls.mapInstances).toBe(0);
   });
 
   it('marks a blank stop as not recorded and an unknown place as off the globe', () => {

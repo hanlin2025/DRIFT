@@ -13,6 +13,11 @@ const NO_POSITION = 'No live AIS position for this shipment.';
 const NO_ACCESS = 'You do not have access to this shipment';
 const NOT_FOUND = 'Shipment not found';
 const SESSION_ENDED = 'Your session has ended. Log in again.';
+const INTERACTION_TEST_STYLE = {
+  version: 8,
+  sources: {},
+  layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#e8ece8' } }],
+};
 
 function assertOwnedDatabase() {
   if (blocked.has(database) || !/^drift_cdg106_[0-9]{14}_[a-f0-9]{12}$/.test(database) || !/^[a-f0-9]{64}$/.test(ownerToken)) {
@@ -288,6 +293,12 @@ test('drag and ctrl-wheel move the map without reloading the shipment', { tag: '
   seedObservation(vessel, identifier, false);
   const url = `/freight-forwarder/shipments/${shipment.id}`;
   try {
+    await page.route('https://tiles.openfreemap.org/**', route => {
+      if (new URL(route.request().url()).pathname === '/styles/liberty') {
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(INTERACTION_TEST_STYLE) });
+      }
+      return route.abort();
+    });
     await signIn(page, owner.email);
     await openMap(page, shipment.id);
     await expect(page.locator('.globe-pin.departure .globe-dot')).toBeVisible();
