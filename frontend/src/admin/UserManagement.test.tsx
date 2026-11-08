@@ -21,6 +21,7 @@ vi.mock('./api', () => ({
   removeUser: vi.fn(),
   reactivateUser: vi.fn(),
   listAccountStatusAudits: vi.fn(),
+  inviteColleague: vi.fn(),
 }));
 
 const admin: Session = {

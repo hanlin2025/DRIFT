@@ -102,7 +102,11 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   if (!response.headers.get('content-type')?.includes('application/json')) throw new ApiError(UNEXPECTED, response.status);
   const data: unknown = await response.json();
   if (!response.ok) {
-    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status);
+    const fields: Record<string, string> = {};
+    if (isRecord(data) && isRecord(data.errors)) {
+      for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
+    }
+    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
   }
   return data;
 }
@@ -192,4 +196,20 @@ export async function listAccountStatusAudits(token: string): Promise<AccountSta
       newStatus: entry.newStatus,
     };
   });
+}
+
+export type IssuedInvitation = { email: string; role: Role; organisation: AdminOrganisation; expiresAt: string };
+
+export async function inviteColleague(token: string, organisationId: number, role: Role, email: string): Promise<IssuedInvitation> {
+  const data = await send('/api/admin/invitations', token, {
+    method: 'POST',
+    body: JSON.stringify({ organisationId, role, email }),
+  });
+  if (!isRecord(data) || typeof data.email !== 'string' || !isRole(data.role) || typeof data.expiresAt !== 'string'
+    || 'token' in data || 'code' in data || 'password' in data) {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+  const organisation = organisationOf(data.organisation);
+  if (!organisation) throw new ApiError(UNEXPECTED, 502);
+  return { email: data.email, role: data.role, organisation, expiresAt: data.expiresAt };
 }

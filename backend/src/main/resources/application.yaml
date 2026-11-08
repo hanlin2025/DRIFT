@@ -46,6 +46,10 @@ app:
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
     ttl: ${PASSWORD_RESET_TTL:1h}
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
+  invitation:
+    link-base-url: ${INVITATION_LINK_BASE_URL:http://localhost:5173/signup}
+    ttl: ${INVITATION_TTL:7d}
+    from: ${INVITATION_FROM:noreply@localhost}
   risk-alerts:
     activation:
       command: ${RISK_ALERTS_ACTIVATION_COMMAND:false}

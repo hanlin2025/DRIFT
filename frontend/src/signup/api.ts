@@ -1,4 +1,4 @@
-export type Role = 'IMPORTER' | 'FREIGHT_FORWARDER';
+export type Role = 'IMPORTER' | 'FREIGHT_FORWARDER' | 'LOGISTICS_MANAGER';
 export type Invitation = { email: string; companyName: string; role: Role; expiresAt: string };
 export type Registration = { fullName: string; email: string; password: string; invitationToken: string };
 export type Account = { id: number; fullName: string; email: string; role: Role };
@@ -7,6 +7,10 @@ export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly fields: Record<string, string> = {}) {
     super(message);
   }
+}
+
+function isInvitedRole(value: unknown): value is Role {
+  return value === 'IMPORTER' || value === 'FREIGHT_FORWARDER' || value === 'LOGISTICS_MANAGER';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,7 +47,7 @@ export async function post(path: string, body: unknown): Promise<unknown> {
 export async function resolveInvitation(token: string): Promise<Invitation> {
   const data = await post('/api/invitations/resolve', { token });
   if (!isRecord(data) || typeof data.email !== 'string' || typeof data.companyName !== 'string'
-    || (data.role !== 'IMPORTER' && data.role !== 'FREIGHT_FORWARDER') || typeof data.expiresAt !== 'string') {
+    || !isInvitedRole(data.role) || typeof data.expiresAt !== 'string') {
     throw new ApiError('DRIFT could not read this invitation. Please try again.', 502);
   }
   return { email: data.email, companyName: data.companyName, role: data.role, expiresAt: data.expiresAt };
@@ -52,7 +56,7 @@ export async function resolveInvitation(token: string): Promise<Invitation> {
 export async function registerAccount(registration: Registration): Promise<Account> {
   const data = await post('/api/register', registration);
   if (!isRecord(data) || typeof data.id !== 'number' || typeof data.email !== 'string'
-    || typeof data.fullName !== 'string' || (data.role !== 'IMPORTER' && data.role !== 'FREIGHT_FORWARDER')) {
+    || typeof data.fullName !== 'string' || !isInvitedRole(data.role)) {
     throw new ApiError('We could not confirm your registration. Check with your administrator before trying again.', 502);
   }
   return { id: data.id, email: data.email, fullName: data.fullName, role: data.role };
