@@ -13,6 +13,7 @@ import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { DelayComparisonFact } from './DelayComparisonFact';
+import { RecordedArrivalChangeFact } from './RecordedArrivalChangeFact';
 import { TransshipmentArrivalDeadlineFact } from './TransshipmentArrivalDeadline';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
@@ -667,6 +668,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          <RecordedArrivalChangeFact shipment={shipment} evidence={cdg201Evidence} />
           {lateArrivalChanceFact(shipment.lateArrivalChance)}
           {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>

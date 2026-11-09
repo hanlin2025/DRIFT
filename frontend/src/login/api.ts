@@ -23,8 +23,8 @@ function accountOf(data: unknown, knownToken: string | null): Session {
     || !('company' in data)) {
     throw new ApiError('DRIFT returned an unexpected response. Please try again shortly.', 502);
   }
-  const token = knownToken ?? (typeof data.token === 'string' ? data.token : null);
-  if (!token) throw new ApiError('DRIFT returned an unexpected response. Please try again shortly.', 502);
+  const token = knownToken ?? (typeof data.token === 'string' ? data.token : '');
+  if (knownToken === null && !token) throw new ApiError('DRIFT returned an unexpected response. Please try again shortly.', 502);
   return {
     token,
     expiresAt: data.expiresAt,
@@ -47,7 +47,8 @@ export async function loadSession(token: string): Promise<Session> {
   let response: Response;
   try {
     response = await fetch('/api/session', {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: token ? 'same-origin' : 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' },
       signal: AbortSignal.timeout(15000),
       cache: 'no-store',
     });

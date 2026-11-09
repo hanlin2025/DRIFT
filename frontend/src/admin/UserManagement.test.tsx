@@ -8,7 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
-import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, reactivateUser, removeUser } from './api';
+import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listPendingInvitations, reactivateUser, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
@@ -21,6 +21,8 @@ vi.mock('./api', () => ({
   removeUser: vi.fn(),
   reactivateUser: vi.fn(),
   listAccountStatusAudits: vi.fn(),
+  inviteColleague: vi.fn(),
+  listPendingInvitations: vi.fn(),
 }));
 
 const admin: Session = {
@@ -81,6 +83,7 @@ beforeEach(() => {
   vi.mocked(removeUser).mockResolvedValue({ ...users[0], status: 'REMOVED' });
   vi.mocked(reactivateUser).mockResolvedValue({ ...users[2], status: 'ACTIVE' });
   vi.mocked(listAccountStatusAudits).mockResolvedValue([]);
+  vi.mocked(listPendingInvitations).mockResolvedValue([]);
 });
 
 describe('user management', () => {
@@ -255,6 +258,7 @@ describe('user management', () => {
   });
 
   it('opens user management after an administrator logs in', async () => {
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...admin, token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
     await user.type(screen.getByLabelText('Work email'), 'amina@example.com');

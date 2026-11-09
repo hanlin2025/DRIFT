@@ -65,7 +65,8 @@ public final class ScenarioQualityStubClient extends ConfiguredMaritimeAiClient 
 		var comparison = Objects.requireNonNull(business.comparison());
 		var riskReview = MaritimeAiResponseValidator.expectedRiskReview(risk);
 		String riskStatement = ScenarioMaritimeAiProse.riskAlternatives(risk.riskLevel(), riskReview.selectedWindowState()).getFirst();
-		String deadlineStatement = ScenarioMaritimeAiProse.deadlineAlternatives(comparison.outcome()).getFirst();
+		String deadlineStatement = ScenarioMaritimeAiProse.deadlineAlternatives(
+				context.scenario().shipmentKey(), comparison).getFirst();
 		String evidenceRef = "evidence:" + revision.evidenceId();
 		Map<String, Object> riskPayload = Map.of("evidenceRef", evidenceRef,
 				"riskReview", Map.of("severity", riskReview.severity().name(),

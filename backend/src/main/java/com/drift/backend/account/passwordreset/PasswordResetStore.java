@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 
@@ -49,6 +50,25 @@ public class PasswordResetStore {
 	@Transactional
 	public void discard(Long tokenId) {
 		tokens.deleteByTokenId(tokenId);
+	}
+
+	@Transactional
+	public boolean complete(String rawToken, String encodedPassword) {
+		PasswordResetToken token = tokens.findForReset(ResetTokens.hash(rawToken)).orElse(null);
+		Instant now = Instant.now();
+		if (token == null || token.getUsedAt() != null || !token.getExpiresAt().isAfter(now)) {
+			return false;
+		}
+		UserAccount account = token.getUser();
+		if (account.getStatus() == AccountStatus.REMOVED) {
+			return false;
+		}
+		// Bumps sessionGeneration, which ends every session issued before the reset.
+		account.replacePasswordHash(encodedPassword);
+		token.markUsed(now);
+		tokens.saveAndFlush(token);
+		tokens.deleteAllUnused(account.getId());
+		return true;
 	}
 
 	public record IssuedReset(Long id, Long userId, String rawToken) {

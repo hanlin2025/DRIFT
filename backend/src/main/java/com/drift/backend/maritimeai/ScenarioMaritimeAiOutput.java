@@ -1,5 +1,6 @@
 package com.drift.backend.maritimeai;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -18,7 +19,7 @@ import tools.jackson.core.json.JsonFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** Transient v1.6 provider wire shape and the backend-owned scenario projection. */
+/** Transient structured provider wire shape and the backend-owned scenario projection. */
 record ScenarioMaritimeAiOutput(Assessment assessment) {
 	private static final JsonFactory STRICT_JSON_FACTORY = JsonFactory.builder()
 			.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build();
@@ -36,16 +37,18 @@ record ScenarioMaritimeAiOutput(Assessment assessment) {
 	record DeadlinePromptFacts(String state, String deadlineAt, String recordedTransshipmentPort,
 			Boolean applicableToCurrentPort) { }
 	record ComparisonPromptFacts(String state, String outcome, String estimatedArrivalAt,
-			String comparedDeadline, String recordedTransshipmentPort) { }
+			String comparedDeadline, String recordedTransshipmentPort, DeadlineImpactPromptFacts deadlineImpact) { }
+	record DeadlineImpactPromptFacts(String direction, BigDecimal magnitudeSeconds, String magnitude) { }
 	record PromptData(String stage, String cutoffUtc, String scenarioShipmentKey, String currentTransshipmentPort, RiskPromptFacts risk,
 			DeadlinePromptFacts deadline, ComparisonPromptFacts comparison, List<RevisionChoice> eligibleRevisions) { }
 
-	/** Returns a safe field path when a positive-stage v1.6 request is missing required context. */
+	/** Returns a safe field path when a positive-stage structured scenario request lacks required context. */
 	static String preflightFailureField(MaritimeAiEvidencePackage input) {
 		if (input == null || input.shipmentContext() == null || input.shipmentContext().scenario() == null)
 			return "scenario";
 		var scenario = input.shipmentContext().scenario();
 		if (!List.of("CHANGE", "WORSENED").contains(scenario.stage())) return "scenario.stage";
+		if (!List.of("A", "B").contains(scenario.shipmentKey())) return "scenario.shipmentKey";
 		Instant cutoff;
 		try {
 			cutoff = Instant.parse(input.assessmentCutoffUtc());
@@ -166,7 +169,13 @@ record ScenarioMaritimeAiOutput(Assessment assessment) {
 					deadline.recordedTransshipmentPort(), deadline.applicableToCurrentPort()),
 				new ComparisonPromptFacts(comparison.state().name(), comparison.outcome().name(),
 					comparison.estimatedArrivalAt().toString(), comparison.comparedDeadline().toString(),
-					comparison.recordedTransshipmentPort()), choices);
+					comparison.recordedTransshipmentPort(), deadlineImpact(comparison)), choices);
+	}
+
+	private static DeadlineImpactPromptFacts deadlineImpact(MaritimeAiBusinessContext.Comparison comparison) {
+		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+		return impact == null ? null : new DeadlineImpactPromptFacts(impact.direction().name(),
+				impact.magnitudeSeconds(), impact.magnitude());
 	}
 
 	static MaritimeAiInterpretation project(ScenarioMaritimeAiOutput output, MaritimeAiEvidencePackage input) {
@@ -227,7 +236,10 @@ record ScenarioMaritimeAiOutput(Assessment assessment) {
 				|| !deadline.recordedTransshipmentPort().equals(comparison.recordedTransshipmentPort())
 				|| !nonblank(currentTransshipmentPort)
 				|| !deadline.recordedTransshipmentPort().equalsIgnoreCase(currentTransshipmentPort)) return false;
-		return risk.arrivalEstimate().estimatedArrivalAt().toInstant().equals(comparison.estimatedArrivalAt().toInstant());
+		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+		return risk.arrivalEstimate().estimatedArrivalAt().toInstant().equals(comparison.estimatedArrivalAt().toInstant())
+				&& impact != null
+				&& ScenarioDeadlineImpact.expectedOutcome(impact) == comparison.outcome();
 	}
 
 	private static boolean validBeforeCutoff(String value, Instant cutoff) {

@@ -171,7 +171,7 @@ The shipment-risk email is the message CDG-49 already sends. It stays off until 
 
 `RISK_ALERTS_FROM` defaults to `noreply@localhost`. `RISK_ALERTS_FRONTEND_BASE_URL` defaults to `http://localhost:5173`. Both match the local password-reset values and can be overridden in this terminal. Do not commit either value. The link is built from that origin plus the existing role path. It is not hardcoded in the mail composer.
 
-`RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server.
+`RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server. The command baselines the current connection risk of every active shipment, suppresses unsent deliveries from an older generation with "Suppressed during risk-alert activation", sets the activation generation to 1, and then the process exits. A normal startup does not create a generation. A delivery recorded under another generation is suppressed as "Risk alert delivery predates the active activation generation" and is not sent. Turning the mail switches on does not activate the gate.
 
 ```bash
 export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
@@ -180,23 +180,36 @@ cd backend
 bash ./mvnw spring-boot:run
 ```
 
-Wait until that process exits. Then start the server with the two mail switches together:
+Wait until that process exits. Then start the server with the mail switches and the evaluation switch together:
 
 ```bash
 unset RISK_ALERTS_ACTIVATION_COMMAND
 export RISK_ALERTS_MAIL_ENABLED=true
 export RISK_ALERTS_DISPATCH_ENABLED=true
+export RISK_ALERTS_EVALUATION_ENABLED=true
 bash ./mvnw spring-boot:run
 ```
 
-With those unset, a due delivery is suppressed as "Risk alert mail is disabled" and is not retried. Dispatch disabled does not open an SMTP connection.
+With the mail switches unset, a due delivery is suppressed as "Risk alert mail is disabled" and is not retried. Dispatch disabled does not open an SMTP connection.
 
-On Windows, set the same two switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'` and `$env:RISK_ALERTS_DISPATCH_ENABLED = 'true'`, and clear the activation command with `Remove-Item Env:RISK_ALERTS_ACTIVATION_COMMAND` before the server you want to keep.
+`RISK_ALERTS_EVALUATION_ENABLED` stays unset on a server that should not sweep. The 15-minute sweep runs only when that switch is set and the activation gate is already active. Creating a shipment, importing one, or changing the planned arrival or feeder departure still evaluates after the write commits. An AIS position does not start an evaluation.
+
+On Windows, set the same switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'`, `$env:RISK_ALERTS_DISPATCH_ENABLED = 'true'`, and `$env:RISK_ALERTS_EVALUATION_ENABLED = 'true'`, and clear the activation command with `Remove-Item Env:RISK_ALERTS_ACTIVATION_COMMAND` before the server you want to keep.
 
 ## Account Registration
 
 See [registration setup](docs/registration.md) for preset companies, local invitation links,
 API details, database migration notes, and registration integration tests.
+
+## First administrator
+
+A new installation does not have an administrator until an operator creates one. Set
+`DRIFT_SETUP_TOKEN` to a private value of at least 32 bytes, start the backend, and open
+http://localhost:5173/setup. The credential is not stored in the repository or the browser.
+After that one administrator exists, setup refuses a second account. Colleagues still join
+by invitation. See [first administrator setup](docs/first-administrator.md).
+An administrator then invites a colleague from User management. See [administrator invitations](docs/admin-invitation.md).
+A signed-in browser stays signed in across tabs for eight hours, until sign-out. See [browser sessions](docs/browser-session.md).
 
 ## Frontend
 

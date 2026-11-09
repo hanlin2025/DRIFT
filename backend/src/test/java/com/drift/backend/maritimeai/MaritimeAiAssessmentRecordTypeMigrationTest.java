@@ -44,7 +44,7 @@ class MaritimeAiAssessmentRecordTypeMigrationTest {
 				assertThat(recordType(connection, "ordinary-null")).isEqualTo(ORDINARY);
 				assertThat(recordType(connection, "scenario-valid")).isEqualTo(SCENARIO);
 				assertThat(recordType(connection, "scenario-context-only")).isEqualTo(SCENARIO);
-				assertThat(migrationVersions(connection)).endsWith("32", "33", "34");
+				assertThat(migrationVersions(connection)).endsWith("32", "33", "34", "35", "36");
 			}
 		} finally {
 			dropOwnedDatabase(database);

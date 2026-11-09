@@ -171,6 +171,20 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 	}
 
 	@Test
+	void suppressesADeliveryFromAnotherActivationGenerationWithoutSending() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
+		jdbc.update("UPDATE shipment_risk_transitions SET activation_generation = 0 WHERE id = ?", fixture.transitionId());
+
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
+		assertThat(delivery.getSuppressionReason()).isEqualTo("Risk alert delivery predates the active activation generation");
+		assertThat(delivery.getNextAttemptAt()).isNull();
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.NOT_PENDING);
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
 	void suppressesABlankSenderAddressAndAnUnusableFrontendBaseUrl() {
 		String from = mailProperties.getFrom();
 		String frontendBaseUrl = mailProperties.getFrontendBaseUrl();
