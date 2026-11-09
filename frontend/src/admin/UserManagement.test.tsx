@@ -123,8 +123,9 @@ describe('user management', () => {
 
     expect(createOrganisation).toHaveBeenCalledWith('admin-token', 'PACIFIC_GATE', 'Pacific Gate Imports');
     expect(await screen.findByText('Pacific Gate Imports (PACIFIC_GATE) was added.')).toBeInTheDocument();
-    expect(within(screen.getByLabelText('Organisation')).queryByRole('option', { name: 'Pacific Gate Imports' })).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Harbourline Logistics (Demo)' })).toBeInTheDocument();
+    const assignmentOrganisation = within(screen.getByLabelText('Organisation'));
+    expect(assignmentOrganisation.queryByRole('option', { name: 'Pacific Gate Imports' })).not.toBeInTheDocument();
+    expect(assignmentOrganisation.getByRole('option', { name: 'Harbourline Logistics (Demo)' })).toBeInTheDocument();
   });
 
   it('shows the assignment history after a change is saved', async () => {
