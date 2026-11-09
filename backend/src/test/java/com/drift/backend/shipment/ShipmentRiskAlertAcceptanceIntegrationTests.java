@@ -73,7 +73,7 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 	@Autowired ShipmentRiskEvaluator evaluator;
 	@Autowired LatestAisPositions aisPositions;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
-	@Autowired ShipmentConnectionRisk connectionRisk;
+	@Autowired ShipmentDetailAssembler detailAssembler;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired JavaMailSender mailSender;
 
@@ -267,7 +267,7 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		return transactions.execute(status -> {
 			Shipment shipment = shipmentRepository.findAll().stream()
 					.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
-			return ShipmentResponse.from(shipment, connectionRisk.assess(shipment), null);
+			return detailAssembler.row(shipment);
 		});
 	}
 
