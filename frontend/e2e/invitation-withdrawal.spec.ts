@@ -145,7 +145,7 @@ test('an administrator confirms withdrawal and the invitation cannot register', 
   expect(sql(`SELECT status FROM invitations WHERE id = ${guestId}`)).toBe('PENDING');
 
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(adminEmail);
+  await page.getByLabel('Email').fill(adminEmail);
   await page.getByLabel('Password', { exact: true }).fill('Example123');
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/admin');

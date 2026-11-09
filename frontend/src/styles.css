@@ -45,6 +45,17 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .65; }
 :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.auth-shell { min-height: 100dvh; display: grid; grid-template-columns: 1.15fr .85fr; background: var(--paper); }
+.auth-visual { position: relative; min-height: 100dvh; }
+.auth-visual img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.auth-panel { min-height: 100dvh; display: flex; justify-content: center; padding: 28px 48px 40px; background: var(--paper); }
+.auth-frame { width: min(400px, 100%); display: flex; flex-direction: column; }
+.auth-frame .wordmark { font-size: 18px; letter-spacing: .14em; }
+.auth-frame .wordmark svg { width: 22px; height: 22px; }
+.auth-card { margin: auto 0; padding: 28px 0; background: transparent; }
+.auth-card .invitation-entry { border: 0; background: transparent; padding: 0; }
+.auth-card .invitation-entry h3 { margin-top: 0; }
+.auth-card .primary-button { border-radius: var(--radius); }
 .auth-layout { display: grid; grid-template-columns: minmax(380px, .95fr) minmax(520px, 1.05fr); min-height: 100dvh; padding: 18px; gap: 18px; }
 .brand-panel { position: relative; overflow: hidden; isolation: isolate; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 42px 48px 28px; display: flex; flex-direction: column; }
 .brand-panel::before { content: ''; position: absolute; inset: 0; z-index: -1; opacity: .13; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.4' filter='url(%23n)'/%3E%3C/svg%3E"); }
@@ -102,6 +113,7 @@ input[aria-invalid=true] { border-color: var(--error); }
 .password-input { position: relative; }
 .password-input input { padding-right: 62px; }
 .visibility-button { position: absolute; inset: 0 7px 0 auto; border: 0; padding: 0 10px; min-width: 44px; color: #647560; background: transparent; font-size: 10px; font-weight: 700; }
+.forgot-password { display: inline-block; margin-top: 8px; color: var(--ink); font-size: 13px; font-weight: 650; text-underline-offset: 3px; }
 .primary-button { border: 1px solid var(--green); background: var(--green); color: var(--on-green); border-radius: var(--radius); box-shadow: var(--shadow); min-height: 40px; width: 100%; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; margin-top: 23px; transition: background .18s; }
 .primary-button:hover:not(:disabled) { background: var(--green-deep); }
 .primary-button span { font-size: 20px; line-height: 1; }
@@ -115,7 +127,6 @@ input[aria-invalid=true] { border-color: var(--error); }
 .login-prompt a { margin-left: 5px; font-weight: 750; text-underline-offset: 4px; }
 .form-footer { text-align: center; color: #91968a; font-size: 8px; padding: 20px 0 5px; letter-spacing: .3px; }
 .invitation-entry { padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #f9faf4; }
-.invitation-icon { display: inline-grid; place-items: center; height: 38px; width: 38px; border: 1px solid #cbd8c2; border-radius: 50%; font-size: 21px; }
 h3 { font-size: 16px; margin: 20px 0 12px; }
 .invitation-entry p { font-size: 11px; line-height: 1.8; color: var(--muted); }
 .invitation-entry form { margin-top: 23px; }
@@ -148,6 +159,9 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .company-card { padding: 13px; }
   .company-card strong { font-size: 11px; }
   .form-footer { padding-top: 12px; }
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-visual { min-height: 200px; height: 200px; }
+  .auth-panel { min-height: 0; padding: 24px 20px 32px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 

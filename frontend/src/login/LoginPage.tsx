@@ -83,26 +83,26 @@ export function LoginPage() {
   }
 
   return <>
-    <p className="eyebrow form-eyebrow">YOUR NEXT CONNECTION</p>
+    <p className="eyebrow form-eyebrow">SIGN IN</p>
     <h2>Welcome to DRIFT.</h2>
-    <p className="intro">Your workspace starts with a shared view.</p>
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
     {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
     {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}
     {error && <div className="error-notice" role="alert">{error}</div>}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
-        <label htmlFor="login-email">Work email</label>
+        <label htmlFor="login-email">Email</label>
         <input id="login-email" name="email" type="email" autoComplete="email" value={email} placeholder="you@company.com" onChange={event => setEmail(event.target.value)} disabled={submitting} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'login-email-error' : undefined} />
         {errors.email && <p className="field-error" id="login-email-error">{errors.email}</p>}
       </div>
       <div className="field">
-        <div className="field-label-row"><label htmlFor="login-password">Password</label><Link to="/forgot-password">Forgot password?</Link></div>
+        <label htmlFor="login-password">Password</label>
         <div className="password-input">
           <input id="login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} placeholder="Enter your password" onChange={event => setPassword(event.target.value)} disabled={submitting} aria-invalid={Boolean(errors.password)} aria-describedby={errors.password ? 'login-password-error' : undefined} />
           <button type="button" className="visibility-button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button>
         </div>
         {errors.password && <p className="field-error" id="login-password-error">{errors.password}</p>}
+        <Link className="forgot-password" to="/forgot-password">Forgot password?</Link>
       </div>
       <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Signing in...' : 'Log in'} <span aria-hidden="true">&#8594;</span></button>
     </form>

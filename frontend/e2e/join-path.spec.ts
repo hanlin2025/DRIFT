@@ -31,7 +31,7 @@ test('the first administrator can invite a colleague who stays signed in across 
   expect(created.status()).toBe(201);
 
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(adminEmail);
+  await page.getByLabel('Email').fill(adminEmail);
   await page.getByLabel('Password', { exact: true }).fill('Example123');
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/admin');
@@ -59,7 +59,7 @@ test('the first administrator can invite a colleague who stays signed in across 
   await colleague.getByLabel('Confirm password').fill('Example123');
   await colleague.getByRole('button', { name: /Create account/ }).click();
   await expect(colleague).toHaveURL('/login');
-  await colleague.getByLabel('Work email').fill(guest);
+  await colleague.getByLabel('Email').fill(guest);
   await colleague.getByLabel('Password', { exact: true }).fill('Example123');
   await colleague.getByRole('button', { name: /Log in/ }).click();
   await expect(colleague).toHaveURL('/logistics-manager');

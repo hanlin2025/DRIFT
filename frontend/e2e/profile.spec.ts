@@ -79,7 +79,7 @@ function cleanup(emails: string[]) {
 
 async function signIn(page: Page, email: string, secret = password, home = '/freight-forwarder') {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(secret);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(home);
@@ -185,7 +185,7 @@ test('a compliant password replaces the old one and a rejected password leaves i
     await expect(page.getByRole('status')).toHaveText('Your password was changed. Log in with the new password.');
     await expect(page.getByRole('alert')).toHaveCount(0);
 
-    await page.getByLabel('Work email').fill(account.email);
+    await page.getByLabel('Email').fill(account.email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page.getByRole('alert')).toHaveText('Invalid email or password.');
