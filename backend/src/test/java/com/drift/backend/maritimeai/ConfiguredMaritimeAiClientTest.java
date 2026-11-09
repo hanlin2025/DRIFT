@@ -29,10 +29,10 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
 			assertThat(result.promptVersion())
-					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1")
+					.isEqualTo("cdg247.evidence.v19.cdg252-source-mode-provenance.1")
 					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
 			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
-					.isEqualTo("cdg247.evidence.v17.cdg252-risk-provenance-human-follow-up.1");
+					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1");
 			assertThat(ConfiguredMaritimeAiClient.V16_PROMPT_VERSION)
 					.isEqualTo("cdg247.evidence.v16.cdg252-risk-citation-unknown-business.1");
 			assertThat(ConfiguredMaritimeAiClient.V15_PROMPT_VERSION)
@@ -56,6 +56,10 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("A feeder schedule is deterministic shipment-context planning information")
 					.contains("Association verification is evidence-item-specific")
 					.contains("never call a synthetic notice official or real")
+					.contains("describe cited evidence as historical or retrospective, never synthetic or fictional")
+					.contains("do not copy source-mode wording from an example or another source")
+					.contains("The cited observation warrants human review alongside backend HIGH risk")
+					.doesNotContain("The synthetic observation warrants human review")
 					.contains("say only that the documented revision warrants schedule review")
 					.contains("Do not state the revision's magnitude or previous/current values")
 					.contains("Never call the revision additional, further, another, or subsequent")
