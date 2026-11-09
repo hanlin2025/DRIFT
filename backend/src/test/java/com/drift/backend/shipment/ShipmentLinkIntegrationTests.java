@@ -121,7 +121,8 @@ class ShipmentLinkIntegrationTests {
 	@Test
 	void rejectsAnActiveCompanyThatHasNoAuthorisation() throws Exception {
 		Long shipmentId = createShipment(token);
-		link(token, shipmentId, importerId)
+		Long unaffiliatedId = insertCompany("CDG339_UNAUTHORISED_" + UUID.randomUUID().toString().substring(0, 8), "Unaffiliated Imports", true);
+		link(token, shipmentId, unaffiliatedId)
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(com.drift.backend.shipment.exception.UnauthorizedImporterLinkException.MESSAGE));
 		assertThat(jdbc.queryForObject("SELECT importer_company_id FROM shipments WHERE id = ?", Long.class, shipmentId))
