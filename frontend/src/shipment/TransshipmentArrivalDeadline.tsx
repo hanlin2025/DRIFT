@@ -5,7 +5,7 @@ import { formatWhen } from './ShipmentForm';
 import { toOffsetDateTime } from './validation';
 
 const LOCAL_TIME = 'Shown in your local time.';
-const PURPOSE = 'The time by which the mother vessel should arrive at the transshipment port. This is not the final delivery time.';
+const PURPOSE = 'Not the final delivery time.';
 const ENTER_TIME = 'Enter a date and time.';
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
