@@ -10,6 +10,9 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Assumptions;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
+import com.drift.backend.maritimecontext.SyntheticMultiSourceMaritimeFixture;
+import com.drift.backend.shipment.ShipmentDetailResponse;
+import com.drift.backend.shipment.ShipmentStatus;
 import tools.jackson.databind.ObjectMapper;
 
 class MaritimeAiResponseValidatorTest {
@@ -861,14 +864,18 @@ class MaritimeAiResponseValidatorTest {
 				new MaritimeAiShipmentContext("Synthetic port", new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic mother", "9001", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T05:00:00+08:00")), null), List.of(revisedArrival, port));
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 		MaritimeAiInterpretation valid = new MaritimeAiInterpretation("AI planning interpretation using separately displayed backend facts.",
-				List.of(new MaritimeAiClaim("Review the schedule against the contextual port constraint.", List.of("port-overlap"), "CONTEXTUAL", null, null, "PORT_CONTEXT", List.of("evidence:port-overlap", "evidence:revised-arrival", MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW")), List.of(), List.of(), true, null);
+				List.of(new MaritimeAiClaim("Review the schedule against the contextual port constraint.", List.of("port-overlap", "revised-arrival"), "CONTEXTUAL", null, null, "PORT_CONTEXT", List.of("evidence:port-overlap", "evidence:revised-arrival", MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW")), List.of(), List.of(), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(valid, input)).isNull();
 		MaritimeEvidence revisedEarly = new MaritimeEvidence("MPA_ETA_REVISION", "SYNTHETIC_DEMONSTRATION", "revised-early", "Synthetic revision", "synthetic", "", "citation",
 				"2026-10-01T05:00:00+08:00", "2026-10-01T05:00:00+08:00", "2026-09-30T22:00:00Z", "FRESH", "2026-10-01T04:00:00+08:00", "2026-10-01T05:00:00+08:00", "+60 minutes", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true, "VERIFIED", "Fictional revision.", "Synthetic mother", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 		MaritimeAiEvidencePackage outsideWindow = new MaritimeAiEvidencePackage("v5", "2026-10-01T00:00:00Z", "VERIFIED",
 				new MaritimeAiShipmentContext("Synthetic port", new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic mother", "9001", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T14:00:00+08:00")), null), List.of(revisedEarly, port));
 		assertThat(MaritimeAiCanonicalFactReferences.allowed(outsideWindow)).doesNotContain(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
-		assertThat(MaritimeAiResponseValidator.validate(valid, outsideWindow)).isEqualTo("UNKNOWN_FACT_REFERENCE");
+		MaritimeAiInterpretation unsupportedOverlap = new MaritimeAiInterpretation("AI planning interpretation using separately displayed backend facts.",
+				List.of(new MaritimeAiClaim("Review the schedule against the contextual port constraint.", List.of("port-overlap", "revised-early"), "CONTEXTUAL", null, null,
+						"PORT_CONTEXT", List.of("evidence:port-overlap", "evidence:revised-early", MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW")),
+				List.of(), List.of(), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(unsupportedOverlap, outsideWindow)).isEqualTo("UNKNOWN_FACT_REFERENCE");
 	}
 
 	@Test void rejectsAPlannedFeederDepartureWhenShipmentContextDoesNotSupplyOne() {
@@ -890,6 +897,81 @@ class MaritimeAiResponseValidatorTest {
 				List.of(new MaritimeAiClaim("All evidence is verified and linked to the shipment.", List.of("weather"), "CONTEXTUAL",
 						null, null, "REGIONAL_CONTEXT")), List.of(), List.of(), true, null)))
 				.isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+	}
+
+	@Test void acceptsOnlyExplicitlyQualifiedShipmentPlanningApplicabilityForContextOnlyEvidence() {
+		MaritimeEvidence port = structuredEvidence("qualified-port", "MPA_OFFICIAL_NOTICE", null, null, "PORT_CONTEXT");
+		String qualified = "The synthetic official notice provides contextual port maintenance information relevant to the transshipment port but does not establish a vessel impact or causation and has uncertain applicability for shipment planning.";
+		MaritimeAiClaim validClaim = new MaritimeAiClaim(qualified, List.of("qualified-port"), "CONTEXTUAL", null, null,
+				"PORT_CONTEXT", List.of("evidence:qualified-port"), "PORT_CONTEXT_REVIEW");
+		assertThat(validateWithEvidence(port, new MaritimeAiInterpretation("Review the contextual evidence and its limitations.",
+				List.of(validClaim), List.of(), List.of(), true, null))).isNull();
+
+		String qualifierCannotShield = qualified + " The shipment is affected by the notice.";
+		MaritimeAiClaim unsupportedClaim = new MaritimeAiClaim(qualifierCannotShield, List.of("qualified-port"), "CONTEXTUAL", null, null,
+				"PORT_CONTEXT", List.of("evidence:qualified-port"), "PORT_CONTEXT_REVIEW");
+		assertThat(validateWithEvidence(port, new MaritimeAiInterpretation("Review the contextual evidence and its limitations.",
+				List.of(unsupportedClaim), List.of(), List.of(), true, null))).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+
+		MaritimeEvidence weather = structuredEvidence("qualified-weather", "NEA_WEATHER", null, null, "REGIONAL_CONTEXT");
+		MaritimeAiClaim unsupportedCausation = new MaritimeAiClaim("The regional observation has uncertain applicability for shipment planning and caused a vessel impact.",
+				List.of("qualified-weather"), "CONTEXTUAL", null, null, "REGIONAL_CONTEXT",
+				List.of("evidence:qualified-weather"), "REGIONAL_WEATHER_CONTEXT");
+		assertThat(validateWithEvidence(weather, new MaritimeAiInterpretation("Review regional context cautiously.",
+				List.of(unsupportedCausation), List.of(), List.of(), true, null))).isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+	}
+
+	@Test void rejectsIncorrectSourceModeLabelsButAcceptsCorrectModeDescriptions() {
+		MaritimeEvidence retrospectiveMpa = new MaritimeEvidence("MPA_ETA_REVISION", "RETROSPECTIVE_ANALYSIS", "retrospective-mpa",
+				"Historical MPA expected-arrival revision", "MPA", "", "Curated historical MPA record.",
+				"2026-10-26T15:00:00Z", "2026-10-26T15:00:00Z", "2026-10-26T15:00:00Z", "FRESH",
+				"old", "new", "+60 minutes", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true,
+				"UNVERIFIED_IMO_ONLY", "Historical context only; no verified shipment impact.", "Recorded vessel", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		MaritimeAiEvidencePackage retrospectiveInput = new MaritimeAiEvidencePackage("v1", "2026-10-27T00:00:00Z",
+				"UNVERIFIED_IMO_ONLY", null, List.of(retrospectiveMpa));
+		MaritimeAiInterpretation mislabeled = modeInterpretation(retrospectiveMpa,
+				"The synthetic observation warrants human review alongside backend HIGH risk based on the planned connection window; the AIS estimate is unavailable.");
+		// The captured v18 response remains historically recorded as VALID; this exact source label is rejected by the v19 validator.
+		assertThat(MaritimeAiResponseValidator.validate(mislabeled, retrospectiveInput)).isEqualTo("EVIDENCE_SOURCE_MODE_MISMATCH");
+		MaritimeAiInterpretation correctlyLabeled = modeInterpretation(retrospectiveMpa, "The historical MPA revision warrants cautious schedule review.");
+		assertThat(MaritimeAiResponseValidator.validate(correctlyLabeled, retrospectiveInput)).isNull();
+
+		MaritimeEvidence syntheticNea = structuredEvidence("synthetic-mode-nea", "NEA_WEATHER", null, null, "REGIONAL_CONTEXT");
+		MaritimeAiEvidencePackage syntheticInput = new MaritimeAiEvidencePackage("v1", "2026-10-01T00:00:00Z", "VERIFIED", null,
+				List.of(syntheticNea));
+		assertThat(MaritimeAiResponseValidator.validate(modeInterpretation(syntheticNea,
+				"The synthetic regional observation provides contextual weather information."), syntheticInput)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(modeInterpretation(syntheticNea,
+				"The authentic regional observation provides contextual weather information."), syntheticInput))
+				.isEqualTo("EVIDENCE_SOURCE_MODE_MISMATCH");
+	}
+
+	@Test void replaysTheEntireSavedSyntheticOpenAiResponseAgainstTheOriginalThreeSourceFixture() throws Exception {
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v18-capture.json")) {
+			assertThat(captureStream).as("sanitized synthetic replay fixture").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(captureStream);
+			assertThat(capture.path("provider").asString()).isEqualTo("openai-responses");
+			assertThat(capture.path("model").asString()).isEqualTo("gpt-4.1-mini");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1");
+			assertThat(capture.path("validationStatus").asString())
+					.isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			assertThat(capturedOutput.claims()).hasSize(5);
+			MaritimeAiEvidencePackage input = savedSyntheticOpenAiFixture();
+			assertThat(input.evidence()).extracting(MaritimeEvidence::evidenceId).containsExactlyInAnyOrder(
+					SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID,
+					SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID,
+					SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID);
+			MaritimeAiClaim overlapClaim = capturedOutput.claims().get(2);
+			assertThat(overlapClaim.evidenceIds()).containsExactlyInAnyOrder(
+					SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID,
+					SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID);
+			assertThat(overlapClaim.factReferences()).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
+			assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
+			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, input)).isNull();
+		}
 	}
 
 	@Test void rejectsCallingASyntheticNoticeOfficialWithoutASyntheticQualifier() {
@@ -934,8 +1016,8 @@ class MaritimeAiResponseValidatorTest {
 				List.of(
 						new MaritimeAiClaim("Review the revised schedule against the feeder vessel's planned departure.", List.of("synthetic-mpa"), "CONTEXTUAL",
 								"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:synthetic-mpa", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW"),
-						new MaritimeAiClaim("The synthetic port context overlaps the eligible arrival window and warrants human review without asserting an impact.", List.of("synthetic-notice"), "CONTEXTUAL",
-								null, null, "PORT_CONTEXT", List.of("evidence:synthetic-notice", MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW"),
+						new MaritimeAiClaim("The synthetic port context overlaps the eligible arrival window and warrants human review without asserting an impact.", List.of("synthetic-notice", "synthetic-mpa"), "CONTEXTUAL",
+								null, null, "PORT_CONTEXT", List.of("evidence:synthetic-notice", "evidence:synthetic-mpa", MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW"),
 						new MaritimeAiClaim("The synthetic regional weather context warrants monitoring and does not establish an operational impact.", List.of("synthetic-weather"), "CONTEXTUAL",
 								null, null, "REGIONAL_CONTEXT", List.of("evidence:synthetic-weather"), "REGIONAL_WEATHER_CONTEXT")),
 				List.of("The contextual sources do not establish causation or a shipment-specific impact."),
@@ -1137,6 +1219,35 @@ class MaritimeAiResponseValidatorTest {
 		assertThat((consequencePoint ? 1 : 0) + (verificationPoint ? 1 : 0))
 				.as("scenario shipment %s usefulness out of two", expectedKey).isEqualTo(2);
 	}
+	private static MaritimeAiInterpretation modeInterpretation(MaritimeEvidence evidence, String statement) {
+		return new MaritimeAiInterpretation("Review the cited source and its limitations.",
+				List.of(new MaritimeAiClaim(statement, List.of(evidence.evidenceId()), "CONTEXTUAL",
+						evidence.vesselRole(), evidence.observationType(), evidence.associationScope(),
+						List.of("evidence:" + evidence.evidenceId()))), List.of(), List.of(), true, null);
+	}
+
+	private static MaritimeAiEvidencePackage savedSyntheticOpenAiFixture() {
+		ShipmentDetailResponse shipment = new ShipmentDetailResponse(200L, 99L, "DEMO-CONTROLLED-TEST",
+				"Synthetic origin", "Synthetic destination", "Synthetic Multi-source Port", "Synthetic Multi-source Vessel",
+				java.time.OffsetDateTime.parse("2026-10-01T05:00:00+08:00"), "9000002", null, null,
+				"Synthetic Multi-source Feeder", java.time.OffsetDateTime.parse("2026-10-01T14:00:00+08:00"), null, null, null,
+				java.time.Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null, null, null, ShipmentStatus.ACTIVE, null, List.of());
+		var bundle = SyntheticMultiSourceMaritimeFixture.context().forShipment(shipment);
+		var eligible = MaritimeAiAssessmentService.eligibleForInference(bundle.evidence());
+		var risk = new MaritimeAiConnectionRiskContext(true, null, com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+				MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 32_400L),
+				 null, new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE,
+						null, null, "NO_POSITION"), List.of());
+		var context = new MaritimeAiShipmentContext("Synthetic Multi-source Port",
+				new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic Multi-source Vessel", "9000002", "PLANNED_ARRIVAL",
+						java.time.OffsetDateTime.parse("2026-10-01T05:00:00+08:00")),
+				new MaritimeAiShipmentContext.Vessel("FEEDER", "Synthetic Multi-source Feeder", "9000003", "PLANNED_DEPARTURE",
+						java.time.OffsetDateTime.parse("2026-10-01T14:00:00+08:00")), risk);
+		return new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
+				bundle.shipmentAssociationConfidence(), context, eligible);
+	}
+
 	private static String validateWith(MaritimeEvidence evidence, String evidenceId) {
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage("v1", "2026-10-28T00:00:00Z", "UNVERIFIED_IMO_ONLY", null, List.of(evidence));
 		return MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("x", List.of(new MaritimeAiClaim("Evidence is recorded.", List.of(evidenceId), "UNCERTAIN")), List.of(), List.of(), true, null), input);
