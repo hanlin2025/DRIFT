@@ -38,7 +38,7 @@ visit, cargo handling, or a shipment association.
 
 ```bash
 cd backend && ./mvnw -Dtest=Cdg201ArrivalEvidenceServiceTest test
-cd ../frontend && npm test -- --run src/shipment/api.test.ts src/shipment/Cdg201EvidencePanel.test.tsx src/shipment/ShipmentDetail.test.tsx
+cd ../frontend && npm test -- --run src/shipment/api.test.ts src/shipment/Cdg201EvidencePanel.test.tsx src/shipment/RecordedArrivalChangeFact.test.tsx src/shipment/ShipmentDetail.test.tsx
 cd ../frontend && npm run build
 cd ../frontend && npm run test:e2e:cdg201-replay
 ```

@@ -37,6 +37,20 @@ class JwtSessionTokensTest {
 	}
 
 	@Test
+	void anEightHourSessionLastsANormalSittingAndThenEnds() throws Exception {
+		Instant now = Instant.parse("2026-09-25T00:00:00Z");
+		JwtSessionTokens tokens = new JwtSessionTokens(SECRET, Duration.ofHours(8).toMillis(), Clock.fixed(now, ZoneOffset.UTC));
+		IssuedSession session = tokens.issue(account());
+
+		assertThat(session.expiresAt()).isEqualTo(now.plus(Duration.ofHours(8)));
+		assertThat(new JwtSessionTokens(SECRET, Duration.ofHours(8).toMillis(), Clock.fixed(now.plus(Duration.ofHours(7)), ZoneOffset.UTC))
+				.parse(session.token()).email()).isEqualTo("alice@example.com");
+		assertThatThrownBy(() -> new JwtSessionTokens(SECRET, Duration.ofHours(8).toMillis(),
+				Clock.fixed(now.plus(Duration.ofHours(8)), ZoneOffset.UTC)).parse(session.token()))
+				.isInstanceOf(SessionEndedException.class);
+	}
+
+	@Test
 	void rejectsExpiredAndTamperedTokens() throws Exception {
 		Instant now = Instant.parse("2026-09-25T00:00:00Z");
 		IssuedSession session = tokensAt(now).issue(account());

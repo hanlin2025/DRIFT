@@ -258,6 +258,7 @@ describe('user management', () => {
   });
 
   it('opens user management after an administrator logs in', async () => {
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...admin, token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
     await user.type(screen.getByLabelText('Work email'), 'amina@example.com');

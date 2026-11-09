@@ -84,9 +84,10 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   try {
     response = await fetch(path, {
       ...init,
+      credentials: token ? init.credentials : 'include',
       headers: {
         ...init.headers,
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }),
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       },
       signal: AbortSignal.timeout(15000),

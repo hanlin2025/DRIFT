@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -74,18 +75,14 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 	void persistsTheRiskSnapshotUsedForGenerationAfterShipmentRiskChanges() throws Exception {
 		String beforeArrival = jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
 		String beforeDeparture = jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId);
+		Long beforeRiskTransitions = jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_transitions WHERE shipment_id = ?", Long.class, shipmentId);
+		Long beforeAisObservations = jdbc.queryForObject("SELECT COUNT(*) FROM vessel_observations", Long.class);
 
-		mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+		MvcResult generated = mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
 				.andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.state").value("GENERATED"))
 				.andExpect(jsonPath("$.validationStatus").value("VALID"))
 				.andExpect(jsonPath("$.provider").isNotEmpty())
-				.andExpect(jsonPath("$.interpretation.claims[0].evidenceIds[0]").value("synthetic-smoke-001"))
-				.andExpect(jsonPath("$.interpretation.claims[0].relationshipType").value("RISK_BUFFER_REVIEW"))
-				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.severity").value("HIGH"))
-				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
-				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.selectedWindowState").value("AVAILABLE"))
-				.andExpect(jsonPath("$.interpretation.claims[0].riskReview.estimateFreshness").value("UNAVAILABLE"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.assessed").value(true))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.severity").value("HIGH"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.selectedWindowBasis").value("PLANNED_SHIPMENT_SCHEDULE"))
@@ -95,9 +92,27 @@ class MaritimeAiSyntheticSmokeIntegrationTests {
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[0]").value("risk:CONNECTION_SEVERITY"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[1]").value("risk:PLANNED_CONNECTION_WINDOW"))
 				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[2]").value("risk:ARRIVAL_ESTIMATE_NOT_USED"))
-				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[3]").value("risk:ARRIVAL_ESTIMATE_FRESHNESS"));
+				.andExpect(jsonPath("$.deterministicSummary.connectionRisk.canonicalFactReferences[3]").value("risk:ARRIVAL_ESTIMATE_FRESHNESS")).andReturn();
+		String generatedJson = generated.getResponse().getContentAsString();
+		List<Map<String, Object>> claims = JsonPath.read(generatedJson, "$.interpretation.claims");
+		Map<String, Object> riskClaim = claims.stream()
+				.filter(claim -> "RISK_BUFFER_REVIEW".equals(claim.get("relationshipType")))
+				.findFirst().orElseThrow(() -> new AssertionError("Generated response has no RISK_BUFFER_REVIEW claim"));
+		assertThat(riskClaim.get("evidenceIds")).isEqualTo(List.of("synthetic-smoke-001"));
+		@SuppressWarnings("unchecked") List<String> riskReferences = (List<String>) riskClaim.get("factReferences");
+		assertThat(riskReferences).containsExactlyInAnyOrder("evidence:synthetic-smoke-001",
+				"risk:CONNECTION_SEVERITY", "risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_NOT_USED",
+				"risk:ARRIVAL_ESTIMATE_FRESHNESS");
+		@SuppressWarnings("unchecked") Map<String, Object> riskReview = (Map<String, Object>) riskClaim.get("riskReview");
+		assertThat(riskReview).containsEntry("severity", "HIGH")
+				.containsEntry("selectedWindowBasis", "PLANNED_SHIPMENT_SCHEDULE")
+				.containsEntry("selectedWindowState", "AVAILABLE")
+				.containsEntry("estimateFreshness", "UNAVAILABLE");
 		assertThat(jdbc.queryForObject("SELECT planned_mother_arrival_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeArrival);
 		assertThat(jdbc.queryForObject("SELECT planned_feeder_departure_at::text FROM shipments WHERE id = ?", String.class, shipmentId)).isEqualTo(beforeDeparture);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM shipment_risk_transitions WHERE shipment_id = ?", Long.class, shipmentId))
+				.isEqualTo(beforeRiskTransitions);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM vessel_observations", Long.class)).isEqualTo(beforeAisObservations);
 
 		jdbc.update("UPDATE shipments SET planned_feeder_departure_at = planned_feeder_departure_at + interval '4 days' WHERE id = ?", shipmentId);
 		entityManager.clear();

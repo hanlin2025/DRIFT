@@ -49,7 +49,7 @@ public final class RecommendationDecisionBrowserApplication {
 		private static ShipmentRecommendationImpact outcome(String configured) {
 			String value = configured == null || configured.isBlank() ? "NOT_RETURNED" : configured;
 			return switch (value) {
-				case "NOT_RETURNED" -> ShipmentRecommendationImpact.notReturned();
+				case "NOT_RETURNED" -> ShipmentRecommendationImpact.unavailable("The delay comparison is unavailable for this test case.");
 				case "NO_PREDICTED_IMPACT" -> ShipmentRecommendationImpact.noPredictedImpact();
 				case "AFFECTS_CONSTRAINTS" -> ShipmentRecommendationImpact.affectsConstraints();
 				default -> throw new IllegalStateException("Unknown recommendation impact outcome");

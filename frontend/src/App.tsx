@@ -4,6 +4,8 @@ import './admin/admin.css';
 import './shipment/importer-link.css';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
+import { ForgotPasswordPage } from './passwordreset/ForgotPasswordPage';
+import { ResetPasswordPage } from './passwordreset/ResetPasswordPage';
 import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
 import { SetupPage } from './setup/SetupPage';
@@ -29,6 +31,8 @@ export function AppRoutes() {
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
     <Route path="/setup" element={<AuthLayout><SetupPage /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+    <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordPage /></AuthLayout>} />
+    <Route path="/reset-password" element={<AuthLayout><ResetPasswordPage /></AuthLayout>} />
     <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin" element={<AdminRoute />} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { VesselPosition } from './api';
+import type { TrackPoint, TrackVessel, VesselPosition, VesselTrack } from './api';
+import type { TrackDisplayMode, TrackPresentationOwnership, TrackReadState } from './trackPresentationContract';
 import { isStalePosition } from './positionNotice';
 import { formatWhen } from './ShipmentForm';
 
@@ -10,36 +11,76 @@ export const NOT_REPORTED = 'Not reported';
 const MINUTE_MS = 60_000;
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
-export function VesselPanel({ name, position }: { name: string | null; position: VesselPosition | null }) {
+export type VesselPanelView = {
+  role: TrackVessel;
+  mode: TrackDisplayMode;
+  ownershipMode?: TrackPresentationOwnership;
+  history?: VesselTrack | null;
+  selectedPointId?: number | null;
+  referenceTime?: string | null;
+  state?: TrackReadState;
+  message?: string | null;
+  identityName?: string | null;
+};
+
+type DisplayPosition = Pick<TrackPoint, 'latitude' | 'longitude' | 'speedOverGroundKnots' | 'courseOverGroundDegrees' | 'trueHeadingDegrees' | 'ingestedAt'> & {
+  mmsi?: string | null;
+  source?: string;
+  lastKnown?: boolean;
+};
+
+export function VesselPanel({ name, position, view }: { name: string | null; position: VesselPosition | null; view?: VesselPanelView }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
+    if (view && (view.ownershipMode === 'controlled' || view.mode !== 'live')) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), AGE_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [position]);
+  }, [position, view?.ownershipMode, view?.mode]);
 
-  const vessel = position?.vesselName?.trim() || name?.trim() || 'Not recorded';
-  const stale = position !== null && isStalePosition(position.ingestedAt, now);
+  const history = view?.history ?? null;
+  const selectedTrackPoint = view?.selectedPointId == null
+    ? null
+    : history?.points.find(point => point.id === view.selectedPointId) ?? null;
+  const lastKnown = view?.mode === 'recorded' && history?.fallbackUsed ? history.lastKnownPosition ?? null : null;
+  const point = view?.mode === 'recorded' ? selectedTrackPoint ?? lastKnown ?? history?.points.at(-1) ?? null : null;
+  const displayed: DisplayPosition | null = point
+    ? { ...point, mmsi: history?.mmsi, lastKnown: point === lastKnown }
+    : position;
+  const liveName = displayed && 'vesselName' in displayed && typeof displayed.vesselName === 'string' ? displayed.vesselName.trim() : null;
+  const vessel = view?.identityName?.trim() || (view?.mode === 'recorded' ? history?.vesselName?.trim() : liveName) || name?.trim() || 'Not recorded';
+  const displayTime = view?.referenceTime ? Date.parse(view.referenceTime) : now;
+  const stale = view?.mode === 'recorded'
+    ? history?.status === 'STALE'
+    : displayed !== null && isStalePosition(displayed.ingestedAt,
+      view?.referenceTime && Number.isFinite(displayTime) ? displayTime : now);
+  const roleLabel = view?.role ?? 'MOTHER';
+  const recorded = view?.mode === 'recorded' && history?.context === 'RECORDED';
+  const seeded = history?.context === 'SEEDED' || ((view?.mode == null || view.mode === 'live') && displayed?.source === 'SEEDED');
 
   return (
-    <aside className="vessel-panel" aria-label="Mother vessel AIS">
-      <p className="eyebrow">MOTHER VESSEL</p>
+    <aside className="vessel-panel" aria-label={`${roleLabel === 'MOTHER' ? 'Mother' : 'Feeder'} vessel AIS`}>
+      <p className="eyebrow">{roleLabel} VESSEL</p>
       <strong>{vessel}</strong>
-      {position === null
-        ? <p className="vessel-empty">{NO_POSITION}</p>
+      {displayed === null
+        ? <p className="vessel-empty">{view?.state === 'loading' ? 'Loading position…' : view?.message ?? (view?.mode === 'recorded' ? 'No recorded position is available.' : NO_POSITION)}</p>
         : <>
-            {position.mmsi && <p className="vessel-mmsi">MMSI {position.mmsi}</p>}
-            {position.source === 'SEEDED' && <p className="vessel-seeded"><span className="vessel-seeded-badge">Seeded</span> This is not a live AIS fix.</p>}
-            {stale && <p className="vessel-stale"><span className="vessel-stale-badge">Stale</span> {STALE_DETAIL}</p>}
+            {displayed.mmsi && <p className="vessel-mmsi">MMSI {displayed.mmsi}</p>}
+            {recorded && <p className="vessel-recorded">Recorded AIS · receipt time. This is not the vessel’s current physical position.</p>}
+            {seeded && <p className="vessel-seeded"><span className="vessel-seeded-badge">Seeded</span> Rehearsal data; not an authentic AIS capture.</p>}
+            {view?.mode === 'scenario' && <p className="vessel-scenario">Scenario position · used for scenario display only.</p>}
+            {displayed.lastKnown && <p className="vessel-stale">Last known position at the requested cutoff.</p>}
+            {stale && <p className="vessel-stale"><span className="vessel-stale-badge">Stale</span> {view?.mode === 'recorded' ? 'This track is stale at its receipt-time cutoff.' : STALE_DETAIL}</p>}
+            {view?.mode === 'recorded' && history?.feedStatus === 'OFFLINE' && <p className="vessel-status">The AIS feed is offline; this stored observation remains available.</p>}
             <dl>
-              <div><dt>Position</dt><dd>{formatCoordinates(position.latitude, position.longitude)}</dd></div>
-              <Reading label="Speed" value={position.speedOverGroundKnots == null ? null : `${position.speedOverGroundKnots} kn`} />
-              <Reading label="Course" value={formatBearing(position.courseOverGroundDegrees)} />
-              <Reading label="Heading" value={formatBearing(position.trueHeadingDegrees)} />
+              <div><dt>Position</dt><dd>{formatCoordinates(displayed.latitude, displayed.longitude)}</dd></div>
+              <Reading label="Speed" value={displayed.speedOverGroundKnots == null ? null : `${displayed.speedOverGroundKnots} kn`} />
+              <Reading label="Course" value={formatBearing(displayed.courseOverGroundDegrees)} />
+              <Reading label="Heading" value={formatBearing(displayed.trueHeadingDegrees)} />
               <div>
-                <dt>Last report</dt>
-                <dd><time dateTime={position.ingestedAt} title={formatWhen(position.ingestedAt)}>Updated {formatAge(position.ingestedAt, now)}</time></dd>
+                <dt>{view?.mode === 'recorded' ? 'Receipt time' : 'Last report'}</dt>
+                <dd><time dateTime={displayed.ingestedAt} title={formatWhen(displayed.ingestedAt)}>{view?.mode === 'recorded' ? formatWhen(displayed.ingestedAt) : `Updated ${formatAge(displayed.ingestedAt, Number.isFinite(displayTime) ? displayTime : now)}`}</time></dd>
               </div>
             </dl>
           </>}

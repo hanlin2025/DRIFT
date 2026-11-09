@@ -73,14 +73,16 @@ class ShipmentRecommendationTest {
 
 	@Test
 	void anUnavailableImpactIsNotNoAction() {
-		ShipmentRecommendation notReturned = recommend(low(), ShipmentRecommendationImpact.notReturned());
+		ShipmentRecommendation noDeadline = recommend(low(),
+				ShipmentRecommendationImpact.unavailable(DelayComparison.MISSING_CONSTRAINT_MESSAGE));
 		ShipmentRecommendation other = recommend(criticalMiss(), ShipmentRecommendationImpact.unavailable(OTHER_IMPACT));
 
-		assertUnavailable(notReturned, Level.LOW, low().explanation(), ShipmentRecommendation.IMPACT_NOT_RETURNED,
-				ShipmentRecommendationImpact.NOT_RETURNED);
+		assertUnavailable(noDeadline, Level.LOW, low().explanation(),
+				ShipmentRecommendation.IMPACT_UNAVAILABLE + DelayComparison.MISSING_CONSTRAINT_MESSAGE,
+				DelayComparison.MISSING_CONSTRAINT_MESSAGE);
 		assertUnavailable(other, Level.CRITICAL, criticalMiss().explanation(),
 				ShipmentRecommendation.IMPACT_UNAVAILABLE + OTHER_IMPACT, OTHER_IMPACT);
-		assertThat(notReturned.unavailable()).doesNotContain("No action is needed");
+		assertThat(noDeadline.unavailable()).doesNotContain("No action is needed");
 		assertThat(other.response()).isNull();
 	}
 
@@ -88,7 +90,8 @@ class ShipmentRecommendationTest {
 	void aMissingRiskIsUnavailableEvenWhenTheImpactIsComplete() {
 		ShipmentRecommendation noImpact = ShipmentRecommendation.of(null, ShipmentRecommendationImpact.noPredictedImpact());
 		ShipmentRecommendation affects = ShipmentRecommendation.of(null, ShipmentRecommendationImpact.affectsConstraints());
-		ShipmentRecommendation both = ShipmentRecommendation.of(null, ShipmentRecommendationImpact.notReturned());
+		ShipmentRecommendation both = ShipmentRecommendation.of(null,
+				ShipmentRecommendationImpact.unavailable(DelayComparison.MISSING_PREDICTION_MESSAGE));
 		ShipmentRecommendation other = ShipmentRecommendation.of(null, ShipmentRecommendationImpact.unavailable(OTHER_IMPACT));
 
 		assertThat(noImpact.available()).isFalse();
@@ -99,25 +102,41 @@ class ShipmentRecommendationTest {
 		assertThat(noImpact.impact().outcome()).isEqualTo(Outcome.NO_PREDICTED_IMPACT);
 		assertThat(affects.unavailable()).isEqualTo(ShipmentRecommendation.RISK_NOT_ASSESSED);
 		assertThat(affects.impact().outcome()).isEqualTo(Outcome.AFFECTS_CONSTRAINTS);
-		assertThat(both.unavailable()).isEqualTo(ShipmentRecommendation.BOTH_NOT_RETURNED);
-		assertThat(both.impact().detail()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(both.unavailable())
+				.isEqualTo(ShipmentRecommendation.BOTH_UNAVAILABLE + DelayComparison.MISSING_PREDICTION_MESSAGE);
+		assertThat(both.impact().detail()).isEqualTo(DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(other.unavailable()).isEqualTo(ShipmentRecommendation.BOTH_UNAVAILABLE + OTHER_IMPACT);
 		assertThat(noImpact.unavailable()).doesNotContain("No action is needed");
 	}
 
 	@Test
-	void theDetailReadUsesTheNotReturnedImpactAndKeepsTheExistingRisk() {
-		ConnectionWindowCalculation planned = planned(Duration.ofHours(24));
-		ShipmentRisk risk = ShipmentRisk.of(planned, null);
-		ShipmentRecommendation recommendation = ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned());
+	void theImpactIsTakenFromTheDelayComparisonAndKeepsTheExistingRisk() {
+		OffsetDateTime deadline = PLANNED.plusHours(2);
+		DelayComparison exceeds = new DelayComparison(DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				DelayComparison.EXCEEDS, deadline.plusSeconds(1), deadline, "Singapore");
+		DelayComparison meets = new DelayComparison(DelayComparison.Outcome.NO_PREDICTED_IMPACT, null,
+				DelayComparison.NO_IMPACT, deadline, deadline, "Singapore");
+		DelayComparison stale = new DelayComparison(null, DelayComparison.Reason.STALE_PREDICTION,
+				DelayComparison.STALE, deadline, deadline, "Singapore");
 
-		assertThat(risk.level()).isEqualTo(Level.LOW);
-		assertThat(recommendation.riskLevel()).isEqualTo(risk.level());
-		assertThat(recommendation.riskExplanation()).isEqualTo(risk.explanation());
-		assertThat(recommendation.available()).isFalse();
-		assertThat(recommendation.response()).isNull();
-		assertThat(recommendation.impact().outcome()).isEqualTo(Outcome.UNAVAILABLE);
-		assertThat(recommendation.impact().detail()).isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+		assertThat(ShipmentRecommendationImpact.from(exceeds)).isEqualTo(ShipmentRecommendationImpact.affectsConstraints());
+		assertThat(ShipmentRecommendationImpact.from(meets)).isEqualTo(ShipmentRecommendationImpact.noPredictedImpact());
+		assertThat(ShipmentRecommendationImpact.from(stale))
+				.isEqualTo(ShipmentRecommendationImpact.unavailable(DelayComparison.STALE));
+
+		ShipmentRisk risk = high();
+		ShipmentRecommendation affected = ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.from(exceeds));
+		assertThat(affected.available()).isTrue();
+		assertThat(affected.response().code()).isEqualTo(Code.PREPARE_INTERVENTION);
+		assertThat(affected.riskLevel()).isEqualTo(risk.level());
+		assertThat(affected.riskExplanation()).isEqualTo(risk.explanation());
+		assertThat(ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.from(meets)).response().code())
+				.isEqualTo(Code.WATCH_CONNECTION);
+
+		ShipmentRecommendation unavailable = ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.from(stale));
+		assertThat(unavailable.available()).isFalse();
+		assertThat(unavailable.response()).isNull();
+		assertThat(unavailable.unavailable()).isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + DelayComparison.STALE);
 	}
 
 	@Test
@@ -128,7 +147,7 @@ class ShipmentRecommendationTest {
 				ShipmentRecommendedResponse.of(Code.NO_ACTION), Level.HIGH, high().explanation(), noImpact))
 				.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ShipmentRecommendation(false, "No action is needed.", null, Level.LOW, explanation,
-				ShipmentRecommendationImpact.notReturned()))
+				ShipmentRecommendationImpact.unavailable(DelayComparison.MISSING_CONSTRAINT_MESSAGE)))
 				.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ShipmentRecommendation(true, null, null, Level.LOW, explanation, noImpact))
 				.isInstanceOf(IllegalArgumentException.class);

@@ -127,6 +127,22 @@ public class LatestAisPositions {
 				.toList();
 	}
 
+	/** Stored observations from one provenance source for a cutoff-bounded read. */
+	public List<StoredAisPosition> history(String mmsi, Instant from, Instant to, int limit,
+			AisPositionSource source) {
+		if (mmsi == null || mmsi.isBlank() || source == null) {
+			return List.of();
+		}
+		return observations.findNewestValidInWindowBySource(mmsi.strip(), source.name(), from, to, limit).stream()
+				.map(VesselObservation::toStoredPosition)
+				.toList();
+	}
+
+	public boolean hasSourceInWindow(String mmsi, Instant from, Instant to, AisPositionSource source) {
+		return mmsi != null && !mmsi.isBlank() && source != null
+				&& observations.existsByMmsiAndSourceInWindow(mmsi.strip(), source.name(), from, to);
+	}
+
 	/**
 	 * Valid stored reports for one MMSI ingested strictly before {@code before}, newest first, at most {@code limit}.
 	 * This is not the track window and it does not apply the track slowdown.

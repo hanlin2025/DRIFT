@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/require-vercel-deployment-approval.mjs && tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -30,13 +30,15 @@
     "test:e2e:deadline": "node ../scripts/run-transshipment-arrival-deadline.mjs",
     "test:e2e:delay-comparison": "node ../scripts/run-delay-comparison.mjs",
     "test:e2e:history": "node ../scripts/run-shipment-history.mjs",
+    "test:e2e:late-arrival-chance": "node ../scripts/run-late-arrival-chance.mjs",
     "test:e2e:first-admin": "node ../scripts/run-first-admin-setup.mjs",
-    "test:e2e:admin-invitation": "node ../scripts/run-admin-invitation.mjs"
+    "test:e2e:admin-invitation": "node ../scripts/run-admin-invitation.mjs",
+    "test:e2e:join-path": "node ../scripts/run-join-path.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.3.0",
     "@fontsource-variable/manrope": "5.3.0",
-    "maplibre-gl": "5.24.0",
+    "maplibre-gl": "6.4.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router-dom": "7.18.4"

@@ -1,0 +1,683 @@
+openapi: 3.1.0
+info:
+  title: DRIFT Controlled Scenario API
+  version: "1"
+  description: >-
+    Authenticated, read-only scenario clock for the CDG-279 fictional disruption.
+    The API is available only when explicitly enabled and configured for an isolated
+    demonstration tenant. It never writes shipment or AIS records, and clock commands never start AI.
+servers:
+  - url: /api/scenarios/v1
+security:
+  - bearerAuth: []
+paths:
+  /sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    put:
+      operationId: createControlledScenarioSession
+      summary: Create a session or read its current state
+      description: >-
+        Creates an UNSTARTED session. Repeating the same session ID and anchor returns
+        the current session, which may already be active or complete. anchorShipmentId must equal one of the two
+        operator-configured A/B demo shipment IDs. The server checks both configured
+        bindings and current caller authorization; a client supplied ID grants no access.
+        Repeating the same session ID and anchor is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+            examples:
+              selectedShipmentA:
+                value:
+                  anchorShipmentId: 142
+      responses:
+        "200":
+          description: New or existing session envelope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+              examples:
+                unstarted:
+                  $ref: "#/components/examples/UnstartedSession"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFoundOrDisabled"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/CommandLimit"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      operationId: getControlledScenarioSession
+      summary: Read the current committed session snapshot
+      responses:
+        "200":
+          description: Current session envelope; snapshot is null while UNSTARTED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionEnvelope"
+              examples:
+                baseline:
+                  $ref: "#/components/examples/BaselineSession"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFoundOrDisabled"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /sessions/{sessionId}/start:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      operationId: startControlledScenario
+      summary: Start at BASELINE
+      description: >-
+        Applies only to the current epoch and revision. A repeated key with the same
+        action and request replays the original response; a new key after Start is a no-op
+        returning the current session.
+      requestBody:
+        $ref: "#/components/requestBodies/Command"
+      responses:
+        "200":
+          $ref: "#/components/responses/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFoundOrDisabled"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/CommandLimit"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /sessions/{sessionId}/next:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      operationId: advanceControlledScenario
+      summary: Advance exactly one stage
+      description: >-
+        Advances BASELINE to CHANGE or CHANGE to WORSENED. Distinct commands against
+        the same revision cannot both commit. WORSENED is final.
+      requestBody:
+        $ref: "#/components/requestBodies/Command"
+      responses:
+        "200":
+          $ref: "#/components/responses/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFoundOrDisabled"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/CommandLimit"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /sessions/{sessionId}/reset:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/IdempotencyKey"
+    post:
+      operationId: resetControlledScenario
+      summary: Reset to UNSTARTED in a new epoch
+      description: >-
+        An effective reset replaces epochId, clears the active snapshot and returns
+        revision 0. Reset while already UNSTARTED is a no-op. A replay of the same key
+        returns the original outcome and does not reset again.
+      requestBody:
+        $ref: "#/components/requestBodies/Command"
+      responses:
+        "200":
+          $ref: "#/components/responses/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/NotFoundOrDisabled"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/CommandLimit"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /sessions/{sessionId}/shipments/{shipmentId}/interpretation:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - name: shipmentId
+        in: path
+        required: true
+        description: Persistent A/B navigation anchor; the server verifies it against the current session binding.
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      operationId: generateControlledScenarioInterpretation
+      summary: Generate a transient interpretation for one scenario snapshot
+      description: >-
+        User-triggered and separately gated from scenario clock commands. The server reauthorizes the session,
+        selected A/B anchor, epoch, revision, snapshot, exact simulation cutoff, backend risk/business context,
+        and synthetic evidence before calling the configured real provider. The response is not persisted to
+        ordinary shipment assessment history. Repeated requests for the same authorized snapshot are served from
+        a bounded in-memory cache to avoid duplicate paid requests. No mock or replay provider is accepted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScenarioInterpretationRequest" }
+      responses:
+        "200":
+          description: Transient result bound to its selected scenario snapshot and shipment.
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioInterpretationResponse" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "404": { $ref: "#/components/responses/NotFoundOrDisabled" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/CommandLimit" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Client-generated UUID; identity is not authorization.
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >-
+        Retry-stable key scoped to this authorized session. The key and identical
+        request replay the stored original outcome. Reuse with different parameters is 409.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  requestBodies:
+    Command:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CommandRequest"
+          examples:
+            startBaseline:
+              value:
+                expectedEpochId: 74dab1c6-1d4b-4889-8dde-0b31986fed28
+                expectedRevision: 0
+  responses:
+    Session:
+      description: Committed command result (may be the replay of its original outcome)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SessionEnvelope"
+    InvalidRequest:
+      description: Invalid JSON or field/header value
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            code: INVALID_REQUEST
+            message: The scenario request is invalid.
+            retryable: false
+    Unauthenticated:
+      description: Missing, expired, or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            code: UNAUTHENTICATED
+            message: Your session has ended. Log in again.
+            retryable: false
+    AccessDenied:
+      description: Authenticated user is outside configured demo access
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            code: SCENARIO_ACCESS_DENIED
+            message: Controlled scenario access is not authorized.
+            retryable: false
+    NotFoundOrDisabled:
+      description: Disabled feature, expired/unknown session, or non-bound shipment
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            disabled:
+              value:
+                code: SCENARIO_DISABLED
+                message: Controlled scenarios are not available.
+                retryable: false
+            notFound:
+              value:
+                code: SCENARIO_NOT_FOUND
+                message: Scenario session not found
+                retryable: false
+    Conflict:
+      description: Stale context, invalid transition, or idempotency-key reuse
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            staleEpoch:
+              value:
+                code: STALE_EPOCH
+                message: The session has been reset. Reload its current state before retrying.
+                retryable: false
+            staleRevision:
+              value:
+                code: STALE_REVISION
+                message: The session changed. Reload its current state before retrying.
+                retryable: false
+            complete:
+              value:
+                code: SCENARIO_COMPLETE
+                message: The scenario is already at WORSENED.
+                retryable: false
+            notStarted:
+              value:
+                code: SCENARIO_NOT_STARTED
+                message: Start the scenario before advancing it.
+                retryable: false
+            sessionIdReused:
+              value:
+                code: SESSION_ID_REUSED
+                message: This session ID was already created for another shipment.
+                retryable: false
+            keyReuse:
+              value:
+                code: IDEMPOTENCY_KEY_REUSED
+                message: This command key was already used with different parameters.
+                retryable: false
+    CommandLimit:
+      description: Per-session idempotency ledger limit reached
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          example:
+            code: SESSION_COMMAND_LIMIT
+            message: The command limit for this session has been reached. Create a new scenario session.
+            retryable: false
+    Unavailable:
+      description: Missing operator configuration or bounded session capacity
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            misconfigured:
+              value:
+                code: SCENARIO_NOT_CONFIGURED
+                message: Controlled scenario access is not configured for this environment.
+                retryable: false
+            capacity:
+              value:
+                code: SESSION_CAPACITY
+                message: The controlled scenario session limit has been reached.
+                retryable: false
+            storageUnavailable:
+              value:
+                code: SCENARIO_STORAGE_UNAVAILABLE
+                message: Controlled scenario authorization could not be verified.
+                retryable: true
+  schemas:
+    CreateSessionRequest:
+      type: object
+      required: [anchorShipmentId]
+      properties:
+        anchorShipmentId:
+          type: integer
+          format: int64
+          description: Configured A/B lookup hint. The server independently authorizes it.
+    CommandRequest:
+      type: object
+      required: [expectedEpochId, expectedRevision]
+      properties:
+        expectedEpochId:
+          type: string
+          format: uuid
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+    ScenarioInterpretationRequest:
+      type: object
+      additionalProperties: false
+      required: [scenarioShipmentKey, expectedEpochId, expectedRevision, expectedSnapshotId, expectedSimulationCutoffUtc]
+      properties:
+        scenarioShipmentKey: { type: string, enum: [A, B] }
+        expectedEpochId: { type: string, format: uuid }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        expectedSnapshotId: { type: string, format: uuid }
+        expectedSimulationCutoffUtc: { type: string, format: date-time, description: Exact UTC string from the accepted snapshot. }
+    ScenarioInterpretationResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, epochId, snapshotId, revision, simulationCutoffUtc, scenarioShipmentKey, shipmentId, assessment]
+      properties:
+        sessionId: { type: string, format: uuid }
+        epochId: { type: string, format: uuid }
+        snapshotId: { type: string, format: uuid }
+        revision: { type: integer, format: int64, minimum: 0 }
+        simulationCutoffUtc: { type: string, format: date-time }
+        scenarioShipmentKey: { type: string, enum: [A, B] }
+        shipmentId: { type: integer, format: int64 }
+        assessment:
+          type: object
+          description: Existing validated maritime AI response shape with assessmentId null; never persisted.
+          additionalProperties: true
+          required: [assessmentId, state, validationStatus, bundleVersion, bundleHash, assessmentCutoffUtc, provider, model, promptVersion, generatedAtUtc, interpretation, limitation, deterministicSummary]
+          properties:
+            assessmentId: { type: "null" }
+            state: { type: string, enum: [GENERATED, ABSTAINED, FAILED] }
+            validationStatus: { type: string }
+            bundleVersion: { type: string }
+            bundleHash: { type: string }
+            assessmentCutoffUtc: { type: string, format: date-time }
+            provider: { type: string }
+            model: { type: string }
+            promptVersion: { type: string }
+            generatedAtUtc: { type: string, format: date-time, nullable: true }
+            interpretation: { type: object, nullable: true }
+            limitation: { type: string, nullable: true }
+            deterministicSummary: { type: object, nullable: true }
+    SessionEnvelope:
+      type: object
+      required:
+        - apiVersion
+        - sessionId
+        - scenarioId
+        - scenarioContractVersion
+        - state
+        - epochId
+        - revision
+        - capabilities
+        - shipments
+        - snapshot
+      properties:
+        apiVersion:
+          type: string
+          const: "1"
+        sessionId:
+          type: string
+          format: uuid
+        scenarioId:
+          type: string
+          example: CDG279-Api
+        scenarioContractVersion:
+          type: string
+          const: cdg279.synthetic-disruption.v1
+        state:
+          type: string
+          enum: [UNSTARTED, ACTIVE, COMPLETE]
+        epochId:
+          type: string
+          format: uuid
+          description: Opaque run identity; replaced by an effective Reset.
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Monotonic within an epoch; UNSTARTED starts at zero.
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+        shipments:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/ShipmentBinding"
+        snapshot:
+          oneOf:
+            - $ref: "#/components/schemas/ScenarioSnapshot"
+            - type: "null"
+          description: Null until Start commits BASELINE.
+    Capabilities:
+      type: object
+      required: [canRead, canStart, canAdvance, canReset, canGenerateAssessment]
+      properties:
+        canRead: { type: boolean }
+        canStart: { type: boolean }
+        canAdvance: { type: boolean }
+        canReset: { type: boolean }
+        canGenerateAssessment:
+          type: boolean
+          const: false
+          description: AI generation is outside this API and never runs on a clock command.
+    ShipmentBinding:
+      type: object
+      required: [scenarioShipmentKey, shipmentId, shipmentReference, scenarioShipmentReference]
+      properties:
+        scenarioShipmentKey:
+          type: string
+          enum: [A, B]
+        shipmentId:
+          type: integer
+          format: int64
+          description: Existing authorized demo shipment ID used only as portfolio/detail navigation anchor.
+        shipmentReference:
+          type: string
+          description: Reference from the separately provisioned ordinary demo shipment.
+        scenarioShipmentReference:
+          type: string
+          description: Fictional fixture reference; never a persistent shipment identifier.
+    ScenarioSnapshot:
+      type: object
+      required:
+        - snapshotId
+        - epochId
+        - revision
+        - stage
+        - stageOrder
+        - stageCount
+        - fixtureStageId
+        - simulationCutoffUtc
+        - mapPlaybackCutoffUtc
+        - shipments
+        - aisObservations
+        - maritimeContext
+      properties:
+        snapshotId: { type: string, format: uuid }
+        epochId: { type: string, format: uuid }
+        revision: { type: integer, format: int64 }
+        stage: { type: string, enum: [BASELINE, CHANGE, WORSENED] }
+        stageOrder: { type: integer, minimum: 0, maximum: 2 }
+        stageCount: { type: integer, const: 3 }
+        fixtureStageId: { type: string }
+        simulationCutoffUtc: { type: string, format: date-time }
+        mapPlaybackCutoffUtc: { type: string, format: date-time }
+        shipments:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ScenarioShipmentRead" }
+        aisObservations:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: "#/components/schemas/AisObservationRead" }
+        maritimeContext:
+          type: object
+          description: Existing maritime context response filtered at this snapshot cutoff.
+          additionalProperties: true
+    ScenarioShipmentRead:
+      type: object
+      required:
+        - scenarioShipmentKey
+        - sourceShipmentId
+        - scenarioShipmentReference
+        - transshipmentPort
+        - plannedMotherArrivalAt
+        - plannedFeederDepartureAt
+        - plannedConnectionWindow
+        - remainingConnectionWindow
+        - arrivalEstimate
+        - risk
+        - businessImpact
+      properties:
+        scenarioShipmentKey: { type: string, enum: [A, B] }
+        sourceShipmentId: { type: integer, format: int64 }
+        scenarioShipmentReference: { type: string }
+        transshipmentPort: { type: string }
+        plannedMotherArrivalAt: { type: string, format: date-time }
+        plannedFeederDepartureAt: { type: string, format: date-time }
+        plannedConnectionWindow: { type: object, additionalProperties: true }
+        remainingConnectionWindow: { type: object, additionalProperties: true }
+        arrivalEstimate: { type: object, additionalProperties: true }
+        risk: { type: object, additionalProperties: true }
+        businessImpact: { type: object, additionalProperties: true }
+    AisObservationRead:
+      type: object
+      required: [vesselRole, observedAtUtc, receivedAtUtc, sourceMode, position]
+      properties:
+        vesselRole: { type: string, enum: [MOTHER, FEEDER] }
+        observedAtUtc: { type: string, format: date-time }
+        receivedAtUtc: { type: string, format: date-time }
+        sourceMode: { type: string }
+        position: { type: object, additionalProperties: true }
+    ApiError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+  examples:
+    UnstartedSession:
+      value:
+        apiVersion: "1"
+        sessionId: d5f2390b-d610-4c5d-9b6c-7153f8a89fbf
+        scenarioId: CDG279-Api
+        scenarioContractVersion: cdg279.synthetic-disruption.v1
+        state: UNSTARTED
+        epochId: 74dab1c6-1d4b-4889-8dde-0b31986fed28
+        revision: 0
+        capabilities:
+          canRead: true
+          canStart: true
+          canAdvance: false
+          canReset: false
+          canGenerateAssessment: false
+        shipments:
+          - scenarioShipmentKey: A
+            shipmentId: 142
+            shipmentReference: DEMO-A-PORTFOLIO
+            scenarioShipmentReference: DEMO-CDG279-Api-A
+          - scenarioShipmentKey: B
+            shipmentId: 143
+            shipmentReference: DEMO-B-PORTFOLIO
+            scenarioShipmentReference: DEMO-CDG279-Api-B
+        snapshot: null
+    BaselineSession:
+      value:
+        apiVersion: "1"
+        sessionId: d5f2390b-d610-4c5d-9b6c-7153f8a89fbf
+        scenarioId: CDG279-Api
+        scenarioContractVersion: cdg279.synthetic-disruption.v1
+        state: ACTIVE
+        epochId: 74dab1c6-1d4b-4889-8dde-0b31986fed28
+        revision: 1
+        capabilities:
+          canRead: true
+          canStart: false
+          canAdvance: true
+          canReset: true
+          canGenerateAssessment: false
+        shipments:
+          - scenarioShipmentKey: A
+            shipmentId: 142
+            shipmentReference: DEMO-A-PORTFOLIO
+            scenarioShipmentReference: DEMO-CDG279-Api-A
+          - scenarioShipmentKey: B
+            shipmentId: 143
+            shipmentReference: DEMO-B-PORTFOLIO
+            scenarioShipmentReference: DEMO-CDG279-Api-B
+        snapshot:
+          snapshotId: 55bb0888-2906-4ba0-946f-b054b0ef1272
+          epochId: 74dab1c6-1d4b-4889-8dde-0b31986fed28
+          revision: 1
+          stage: BASELINE
+          stageOrder: 0
+          stageCount: 3
+          fixtureStageId: baseline
+          simulationCutoffUtc: "2026-10-01T00:00:00Z"
+          mapPlaybackCutoffUtc: "2026-10-01T00:00:00Z"
+          shipments:
+            - scenarioShipmentKey: A
+              sourceShipmentId: 142
+              scenarioShipmentReference: DEMO-CDG279-Api-A
+              transshipmentPort: Synthetic Multi-source Port
+              plannedMotherArrivalAt: "2026-10-01T06:00:00Z"
+              plannedFeederDepartureAt: "2026-10-02T12:00:00Z"
+              plannedConnectionWindow: { totalSeconds: 108000 }
+              remainingConnectionWindow: { totalSeconds: 108000 }
+              arrivalEstimate: { estimatedArrivalAt: "2026-10-01T06:00:00Z" }
+              risk: { level: LOW }
+              businessImpact: { outcome: NO_PREDICTED_IMPACT }
+            - scenarioShipmentKey: B
+              sourceShipmentId: 143
+              scenarioShipmentReference: DEMO-CDG279-Api-B
+              transshipmentPort: Synthetic Multi-source Port
+              plannedMotherArrivalAt: "2026-10-01T06:00:00Z"
+              plannedFeederDepartureAt: "2026-10-02T12:00:00Z"
+              plannedConnectionWindow: { totalSeconds: 108000 }
+              remainingConnectionWindow: { totalSeconds: 108000 }
+              arrivalEstimate: { estimatedArrivalAt: "2026-10-01T06:00:00Z" }
+              risk: { level: LOW }
+              businessImpact: { outcome: NO_PREDICTED_IMPACT }
+          aisObservations:
+            - vesselRole: MOTHER
+              observedAtUtc: "2026-10-01T00:00:00Z"
+              receivedAtUtc: "2026-10-01T00:00:00Z"
+              sourceMode: SYNTHETIC_DEMONSTRATION
+              position: { source: SEEDED }
+            - vesselRole: FEEDER
+              observedAtUtc: "2026-10-01T00:00:00Z"
+              receivedAtUtc: "2026-10-01T00:00:00Z"
+              sourceMode: SYNTHETIC_DEMONSTRATION
+              position: { source: SEEDED }
+          maritimeContext: {}
