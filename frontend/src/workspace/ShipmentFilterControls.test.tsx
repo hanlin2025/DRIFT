@@ -110,7 +110,7 @@ describe('ShipmentFilterControls', () => {
     expect(Array.from((sort as HTMLSelectElement).options).map(option => option.textContent)).toEqual([
       'Newest first', 'Risk level (Critical first)',
     ]);
-    expect(sort).toHaveAccessibleDescription(/Risk level puts Critical first, then the soonest feeder departure/);
+    expect(sort).toHaveAccessibleDescription(/Risk level puts Critical first\. Within a level, shipments that exceed the importer's deadline come first, then the soonest feeder departure/);
     await user.selectOptions(sort, 'risk');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
     expect(screen.getByTestId('location')).toHaveTextContent('?view=table&sort=risk');
@@ -137,6 +137,23 @@ describe('ShipmentFilterControls', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('');
     expect(atRisk).not.toBeChecked();
     expect(screen.getByRole('combobox', { name: 'Sort by' })).toHaveValue('');
+  });
+
+  it('applies the exceeds-deadline toggle with the at-risk toggle and clears it with them', async () => {
+    const user = userEvent.setup();
+    renderControls('/freight-forwarder?sort=risk&atRisk=true');
+
+    const exceeds = screen.getByRole('checkbox', { name: 'Exceeds importer deadline only' });
+    expect(exceeds).not.toBeChecked();
+    expect(exceeds).toHaveAccessibleDescription("Shows shipments whose predicted arrival is after the importer's recorded deadline.");
+
+    await user.click(exceeds);
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('?sort=risk&atRisk=true&exceedsDeadline=true');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('');
+    expect(exceeds).not.toBeChecked();
   });
 
   it('keeps an invalid raw URL at-risk value until the user toggles it', async () => {

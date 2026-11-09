@@ -52,15 +52,17 @@ app:
       interval: ${RISK_ALERTS_EVALUATION_INTERVAL:15m}
       batch-size: ${RISK_ALERTS_EVALUATION_BATCH_SIZE:100}
     mail:
+      # Stays off until an operator enables it. The local from address and frontend origin match password reset and stay overridable.
       enabled: ${RISK_ALERTS_MAIL_ENABLED:false}
-      frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:}
-      from: ${RISK_ALERTS_FROM:}
+      frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:http://localhost:5173}
+      from: ${RISK_ALERTS_FROM:noreply@localhost}
       claim-lease: ${RISK_ALERTS_CLAIM_LEASE:1m}
       dispatch-enabled: ${RISK_ALERTS_DISPATCH_ENABLED:false}
       poll-interval: ${RISK_ALERTS_POLL_INTERVAL:1m}
       batch-size: ${RISK_ALERTS_BATCH_SIZE:50}
   ais:
     enabled: ${AIS_ENABLED:false}
+    capture-directory: ${AIS_CAPTURE_DIRECTORY:}
     stream-uri: wss://stream.aisstream.io/v0/stream
     api-key: ${AISSTREAM_API_KEY:}
     southwest-latitude: ${AIS_SOUTHWEST_LATITUDE:}
@@ -77,8 +79,20 @@ app:
     # Local/staging-only fictional replay; stage changes require an application restart.
     controlled-replay-enabled: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED:false}
     controlled-replay-stage: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_STAGE:BASELINE}
+  controlled-scenario:
+    # Keep the session API absent from usable deployments unless explicitly configured for an isolated demo.
+    enabled: ${CONTROLLED_SCENARIO_ENABLED:false}
+    demo-company-id: ${CONTROLLED_SCENARIO_DEMO_COMPANY_ID:}
+    allowed-user-ids: ${CONTROLLED_SCENARIO_ALLOWED_USER_IDS:}
+    shipment-a-id: ${CONTROLLED_SCENARIO_SHIPMENT_A_ID:}
+    shipment-b-id: ${CONTROLLED_SCENARIO_SHIPMENT_B_ID:}
+    session-ttl: ${CONTROLLED_SCENARIO_SESSION_TTL:4h}
+    max-sessions: ${CONTROLLED_SCENARIO_MAX_SESSIONS:100}
+    max-commands-per-session: ${CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION:64}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
+    # Separate explicit UI-requested controlled-scenario inference gate; the provider approval gate still applies.
+    scenario-enabled: ${MARITIME_AI_SCENARIO_ENABLED:false}
     # Offline-only client for the controlled fictional replay. Never sends a provider request.
     controlled-replay-stub-enabled: ${MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED:false}
     provider: ${MARITIME_AI_PROVIDER:}

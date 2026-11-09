@@ -13,14 +13,14 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
 
 /**
- * Rejects an archive or visibility integration context before refresh unless that context has its own
- * empty disposable database. Each context supplies a distinct URL, so a later context is not rejected
- * because an earlier one already migrated a different database.
+ * Rejects an archive, visibility, or durable activation integration context before refresh unless that
+ * context has its own empty disposable database. Each context supplies a distinct URL, so a later
+ * context is not rejected because an earlier one already migrated a different database.
  */
 final class ShipmentDisposableDatabaseGuard implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
 	static final Pattern URL = Pattern.compile(
-			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/(drift_cdg81(?:archive|visibility|filterapi|filterservice|identity)_[0-9]{14}_[a-f0-9]{12})$");
+			"^jdbc:postgresql://127\\.0\\.0\\.1:5432/((?:drift_cdg81(?:archive|visibility|filterapi|filterservice|identity)|drift_cdg198_activation_(?:service|concurrency|race))_[0-9]{14}_[a-f0-9]{12})$");
 
 	@Override
 	public void initialize(ConfigurableApplicationContext applicationContext) {
