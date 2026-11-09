@@ -88,6 +88,7 @@ class ShipmentObservationReportIntegrationTests {
 
 		assertThat(storedAt("563177001").toInstant()).isEqualTo(motherStored.toInstant());
 
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, id, importerCompanyId);
 		mvc.perform(patch("/api/shipments/" + id + "/link-importer")
 				.header("Authorization", "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)

@@ -553,6 +553,7 @@ class ShipmentArchiveIntegrationTests {
 	}
 
 	private ResultActions link(String bearerToken, Long shipmentId, Long importerCompanyId) throws Exception {
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
 		return mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + bearerToken)
 				.contentType(MediaType.APPLICATION_JSON)

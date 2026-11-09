@@ -11,11 +11,10 @@
   padding: 8px 12px;
   border-radius: 12px;
 }
-.workspace-nav:hover { background: #f8fafc; }
+.workspace-nav:hover { background: var(--hover); }
 .workspace-nav[aria-current="page"] { background: var(--accent); color: #000; }
 .workspace-nav[aria-current="page"]:hover { background: var(--accent); }
-.workspace-bar .workspace-nav + .workspace-nav,
-.workspace-bar .workspace-nav + .sign-out { margin-left: 0; }
+.workspace-bar .workspace-nav + .workspace-nav { margin-left: 0; }
 .admin-layout { display: grid; gap: 22px; }
 .user-choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
 .user-choices legend { font-size: 11px; font-weight: 750; margin-bottom: 8px; }
@@ -43,7 +42,6 @@
   font-size: 12px;
   min-height: 44px;
 }
-.admin-form select:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px #0f172a33; }
 .admin-form .primary-button { width: auto; min-width: 180px; }
 .admin-form .form-actions { margin-top: 0; flex-wrap: wrap; }
 .audit-panel { margin-top: 28px; }

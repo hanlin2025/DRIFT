@@ -112,6 +112,7 @@ class VesselDetailsIntegrationTests {
 				.andExpect(jsonPath("$.plannedMotherArrivalAt").value("2026-10-15T00:00:00Z"))
 				.andExpect(jsonPath("$.plannedFeederDepartureAt").value("2026-10-16T04:00:00Z"));
 
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, id, importerCompanyId);
 		mvc.perform(patch("/api/shipments/" + id + "/link-importer")
 				.header("Authorization", "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)

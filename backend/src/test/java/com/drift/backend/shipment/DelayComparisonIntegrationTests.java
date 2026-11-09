@@ -389,6 +389,9 @@ class DelayComparisonIntegrationTests {
 	}
 
 	private void link(String token, Long shipmentId, Long importerCompanyId) throws Exception {
+		if (importerCompanyId != null) {
+			com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
+		}
 		String body = importerCompanyId == null ? "{\"importerCompanyId\":null}"
 				: "{\"importerCompanyId\":" + importerCompanyId + "}";
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")

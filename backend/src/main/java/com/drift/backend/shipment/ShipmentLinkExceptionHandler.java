@@ -16,6 +16,7 @@ import com.drift.backend.shipment.exception.MissingShipmentInformationException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
+import com.drift.backend.shipment.exception.UnauthorizedImporterLinkException;
 
 @RestControllerAdvice(assignableTypes = ShipmentLinkController.class)
 public class ShipmentLinkExceptionHandler {
@@ -30,7 +31,8 @@ public class ShipmentLinkExceptionHandler {
 		return message(HttpStatus.BAD_REQUEST, MissingShipmentInformationException.MESSAGE);
 	}
 
-	@ExceptionHandler({ ShipmentLinkForbiddenException.class, ShipmentAccessForbiddenException.class })
+	@ExceptionHandler({ ShipmentLinkForbiddenException.class, ShipmentAccessForbiddenException.class,
+			UnauthorizedImporterLinkException.class })
 	public ResponseEntity<Map<String, String>> handleForbidden(RuntimeException ex) {
 		return message(HttpStatus.FORBIDDEN, ex.getMessage());
 	}
