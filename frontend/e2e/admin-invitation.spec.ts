@@ -77,12 +77,10 @@ test('an administrator invites a colleague and the invitation registers once', {
   await page.getByRole('button', { name: 'Send invitation' }).click();
   await expect(page.getByRole('status')).toContainText(`Invitation sent to ${guest}`);
 
-  const session = await page.evaluate(() => sessionStorage.getItem('drift.session') ?? '');
-  const token = JSON.parse(session).token as string;
-  const foreign = await request.post('/api/admin/invitations', {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { organisationId: Number(straits), role: 'IMPORTER', email: `cdg310-foreign-${stamp}@example.com` },
-  });
+    const foreign = await page.request.post('/api/admin/invitations', {
+      headers: { 'X-DRIFT-Request': '1' },
+      data: { organisationId: Number(straits), role: 'IMPORTER', email: `cdg310-foreign-${stamp}@example.com` },
+    });
   expect(foreign.status()).toBe(400);
   expect(sql(`SELECT COUNT(*) FROM invitations WHERE email = 'cdg310-foreign-${stamp}@example.com'`)).toBe('0');
 

@@ -21,7 +21,9 @@ export async function post(path: string, body: unknown): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-DRIFT-Request': '1' },
       body: JSON.stringify(body), signal: AbortSignal.timeout(15000), cache: 'no-store',
     });
   } catch (error) {
