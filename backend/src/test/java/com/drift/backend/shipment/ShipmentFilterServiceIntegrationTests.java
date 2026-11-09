@@ -187,7 +187,8 @@ class ShipmentFilterServiceIntegrationTests {
 		assertThat(first.total()).isEqualTo(ShipmentService.PAGE_SIZE + 2);
 		assertThat(first.items()).hasSize(ShipmentService.PAGE_SIZE);
 		assertThat(first.items().get(0).shipmentReference()).isEqualTo("HBL-HIGH-OLDEST");
-		assertThat(second.items()).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-LOW-NEWEST");
+		assertThat(second.items()).extracting(ShipmentResponse::shipmentReference)
+				.containsExactly("HBL-MEDIUM-24", "HBL-LOW-NEWEST");
 		assertThat(atRisk.total()).isEqualTo(1);
 		assertThat(atRisk.items()).extracting(ShipmentResponse::shipmentReference).containsExactly("HBL-HIGH-OLDEST");
 	}
@@ -272,7 +273,9 @@ class ShipmentFilterServiceIntegrationTests {
 				at("2026-10-12T08:00:00+08:00"), Instant.now());
 		insert(forwarder, linkedImporter, "HBL-ARCHIVED-STATUS", "MV Pacific Horizon", "MV Feeder",
 				at("2026-10-12T08:00:00+08:00"), Instant.now());
-		insert(unrelatedCompany, null, "HBL-HIDDEN-ARCHIVED", "MV Pacific Horizon", "MV Feeder",
+		CompanyFixture hiddenArchivedOwner = company("Hidden Archived Owner");
+		account(Role.FREIGHT_FORWARDER, hiddenArchivedOwner.id());
+		insert(hiddenArchivedOwner, null, "HBL-HIDDEN-ARCHIVED", "MV Pacific Horizon", "MV Feeder",
 				at("2026-10-12T08:00:00+08:00"), Instant.now());
 		archive("HBL-ARCHIVED-STATUS");
 		archive("HBL-HIDDEN-ARCHIVED");
