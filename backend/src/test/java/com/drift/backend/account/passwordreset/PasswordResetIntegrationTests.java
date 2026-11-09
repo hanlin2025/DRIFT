@@ -407,6 +407,30 @@ class PasswordResetIntegrationTests {
 		assertThat(output.getAll()).doesNotContain(token, tampered, weak, chosen);
 	}
 
+	@Test
+	void documentsBothEndpointsAsPublicWithTheirResponses() throws Exception {
+		mvc.perform(get("/v3/api-docs"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.summary").value("Request a password reset link"))
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.tags[0]").value("Password reset"))
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.responses['200']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.responses['400']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/forgot-password'].post.responses['429']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.summary")
+						.value("Choose a new password with a reset link"))
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.tags[0]").value("Password reset"))
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.security").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.responses['200']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.responses['400']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.responses['429']").exists())
+				.andExpect(jsonPath("$.paths['/api/auth/reset-password'].post.requestBody.content['application/json'].schema.$ref")
+						.value("#/components/schemas/ResetPasswordRequest"))
+				.andExpect(jsonPath("$.components.schemas.ResetPasswordRequest.properties.password").exists())
+				.andExpect(jsonPath("$.components.schemas.ResetPasswordRequest.properties.token.pattern")
+						.value("[A-Za-z0-9_-]{43}"));
+	}
+
 	private String loginToken(String password) throws Exception {
 		MvcResult result = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
 				.content(loginBody(email, password)))
