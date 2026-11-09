@@ -36,7 +36,7 @@ class SyntheticMaritimeAiSmokeFixtureTest {
 				99L, 99L, "SYNTHETIC-SMOKE", "Synthetic origin", "Synthetic destination", "Synthetic port", "Synthetic vessel",
 				OffsetDateTime.parse("2026-10-01T08:00:00+08:00"), imo, null, null, "Synthetic feeder", OffsetDateTime.parse("2026-10-01T16:00:00+08:00"), null, null, null,
 				Instant.EPOCH, 0L,
-				null, null, null, null, null, null, null,
-				null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE);
+				null, null, null, null, null, null, null, null,
+				null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE, null, java.util.List.of());
 	}
 }

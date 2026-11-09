@@ -19,6 +19,7 @@ import com.drift.backend.maritimecontext.MaritimeEvidence;
  * review remains required for all accepted output.
  */
 final class MaritimeAiResponseValidator {
+	private record BusinessConstraintFinding(String location, int clauseIndex, String reason) { }
 	private static final Pattern FEEDER_ARRIVAL_OR_REVISION = Pattern.compile("\\bfeeder(?:\\s+vessel)?\\b[^.!?;]{0,120}\\b(arriv\\w*|eta|revis\\w*)\\b");
 	private static final Pattern MOTHER_ARRIVAL_OR_REVISION = Pattern.compile("\\bmother(?:\\s+vessel)?\\b[^.!?;]{0,120}\\b(arriv\\w*|eta|revis\\w*)\\b");
 	private static final Pattern FEEDER_DEPARTURE = Pattern.compile("\\bfeeder(?:\\s+vessel)?\\b[^.!?;]{0,120}\\bdeparture\\b");
@@ -44,10 +45,16 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern UNSUPPORTED_ALTERNATIVE_PLAN_FOLLOW_UP = Pattern.compile("(?i)\\b(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b[^.!?;]{0,80}\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b|\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b[^.!?;]{0,80}\\b(?:should|could|may|need(?:s)? to|can)\\s+(?:be\\s+)?(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b");
 	private static final Pattern NO_WINDOW_ASSERTION = Pattern.compile("(?i)\\b(?:(?:no|zero)\\s+(?:(?:positive|remaining|available)\\s+)?(?:connection\\s+)?(?:windows?|buffers?)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:(?:is|has(?:\\s+been)?)\\s+)?(?:exhausted|unavailable|zero|ended|expired|gone|depleted|consumed|run\\s+out|not\\s+available|used\\s+up)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:has\\s+)?no\\s+positive\\s+buffer)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
+	/* Uncertainty-only exception for a fully scoped, explicitly negative evidence statement.
+	 * It does not authorize urgency assertions or claims that urgency affects a deadline/risk. */
+	private static final Pattern SCOPED_URGENCY_UNCERTAINTY = Pattern.compile("(?i)^(?:the\\s+)?(?:supplied\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|confirm|determine|show|indicate|support)\\s+whether\\s+(?:this|the\\s+current)\\s+shipment\\s+is\\s+(?:urgent|time[- ]sensitive)\\.?$");
 	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
+	private static final Pattern SCENARIO_EXCEEDS_OUTCOME = Pattern.compile("(?i)\\bbackend\\s+comparison\\s+shows\\s+(?:the\\s+)?predicted\\s+arrival\\s+exceeds\\b");
+	private static final Pattern SCENARIO_NO_IMPACT_OUTCOME = Pattern.compile("(?i)\\bbackend\\s+comparison\\s+shows\\s+no\\s+predicted\\s+impact\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_PREFIX = Pattern.compile("(?i)\\b(?:confirm|verify|check|establish|determine|ask)\\b[^.!?]{0,80}\\b(?:whether|if)\\b[^.!?]{0,80}$");
 	private static final Pattern BUSINESS_CONSTRAINT_VERIFICATION_SUFFIX = Pattern.compile("(?i)^\\s+(?:exists?|does\\s+not\\s+exist|doesn['’]t\\s+exist|is\\s+(?:recorded|provided|specified|available|known|unknown|unavailable|unspecified|unrecorded|absent|missing|applicable|not\\s+(?:known|available|provided|recorded|specified|applicable))|has\\s+been\\s+(?:recorded|provided|specified)|has\\s+not\\s+been\\s+(?:recorded|provided|specified)|remains\\s+applicable|applies|does\\s+not\\s+apply|doesn['’]t\\s+apply)(?:\\s+(?:with\\s+(?:the\\s+)?(?:operations\\s+)?team|in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment|to\\s+(?:the\\s+)?current\\s+(?:shipment\\s+)?port))?\\s*$");
+	private static final Pattern SAFE_COMPOSITE_DEADLINE_PORT_VERIFICATION = Pattern.compile("(?i)^\\s*ask\\s+the\\s+operations\\s+team\\s+to\\s+confirm\\s+whether\\s+the\\s+scenario-defined\\s+deadline\\s+and\\s+port\\s+still\\s+apply(?:[.!?]\\s*|$)");
 	private static final Pattern BUSINESS_TEMPORAL_DETAIL = Pattern.compile("(?i)\\b(?:\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}:\\d{2}|today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\\d+\\s+(?:minutes?|hours?|days?|weeks?|months?|years?))\\b|\\b(?:next|last|this)\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|year)\\b|\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_PREFIX = Pattern.compile("(?i)\\bno\\s+(?:(?:final|commercial|delivery|transshipment(?:[- ]arrival)?|shipment|recorded)\\s+){0,3}$");
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
@@ -58,6 +65,77 @@ final class MaritimeAiResponseValidator {
 			Map.entry("four", 4L), Map.entry("five", 5L), Map.entry("six", 6L), Map.entry("seven", 7L), Map.entry("eight", 8L),
 			Map.entry("nine", 9L), Map.entry("ten", 10L));
 	private MaritimeAiResponseValidator() { }
+
+	record ScenarioValidation(String validationStatus, String fieldPath, MaritimeAiInterpretation interpretation) {
+		boolean valid() { return "VALID".equals(validationStatus); }
+		boolean abstained() { return "INSUFFICIENT_MODEL_EVIDENCE".equals(validationStatus)
+				|| "INSUFFICIENT_SCENARIO_CONTEXT".equals(validationStatus); }
+	}
+
+	/** Dedicated v1.6 validator. It validates typed meaning and whole authored sentences before projection. */
+	static ScenarioValidation validateScenarioV16(String outputText, MaritimeAiEvidencePackage input) {
+		String preflightField = ScenarioMaritimeAiOutput.preflightFailureField(input);
+		if (preflightField != null) return new ScenarioValidation("INSUFFICIENT_SCENARIO_CONTEXT", preflightField, null);
+		ScenarioMaritimeAiOutput output;
+		try { output = ScenarioMaritimeAiOutput.parse(outputText); }
+		catch (RuntimeException invalid) { return new ScenarioValidation("INVALID_SCENARIO_OUTPUT", "output", null); }
+		if (output.assessment() == null)
+			return new ScenarioValidation("INSUFFICIENT_MODEL_EVIDENCE", "assessment", null);
+		var assessment = output.assessment();
+		var risk = input.shipmentContext().connectionRisk();
+		var expectedRisk = expectedRiskReview(risk);
+		if (resolveEligibleScenarioEvidence(assessment.risk().evidenceRef(), input) == null)
+			return new ScenarioValidation("SCENARIO_EVIDENCE_MISMATCH", "assessment.risk.evidenceRef", null);
+		if (resolveEligibleScenarioEvidence(assessment.deadline().evidenceRef(), input) == null)
+			return new ScenarioValidation("SCENARIO_EVIDENCE_MISMATCH", "assessment.deadline.evidenceRef", null);
+		var claimedRisk = assessment.risk().riskReview();
+		if (!risk.riskLevel().name().equals(claimedRisk.severity()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.severity", null);
+		if (!risk.riskBasis().name().equals(claimedRisk.selectedWindowBasis()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.selectedWindowBasis", null);
+		if (!expectedRisk.selectedWindowState().name().equals(claimedRisk.selectedWindowState()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.selectedWindowState", null);
+		if (!risk.arrivalEstimate().state().name().equals(claimedRisk.estimateFreshness()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.riskReview.estimateFreshness", null);
+		var comparison = input.shipmentContext().businessContext().comparison();
+		if (!comparison.outcome().name().equals(assessment.deadline().outcome()))
+			return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.deadline.outcome", null);
+
+		if (!ScenarioMaritimeAiProse.matchesRisk(assessment.risk().statement(), expectedRisk.severity(),
+				expectedRisk.selectedWindowState()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.risk.statement", null);
+		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(), comparison.outcome()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadline.statement", null);
+		if (!ScenarioMaritimeAiProse.matchesUncertainty(assessment.uncertainty()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.uncertainty", null);
+		if (!ScenarioMaritimeAiProse.matchesEtaCheck(assessment.etaCheck()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.etaCheck", null);
+		if (!ScenarioMaritimeAiProse.matchesDeadlineCheck(assessment.deadlineCheck()))
+			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadlineCheck", null);
+
+		var allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		for (String reference : MaritimeAiCanonicalFactReferences.riskReferences(input)) {
+			if (!allowed.contains(reference))
+				return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.risk.factReferences", null);
+		}
+		for (String reference : List.of(MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY,
+				MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_PORT)) {
+			if (!allowed.contains(reference))
+				return new ScenarioValidation("SCENARIO_FACT_MISMATCH", "assessment.deadline.factReferences", null);
+		}
+		return new ScenarioValidation("VALID", null, ScenarioMaritimeAiOutput.project(output, input));
+	}
+
+	private static MaritimeEvidence resolveEligibleScenarioEvidence(String reference, MaritimeAiEvidencePackage input) {
+		List<MaritimeEvidence> matches = ScenarioMaritimeAiOutput.eligibleRevisionChoices(input).stream()
+				.filter(item -> ("evidence:" + item.evidenceId()).equals(reference)).toList();
+		return matches.size() == 1 ? matches.getFirst() : null;
+	}
 
 	static String validate(MaritimeAiInterpretation output, MaritimeAiEvidencePackage input) {
 		if (output != null && output.formalRecommendationCode() != null) return "FORMAL_RECOMMENDATION_NOT_OWNED_BY_CDG247";
@@ -113,8 +191,75 @@ final class MaritimeAiResponseValidator {
 			String relationshipGrounding = validateRelationship(claim, cited, input);
 			if (relationshipGrounding != null) return relationshipGrounding;
 		}
+		String scenarioComparisonContract = validateScenarioComparisonClaimContract(output, input);
+		if (scenarioComparisonContract != null) return scenarioComparisonContract;
 		if (claimsUnsupportedRiskOutcome(output, input)) return "UNSUPPORTED_OPERATIONAL_IMPACT_CLAIM";
 		return null;
+	}
+
+	/** Controlled scenario outputs keep the backend comparison in one typed, cited claim. */
+	private static String validateScenarioComparisonClaimContract(MaritimeAiInterpretation output,
+			MaritimeAiEvidencePackage input) {
+		if (input.shipmentContext() == null || input.shipmentContext().scenario() == null
+				|| input.shipmentContext().businessContext() == null
+				|| input.shipmentContext().businessContext().comparison() == null
+				|| input.shipmentContext().businessContext().comparison().state()
+						!= MaritimeAiBusinessContext.ComparisonState.AVAILABLE) return null;
+		if (!output.evidenceSufficient() && output.claims().isEmpty()) return null;
+
+		List<MaritimeAiClaim> comparisonClaims = output.claims().stream().filter(java.util.Objects::nonNull)
+				.filter(claim -> "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())).toList();
+		if (comparisonClaims.size() != 1) return "UNSUPPORTED_DELAY_COMPARISON";
+		MaritimeAiBusinessContext.Comparison comparison = input.shipmentContext().businessContext().comparison();
+		boolean statesBackendOutcome = switch (comparison.outcome()) {
+			case EXCEEDS_DEADLINE -> SCENARIO_EXCEEDS_OUTCOME.matcher(comparisonClaims.getFirst().statement()).find();
+			case NO_PREDICTED_IMPACT -> SCENARIO_NO_IMPACT_OUTCOME.matcher(comparisonClaims.getFirst().statement()).find();
+		};
+		if (!statesBackendOutcome) return "UNSUPPORTED_DELAY_COMPARISON";
+		if (mentionsBusinessConstraint(output.summary()) || output.uncertainties().stream()
+				.filter(java.util.Objects::nonNull).anyMatch(MaritimeAiResponseValidator::mentionsBusinessConstraint))
+			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
+		for (MaritimeAiClaim claim : output.claims()) {
+			if (claim == null || "DELAY_COMPARISON_REVIEW".equals(claim.relationshipType())) continue;
+			if (mentionsBusinessConstraint(claim.statement())) return "UNSUPPORTED_BUSINESS_CONSTRAINT";
+			if (claim.factReferences() != null && claim.factReferences().stream()
+					.anyMatch(reference -> reference.startsWith("business:") || reference.startsWith("comparison:")))
+				return "UNSUPPORTED_DELAY_COMPARISON";
+		}
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+				.noneMatch(MaritimeAiResponseValidator::verifiesLatestScenarioArrivalEstimate))
+			return "MISSING_SCENARIO_ETA_VERIFICATION_FOLLOW_UP";
+		if (output.followUpConsiderations().stream().filter(java.util.Objects::nonNull)
+				.noneMatch(MaritimeAiResponseValidator::confirmsScenarioDeadlineApplicability))
+			return "MISSING_SCENARIO_DEADLINE_APPLICABILITY_FOLLOW_UP";
+		return null;
+	}
+
+	private static boolean verifiesLatestScenarioArrivalEstimate(String text) {
+		if (text == null) return false;
+		String lower = text.toLowerCase(Locale.ROOT);
+		boolean latestEstimate = containsAny(lower, "latest eta", "most recent eta", "latest arrival estimate",
+				"most recent arrival estimate", "eta remains current", "arrival estimate remains current");
+		return isScenarioHumanVerification(lower) && latestEstimate
+				&& containsAny(lower, "verify", "check", "confirm", "ask");
+	}
+
+	private static boolean confirmsScenarioDeadlineApplicability(String text) {
+		if (text == null) return false;
+		String lower = text.toLowerCase(Locale.ROOT);
+		return isScenarioHumanVerification(lower)
+				&& containsAny(lower, "confirm", "verify", "check", "ask")
+				&& containsAny(lower, "deadline")
+				&& containsAny(lower, "applicable", "applicability", "applies", "apply")
+				&& containsAny(lower, "current shipment port", "current transshipment port", "current port");
+	}
+
+	private static boolean isScenarioHumanVerification(String lower) {
+		return HUMAN_REVIEW_PARTICIPANT.matcher(lower).find() || containsWord(lower, "carrier");
+	}
+
+	private static boolean mentionsBusinessConstraint(String text) {
+		return text != null && BUSINESS_CONSTRAINT_ASSERTION.matcher(text).find();
 	}
 
 	private static String validateStructuredGrounding(MaritimeAiClaim claim, List<MaritimeEvidence> cited,
@@ -317,7 +462,7 @@ final class MaritimeAiResponseValidator {
 			case STALE_PREDICTION -> containsAny(statement, "stale", "outdated");
 		};
 	}
-	private static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
+	static MaritimeAiClaim.RiskReview expectedRiskReview(MaritimeAiConnectionRiskContext risk) {
 		MaritimeAiClaim.RiskReview.SelectedWindowState windowState = MaritimeAiClaim.RiskReview.SelectedWindowState.INCOMPLETE;
 		if (risk.assessed() && risk.riskBasis() == MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE
 				&& risk.remainingWindow() != null) {
@@ -417,9 +562,141 @@ final class MaritimeAiResponseValidator {
 		if (output.claims() != null && output.claims().stream().filter(java.util.Objects::nonNull)
 				.anyMatch(claim -> hasUnsupportedBusinessConstraint(claim.statement(), claim.factReferences(), allowedFactReferences, businessContext))) return true;
 		if (output.uncertainties() != null && output.uncertainties().stream()
-				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
+				.anyMatch(text -> !isScopedUrgencyUncertainty(text)
+						&& hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext))) return true;
 		return output.followUpConsiderations() != null && output.followUpConsiderations().stream()
+				.map(MaritimeAiResponseValidator::followUpTextAfterSafeCompositeVerification)
+				.filter(java.util.Objects::nonNull)
 				.anyMatch(text -> hasUnsupportedBusinessConstraint(text, null, allowedFactReferences, businessContext));
+	}
+	private static String followUpTextAfterSafeCompositeVerification(String text) {
+		if (text == null) return null;
+		Matcher verification = SAFE_COMPOSITE_DEADLINE_PORT_VERIFICATION.matcher(text);
+		if (!verification.find()) return text;
+		String remaining = text.substring(verification.end()).strip();
+		return remaining.isEmpty() ? null : remaining;
+	}
+	private static boolean isScopedUrgencyUncertainty(String text) {
+		return text != null && SCOPED_URGENCY_UNCERTAINTY.matcher(text.strip()).matches();
+	}
+	/** Returns only a field path for transient scenario diagnostics; never includes generated text or fact values. */
+	static String safeValidationDiagnostic(String validationCode, MaritimeAiInterpretation output,
+			MaritimeAiEvidencePackage input) {
+		if (validationCode == null || !"UNSUPPORTED_BUSINESS_CONSTRAINT".equals(validationCode) || input == null)
+			return validationCode;
+		BusinessConstraintFinding finding = unsupportedBusinessConstraintFinding(output,
+				MaritimeAiCanonicalFactReferences.allowed(input),
+				input.shipmentContext() == null ? null : input.shipmentContext().businessContext());
+		return finding == null ? validationCode : validationCode + " at " + finding.location()
+				+ " (" + finding.reason() + ", clause " + (finding.clauseIndex() + 1) + ")";
+	}
+	private static BusinessConstraintFinding unsupportedBusinessConstraintFinding(MaritimeAiInterpretation output,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (output == null) return null;
+		String reason = firstBusinessConstraintReason(output.summary(), null, allowedFactReferences, businessContext);
+		if (reason != null) return new BusinessConstraintFinding("summary", firstBusinessConstraintClause(output.summary(), null,
+				allowedFactReferences, businessContext), reason);
+		if (output.claims() != null) {
+			for (int index = 0; index < output.claims().size(); index++) {
+				MaritimeAiClaim claim = output.claims().get(index);
+				if (claim != null) {
+					reason = firstBusinessConstraintReason(claim.statement(), claim.factReferences(),
+							allowedFactReferences, businessContext);
+					if (reason != null) return new BusinessConstraintFinding("claims[" + index + "].statement",
+							firstBusinessConstraintClause(claim.statement(), claim.factReferences(), allowedFactReferences,
+									businessContext), reason);
+				}
+			}
+		}
+		if (output.uncertainties() != null) {
+			for (int index = 0; index < output.uncertainties().size(); index++) {
+				String uncertainty = output.uncertainties().get(index);
+				if (isScopedUrgencyUncertainty(uncertainty)) continue;
+				reason = firstBusinessConstraintReason(uncertainty, null, allowedFactReferences, businessContext);
+				if (reason != null) return new BusinessConstraintFinding("uncertainties[" + index + "]",
+						firstBusinessConstraintClause(uncertainty, null, allowedFactReferences, businessContext), reason);
+			}
+		}
+		if (output.followUpConsiderations() != null) {
+			for (int index = 0; index < output.followUpConsiderations().size(); index++) {
+				String followUp = followUpTextAfterSafeCompositeVerification(output.followUpConsiderations().get(index));
+				if (followUp == null) continue;
+				reason = firstBusinessConstraintReason(followUp, null, allowedFactReferences, businessContext);
+				if (reason != null) return new BusinessConstraintFinding("followUpConsiderations[" + index + "]",
+						firstBusinessConstraintClause(followUp, null, allowedFactReferences, businessContext), reason);
+			}
+		}
+		return null;
+	}
+	private static int firstBusinessConstraintClause(String text, List<String> claimReferences,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (text == null) return 0;
+		String[] clauses = text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b");
+		for (int index = 0; index < clauses.length; index++) {
+			String clause = clauses[index];
+			Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
+			while (assertion.find()) {
+				if (isSafeBusinessConstraintVerification(clause, assertion.start(), assertion.end())) continue;
+				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) {
+					if (missingContextContradictsOrLacksReference(clause, claimReferences, allowedFactReferences, businessContext)) return index;
+					continue;
+				}
+				if (!hasAuthorizedBusinessReference(clause, assertion.group(), claimReferences, allowedFactReferences, businessContext)) return index;
+			}
+		}
+		return 0;
+	}
+	private static String firstBusinessConstraintReason(String text, List<String> claimReferences,
+			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {
+		if (text == null) return null;
+		String[] clauses = text.split("(?i)[,;.!?]|\\b(?:but|however|yet|and|or)\\b");
+		for (String clause : clauses) {
+			Matcher assertion = BUSINESS_CONSTRAINT_ASSERTION.matcher(clause);
+			while (assertion.find()) {
+				String constraint = assertion.group();
+				if (isSafeBusinessConstraintVerification(clause, assertion.start(), assertion.end())) continue;
+				if (hasExplicitlyMissingContext(clause, assertion.start(), assertion.end())) {
+					if (missingContextContradictsOrLacksReference(clause, claimReferences, allowedFactReferences, businessContext)) {
+						return businessContext != null && businessContext.deadline() != null
+								&& businessContext.deadline().state() == MaritimeAiBusinessContext.DeadlineState.RECORDED
+								? "MISSING_CONTEXT_CONTRADICTS_RECORDED_DEADLINE" : "MISSING_STATUS_REFERENCE_REQUIRED";
+					}
+					continue;
+				}
+				if (hasAuthorizedBusinessReference(clause, constraint, claimReferences, allowedFactReferences, businessContext)) continue;
+				return unsupportedBusinessConstraintReason(text, clause, constraint, assertion.start(), claimReferences,
+						allowedFactReferences, businessContext);
+			}
+		}
+		return null;
+	}
+	private static String unsupportedBusinessConstraintReason(String fullText, String clause, String constraint,
+			int assertionStart, List<String> claimReferences, Set<String> allowedFactReferences,
+			MaritimeAiBusinessContext businessContext) {
+		if (isUrgencyConstraint(constraint)) return "URGENCY_ASSERTION_NOT_AUTHORIZED";
+		if (BUSINESS_CONSTRAINT_VERIFICATION_PREFIX.matcher(clause.substring(0, assertionStart)).find())
+			return "VERIFICATION_QUESTION_WORDING_NOT_SUPPORTED";
+		if (businessContext == null || businessContext.deadline() == null
+				|| businessContext.deadline().state() != MaritimeAiBusinessContext.DeadlineState.RECORDED
+				|| businessContext.deadline().instant() == null || businessContext.deadline().recordedTransshipmentPort() == null
+				|| businessContext.deadline().applicableToCurrentPort() == null) return "DEADLINE_CONTEXT_UNAVAILABLE_OR_INCOMPLETE";
+		Set<String> required = Set.of(MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
+				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY);
+		if (claimReferences == null || !claimReferences.containsAll(required)) return "CANONICAL_BUSINESS_REFERENCE_MISSING";
+		if (allowedFactReferences == null || !allowedFactReferences.containsAll(required)) return "CANONICAL_BUSINESS_REFERENCE_UNAVAILABLE";
+		if (hasAuthorizedBusinessReference(fullText, constraint, claimReferences, allowedFactReferences, businessContext))
+			return "CLAUSE_SPLIT_SEPARATED_DEADLINE_AND_APPLICABILITY";
+		if (!TRANSSHIPMENT_ARRIVAL_DEADLINE.matcher(clause).find()) return "TRANSSHIPMENT_ARRIVAL_DEADLINE_TERM_MISSING";
+		String lower = clause.toLowerCase(Locale.ROOT);
+		boolean saysNotApplicable = containsAny(lower, "different port", "not applicable", "does not apply", "doesn't apply");
+		boolean saysApplicable = containsAny(lower, "applicable", "applies to the current transshipment port", "current transshipment port");
+		boolean backendApplicable = Boolean.TRUE.equals(businessContext.deadline().applicableToCurrentPort());
+		if (backendApplicable && saysNotApplicable || !backendApplicable && saysApplicable)
+			return "APPLICABILITY_WORDING_CONTRADICTS_BACKEND";
+		if (backendApplicable && !saysApplicable || !backendApplicable && !saysNotApplicable)
+			return "APPLICABILITY_WORDING_MISSING";
+		return "BUSINESS_CONSTRAINT_NOT_AUTHORIZED";
 	}
 	private static boolean hasUnsupportedBusinessConstraint(String text, List<String> claimReferences,
 			Set<String> allowedFactReferences, MaritimeAiBusinessContext businessContext) {

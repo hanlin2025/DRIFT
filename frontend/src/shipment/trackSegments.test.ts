@@ -4,7 +4,7 @@ import { formatSpeed, hasEnoughHistory, isSlowSegment, slowdownCount, trackPoint
 
 let nextId = 1;
 
-function point(speed: number | null, longitude = 103.8): TrackPoint {
+function point(speed: number | null, longitude = 103.8, ingestedAt = '2026-10-13T07:00:00Z'): TrackPoint {
   return {
     id: nextId++,
     latitude: 1.2,
@@ -12,7 +12,7 @@ function point(speed: number | null, longitude = 103.8): TrackPoint {
     speedOverGroundKnots: speed,
     courseOverGroundDegrees: 90,
     trueHeadingDegrees: 91,
-    ingestedAt: '2026-10-13T07:00:00Z',
+    ingestedAt,
   };
 }
 
@@ -40,6 +40,23 @@ describe('track history helpers', () => {
     expect(segments.features[1].geometry.coordinates).toEqual([[103.2, 1.2], [103.3, 1.2]]);
     expect(slowdownCount(points, 3)).toBe(1);
     expect(trackPoints(points, 3).features.map(feature => feature.properties.id)).toEqual(points.map(point => point.id));
+  });
+
+  it('leaves coverage gaps open and keeps equal-time observations distinct', () => {
+    const points = [
+      point(2, 103.1, '2026-10-13T07:00:00Z'),
+      point(1, 103.2, '2026-10-13T07:30:00Z'),
+      point(4, 103.3, '2026-10-13T10:00:01Z'),
+      point(6, 103.4, '2026-10-13T10:00:01Z'),
+    ];
+
+    const segments = trackSegments(points, 3);
+
+    expect(segments.features).toHaveLength(2);
+    expect(segments.features[0].geometry.coordinates).toEqual([[103.1, 1.2], [103.2, 1.2]]);
+    expect(segments.features[1].geometry.coordinates).toEqual([[103.3, 1.2], [103.4, 1.2]]);
+    expect(trackPoints(points, 3).features.map(feature => feature.properties.id)).toEqual(points.map(value => value.id));
+    expect(slowdownCount(points, 3)).toBe(1);
   });
 
   it('rounds speed to one decimal for the point readout', () => {

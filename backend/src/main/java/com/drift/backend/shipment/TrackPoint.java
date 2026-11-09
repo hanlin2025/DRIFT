@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import com.drift.backend.ais.position.AisPosition;
+import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.StoredAisPosition;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,11 +23,14 @@ public record TrackPoint(
 		BigDecimal courseOverGroundDegrees,
 		@Schema(description = "Null when the vessel did not report its heading.", example = "176")
 		Integer trueHeadingDegrees,
-		Instant ingestedAt) {
+		Instant ingestedAt,
+		AisPositionSource source,
+		Boolean positionValid) {
 
 	static TrackPoint from(StoredAisPosition stored) {
 		AisPosition position = stored.position();
 		return new TrackPoint(stored.id(), position.latitude(), position.longitude(), position.speedOverGroundKnots(),
-				position.courseOverGroundDegrees(), position.trueHeadingDegrees(), position.ingestedAt());
+				position.courseOverGroundDegrees(), position.trueHeadingDegrees(), position.ingestedAt(), position.source(),
+				position.positionValid());
 	}
 }
