@@ -3,7 +3,6 @@ package com.drift.backend.shipment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
-import com.drift.backend.company.Company;
 import com.drift.backend.organisation.OrganisationResponse;
 import com.drift.backend.ais.feed.AisFeedStatus;
 import com.drift.backend.ais.operation.OperationalState;
@@ -47,6 +46,8 @@ public record ShipmentDetailResponse(
 		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
+		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
+		ShipmentRecommendation recommendation,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -66,35 +67,42 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
-		ShipmentStatus status) {
+		ShipmentStatus status,
+		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
+				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
+		RecommendationDecisionResponse recommendationDecision) {
 
-	static ShipmentDetailResponse from(Shipment shipment, ConnectionWindowCalculation calculation,
-			RemainingConnectionWindow remainingConnectionWindow, VesselPosition motherVesselPosition,
-			VesselPosition feederVesselPosition, ArrivalEstimate arrivalComparison) {
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+		return from(shipment, connection, null);
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			RecommendationDecisionResponse recommendationDecision) {
+		ConnectionWindowCalculation calculation = connection.planned();
+		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
+		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
+		ShipmentRisk risk = connection.risk();
+		VesselPosition motherVesselPosition = connection.motherVesselPosition();
+		VesselPosition feederVesselPosition = connection.feederVesselPosition();
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
 				shipment.getMotherVesselOperator(), shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(),
 				shipment.getFeederVesselImo(), shipment.getFeederVesselMmsi(), shipment.getFeederVesselOperator(),
 				shipment.getCreatedAt(), shipment.getVersion(), calculation.window(), remainingConnectionWindow,
-				ShipmentRisk.of(calculation, remainingConnectionWindow),
+				risk,
 				AssessmentExplanation.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
+				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getMotherVessel(), shipment.getTransshipmentPort()),
 				ShipmentOperationalStates.forShipmentVessel(shipment.getFeederVessel(), shipment.getTransshipmentPort()),
 				ShipmentAisFeed.current(),
 				arrivalComparison,
-				organisation(shipment.getImporterCompany()), shipment.getStatus());
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision);
 	}
 
-	private static OrganisationResponse organisation(Company company) {
-		if (company == null) {
-			return null;
-		}
-		return new OrganisationResponse(company.getId(), company.getCode(), company.getName());
-	}
 }

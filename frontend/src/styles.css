@@ -168,6 +168,10 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-filters fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .shipment-filters legend { font-family: 'Fraunces Variable', Georgia, serif; font-size: 22px; letter-spacing: -.4px; margin-bottom: 18px; }
 .shipment-filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.field-checkbox { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; align-self: center; }
+.field-checkbox input { width: 18px; min-height: 18px; margin: 0; padding: 0; }
+.field-checkbox label { margin: 0; justify-content: flex-start; }
+.field-checkbox .field-hint { grid-column: 2; margin-top: 2px; }
 .shipment-filter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
 .shipment-filter-actions .primary-button { width: auto; margin: 0; min-width: 150px; }
 .shipment-filter-actions .secondary-button { min-height: 47px; }
@@ -303,6 +307,8 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .risk-medium { background: var(--accent); color: var(--ink); }
 .risk-high { background: #c46a2b; }
 .risk-critical { background: var(--error); }
+.risk-unassessed { background: transparent; color: var(--muted); border: 1px dashed currentColor; font-weight: 600; }
+.shipment-risk { white-space: nowrap; }
 .skeleton { display: block; border-radius: 4px; background: linear-gradient(90deg, #dfe5da 25%, #edf0e8 50%, #dfe5da 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-eyebrow { width: 72px; height: 10px; margin: 4px 0 16px; }
 .skeleton-title { width: min(260px, 70%); height: 38px; margin: 0 0 16px; }
@@ -312,7 +318,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .shipment-record .skeleton-value { width: 120px; height: 12px; margin: 1px 0 1px auto; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (min-width: 761px) {
-  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(11, auto); grid-auto-flow: column; column-gap: 32px; }
+  .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(12, auto); grid-auto-flow: column; column-gap: 32px; }
 }
 @media (max-width: 760px) {
   .workspace-bar { padding: 16px; }
@@ -335,6 +341,26 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .track-toggle button { flex: 1; }
   .shipment-detail h2 { font-size: 28px; overflow-wrap: anywhere; }
 }
+.recommendation-decision { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
+.recommendation-decision .eyebrow { margin: 0; }
+.recommendation-decision h3 { margin: 6px 0 0; font-size: 18px; }
+.recommendation-decision .intro { margin: 8px 0 0; font-size: 13px; line-height: 1.55; }
+.current-decision { margin: 14px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fcfcf8; }
+.current-decision-outcome { margin: 0 0 10px; font-size: 13px; font-weight: 750; }
+.current-decision dl { display: grid; gap: 10px; margin: 0; }
+.current-decision dt { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.current-decision dd { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.current-decision dd strong { display: block; }
+.current-decision dd span { display: block; margin-top: 2px; font-weight: 500; }
+.recommendation-decision-controls { margin: 14px 0 0; display: grid; gap: 12px; }
+.recommendation-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.recommendation-decision-actions .primary-button,
+.recommendation-decision-actions .quiet-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; }
+.recommendation-modify { display: grid; gap: 8px; }
+.recommendation-modify label { font-size: 12px; font-weight: 650; }
+.recommendation-modify select { width: 100%; max-width: 360px; border: 1px solid #ccd5cb; background: #fcfcf8; border-radius: 4px; padding: 10px 12px; color: var(--ink); font: inherit; font-size: 12px; min-height: 40px; }
+.recommendation-modify .secondary-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; justify-self: start; }
+.recommendation-decision .error-notice { margin: 12px 0 0; }
 .change-history { margin: 18px 0 0; padding: 14px 16px; border: 1px solid #c8d9bf; border-radius: 8px; background: #f8f6ed; }
 .change-history h3 { margin: 0; font-size: 14px; color: var(--ink); }
 .change-history .error-notice { margin: 10px 0 0; }

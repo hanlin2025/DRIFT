@@ -28,6 +28,7 @@ import com.drift.backend.shipment.exception.ShipmentRestoreForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentCreationForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentDetailForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentNotEditableException;
+import com.drift.backend.shipment.exception.RecommendationDecisionRejectedException;
 import com.drift.backend.shipment.exception.ShipmentNotFoundException;
 import com.drift.backend.shipment.exception.StaleShipmentVersionException;
 
@@ -91,6 +92,12 @@ public class ShipmentExceptionHandler {
 				.body(Map.of("message", ex.getMessage()));
 	}
 
+	@ExceptionHandler(RecommendationDecisionRejectedException.class)
+	public ResponseEntity<Map<String, String>> handleDecisionRejected(RecommendationDecisionRejectedException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
+	}
+
 	@ExceptionHandler(ShipmentAlreadyArchivedException.class)
 	public ResponseEntity<Map<String, String>> handleAlreadyArchived() {
 		return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(CacheControl.noStore())
@@ -125,6 +132,11 @@ public class ShipmentExceptionHandler {
 			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 					.body(body("Shipment information is missing or invalid",
 							Map.of(exception.getName(), "Status must be ACTIVE or ARCHIVED")));
+		}
+		if (Boolean.class.equals(exception.getRequiredType())) {
+			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+					.body(body("Shipment information is missing or invalid",
+							Map.of(exception.getName(), "atRisk must be true or false")));
 		}
 		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
 				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {

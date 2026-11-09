@@ -15,6 +15,8 @@ import com.drift.backend.shipment.exception.ShipmentLinkForbiddenException;
  * Company isolation for a particular shipment stays in {@code ShipmentAccessPolicy}:
  * a company can view a shipment it manages or one linked to it, and can edit only a shipment it manages.
  * {@link ShipmentVisibilityFilter} applies that view rule to the shipment list, detail, tracking, track history, and change history reads.
+ * The recommendation decision is a shipment write for an active company. The visibility filter then allows it
+ * only for a company that can view that shipment, which is who CDG-220 allows to decide.
  * There is no planner role. Logistics managers keep the shipment operations main already allows,
  * which is also the role the open archive work permits to archive a shipment.
  * GET and PATCH /api/profile are the signed-in user's own account, so every role is allowed
@@ -60,7 +62,8 @@ public final class RolePermissionMatrix {
 			}
 			return Optional.empty();
 		}
-		if (shipmentRead(method, normalized) || shipmentReplace(method, normalized)) {
+		if (shipmentRead(method, normalized) || shipmentReplace(method, normalized)
+				|| recommendationDecision(method, normalized)) {
 			if (!activeCompany) {
 				return Optional.of(ShipmentAccessForbiddenException.MESSAGE);
 			}
@@ -92,6 +95,10 @@ public final class RolePermissionMatrix {
 		return shipmentRead(method, normalize(path));
 	}
 
+	static boolean isRecommendationDecision(String method, String path) {
+		return recommendationDecision(method, normalize(path));
+	}
+
 	private static boolean shipmentRead(String method, String path) {
 		return "GET".equals(method) && (path.equals("/api/shipments")
 				|| path.matches("/api/shipments/\\d+")
@@ -107,6 +114,10 @@ public final class RolePermissionMatrix {
 
 	private static boolean shipmentReplace(String method, String path) {
 		return "PUT".equals(method) && path.matches("/api/shipments/\\d+");
+	}
+
+	private static boolean recommendationDecision(String method, String path) {
+		return "PATCH".equals(method) && path.matches("/api/shipments/\\d+/recommendation-decision");
 	}
 
 	static String normalize(String path) {

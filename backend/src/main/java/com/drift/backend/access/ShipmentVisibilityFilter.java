@@ -41,6 +41,8 @@ import tools.jackson.databind.node.ArrayNode;
  * Detail is refused before the handler runs, so the detail document — including the risk field
  * the open shipment-detail work adds — is not written for a company that cannot view it.
  * Change history is refused the same way as detail, so a hidden shipment's history is forbidden.
+ * The recommendation decision has its own branch. Anyone who can view the shipment may decide, including a linked importer.
+ * A company that cannot view it is refused before the handler runs, so the decision is not stored.
  * Tracking keeps the current not-found response for both a missing shipment and a hidden one.
  * List responses that already contain only visible shipments are passed through unchanged.
  */
@@ -63,7 +65,8 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
 		String path = path(request);
-		if (!RolePermissionMatrix.isShipmentRead(request.getMethod(), path)) {
+		boolean decision = RolePermissionMatrix.isRecommendationDecision(request.getMethod(), path);
+		if (!RolePermissionMatrix.isShipmentRead(request.getMethod(), path) && !decision) {
 			chain.doFilter(request, response);
 			return;
 		}
@@ -83,6 +86,14 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			return;
 		}
 		Long shipmentId = shipmentId(path);
+		if (decision) {
+			if (shipmentId == null) {
+				chain.doFilter(request, response);
+				return;
+			}
+			enforceDecision(request, response, chain, companyId, shipmentId);
+			return;
+		}
 		if (path.matches("/api/shipments/\\d+/(tracking|track-history)")) {
 			if (shipmentId == null) {
 				chain.doFilter(request, response);
@@ -109,6 +120,16 @@ public class ShipmentVisibilityFilter extends OncePerRequestFilter {
 			return;
 		}
 		enforceList(request, response, chain, companyId);
+	}
+
+	private void enforceDecision(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
+			long companyId, long shipmentId) throws ServletException, IOException {
+		Optional<ShipmentVisibility> row = shipments.find(shipmentId);
+		if (row.isEmpty() || access.canDecide(companyId, row.get().managingCompanyId(), row.get().importerCompanyId())) {
+			chain.doFilter(request, response);
+			return;
+		}
+		deny(response, HttpServletResponse.SC_FORBIDDEN, ShipmentDetailForbiddenException.MESSAGE);
 	}
 
 	private void enforceDetail(HttpServletRequest request, HttpServletResponse response, FilterChain chain,
