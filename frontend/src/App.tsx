@@ -1,5 +1,4 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { AuthorisationsRoute } from './admin/AuthorisationsPage';
 import { AdminRoute } from './admin/UserManagementPage';
 import './admin/admin.css';
 import './shipment/importer-link.css';
@@ -30,7 +29,6 @@ export function AppRoutes() {
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
     <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
-    <Route path="/admin/authorisations" element={<AuthorisationsRoute />} />
     <Route path="/admin" element={<AdminRoute />} />
     <Route path="/logistics-manager/shipments/:shipmentId" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
     <Route path="/logistics-manager" element={<WorkspaceRoute role="LOGISTICS_MANAGER" />} />
