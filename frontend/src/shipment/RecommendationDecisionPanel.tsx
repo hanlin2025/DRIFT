@@ -205,6 +205,6 @@ function unavailableUntilImpact(): Extract<ShipmentRecommendation, { available: 
     response: null,
     riskLevel: null,
     riskExplanation: null,
-    impact: { outcome: 'UNAVAILABLE', detail: 'The impact assessment has not been returned.' },
+    impact: { outcome: 'UNAVAILABLE', detail: 'The delay comparison is unavailable.' },
   };
 }

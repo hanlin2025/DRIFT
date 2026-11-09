@@ -58,3 +58,6 @@ frontend/playwright-report/
 
 # Private/retrieved maritime-notice evidence; source tools and synthetic tests are tracked.
 var/maritime-notices/
+
+# Private authentic AIS capture exports
+/local/ais-captures/

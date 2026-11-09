@@ -27,6 +27,8 @@ public record ShipmentResponse(
 		ConnectionWindow connectionWindow,
 		@Schema(description = "Transshipment risk calculated exactly as on the shipment detail: from the remaining connection window when a usable AIS arrival estimate exists, otherwise from the planned window. CRITICAL when the window in use is missed or not positive, HIGH under 12 hours, MEDIUM under 24 hours, otherwise LOW. Null (not assessed) when the feeder departure is missing.", nullable = true)
 		ShipmentRisk risk,
+		@Schema(description = "Comparison of the mother-vessel transshipment-arrival estimate with the current importer's recorded deadline, calculated exactly as on the shipment detail. EXCEEDS_DEADLINE marks a case whose customer is likely affected. outcome is null when the comparison cannot be made; reason then says why.")
+		DelayComparison delayComparison,
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
@@ -36,12 +38,14 @@ public record ShipmentResponse(
 		@Schema(description = "Full name of the user who last updated this shipment. On an archived shipment this is who archived it.", example = "Ada Lee")
 		String updatedByName) {
 
-	static ShipmentResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection) {
+	static ShipmentResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
 		return new ShipmentResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(),
 				shipment.getFeederVessel(), shipment.getPlannedFeederDepartureAt(), shipment.getCreatedAt(),
 				shipment.getVersion(), connection.planned().window(), connection.risk(),
+				DelayComparison.of(connection.arrivalComparison(), transshipmentArrivalDeadline),
 				importer(shipment.getImporterCompany()), shipment.getStatus(), shipment.getUpdatedAt(),
 				shipment.getUpdatedBy().getFullName());
 	}

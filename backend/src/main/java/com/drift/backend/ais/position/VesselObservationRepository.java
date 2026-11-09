@@ -72,11 +72,40 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 				AND ingested_at > :from
 				AND ingested_at <= :to
 				AND position_valid IS NOT FALSE
+				AND latitude BETWEEN -90 AND 90
+				AND longitude BETWEEN -180 AND 180
 			ORDER BY ingested_at DESC, id DESC
 			LIMIT :limit
 			""", nativeQuery = true)
 	List<VesselObservation> findNewestValidInWindow(@Param("mmsi") String mmsi, @Param("from") Instant from,
 			@Param("to") Instant to, @Param("limit") int limit);
+
+	@Query(value = """
+			SELECT *
+			FROM vessel_observations
+			WHERE mmsi = :mmsi
+				AND source = :source
+				AND ingested_at > :from
+				AND ingested_at <= :to
+				AND position_valid IS NOT FALSE
+				AND latitude BETWEEN -90 AND 90
+				AND longitude BETWEEN -180 AND 180
+			ORDER BY ingested_at DESC, id DESC
+			LIMIT :limit
+			""", nativeQuery = true)
+	List<VesselObservation> findNewestValidInWindowBySource(@Param("mmsi") String mmsi,
+			@Param("source") String source, @Param("from") Instant from,
+			@Param("to") Instant to, @Param("limit") int limit);
+
+	@Query(value = """
+			SELECT EXISTS (
+				SELECT 1 FROM vessel_observations
+				WHERE mmsi = :mmsi AND source = :source
+					AND ingested_at > :from AND ingested_at <= :to
+			)
+			""", nativeQuery = true)
+	boolean existsByMmsiAndSourceInWindow(@Param("mmsi") String mmsi,
+			@Param("source") String source, @Param("from") Instant from, @Param("to") Instant to);
 
 	Optional<VesselObservation> findFirstBySourceOrderByIngestedAtDescIdDesc(AisPositionSource source);
 
@@ -90,6 +119,8 @@ public interface VesselObservationRepository extends JpaRepository<VesselObserva
 			WHERE mmsi = :mmsi
 				AND ingested_at < :before
 				AND position_valid IS NOT FALSE
+				AND latitude BETWEEN -90 AND 90
+				AND longitude BETWEEN -180 AND 180
 			ORDER BY ingested_at DESC, id DESC
 			LIMIT :limit
 			""", nativeQuery = true)
