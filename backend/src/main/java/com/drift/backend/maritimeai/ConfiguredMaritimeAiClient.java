@@ -30,7 +30,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 	static final String SCENARIO_PROMPT_VERSION_V13 = "cdg290.scenario-grounded-v1.3";
 	static final String PREVIOUS_SCENARIO_PROMPT_VERSION = "cdg290.scenario-grounded-v1.4";
 	static final String SCENARIO_PROMPT_VERSION = "cdg290.scenario-grounded-v1.5";
-	static final String OPENAI_SCENARIO_PROMPT_VERSION = "cdg290.scenario-grounded-v1.7";
+	static final String OPENAI_SCENARIO_PROMPT_VERSION = "cdg290.scenario-grounded-v1.7.1";
 	static final String SCENARIO_V17_SCHEMA_NAME = "maritime_ai_controlled_scenario_v17";
 	private final String provider;
 	private final String model;

@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -916,7 +917,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(assessment.path("provider").asText()).isEqualTo("offline-scenario-quality-stub");
 		assertThat(assessment.path("model").asText()).isEqualTo("deterministic-fixture");
 		assertThat(assessment.path("promptVersion").asText())
-				.isEqualTo("cdg290.scenario-grounded-v1.7");
+				.isEqualTo("cdg290.scenario-grounded-v1.7.1");
 		JsonNode claims = assessment.at("/interpretation/claims");
 		JsonNode riskClaim = claimWithRelationship(claims, "RISK_BUFFER_REVIEW");
 		JsonNode businessClaim = claimWithRelationship(claims, "DELAY_COMPARISON_REVIEW");
@@ -941,7 +942,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(strings(riskClaim.path("evidenceIds"))).containsExactly("cdg279-v1-revision-1");
 
 		String expectedOutcome = shipmentIndex == 0 ? expected.impactA() : expected.impactB();
-		String businessStatement = businessClaim.path("statement").asText().toLowerCase();
+		String businessStatement = businessClaim.path("statement").asText().toLowerCase(Locale.ROOT);
 		String deadline = key.equals("A") ? "2026-10-01T12:00:00Z" : "2026-10-02T10:00:00Z";
 		long marginHours = Math.abs(java.time.Duration.between(java.time.Instant.parse(deadline),
 				java.time.Instant.parse(expected.eta())).toHours());
@@ -982,7 +983,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 
 		// Both rubric points come from the authored claim: shipment-specific backend margin and human verification.
 		int usefulnessScore = 0;
-		if (businessStatement.contains("shipment " + key)
+		if (businessStatement.contains("shipment " + key.toLowerCase(Locale.ROOT))
 				&& businessStatement.contains(marginHours + " hours")
 				&& (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds")
 				|| "NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("predicted arrival is " + marginHours + " hours before")))

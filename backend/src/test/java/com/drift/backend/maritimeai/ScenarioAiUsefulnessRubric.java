@@ -2,7 +2,10 @@ package com.drift.backend.maritimeai;
 
 import java.util.List;
 
-/** Shared two-point usefulness rubric for model-authored controlled-scenario interpretations. */
+/**
+ * Shared two-point usefulness rubric: a cited AI-authored deadline direction that matches the typed
+ * comparison, plus two concrete human checks. The backend facts panel owns and displays the numeric margin.
+ */
 final class ScenarioAiUsefulnessRubric {
 	private ScenarioAiUsefulnessRubric() { }
 

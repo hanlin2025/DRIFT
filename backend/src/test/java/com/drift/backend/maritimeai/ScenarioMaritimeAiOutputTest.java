@@ -24,7 +24,7 @@ class ScenarioMaritimeAiOutputTest {
 	private final ObjectMapper json = new ObjectMapper();
 
 	@Test
-	void capturedGenuineWorsenedAResponseIsRejectedForOmittingShipmentSpecificDeadlineConsequence() throws Exception {
+	void capturedGenuineWorsenedAResponseReplaysAsValidWithItsBackendVerifiedDeadlineDirection() throws Exception {
 		MaritimeAiEvidencePackage input = ScenarioQualityStubClientTest.worsenedShipmentAInput("GenuineReplay");
 		String captured = genuineWorsenedAResponse();
 		ScenarioMaritimeAiOutput parsed = ScenarioMaritimeAiOutput.parse(captured);
@@ -44,9 +44,8 @@ class ScenarioMaritimeAiOutputTest {
 				input.shipmentContext().businessContext().comparison().estimatedArrivalAt()).toHours()).isEqualTo(20);
 
 		var validation = MaritimeAiResponseValidator.validateScenarioV16(captured, input);
-		assertThat(validation.valid()).isFalse();
-		assertThat(validation.validationStatus()).isEqualTo("SCENARIO_PROSE_MISMATCH");
-		assertThat(validation.fieldPath()).isEqualTo("assessment.deadline.statement");
+		assertThat(validation.valid()).isTrue();
+		assertThat(validation.validationStatus()).isEqualTo("VALID");
 		var authored = ScenarioMaritimeAiOutput.project(parsed, input);
 		var risk = authored.claims().getFirst();
 		var deadline = authored.claims().get(1);
@@ -57,11 +56,12 @@ class ScenarioMaritimeAiOutputTest {
 				.isEqualTo(MaritimeAiClaim.RiskReview.SelectedWindowState.AVAILABLE);
 		assertThat(risk.factReferences()).containsAll(MaritimeAiCanonicalFactReferences.riskReferences(input));
 		assertThat(deadline.factReferences()).containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
+		assertThat(deadline.statement()).contains("shows estimated arrival exceeds the applicable transshipment-arrival deadline");
 
 		var usefulness = ScenarioAiUsefulnessRubric.evaluate(authored, input);
-		assertThat(usefulness.groundedOutcome()).isZero();
+		assertThat(usefulness.groundedOutcome()).isEqualTo(1);
 		assertThat(usefulness.humanVerificationChecks()).isEqualTo(1);
-		assertThat(usefulness.total()).isEqualTo(1);
+		assertThat(usefulness.total()).isEqualTo(2);
 		assertThat(authored.followUpConsiderations()).hasSize(2);
 	}
 
@@ -122,6 +122,20 @@ class ScenarioMaritimeAiOutputTest {
 		String withAlternativeMeaning = valid.replace("shows the predicted arrival exceeds the applicable transshipment-arrival deadline by 20 hours",
 				"indicates the estimated arrival is 20 hours later than the applicable transshipment-arrival deadline");
 		assertThat(MaritimeAiResponseValidator.validateScenarioV16(withAlternativeMeaning, input).valid()).isTrue();
+		String conciseDirection = "The synthetic expected-arrival revision warrants review of the arrival estimate against the recorded milestone. "
+				+ "The backend comparison shows estimated arrival exceeds the applicable transshipment-arrival deadline.";
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection, "A",
+				input.shipmentContext().businessContext().comparison())).isTrue();
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection.replace("exceeds", "does not exceed"), "A",
+				input.shipmentContext().businessContext().comparison())).isFalse();
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection.replace("exceeds", "is before"), "A",
+				input.shipmentContext().businessContext().comparison())).isFalse();
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection + " The shipment is urgent.", "A",
+				input.shipmentContext().businessContext().comparison())).isFalse();
+		var worsenedB = ScenarioQualityStubClientTest.input(
+				com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture.create("ConciseB"), 2, 1);
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection, "B",
+				worsenedB.shipmentContext().businessContext().comparison())).isFalse();
 
 		List<String> unsupported = List.of(
 			authored.replace("by 20 hours", "by 4 hours"),
