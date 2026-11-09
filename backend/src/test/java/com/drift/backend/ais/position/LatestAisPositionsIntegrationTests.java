@@ -31,9 +31,11 @@ class LatestAisPositionsIntegrationTests {
 
 	@Test
 	void storesEachObservationWithItsSourceAndMetadata() {
+		Long transitionsBefore = jdbc.queryForObject("SELECT count(*) FROM shipment_risk_transitions", Long.class);
 		positions.record(new AisPosition("368207620", "EVER STEADY", new BigDecimal("1.2640166"),
 				new BigDecimal("103.8201833"), new BigDecimal("12.4"), new BigDecimal("86.7"), 87, 5, true, 42,
 				Instant.parse("2026-10-05T01:00:00Z"), AisPositionSource.AIS_STREAM));
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM shipment_risk_transitions", Long.class)).isEqualTo(transitionsBefore);
 
 		Map<String, Object> row = jdbc.queryForMap("SELECT * FROM vessel_observations WHERE mmsi = '368207620'");
 		assertThat(row)

@@ -277,7 +277,19 @@ class DelayComparisonIntegrationTests {
 		String list = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + fixture.forwarderToken()))
 				.andExpect(status().isOk())
 				.andReturn().getResponse().getContentAsString();
-		assertThat(list).doesNotContain("delayComparison");
+		JsonNode listedShipment = null;
+		for (JsonNode shipment : JSON.readTree(list)) {
+			if (shipment.path("id").asLong() == fixture.shipmentId()) {
+				listedShipment = shipment;
+				break;
+			}
+		}
+		assertThat(listedShipment).isNotNull();
+		assertThat(listedShipment.at("/delayComparison/outcome").asString()).isEqualTo("NO_PREDICTED_IMPACT");
+		assertThat(listedShipment.at("/delayComparison/estimatedArrivalAt").asString())
+				.isEqualTo(calculatedEstimate(ingested).toInstant().toString());
+		assertThat(listedShipment.at("/delayComparison/deadline").asString())
+				.isEqualTo(calculatedEstimate(ingested).toInstant().toString());
 	}
 
 	private OffsetDateTime calculatedEstimate(Instant ingested) {

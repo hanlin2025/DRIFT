@@ -73,6 +73,7 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 	@Autowired ShipmentRiskEvaluator evaluator;
 	@Autowired LatestAisPositions aisPositions;
 	@Autowired ShipmentRiskAlertMailProperties mailProperties;
+	@Autowired ShipmentDetailAssembler detailAssembler;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired JavaMailSender mailSender;
 
@@ -263,9 +264,11 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		shipments.createImported(managingCompany, managingUser,
 				new ShipmentImportRow(1, reference, "A", "B", transshipmentPort, motherVessel, arrival,
 						"Feeder", arrival.plusHours(connectionHours), null), importer);
-		Shipment shipment = shipmentRepository.findAll().stream()
-				.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
-		return ShipmentResponse.from(shipment, null);
+		return transactions.execute(status -> {
+			Shipment shipment = shipmentRepository.findAll().stream()
+					.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
+			return detailAssembler.row(shipment);
+		});
 	}
 
 	private ShipmentResponse updateWindow(ShipmentResponse current, int connectionHours) {

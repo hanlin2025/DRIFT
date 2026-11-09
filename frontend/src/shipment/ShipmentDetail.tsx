@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { ApiError } from '../signup/api';
 import { canArchiveShipment, type ShipmentArchive } from './archiveAccess';
-import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
+import { generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentTracking, getVesselTrack, listMaritimeAiAssessments, type ArrivalComparison, type Cdg201ArrivalEvidence, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type RecommendationDecision, type RecommendationImpact, type RiskLevel, type Shipment, type ShipmentTracking, type TrackPoint, type TrackVessel, type TrackWindow, type VesselPosition, type VesselTrack } from './api';
 import { RecommendationDecisionPanel } from './RecommendationDecisionPanel';
 import { Cdg201EvidencePanel } from './Cdg201EvidencePanel';
 import { MaritimeContextPanel } from './MaritimeContextPanel';
@@ -13,10 +13,12 @@ import { RiskBadge } from './RiskBadge';
 import { ShipmentChangeHistory } from './ShipmentChangeHistory';
 import { formatWhen, PENDING_ASSIGNMENT, ShipmentForm } from './ShipmentForm';
 import { DelayComparisonFact } from './DelayComparisonFact';
+import { RecordedArrivalChangeFact } from './RecordedArrivalChangeFact';
 import { TransshipmentArrivalDeadlineFact } from './TransshipmentArrivalDeadline';
 import { TrackHistory } from './TrackHistory';
 import { DEFAULT_TRACK_WINDOW } from './trackSegments';
 import { VesselPanel } from './VesselPanel';
+import type { TrackDisplayMode, TrackReadState } from './trackPresentationContract';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 export const TRACKING_POLL_MS = 60_000;
@@ -26,7 +28,16 @@ const NOT_FOUND = 'Shipment not found or has been removed.';
 
 type Problem = { kind: 'forbidden' | 'missing' | 'failed'; message: string };
 
-export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, viewerCompanyId = null, archive }: {
+export type ShipmentTrackBinding = {
+  sourceShipmentId: string;
+  captureId?: string | null;
+  mappingVersion?: string | null;
+};
+
+export type ShipmentTrackBindings = Partial<Record<TrackVessel, ShipmentTrackBinding>>;
+
+export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, canEdit = true, viewerCompanyId = null, archive, trackBindings,
+  controlledScenarioEnabled = false, onEnterControlledScenario }: {
   token: string;
   shipmentId: string;
   basePath: string;
@@ -34,6 +45,11 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   canEdit?: boolean;
   viewerCompanyId?: number | null;
   archive?: ShipmentArchive;
+  /** Optional reviewed per-role source shipment/capture mapping. The backend still authorizes and validates each read. */
+  trackBindings?: ShipmentTrackBindings;
+  /** Visibility only; scenario access is still decided by the authenticated backend. */
+  controlledScenarioEnabled?: boolean;
+  onEnterControlledScenario?: (authorizedAnchor: Shipment) => void;
 }) {
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [tracking, setTracking] = useState<ShipmentTracking | null>(null);
@@ -46,6 +62,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const requestSeq = useRef(0);
   const [trackVessel, setTrackVessel] = useState<TrackVessel>('MOTHER');
   const [trackHours, setTrackHours] = useState<TrackWindow>(DEFAULT_TRACK_WINDOW);
+  const [trackMode, setTrackMode] = useState<Extract<TrackDisplayMode, 'live' | 'recorded'>>('live');
+  const [recordedCutoff, setRecordedCutoff] = useState<string | null>(null);
+  const [playbackPoints, setPlaybackPoints] = useState<TrackPoint[]>([]);
+  const [playbackState, setPlaybackState] = useState<TrackReadState>('loading');
+  const [playbackMessage, setPlaybackMessage] = useState<string | null>(null);
+  const [playbackContext, setPlaybackContext] = useState<VesselTrack['context']>(undefined);
+  const [playbackVesselName, setPlaybackVesselName] = useState<string | null>(null);
   const [history, setHistory] = useState<VesselTrack | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
@@ -68,32 +91,91 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setTracking(null);
     setProblem(null);
     setRefreshNote(null);
+    setHistory(null);
+    setSelectedId(null);
+    setTrackVessel('MOTHER');
+    setTrackHours(DEFAULT_TRACK_WINDOW);
+    setTrackMode('live');
+    setRecordedCutoff(null);
+    setPlaybackPoints([]);
+    setPlaybackState('loading');
+    setPlaybackMessage(null);
+    setPlaybackContext(undefined);
+    setPlaybackVesselName(null);
   }
 
-  const reloadHistory = useCallback(async () => {
+  const reloadHistory = useCallback(async (requestedCutoff?: string | null) => {
     const requestId = ++historySeq.current;
+    const binding = trackBindings?.[trackVessel];
+    const cutoff = trackMode === 'recorded' ? requestedCutoff ?? recordedCutoff ?? new Date().toISOString() : undefined;
+    const sourceShipmentId = binding?.sourceShipmentId ?? shipmentId;
     setHistoryLoading(true);
+    setPlaybackState(trackMode === 'recorded' ? 'loading' : 'available');
+    setPlaybackMessage(null);
     try {
-      const found = await getVesselTrack(token, shipmentId, trackVessel, trackHours);
+      const options = {
+        ...(cutoff ? { cutoff } : {}),
+        ...(trackMode === 'recorded' && binding?.captureId ? { captureId: binding.captureId } : {}),
+      };
+      const found = Object.keys(options).length > 0
+        ? await getVesselTrack(token, sourceShipmentId, trackVessel, trackHours, options)
+        : await getVesselTrack(token, sourceShipmentId, trackVessel, trackHours);
       if (requestId !== historySeq.current) return;
+      if (found.vessel !== trackVessel) {
+        setHistory(null);
+        setHistoryFailed(true);
+        setPlaybackState('unavailable');
+        setPlaybackMessage('Track identity did not match the selected vessel.');
+        return;
+      }
+      if (trackMode === 'recorded' && found.context !== 'RECORDED' && found.context !== 'SEEDED') {
+        setHistory(null);
+        setHistoryFailed(true);
+        setPlaybackState('unavailable');
+        setPlaybackMessage('No recorded or seeded positions are available for this vessel and receipt-time cutoff.');
+        return;
+      }
       setHistory(found);
       setHistoryFailed(false);
       setSelectedId(current => current !== null && found.points.some(point => point.id === current) ? current : null);
+      if (trackMode === 'recorded') {
+        setPlaybackPoints(current => current.length > 0 ? current : found.points);
+        setPlaybackContext(found.context);
+        setPlaybackVesselName(found.vesselName);
+        setPlaybackState(found.status === 'UNAVAILABLE' ? 'unavailable' : 'available');
+        setPlaybackMessage(found.status === 'UNAVAILABLE' ? 'Track data is unavailable at this cutoff.' : null);
+      } else setPlaybackState('available');
     } catch (reason: unknown) {
       if (requestId !== historySeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
+        setHistory(null);
+        setTracking(null);
+        setPlaybackPoints([]);
         onSessionEnded();
         return;
       }
       if (reason instanceof ApiError && reason.status === 403) {
+        setHistory(null);
+        setTracking(null);
+        setPlaybackPoints([]);
         setProblem({ kind: 'forbidden', message: reason.message });
         return;
       }
+      if (reason instanceof ApiError && reason.status === 404) {
+        setHistory(null);
+        setTracking(null);
+        setPlaybackPoints([]);
+        setProblem({ kind: 'missing', message: NOT_FOUND });
+        return;
+      }
+      setHistory(null);
       setHistoryFailed(true);
+      setPlaybackState(trackMode === 'recorded' ? 'unavailable' : 'error');
+      setPlaybackMessage(reason instanceof ApiError && reason.status >= 400 ? reason.message : null);
     } finally {
       if (requestId === historySeq.current) setHistoryLoading(false);
     }
-  }, [token, shipmentId, trackVessel, trackHours, onSessionEnded]);
+  }, [token, shipmentId, trackVessel, trackHours, trackMode, recordedCutoff, trackBindings, onSessionEnded]);
 
   const reloadTracking = useCallback(async (mode: 'background' | 'explicit' = 'background') => {
     const requestId = ++requestSeq.current;
@@ -102,10 +184,12 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       found => ({ ok: true as const, found }),
       (reason: unknown) => ({ ok: false as const, reason }),
     );
-    const trackingRequest = getShipmentTracking(token, shipmentId).then(
-      found => ({ ok: true as const, found }),
-      (reason: unknown) => ({ ok: false as const, reason }),
-    );
+    const trackingRequest = trackMode === 'live'
+      ? getShipmentTracking(token, shipmentId).then(
+        found => ({ ok: true as const, found }),
+        (reason: unknown) => ({ ok: false as const, reason }),
+      )
+      : Promise.resolve({ ok: true as const, found: null });
     try {
       const [shipmentOutcome, trackingOutcome] = await Promise.all([shipmentRequest, trackingRequest]);
       if (requestId !== requestSeq.current) return;
@@ -133,14 +217,77 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
           setPortCapture({ nonce: ++refreshNonce.current, port: shipmentOutcome.found.transshipmentPort });
         }
       }
-      if (trackingOutcome.ok) setTracking(trackingOutcome.found);
+      if (trackingOutcome.ok && trackingOutcome.found) setTracking(trackingOutcome.found);
       if (!trackingOutcome.ok) setRefreshNote(REFRESH_NOTE);
       else if (!shipmentOutcome.ok) setRefreshNote(DETAIL_REFRESH_NOTE);
       else setRefreshNote(null);
     } finally {
       if (requestId === requestSeq.current) setRefreshing(false);
     }
-  }, [token, shipmentId, onSessionEnded]);
+  }, [token, shipmentId, trackMode, onSessionEnded]);
+
+  const changeTrackMode = useCallback((mode: TrackDisplayMode) => {
+    if (mode !== 'live' && mode !== 'recorded') return;
+    setSelectedId(null);
+    setPlaybackMessage(null);
+    if (mode === 'recorded') {
+      setTrackMode('recorded');
+      setRecordedCutoff(history?.to ?? new Date().toISOString());
+      setPlaybackPoints([]);
+      setPlaybackContext(undefined);
+      setPlaybackVesselName(null);
+      setPlaybackState('loading');
+    } else {
+      setTrackMode('live');
+      setRecordedCutoff(null);
+      setPlaybackPoints([]);
+      setPlaybackContext(undefined);
+      setPlaybackVesselName(null);
+      setPlaybackState('available');
+    }
+  }, [history?.to]);
+
+  const selectTrackPoint = useCallback((id: number) => {
+    const point = trackMode === 'recorded'
+      ? playbackPoints.find(item => item.id === id)
+      : history?.points.find(item => item.id === id);
+    setSelectedId(id);
+    if (trackMode === 'recorded' && point && point.ingestedAt !== recordedCutoff) {
+      setRecordedCutoff(point.ingestedAt);
+    }
+  }, [trackMode, playbackPoints, history, recordedCutoff]);
+
+  const stepPlayback = useCallback((direction: 'previous' | 'next') => {
+    if (playbackPoints.length === 0) return;
+    const current = playbackPoints.findIndex(point => point.id === selectedId);
+    const next = direction === 'next'
+      ? current < 0 ? 0 : current + 1
+      : current < 0 ? playbackPoints.length - 1 : current - 1;
+    const point = playbackPoints[next];
+    if (!point) return;
+    setSelectedId(point.id);
+    if (point.ingestedAt !== recordedCutoff) setRecordedCutoff(point.ingestedAt);
+  }, [playbackPoints, selectedId, recordedCutoff]);
+
+  const changeTrackVessel = useCallback((vessel: TrackVessel) => {
+    setPlaybackPoints([]);
+    setPlaybackContext(undefined);
+    setPlaybackVesselName(null);
+    setPlaybackMessage(null);
+    setPlaybackState(trackMode === 'recorded' ? 'loading' : 'available');
+    setSelectedId(null);
+    setTrackVessel(vessel);
+  }, [trackMode]);
+
+  const changeTrackHours = useCallback((hours: TrackWindow) => {
+    setPlaybackPoints([]);
+    setPlaybackContext(undefined);
+    setPlaybackVesselName(null);
+    setPlaybackMessage(null);
+    setPlaybackState(trackMode === 'recorded' ? 'loading' : 'available');
+    setSelectedId(null);
+    setTrackHours(hours);
+  }, [trackMode]);
 
   const generateMaritimeAi = useCallback(async () => {
     setMaritimeAiGenerating(true);
@@ -165,6 +312,13 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setRefreshNote(null);
     setRefreshing(false);
     setHistory(null);
+    setTrackMode('live');
+    setRecordedCutoff(null);
+    setPlaybackPoints([]);
+    setPlaybackState('loading');
+    setPlaybackMessage(null);
+    setPlaybackContext(undefined);
+    setPlaybackVesselName(null);
     setCdg201Evidence(null);
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
     setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
@@ -246,10 +400,10 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
 
   const shipmentLoaded = shipment !== null;
   useEffect(() => {
-    if (problem || !shipmentLoaded) return;
+    if (problem || !shipmentLoaded || trackMode !== 'live') return;
     const timer = window.setInterval(() => { void reloadTracking('background'); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [problem, shipmentLoaded, reloadTracking]);
+  }, [problem, shipmentLoaded, trackMode, reloadTracking]);
 
   useEffect(() => {
     if (!shipmentLoaded) return;
@@ -259,14 +413,26 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   }, [shipmentLoaded, reloadHistory]);
 
   useEffect(() => {
-    if (problem || !shipmentLoaded) return;
+    if (problem || !shipmentLoaded || trackMode !== 'live') return;
     const timer = window.setInterval(() => { void reloadHistory(); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [problem, shipmentLoaded, reloadHistory]);
+  }, [problem, shipmentLoaded, trackMode, reloadHistory]);
 
   return (
     <section className="shipment-detail">
       <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back</Link>
+      {controlledScenarioEnabled && viewerCompanyId !== null && shipment?.companyId === viewerCompanyId
+        && !problem && !editing && onEnterControlledScenario && (
+        <aside className="scenario-entry-callout" aria-label="Synthetic controlled scenario">
+          <div>
+            <p className="eyebrow">OPTIONAL SYNTHETIC DEMONSTRATION</p>
+            <p>Open a controlled, read-only three-stage scenario for this independently authorized shipment.</p>
+          </div>
+          <button type="button" className="secondary-button" onClick={() => onEnterControlledScenario(shipment)}>
+            Enter controlled scenario
+          </button>
+        </aside>
+      )}
       {problem
         ? problem.kind === 'failed'
           ? <div className="error-notice" role="alert">{problem.message}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
@@ -306,17 +472,25 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                 track={(
                   <TrackHistory vessel={trackVessel} hours={trackHours} history={history} loading={historyLoading}
                     failed={historyFailed} feederAssigned={Boolean(shipment.feederVessel?.trim())} selectedId={selectedId}
-                    onVessel={vessel => {
+                    onVessel={changeTrackVessel}
+                    onHours={changeTrackHours}
+                    onSelectPoint={selectTrackPoint}
+                    mode={trackMode} cutoff={recordedCutoff} playbackPoints={playbackPoints}
+                    readState={trackMode === 'recorded' ? playbackState : historyFailed ? 'error' : 'available'}
+                    statusMessage={playbackMessage} onDisplayModeChange={changeTrackMode}
+                    sourceShipmentId={trackBindings?.[trackVessel]?.sourceShipmentId ?? shipmentId}
+                    mappingVersion={trackBindings?.[trackVessel]?.mappingVersion}
+                    onCutoffRequest={cutoff => {
                       setSelectedId(null);
-                      setTrackVessel(vessel);
-                    }}
-                    onHours={hours => {
-                      setSelectedId(null);
-                      setTrackHours(hours);
-                    }}
-                    onSelectPoint={setSelectedId} />
+                      setRecordedCutoff(cutoff);
+                      setPlaybackState('loading');
+                    }} onPlaybackStep={stepPlayback} />
                 )}
-                history={history} selectedId={selectedId} onSelectPoint={setSelectedId}
+                history={history} selectedId={selectedId} onSelectPoint={selectTrackPoint}
+                trackMode={trackMode} trackVessel={trackVessel} recordedCutoff={recordedCutoff}
+                playbackPoints={playbackPoints} playbackState={playbackState} playbackMessage={playbackMessage}
+                playbackContext={playbackContext} playbackVesselName={playbackVesselName}
+                mapContextKey={contextKey}
                 viewerCompanyId={viewerCompanyId} token={token} onSessionEnded={onSessionEnded}
                 portCapture={portCapture} onExplicitRefresh={() => { void reloadTracking('explicit'); }}
                 onShipment={setShipment}
@@ -336,7 +510,7 @@ function ShipmentUnavailable({ problem }: { problem: Problem }) {
   );
 }
 
-const FACT_ROWS = 25;
+const FACT_ROWS = 27;
 
 function ShipmentSkeleton() {
   return (
@@ -359,7 +533,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, trackMode, trackVessel, recordedCutoff, playbackPoints, playbackState, playbackMessage, playbackContext, playbackVesselName, mapContextKey, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
@@ -380,6 +554,15 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   history: VesselTrack | null;
   selectedId: number | null;
   onSelectPoint: (id: number) => void;
+  trackMode: 'live' | 'recorded';
+  trackVessel: TrackVessel;
+  recordedCutoff: string | null;
+  playbackPoints: TrackPoint[];
+  playbackState: TrackReadState;
+  playbackMessage: string | null;
+  playbackContext: VesselTrack['context'];
+  playbackVesselName: string | null;
+  mapContextKey: string;
   viewerCompanyId: number | null;
   token: string;
   onSessionEnded: () => void;
@@ -389,6 +572,25 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   changeHistory: ReactNode;
 }) {
   const remaining = remainingWindowFact(shipment);
+  const selectedPlaybackPoint = selectedId == null
+    ? null
+    : playbackPoints.find(point => point.id === selectedId) ?? history?.points.find(point => point.id === selectedId) ?? null;
+  const lastKnownPlaybackPoint = trackMode === 'recorded' && history?.points.length === 0 && history.fallbackUsed
+    ? history.lastKnownPosition ?? null
+    : null;
+  const shownPlaybackPoint = selectedPlaybackPoint ?? lastKnownPlaybackPoint;
+  const playbackName = playbackVesselName?.trim() || history?.vesselName?.trim()
+    || (trackVessel === 'MOTHER' ? shipment.motherVessel : shipment.feederVessel?.trim() || 'Feeder vessel');
+  const displayPositions = trackMode === 'recorded' && shownPlaybackPoint ? [{
+    role: trackVessel,
+    name: playbackName,
+    latitude: shownPlaybackPoint.latitude,
+    longitude: shownPlaybackPoint.longitude,
+    ingestedAt: shownPlaybackPoint.ingestedAt,
+    speedOverGroundKnots: shownPlaybackPoint.speedOverGroundKnots,
+    label: lastKnownPlaybackPoint && shownPlaybackPoint === lastKnownPlaybackPoint ? 'LAST KNOWN' as const
+      : playbackContext === 'SEEDED' || history?.context === 'SEEDED' ? 'SEEDED' as const : 'RECORDED' as const,
+  }] : undefined;
   return (
     <>
       <p className="eyebrow">SHIPMENT</p>
@@ -404,14 +606,22 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}
       <div className="tracking-layout">
         <div className="tracking-map">
-          <RouteMap shipment={shipment} tracking={tracking} history={history} selectedId={selectedId} onSelectPoint={onSelectPoint} />
+          <RouteMap shipment={shipment} tracking={trackMode === 'recorded' ? null : tracking} history={history} selectedId={selectedId} onSelectPoint={onSelectPoint}
+            displayMode={trackMode} displayPositions={displayPositions} contextKey={mapContextKey} />
           {track}
         </div>
-        <VesselPanel name={shipment.motherVessel} position={tracking ? tracking.motherVessel : shipment.motherVesselPosition} />
+        <VesselPanel name={trackVessel === 'MOTHER' ? shipment.motherVessel : shipment.feederVessel}
+          position={trackMode === 'recorded' ? null : tracking ? tracking.motherVessel : shipment.motherVesselPosition}
+          view={trackMode === 'recorded' ? {
+            role: trackVessel, mode: 'recorded', history, selectedPointId: selectedId,
+            referenceTime: recordedCutoff, state: playbackState, message: playbackMessage,
+            identityName: playbackVesselName,
+          } : undefined} />
       </div>
-      <Cdg201EvidencePanel evidence={cdg201Evidence} />
-      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
-      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
+      <section className="shipment-assessment-summary" aria-label="Backend-calculated shipment assessment">
+        <h3>Shipment and backend assessment</h3>
+        <p>Shipment schedule, risk, recommendation and impact below are calculated by DRIFT. The AI interpretation is shown separately and does not approve or apply a change.</p>
+      </section>
       <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
         <dl>
           {feedFact(shipment.aisFeed)}
@@ -458,14 +668,19 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Risk</dt>{shipment.risk
             ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
             : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+          <RecordedArrivalChangeFact shipment={shipment} evidence={cdg201Evidence} />
+          {lateArrivalChanceFact(shipment.lateArrivalChance)}
           {recommendationFact(shipment.recommendation)}
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
-      <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+<RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
         decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
         archived={shipment.status === 'ARCHIVED'}
         onSessionEnded={onSessionEnded} onRecorded={onDecision} />
+      <Cdg201EvidencePanel evidence={cdg201Evidence} />
+      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       {changeHistory}
     </>
   );
@@ -475,6 +690,32 @@ const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', str
   AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
   NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
 };
+
+// Neutral wording on purpose: this is an uncalibrated chance, not a risk level, so it has no badge or colour.
+function lateArrivalChanceFact(chance: Shipment['lateArrivalChance']) {
+  if (!chance) return null;
+  if (!chance.available) {
+    return (
+      <div>
+        <dt>Chance of arriving after feeder departure</dt>
+        <dd className="is-missing">{chance.unavailableReason.message}</dd>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <dt>Chance of arriving after feeder departure</dt>
+      <dd>
+        {`${chance.display} · rough estimate`}
+        <dl className="arrival-comparison">
+          <div><dt>Estimated arrival used</dt><dd><time dateTime={chance.arrivalUsed}>{formatWhen(chance.arrivalUsed)}</time></dd></div>
+          <div><dt>Planned feeder departure used</dt><dd><time dateTime={chance.plannedFeederDepartureUsed}>{formatWhen(chance.plannedFeederDepartureUsed)}</time></dd></div>
+          {chance.plannedWindowInvalid && <div><dt>Note</dt><dd>The planned feeder departure is at or before the planned mother-vessel arrival.</dd></div>}
+        </dl>
+      </dd>
+    </div>
+  );
+}
 
 const PORT_OUTCOME_LABELS: Record<NonNullable<PortConditionComparison['outcome']>, string> = {
   MATCHES_NORMAL: 'Matches own reports',

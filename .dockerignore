@@ -1,0 +1,13 @@
+.git
+.github
+**/target
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+docs
+fixtures
+frontend
+scripts
+tools

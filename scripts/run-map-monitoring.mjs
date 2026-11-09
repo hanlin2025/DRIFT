@@ -95,10 +95,18 @@ function processCwd(pid) {
   return output.split('\n').find(line => line.startsWith('n'))?.slice(1) ?? '';
 }
 
-function assertPortsAvailable() {
-  const backend = listeners(8080);
+function configuredBackendPort(value = process.env.DRIFT_E2E_BACKEND_PORT) {
+  const port = value == null || value === '' ? 8080 : Number(value);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error('DRIFT_E2E_BACKEND_PORT must be an available TCP port from 1024 to 65535.');
+  }
+  return port;
+}
+
+function assertPortsAvailable(backendPort) {
+  const backend = listeners(backendPort);
   if (backend.length) {
-    throw new Error(`Port 8080 is already in use by pid ${backend.join(', ')}. This runner will not use or stop that process.`);
+    throw new Error(`Port ${backendPort} is already in use by pid ${backend.join(', ')}. This runner will not use or stop that process.`);
   }
   for (const pid of listeners(5173)) {
     if (processCwd(pid) !== frontendDir) {
@@ -107,13 +115,13 @@ function assertPortsAvailable() {
   }
 }
 
-function backendEnv(owned) {
+function backendEnv(owned, backendPort) {
   const url = `jdbc:postgresql://localhost:5432/${owned.name}`;
   return {
     ...process.env,
     JWT_SECRET: randomBytes(48).toString('base64url'),
     AIS_ENABLED: 'false',
-    SERVER_PORT: '8080',
+    SERVER_PORT: String(backendPort),
     SPRING_DATASOURCE_URL: url,
     SPRING_DATASOURCE_USERNAME: 'drift',
     SPRING_DATASOURCE_PASSWORD: 'drift',
@@ -165,22 +173,27 @@ function waitForBackend(child, owned) {
   });
 }
 
-function assertListenerIsOurs(child) {
+function assertListenerIsOurs(child, backendPort) {
   const group = execFileSync('ps', ['-o', 'pgid=', '-p', String(child.pid)], { encoding: 'utf8' }).trim();
-  const pids = listeners(8080);
-  if (!pids.length) throw new Error('The backend this runner started is not listening on port 8080.');
+  const pids = listeners(backendPort);
+  if (!pids.length) throw new Error(`The backend this runner started is not listening on port ${backendPort}.`);
   for (const pid of pids) {
     const listenerGroup = execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim();
     if (listenerGroup !== group) {
-      throw new Error(`Port 8080 is served by pid ${pid}, not the backend this runner started.`);
+      throw new Error(`Port ${backendPort} is served by pid ${pid}, not the backend this runner started.`);
     }
   }
 }
 
-function runPlaywright(owned, args) {
+function runPlaywright(owned, args, backendPort) {
   const child = spawn('npx', args ?? ['playwright', 'test', 'e2e/map-monitoring.spec.ts', '--project=desktop'], {
     cwd: frontendDir,
-    env: { ...process.env, DRIFT_E2E_DATABASE: owned.name, DRIFT_E2E_OWNER_TOKEN: owned.token },
+    env: {
+      ...process.env,
+      DRIFT_E2E_DATABASE: owned.name,
+      DRIFT_E2E_OWNER_TOKEN: owned.token,
+      DRIFT_API_ORIGIN: `http://127.0.0.1:${backendPort}`,
+    },
     stdio: 'inherit',
   });
   activePlaywright = child;
@@ -235,16 +248,17 @@ async function stopProcessGroup(child) {
 }
 
 export async function runMapMonitoring(options = {}) {
-  assertPortsAvailable();
+  const backendPort = options.backendPort ?? configuredBackendPort();
+  assertPortsAvailable(backendPort);
   const owned = await (options.createDatabase ?? createOwnedDatabase)();
   let testCode = 1;
   let failure = null;
   const failures = [];
   try {
-    activeBackend = (options.spawnBackend ?? defaultSpawnBackend)(backendEnv(owned));
+    activeBackend = (options.spawnBackend ?? defaultSpawnBackend)(backendEnv(owned, backendPort));
     await waitForBackend(activeBackend, owned);
-    if (!options.spawnBackend) assertListenerIsOurs(activeBackend);
-    testCode = await runPlaywright(owned, options.playwrightArgs);
+    if (!options.spawnBackend) assertListenerIsOurs(activeBackend, backendPort);
+    testCode = await runPlaywright(owned, options.playwrightArgs, backendPort);
   } catch (error) {
     failure = error;
   } finally {
