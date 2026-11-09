@@ -149,6 +149,21 @@ class ImporterAuthorisationIntegrationTests {
 		end(otherAdminToken, authorisationId.longValue())
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value(ImporterAuthorisationNotFoundException.MESSAGE));
+		end(forwarderToken, authorisationId.longValue())
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
+		String otherForwarderEmail = "cdg338-other-ff-" + UUID.randomUUID() + "@example.com";
+		createAccount(otherForwarderEmail, otherCompanyId, "FREIGHT_FORWARDER");
+		String otherForwarderToken = tokenFor(otherForwarderEmail);
+		grant(otherForwarderToken, importerCompanyId)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
+		end(otherForwarderToken, authorisationId.longValue())
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
+		mvc.perform(get("/api/importer-authorisations").header("Authorization", "Bearer " + otherForwarderToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.authorisations[?(@.id == " + authorisationId + ")]").isEmpty());
 		assertThat(jdbc.queryForObject("SELECT active FROM forwarder_importer_relationships WHERE id = ?", Boolean.class,
 				authorisationId.longValue())).isTrue();
 

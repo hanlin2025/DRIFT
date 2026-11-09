@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Session } from '../session/session';
+import { endSession, homePath, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { ProfilePage } from './ProfilePage';
 
@@ -82,7 +82,7 @@ export function ProfileRoute() {
         <Wordmark href={home} />
         {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
         <Link className="workspace-nav" to="/profile" aria-current="page">Profile</Link>
-        <button type="button" className="sign-out" onClick={() => { clearSession(); navigate('/login', { replace: true }); }}>Sign out</button>
+        <button type="button" className="sign-out" onClick={() => { void signOut().then(() => navigate('/login', { replace: true })); }}>Sign out</button>
       </header>
       <main className="workspace-main">
         <ProfilePage token={account.token} onSessionEnded={sessionEnded} onPasswordChanged={passwordChanged} onNameSaved={fullName => {

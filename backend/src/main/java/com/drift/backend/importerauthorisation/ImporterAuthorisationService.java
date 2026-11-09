@@ -3,7 +3,6 @@ package com.drift.backend.importerauthorisation;
 import java.sql.SQLException;
 
 import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +36,10 @@ public class ImporterAuthorisationService {
 		this.transactions = new TransactionTemplate(transactions);
 	}
 
+	/**
+	 * Must not run inside an existing transaction. A unique-pair conflict rolls the insert back,
+	 * and the retry starts a fresh transaction so it can see the row that won the race.
+	 */
 	public ImporterAuthorisationResponse grant(AuthenticatedUser principal, Long importerCompanyId) {
 		try {
 			return grantInTransaction(principal, importerCompanyId);
@@ -129,10 +132,10 @@ public class ImporterAuthorisationService {
 	private static boolean isUniqueConflict(Throwable exception) {
 		Throwable current = exception;
 		while (current != null) {
-			if (current instanceof DataIntegrityViolationException || current instanceof ConstraintViolationException) {
+			if (current instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
 				return true;
 			}
-			if (current instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
+			if (current instanceof ConstraintViolationException constraint && "23505".equals(constraint.getSQLState())) {
 				return true;
 			}
 			current = current.getCause();

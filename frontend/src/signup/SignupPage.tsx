@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account } from './api';
+import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account, type Role } from './api';
 import { passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
 
-const roleNames = { IMPORTER: 'Importer', FREIGHT_FORWARDER: 'Freight forwarder' };
+const roleNames: Record<Role, string> = {
+  IMPORTER: 'Importer',
+  FREIGHT_FORWARDER: 'Freight forwarder',
+  LOGISTICS_MANAGER: 'Logistics manager',
+};
 const emptyFields: SignupFields = { fullName: '', password: '', confirmation: '' };
 
 export function SignupPage({ onRegistered }: { onRegistered?: (account: Account) => void }) {

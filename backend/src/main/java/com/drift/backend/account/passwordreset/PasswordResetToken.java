@@ -56,7 +56,15 @@ public class PasswordResetToken {
 		return expiresAt;
 	}
 
+	public UserAccount getUser() {
+		return user;
+	}
+
 	public Instant getUsedAt() {
 		return usedAt;
+	}
+
+	public void markUsed(Instant usedAt) {
+		this.usedAt = usedAt;
 	}
 }

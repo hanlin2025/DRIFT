@@ -28,6 +28,10 @@ describe('Cdg201EvidencePanel', () => {
     render(<Cdg201EvidencePanel evidence={evidence} />);
     expect(screen.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveTextContent('KOTA LARIS · IMO 9351048');
     expect(screen.getByText('+180 minutes')).toBeInTheDocument();
+    expect(screen.getByText('prior-evidence.manifest.json')).toBeInTheDocument();
+    expect(screen.getByText('prior-evidence.json')).toBeInTheDocument();
+    expect(screen.getByText('evidence.manifest.json')).toBeInTheDocument();
+    expect(screen.getByText('evidence.json')).toBeInTheDocument();
     expect(screen.getByText('2026-10-29T02:00:00+08:00')).toBeInTheDocument();
     expect(screen.getByText('2026-10-28T18:00:00+00:00')).toBeInTheDocument();
     expect(screen.getByText(/unverified imo only/i)).toBeInTheDocument();

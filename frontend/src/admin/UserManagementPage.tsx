@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Role, type Session } from '../session/session';
+import { endSession, homePath, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { InviteColleague } from './InviteColleague';
+import { PendingInvitations } from './PendingInvitations';
 import { ReactivateUser } from './ReactivateUser';
 import { RemoveUser } from './RemoveUser';
 
@@ -216,6 +218,8 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </div>
           </form>
         ) : null}
+        {users !== null ? <InviteColleague token={account.token} organisations={organisations} roles={roles} onSessionEnded={onSessionEnded} /> : null}
+        {users !== null ? <PendingInvitations token={account.token} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
         {users !== null ? <RemovalHistory removals={removals} /> : null}
       </main>
@@ -330,5 +334,5 @@ export function AdminRoute() {
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  return <UserManagementPage account={account} onSignOut={() => { clearSession(); navigate('/login', { replace: true }); }} onSessionEnded={sessionEnded} />;
+  return <UserManagementPage account={account} onSignOut={() => { void signOut().then(() => navigate('/login', { replace: true })); }} onSessionEnded={sessionEnded} />;
 }

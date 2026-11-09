@@ -1,0 +1,61 @@
+# Review-only Blueprint. Do not sync/provision without explicit hosting approval.
+previews:
+  generation: manual
+
+services:
+  - type: web
+    name: drift-cs203-presentation-api
+    runtime: docker
+    plan: 0.5c-512mb
+    region: singapore
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /readyz
+    numInstances: 1
+    autoDeployTrigger: "off"
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SPRING_DATASOURCE_URL
+        sync: false
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: AIS_ENABLED
+        value: "false"
+      - key: MARITIME_CONTEXT_DEMO_ENABLED
+        value: "false"
+      - key: MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED
+        value: "false"
+      - key: MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED
+        value: "false"
+      - key: CONTROLLED_SCENARIO_ENABLED
+        value: "false"
+      - key: CONTROLLED_SCENARIO_DEMO_COMPANY_ID
+        sync: false
+      - key: CONTROLLED_SCENARIO_ALLOWED_USER_IDS
+        sync: false
+      - key: CONTROLLED_SCENARIO_SHIPMENT_A_ID
+        sync: false
+      - key: CONTROLLED_SCENARIO_SHIPMENT_B_ID
+        sync: false
+      - key: MARITIME_AI_ENABLED
+        value: "false"
+      - key: MARITIME_AI_SCENARIO_ENABLED
+        value: "false"
+      - key: MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED
+        value: "false"
+      - key: MARITIME_AI_EXTERNAL_REQUESTS_APPROVED
+        value: "false"
+
+databases:
+  - name: drift-cs203-presentation-db
+    databaseName: drift_demo
+    user: drift_admin
+    plan: 0.5c-1g
+    region: singapore
+    postgresMajorVersion: "16"
+    ipAllowList: []

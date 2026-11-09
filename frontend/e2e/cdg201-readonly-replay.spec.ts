@@ -95,10 +95,11 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   for (const key of ['plannedMotherArrivalAt', 'plannedFeederDepartureAt', 'connectionWindow', 'remainingConnectionWindow', 'risk', 'version']) {
     expect(afterBody[key]).toEqual(before[key]);
   }
-
-  const noReplay = await request.get(`/api/shipments/${other.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${owner.token}` } });
-  expect(noReplay.status()).toBe(200);
-  expect((await noReplay.json()).evidence).toBeNull();
+  const noReplayEnvelope = await request.get(`/api/shipments/${other.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${owner.token}` } });
+  expect(noReplayEnvelope.status()).toBe(200);
+  const noReplayBody = await noReplayEnvelope.json() as { readOnlyReplay: boolean; evidence: unknown };
+  expect(noReplayBody.readOnlyReplay).toBe(true);
+  expect(noReplayBody.evidence).toBeNull();
 
   const forbidden = await request.get(`/api/shipments/${kota.id}/cdg201-arrival-evidence`, { headers: { Authorization: `Bearer ${outsider.token}` } });
   expect(forbidden.status()).toBe(403);
@@ -107,8 +108,16 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   expect(unknown.status()).toBe(404);
   expect(await unknown.json()).toEqual({ message: 'Shipment not found' });
 
+  const storedBeforeOpen = {
+    states: sql('SELECT COUNT(*) FROM shipment_risk_states'),
+    transitions: sql('SELECT COUNT(*) FROM shipment_risk_transitions'),
+    deliveries: sql('SELECT COUNT(*) FROM shipment_risk_alert_deliveries'),
+  };
+
   await signIn(page, owner);
+  await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
   await page.getByRole('link', { name: `CDG201-KOTA-${suffix}` }).click();
+  await expect(page.getByText('Loading shipment...')).toHaveCount(0, { timeout: 20_000 });
   const panel = page.getByRole('article', { name: 'CDG-201 external arrival evidence' });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText('KOTA LARIS · IMO 9351048');
@@ -118,5 +127,45 @@ test('CDG-201 replay is authenticated, isolated, immutable, and visibly labelled
   await expect(panel).toContainText('PILOT EAST BOARD GRD A');
   await expect(panel).toContainText('Derived category (display-only): PILOT_GROUND');
   await expect(panel).toContainText('780 → 600 minutes');
+  await expect(panel).toContainText('Illustrative classification:');
   await expect(panel).toContainText('Not the production shipment risk.');
+  await expect(panel).toContainText('due_to_arrive_2026-10-28_20261026T151022Z.manifest.json');
+  await expect(panel).toContainText('due_to_arrive_2026-10-28_20261026T151022Z.json');
+  await expect(panel).toContainText('due_to_arrive_2026-10-29_20261026T154603Z.manifest.json');
+  await expect(panel).toContainText('due_to_arrive_2026-10-29_20261026T154603Z.json');
+  const revision = page.getByText('KOTA LARIS, IMO 9351048, has a recorded expected-arrival revision from 2026-10-28 23:00:00 to 2026-10-29 02:00:00, 180 minutes later. This recorded revision is not an actual arrival.');
+  await expect(revision).toBeVisible();
+  await expect(revision).not.toContainText('780');
+  await expect(revision).not.toContainText('booking');
+  await expect(revision).not.toContainText('manifest.json');
+  const risk = before.risk as { level: string; explanation: string } | null;
+  const riskLabel: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', CRITICAL: 'Critical' };
+  if (risk) {
+    await expect(page.getByText(`The connection risk to act on is the one already on this shipment: ${riskLabel[risk.level]}. ${risk.explanation}`)).toBeVisible();
+    await expect(page.getByRole('article', { name: `Shipment CDG201-KOTA-${suffix}` })).toContainText(risk.explanation);
+  } else {
+    await expect(page.getByText('The connection risk on this shipment is not assessed.')).toBeVisible();
+  }
+
+  await page.goto(owner.home);
+  await page.getByRole('link', { name: `CDG201-OTHER-${suffix}` }).click();
+  await expect(page.getByText('Loading shipment...')).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
+  await expect(page.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signIn(page, outsider);
+  const denied = page.waitForResponse(response => response.url().includes(`/api/shipments/${kota.id}`) && response.status() === 403);
+  await page.goto(`/freight-forwarder/shipments/${kota.id}`);
+  await denied;
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Recorded arrival change')).toHaveCount(0);
+  await expect(page.getByText(/recorded expected-arrival revision/)).toHaveCount(0);
+  await expect(page.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveCount(0);
+
+  const opened = await request.get(`/api/shipments/${kota.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+  expect((await opened.json() as Record<string, unknown>).risk).toEqual(before.risk);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_states')).toBe(storedBeforeOpen.states);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_transitions')).toBe(storedBeforeOpen.transitions);
+  expect(sql('SELECT COUNT(*) FROM shipment_risk_alert_deliveries')).toBe(storedBeforeOpen.deliveries);
 });

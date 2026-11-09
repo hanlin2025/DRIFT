@@ -50,6 +50,20 @@ describe('login and session roles', () => {
     }));
   });
 
+  it('loads the cookie session without sending a bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ ...account('LOGISTICS_MANAGER'), token: undefined }));
+    vi.stubGlobal('fetch', fetchMock);
+    const session = await loadSession('');
+    expect(session.token).toBe('');
+    expect(session.role).toBe('LOGISTICS_MANAGER');
+    expect(fetchMock).toHaveBeenCalledWith('/api/session', expect.objectContaining({
+      credentials: 'include',
+      headers: { 'X-DRIFT-Request': '1' },
+    }));
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.stringify(init.headers)).not.toContain('Bearer');
+  });
+
   it('rejects a session whose role is not one of the four account roles', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(account('PLANNER'))));
     await expect(loadSession('saved-token')).rejects.toMatchObject({ status: 502 });

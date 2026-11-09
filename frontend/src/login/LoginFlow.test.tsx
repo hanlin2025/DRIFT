@@ -52,6 +52,9 @@ describe('login and role routing', () => {
     expect(screen.getByText('Harbourline Logistics (Demo)')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(sessionStorage.getItem('drift.session')).not.toContain('Example123');
+    expect(sessionStorage.getItem('drift.session')).not.toContain('session-token');
+    expect(localStorage.getItem('drift.profile')).toContain('FREIGHT_FORWARDER');
+    expect(localStorage.getItem('drift.profile')).not.toContain('session-token');
   });
 
   it('opens user management for an administrator', async () => {

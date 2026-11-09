@@ -1,8 +1,8 @@
 export type ShipmentStatus = 'ACTIVE' | 'ARCHIVED';
 
 /**
- * '' keeps newest first. 'risk' puts Critical first with ties by the soonest feeder departure, and shipments that
- * are not assessed come last.
+ * '' keeps newest first. 'risk' puts Critical first; within a level, shipments predicted to exceed the importer's
+ * deadline come first, then the soonest feeder departure, and shipments that are not assessed come last.
  */
 export type ShipmentSortOption = '' | 'risk';
 
@@ -15,9 +15,11 @@ export type ShipmentFilters = {
   sort: string;
   /** 'true' keeps only High and Critical shipments; '' or 'false' shows every risk level. Other values are sent as-is. */
   atRisk: string;
+  /** 'true' keeps only shipments predicted to exceed the importer's deadline; '' or 'false' shows every shipment. */
+  exceedsDeadline: string;
 };
 
-export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate', 'status', 'sort', 'atRisk'] as const;
+export const SHIPMENT_FILTER_PARAMETERS = ['reference', 'vessel', 'customer', 'arrivalDate', 'status', 'sort', 'atRisk', 'exceedsDeadline'] as const;
 
 export const EMPTY_SHIPMENT_FILTERS: ShipmentFilters = {
   reference: '',
@@ -27,6 +29,7 @@ export const EMPTY_SHIPMENT_FILTERS: ShipmentFilters = {
 	 status: '',
   sort: '',
   atRisk: '',
+  exceedsDeadline: '',
 };
 
 export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFilters {
@@ -38,6 +41,7 @@ export function shipmentFiltersFromSearchParams(searchParams: URLSearchParams): 
 	 status: searchParams.get('status') ?? '',
     sort: searchParams.get('sort') ?? '',
     atRisk: searchParams.get('atRisk') ?? '',
+    exceedsDeadline: searchParams.get('exceedsDeadline') ?? '',
   };
 }
 
@@ -52,8 +56,8 @@ export function applyShipmentFilters(searchParams: URLSearchParams, filters: Shi
 	 setText(next, 'status', filters.status);
   setText(next, 'sort', filters.sort);
   // 'false' means no filter. Any other value is kept, so the API can reject an invalid one from a direct URL.
-  const atRisk = filters.atRisk.trim();
-  if (atRisk && atRisk !== 'false') next.set('atRisk', atRisk);
+  setFlag(next, 'atRisk', filters.atRisk);
+  setFlag(next, 'exceedsDeadline', filters.exceedsDeadline);
   return next;
 }
 
@@ -71,6 +75,11 @@ export function shipmentFilterSearchParams(filters: ShipmentFilters): URLSearchP
 
 export function hasShipmentFilters(filters: ShipmentFilters): boolean {
   return shipmentFilterSearchParams(filters).size > 0;
+}
+
+function setFlag(searchParams: URLSearchParams, parameter: string, value: string) {
+  const normalized = value.trim();
+  if (normalized && normalized !== 'false') searchParams.set(parameter, normalized);
 }
 
 function setText(searchParams: URLSearchParams, parameter: string, value: string) {

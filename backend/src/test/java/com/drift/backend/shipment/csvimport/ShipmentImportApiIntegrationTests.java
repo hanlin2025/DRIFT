@@ -64,8 +64,34 @@ class ShipmentImportApiIntegrationTests {
 	}
 
 	private void cleanupTestData() {
-		jdbc.update("DELETE FROM shipment_import_job_errors");
-		jdbc.update("DELETE FROM shipment_import_jobs");
+		jdbc.update("""
+				DELETE FROM shipment_import_job_errors
+				WHERE shipment_import_job_id IN (
+					SELECT job.id FROM shipment_import_jobs job
+					JOIN users requester ON requester.id = job.requested_by_user_id
+					WHERE requester.email LIKE 'cdg126-%'
+				)
+				""");
+		jdbc.update("""
+				DELETE FROM shipment_import_jobs
+				WHERE requested_by_user_id IN (SELECT id FROM users WHERE email LIKE 'cdg126-%')
+				""");
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.shipment_reference LIKE 'HBL-CDG126-%'
+				)
+				""");
+		jdbc.update("""
+				DELETE FROM shipment_risk_transitions
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE 'HBL-CDG126-%')
+				""");
+		jdbc.update("""
+				DELETE FROM shipment_risk_states
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE 'HBL-CDG126-%')
+				""");
 		jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE 'HBL-CDG126-%'");
 		jdbc.update("""
 				DELETE FROM forwarder_importer_relationships
@@ -95,7 +121,15 @@ class ShipmentImportApiIntegrationTests {
 				JOIN shipments shipment ON shipment.id = state.shipment_id
 				WHERE shipment.shipment_reference LIKE 'HBL-CDG126-%'
 					AND state.baseline_mode = 'ALERTABLE_FIRST_VALID'
-					AND state.last_risk_level IS NULL
+					AND state.last_risk_level IS NOT NULL
+					AND state.last_explanation IS NOT NULL
+					AND state.evaluated_at IS NOT NULL
+				""", Integer.class)).isEqualTo(2);
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM shipment_risk_transitions transition
+				JOIN shipments shipment ON shipment.id = transition.shipment_id
+				WHERE shipment.shipment_reference LIKE 'HBL-CDG126-%'
+					AND transition.transition_type = 'INITIAL'
 				""", Integer.class)).isEqualTo(2);
 		assertThat(jdbc.queryForObject("SELECT source_csv IS NULL FROM shipment_import_jobs WHERE id = ?", Boolean.class, jobId))
 				.isTrue();
