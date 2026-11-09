@@ -131,11 +131,17 @@ class MaritimeAiScenarioTransientTest {
 		};
 		var service = service(new ObjectMapper(), stub, mock(MaritimeAiAssessmentRepository.class));
 
-		MaritimeAiAssessmentResponse baseline = service.generateScenarioTransient(
-				scenarioInput(fixture, "A", "BASELINE", List.of(), ShipmentRisk.Level.LOW,
-						DelayComparison.Outcome.NO_PREDICTED_IMPACT), true);
-		assertThat(baseline.state()).isEqualTo("ABSTAINED");
-		assertThat(baseline.validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
+		for (String key : List.of("A", "B")) {
+			MaritimeAiEvidencePackage baselineInput = scenarioInput(fixture, key, "BASELINE", List.of(),
+					ShipmentRisk.Level.LOW, DelayComparison.Outcome.NO_PREDICTED_IMPACT);
+			assertThat(baselineInput.shipmentContext().connectionRisk().remainingWindow().remainingSeconds()).isEqualTo(108_000L);
+			assertThat(baselineInput.shipmentContext().businessContext().comparison().outcome())
+					.isEqualTo(DelayComparison.Outcome.NO_PREDICTED_IMPACT);
+			MaritimeAiAssessmentResponse baseline = service.generateScenarioTransient(baselineInput, true);
+			assertThat(baseline.state()).isEqualTo("ABSTAINED");
+			assertThat(baseline.validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
+			assertThat(baseline.interpretation()).isNull();
+		}
 		assertThat(calls).hasValue(0);
 
 		var changeEvidence = MaritimeAiAssessmentService.eligibleForInference(change.evidence());
@@ -249,14 +255,18 @@ class MaritimeAiScenarioTransientTest {
 			DelayComparison.Outcome outcome) {
 		Instant cutoff = Instant.parse(stage.equals("BASELINE") ? "2026-10-01T00:00:00Z"
 				: stage.equals("CHANGE") ? "2026-10-01T04:00:00Z" : "2026-10-01T08:00:00Z");
+		long remainingSeconds = stage.equals("BASELINE") ? 108_000L
+				: stage.equals("CHANGE") ? 72_000L : 14_400L;
 		var riskContext = new MaritimeAiConnectionRiskContext(true, null, risk,
 				MaritimeAiConnectionRiskContext.RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE,
 				new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 108_000L),
-				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", 14_400L, null),
+				new MaritimeAiConnectionRiskContext.RemainingWindow("AVAILABLE", remainingSeconds, null),
 				new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.AVAILABLE,
-						OffsetDateTime.parse(stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z"), cutoff, null), List.of());
+						OffsetDateTime.parse(stage.equals("BASELINE") ? "2026-10-01T06:00:00Z"
+								: stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z"), cutoff, null), List.of());
 		OffsetDateTime deadline = OffsetDateTime.parse(key.equals("A") ? "2026-10-01T12:00:00Z" : "2026-10-02T10:00:00Z");
-		OffsetDateTime estimate = OffsetDateTime.parse(stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z");
+		OffsetDateTime estimate = OffsetDateTime.parse(stage.equals("BASELINE") ? "2026-10-01T06:00:00Z"
+				: stage.equals("CHANGE") ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z");
 		var business = new MaritimeAiBusinessContext(
 				new MaritimeAiBusinessContext.Deadline(MaritimeAiBusinessContext.DeadlineState.RECORDED, deadline,
 						fixture.transshipmentPort(), true),

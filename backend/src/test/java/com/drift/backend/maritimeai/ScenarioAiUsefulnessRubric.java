@@ -8,6 +8,7 @@ final class ScenarioAiUsefulnessRubric {
 
 	static Score evaluate(MaritimeAiInterpretation authored, MaritimeAiEvidencePackage input) {
 		if (authored == null || input == null || input.shipmentContext() == null
+				|| input.shipmentContext().scenario() == null
 				|| input.shipmentContext().businessContext() == null
 				|| input.shipmentContext().businessContext().comparison() == null
 				|| authored.claims() == null || authored.followUpConsiderations() == null)
@@ -26,7 +27,8 @@ final class ScenarioAiUsefulnessRubric {
 					&& eligibleEvidenceIds.containsAll(evidenceIds);
 			boolean evidenceReferences = eligibleCitation && factReferences != null
 					&& factReferences.contains("evidence:" + evidenceIds.getFirst());
-			groundedOutcome = ScenarioMaritimeAiProse.matchesDeadline(business.statement(), comparison.outcome())
+			groundedOutcome = ScenarioMaritimeAiProse.matchesDeadline(business.statement(),
+					input.shipmentContext().scenario().shipmentKey(), comparison)
 					&& evidenceReferences
 					&& factReferences.containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
 		}

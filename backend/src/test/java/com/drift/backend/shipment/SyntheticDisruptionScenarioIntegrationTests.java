@@ -916,7 +916,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(assessment.path("provider").asText()).isEqualTo("offline-scenario-quality-stub");
 		assertThat(assessment.path("model").asText()).isEqualTo("deterministic-fixture");
 		assertThat(assessment.path("promptVersion").asText())
-				.isEqualTo("cdg290.scenario-grounded-v1.6");
+				.isEqualTo("cdg290.scenario-grounded-v1.7");
 		JsonNode claims = assessment.at("/interpretation/claims");
 		JsonNode riskClaim = claimWithRelationship(claims, "RISK_BUFFER_REVIEW");
 		JsonNode businessClaim = claimWithRelationship(claims, "DELAY_COMPARISON_REVIEW");
@@ -942,9 +942,15 @@ class SyntheticDisruptionScenarioIntegrationTests {
 
 		String expectedOutcome = shipmentIndex == 0 ? expected.impactA() : expected.impactB();
 		String businessStatement = businessClaim.path("statement").asText().toLowerCase();
+		String deadline = key.equals("A") ? "2026-10-01T12:00:00Z" : "2026-10-02T10:00:00Z";
+		long marginHours = Math.abs(java.time.Duration.between(java.time.Instant.parse(deadline),
+				java.time.Instant.parse(expected.eta())).toHours());
+		assertThat(businessStatement).contains("shipment " + key, marginHours + " hours");
 		if ("EXCEEDS_DEADLINE".equals(expectedOutcome))
-			assertThat(businessStatement).contains("predicted arrival exceeds");
-		else assertThat(businessStatement).contains("no predicted impact");
+			assertThat(businessStatement).contains("predicted arrival exceeds the applicable transshipment-arrival deadline by "
+					+ marginHours + " hours");
+		else assertThat(businessStatement).contains("predicted arrival is " + marginHours
+				+ " hours before the applicable transshipment-arrival deadline");
 		assertThat(businessStatement).contains("synthetic", "expected-arrival revision", "transshipment-arrival deadline", "applicable");
 		List<String> businessReferences = strings(businessClaim.path("factReferences"));
 		assertThat(businessReferences).contains("evidence:cdg279-v1-revision-1", "business:TRANSSHIPMENT_ARRIVAL_DEADLINE",
@@ -974,10 +980,12 @@ class SyntheticDisruptionScenarioIntegrationTests {
 					.doesNotContain("deadline", "exceeds_deadline", "no predicted impact");
 		}
 
-		// Both rubric points are earned by the generated AI output: exact grounded business outcome and human verification.
+		// Both rubric points come from the authored claim: shipment-specific backend margin and human verification.
 		int usefulnessScore = 0;
-		if (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds")
-				|| "NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("no predicted impact"))
+		if (businessStatement.contains("shipment " + key)
+				&& businessStatement.contains(marginHours + " hours")
+				&& (("EXCEEDS_DEADLINE".equals(expectedOutcome) && businessStatement.contains("predicted arrival exceeds")
+				|| "NO_PREDICTED_IMPACT".equals(expectedOutcome) && businessStatement.contains("predicted arrival is " + marginHours + " hours before")))
 				&& businessReferences.contains("comparison:DELAY_OUTCOME")
 				&& businessReferences.contains("business:TRANSSHIPMENT_ARRIVAL_DEADLINE_APPLICABILITY")) usefulnessScore++;
 		if (followUps.stream().anyMatch(text -> text.contains("carrier operations team") && text.contains("verify") && text.contains("arrival estimate"))
