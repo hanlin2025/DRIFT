@@ -4,7 +4,8 @@ import java.util.List;
 
 /**
  * Shared two-point usefulness rubric: a cited AI-authored deadline direction that matches the typed
- * comparison, plus two concrete human checks. The backend facts panel owns and displays the numeric margin.
+ * comparison, plus two concrete human checks. The backend facts panel owns the comparison and displays
+ * the outcome and the estimate/deadline timestamps used to derive its numeric margin.
  */
 final class ScenarioAiUsefulnessRubric {
 	private ScenarioAiUsefulnessRubric() { }

@@ -87,13 +87,16 @@ final class ScenarioMaritimeAiProse {
 				relevance.add("The synthetic " + noun + " " + verb
 						+ " the arrival estimate against the recorded " + target + ".");
 		List<String> result = new ArrayList<>();
-		for (String comparisonVerb : COMPARISON_VERBS) for (String outcomeClause : outcomes)
-			for (String shipmentQualifier : List.of("for Shipment " + shipmentKey + " ", "")) {
-			String outcomeSentence = "The backend comparison " + shipmentQualifier + comparisonVerb + " "
-					+ outcomeClause + ".";
-			for (String relevanceSentence : relevance) {
-				result.add(relevanceSentence + " " + outcomeSentence);
-				result.add(outcomeSentence + " " + relevanceSentence);
+		for (String comparisonVerb : COMPARISON_VERBS) {
+			for (String outcomeClause : outcomes) {
+				for (String shipmentQualifier : List.of("for Shipment " + shipmentKey + " ", "")) {
+					String outcomeSentence = "The backend comparison " + shipmentQualifier + comparisonVerb + " "
+							+ outcomeClause + ".";
+					for (String relevanceSentence : relevance) {
+						result.add(relevanceSentence + " " + outcomeSentence);
+						result.add(outcomeSentence + " " + relevanceSentence);
+					}
+				}
 			}
 		}
 		return List.copyOf(result);
