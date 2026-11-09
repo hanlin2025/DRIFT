@@ -70,7 +70,7 @@ class RecommendationDecisionHistoryBackfillTest {
 						.filter(row -> row.actorId == seed.adaId)
 						.map(row -> row.actorName))
 						.containsOnly("Ada Lee");
-				assertThat(versions(connection)).endsWith("31", "32", "33", "34", "35");
+				assertThat(versions(connection)).endsWith("31", "32", "33", "34", "35", "36");
 				assertThat(monotonic(versions(connection))).isTrue();
 			}
 		} finally {

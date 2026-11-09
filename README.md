@@ -208,6 +208,7 @@ A new installation does not have an administrator until an operator creates one.
 http://localhost:5173/setup. The credential is not stored in the repository or the browser.
 After that one administrator exists, setup refuses a second account. Colleagues still join
 by invitation. See [first administrator setup](docs/first-administrator.md).
+An administrator then invites a colleague from User management. See [administrator invitations](docs/admin-invitation.md).
 
 ## Frontend
 

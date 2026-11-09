@@ -4,6 +4,7 @@ import { loadSession } from '../login/api';
 import { clearSession, endSession, homePath, isExpired, readSession, sessionHasEnded, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { InviteColleague } from './InviteColleague';
 import { ReactivateUser } from './ReactivateUser';
 import { RemoveUser } from './RemoveUser';
 
@@ -216,6 +217,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </div>
           </form>
         ) : null}
+        {users !== null ? <InviteColleague token={account.token} organisations={organisations} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
         {users !== null ? <RemovalHistory removals={removals} /> : null}
       </main>

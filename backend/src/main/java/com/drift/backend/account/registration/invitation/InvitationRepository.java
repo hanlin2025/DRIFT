@@ -13,4 +13,11 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select i from Invitation i where i.tokenHash = :tokenHash")
 	Optional<Invitation> findForRegistration(@Param("tokenHash") String tokenHash);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+			select invitation from Invitation invitation
+			where invitation.email = :email and invitation.status = com.drift.backend.account.registration.invitation.InvitationStatus.PENDING
+			""")
+	Optional<Invitation> findPendingForUpdate(@Param("email") String email);
 }
