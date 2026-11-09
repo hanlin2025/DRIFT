@@ -1,6 +1,7 @@
 package com.drift.backend.account.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -170,6 +171,86 @@ class AdminInvitationIntegrationTests {
 	}
 
 	@Test
+	void anAdministratorSeesOnlyPendingInvitationsForTheirOrganisation() throws Exception {
+		String visibleCode = "visible-invitation-code-should-stay-hidden";
+		String expiredCode = "expired-invitation-code-should-stay-hidden";
+		String consumedCode = "consumed-invitation-code-should-stay-hidden";
+		String foreignCode = "foreign-invitation-code-should-stay-hidden";
+		String visible = "cdg310-visible-" + UUID.randomUUID() + "@example.com";
+		String expired = "cdg310-expired-" + UUID.randomUUID() + "@example.com";
+		String consumed = "cdg310-consumed-" + UUID.randomUUID() + "@example.com";
+		String foreign = "cdg310-foreign-" + UUID.randomUUID() + "@example.com";
+		insertInvitation(visible, harbourline, "LOGISTICS_MANAGER", hash(visibleCode), "PENDING", "2 days", false);
+		insertInvitation(expired, harbourline, "IMPORTER", hash(expiredCode), "PENDING", "-1 hour", false);
+		insertInvitation(consumed, harbourline, "FREIGHT_FORWARDER", hash(consumedCode), "CONSUMED", "2 days", true);
+		insertInvitation(foreign, straits, "IMPORTER", hash(foreignCode), "PENDING", "2 days", false);
+
+		MvcResult listed = mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.email == '" + expired + "')].role").value(org.hamcrest.Matchers.contains("IMPORTER")))
+				.andExpect(jsonPath("$[?(@.email == '" + expired + "')].organisation.code").value(org.hamcrest.Matchers.contains("HARBOURLINE_DEMO")))
+				.andExpect(jsonPath("$[?(@.email == '" + expired + "')].expiresAt").isNotEmpty())
+				.andExpect(jsonPath("$[?(@.email == '" + expired + "')].expired").value(org.hamcrest.Matchers.contains(true)))
+				.andExpect(jsonPath("$[?(@.email == '" + visible + "')].role").value(org.hamcrest.Matchers.contains("LOGISTICS_MANAGER")))
+				.andExpect(jsonPath("$[?(@.email == '" + visible + "')].organisation.name").value(org.hamcrest.Matchers.contains("Harbourline Logistics (Demo)")))
+				.andExpect(jsonPath("$[?(@.email == '" + visible + "')].expired").value(org.hamcrest.Matchers.contains(false)))
+				.andExpect(jsonPath("$[?(@.email == '" + consumed + "')]").isEmpty())
+				.andExpect(jsonPath("$[?(@.email == '" + foreign + "')]").isEmpty())
+				.andReturn();
+		String body = listed.getResponse().getContentAsString();
+		assertThat(body).doesNotContain(visibleCode, expiredCode, consumedCode, foreignCode);
+		assertThat(body).doesNotContain(consumed, foreign);
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, visible)).isEqualTo("PENDING");
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, expired)).isEqualTo("PENDING");
+
+		String otherAdmin = "cdg310-other-" + UUID.randomUUID() + "@example.com";
+		insertUser(otherAdmin, "ADMIN", straits);
+		mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(otherAdmin)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.email == '" + foreign + "')].organisation.code").value(org.hamcrest.Matchers.contains("STRAITS_FRESH_DEMO")))
+				.andExpect(jsonPath("$[?(@.email == '" + visible + "')]").isEmpty())
+				.andExpect(jsonPath("$[?(@.email == '" + expired + "')]").isEmpty());
+	}
+
+	@Test
+	void anEmptyInvitationListIsNotAnError() throws Exception {
+		String code = "CDG334" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+		Long isolated = jdbc.queryForObject("INSERT INTO companies (code, name, active) VALUES (?, 'Isolated Organisation', TRUE) RETURNING id",
+				Long.class, code);
+		jdbc.update("UPDATE users SET company_id = ? WHERE email = ?", isolated, adminEmail);
+		try {
+			mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail)))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.length()").value(0));
+		} finally {
+			jdbc.update("UPDATE users SET company_id = ? WHERE email = ?", harbourline, adminEmail);
+			jdbc.update("DELETE FROM companies WHERE id = ?", isolated);
+		}
+	}
+
+	@Test
+	void callersWhoCannotSendCannotListInvitations() throws Exception {
+		String pending = "cdg310-listed-" + UUID.randomUUID() + "@example.com";
+		insertInvitation(pending, harbourline, "IMPORTER", "b".repeat(64), "PENDING", "1 day", false);
+		String forwarder = "cdg310-forwarder-" + UUID.randomUUID() + "@example.com";
+		insertUser(forwarder, "FREIGHT_FORWARDER", harbourline);
+		mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(forwarder)))
+				.andExpect(status().isForbidden());
+		mvc.perform(get("/api/admin/invitations"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("Your session has ended. Log in again."));
+		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", harbourline);
+		try {
+			mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail)))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.message").value(InvitationManagementForbiddenException.MESSAGE));
+		} finally {
+			jdbc.update("UPDATE companies SET active = TRUE WHERE id = ?", harbourline);
+		}
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE email = ?", String.class, pending)).isEqualTo("PENDING");
+	}
+
+	@Test
 	void anInactiveOrganisationCannotSend() throws Exception {
 		jdbc.update("UPDATE companies SET active = FALSE WHERE id = ?", harbourline);
 		try {
@@ -214,6 +295,21 @@ class AdminInvitationIntegrationTests {
 		return """
 				{"fullName":"Guest User","email":"%s","password":"Example123","invitationToken":"%s"}
 				""".formatted(guestEmail, code);
+	}
+
+	private void insertInvitation(String email, Long companyId, String role, String tokenHash, String status, String expiry,
+			boolean consumed) {
+		if (consumed) {
+			jdbc.update("""
+					INSERT INTO invitations (email, company_id, role, token_hash, expires_at, status, consumed_at)
+					VALUES (?, ?, ?, ?, NOW() + CAST(? AS interval), 'CONSUMED', NOW())
+					""", email, companyId, role, tokenHash, expiry);
+			return;
+		}
+		jdbc.update("""
+				INSERT INTO invitations (email, company_id, role, token_hash, expires_at, status)
+				VALUES (?, ?, ?, ?, NOW() + CAST(? AS interval), ?)
+				""", email, companyId, role, tokenHash, expiry, status);
 	}
 
 	private static String hash(String code) {

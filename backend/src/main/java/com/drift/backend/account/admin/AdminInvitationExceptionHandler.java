@@ -27,6 +27,11 @@ public class AdminInvitationExceptionHandler {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
 	}
 
+	@ExceptionHandler(InvitationManagementForbiddenException.class)
+	public ResponseEntity<Map<String, String>> cannotManage(InvitationManagementForbiddenException ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+	}
+
 	@ExceptionHandler(NoEligibleOrganisationException.class)
 	public ResponseEntity<Map<String, String>> noOrganisation(NoEligibleOrganisationException ex) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
