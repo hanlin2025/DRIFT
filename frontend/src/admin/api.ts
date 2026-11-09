@@ -199,7 +199,39 @@ export async function listAccountStatusAudits(token: string): Promise<AccountSta
   });
 }
 
+export type ManagedInvitation = {
+  id: number;
+  email: string;
+  role: Role;
+  organisation: AdminOrganisation;
+  expiresAt: string;
+  expired: boolean;
+};
 export type IssuedInvitation = { email: string; role: Role; organisation: AdminOrganisation; expiresAt: string };
+
+const INVITATION_SECRET_KEYS = ['token', 'code', 'tokenHash', 'password', 'invitationToken'];
+
+export async function listPendingInvitations(token: string): Promise<ManagedInvitation[]> {
+  const data = await send('/api/admin/invitations', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(item => {
+    if (!isRecord(item) || typeof item.id !== 'number' || typeof item.email !== 'string' || !isRole(item.role)
+      || typeof item.expiresAt !== 'string' || typeof item.expired !== 'boolean'
+      || INVITATION_SECRET_KEYS.some(key => key in item)) {
+      throw new ApiError(UNEXPECTED, 502);
+    }
+    const organisation = organisationOf(item.organisation);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return {
+      id: item.id,
+      email: item.email,
+      role: item.role,
+      organisation,
+      expiresAt: item.expiresAt,
+      expired: item.expired,
+    };
+  });
+}
 
 export async function inviteColleague(token: string, organisationId: number, role: Role, email: string): Promise<IssuedInvitation> {
   const data = await send('/api/admin/invitations', token, {
