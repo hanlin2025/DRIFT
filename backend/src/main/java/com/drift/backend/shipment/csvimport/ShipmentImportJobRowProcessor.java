@@ -32,6 +32,9 @@ public class ShipmentImportJobRowProcessor {
 			shipments.create(context.managingCompanyId(), context.requestedByUserId(), row,
 					importer.importerCompany() == null ? null : importer.importerCompany().getId());
 			jobs.recordImportedRow(jobId);
+		} catch (ImporterAuthorisationRevokedException exception) {
+			jobs.recordFailedRow(jobId, new ShipmentImportRowError(row.rowNumber(), ShipmentImportCsvContract.IMPORTER_ORGANISATION,
+					"UNAUTHORIZED_IMPORTER_ORGANISATION", ImporterOrganisationAuthorizer.UNAUTHORIZED_MESSAGE));
 		} catch (DuplicateShipmentReferenceException exception) {
 			jobs.recordFailedRow(jobId, new ShipmentImportRowError(row.rowNumber(), ShipmentImportCsvContract.TRACKING_BL_NUMBER,
 					"DUPLICATE_REFERENCE_IN_DATABASE",

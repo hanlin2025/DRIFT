@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import com.drift.backend.account.Role;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
+import com.drift.backend.importerauthorisation.ImporterAuthorisationForbiddenException;
 import com.drift.backend.organisation.exception.OrganisationAccessForbiddenException;
 import com.drift.backend.shipment.csvimport.BulkImportForbiddenException;
 import com.drift.backend.shipment.exception.ShipmentAccessForbiddenException;
@@ -55,6 +56,26 @@ class RolePermissionMatrixTest {
 			assertThat(RolePermissionMatrix.denial(role, false, "PATCH", "/api/shipments/12/transshipment-arrival-deadline"))
 					.contains(ShipmentAccessForbiddenException.MESSAGE);
 		}
+	}
+
+	@Test
+	void limitsImporterAuthorisationsToTheForwarderCompany() {
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, true, "POST", "/api/importer-authorisations")).isEmpty();
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, true, "POST", "/api/importer-authorisations/4/end")).isEmpty();
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, true, "GET", "/api/importer-authorisations")).isEmpty();
+		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, true, "GET", "/api/importer-authorisations")).isEmpty();
+		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, true, "POST", "/api/importer-authorisations"))
+				.contains(ImporterAuthorisationForbiddenException.CHANGE);
+		assertThat(RolePermissionMatrix.denial(Role.FREIGHT_FORWARDER, true, "POST", "/api/importer-authorisations/4/end"))
+				.contains(ImporterAuthorisationForbiddenException.CHANGE);
+		assertThat(RolePermissionMatrix.denial(Role.IMPORTER, true, "GET", "/api/importer-authorisations"))
+				.contains(ImporterAuthorisationForbiddenException.VIEW);
+		assertThat(RolePermissionMatrix.denial(Role.LOGISTICS_MANAGER, true, "POST", "/api/importer-authorisations"))
+				.contains(ImporterAuthorisationForbiddenException.CHANGE);
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, false, "GET", "/api/importer-authorisations"))
+				.contains(ImporterAuthorisationForbiddenException.ACTIVE_COMPANY);
+		assertThat(RolePermissionMatrix.denial(Role.ADMIN, true, "POST", "/api/shipments/import"))
+				.contains(BulkImportForbiddenException.ADMIN_DEFERRED);
 	}
 
 	@Test

@@ -189,6 +189,7 @@ class ArrivalComparisonCoverageIntegrationTests {
 		observe("Shared", new BigDecimal("0.5"), RECEIVED);
 		Long shipmentId = create(owner, "Shared", RECEIVED.minus(Duration.ofHours(2)));
 
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
 		MvcResult linked = mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + owner)
 				.contentType(MediaType.APPLICATION_JSON)

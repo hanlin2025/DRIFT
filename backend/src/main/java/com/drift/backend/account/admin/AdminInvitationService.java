@@ -24,6 +24,7 @@ import com.drift.backend.account.exception.DuplicateAccountException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.account.registration.invitation.Invitation;
 import com.drift.backend.account.registration.invitation.InvitationRepository;
+import com.drift.backend.account.registration.invitation.InvitationStatus;
 import com.drift.backend.account.registration.invitation.InvitationToken;
 import com.drift.backend.company.Company;
 
@@ -32,26 +33,29 @@ public class AdminInvitationService {
 
 	static final Set<Role> INVITABLE = EnumSet.of(Role.IMPORTER, Role.FREIGHT_FORWARDER, Role.LOGISTICS_MANAGER);
 	private static final String PENDING_INDEX = "invitations_one_pending_email";
+	private static final String REVOCATION_CONSTRAINT = "invitation_revocations_one_per_invitation";
 	private static final Logger log = LoggerFactory.getLogger(AdminInvitationService.class);
 
 	private final UserAccountRepository users;
 	private final InvitationRepository invitations;
+	private final InvitationRevocationRepository revocations;
 	private final InvitationMailer mailer;
 	private final Clock clock;
 	private final String linkBaseUrl;
 	private final Duration ttl;
 
 	@Autowired
-	public AdminInvitationService(UserAccountRepository users, InvitationRepository invitations, InvitationMailer mailer,
-			ObjectProvider<Clock> clocks, @Value("${app.invitation.link-base-url}") String linkBaseUrl,
-			@Value("${app.invitation.ttl}") Duration ttl) {
-		this(users, invitations, mailer, clocks.getIfAvailable(Clock::systemUTC), linkBaseUrl, ttl);
+	public AdminInvitationService(UserAccountRepository users, InvitationRepository invitations,
+			InvitationRevocationRepository revocations, InvitationMailer mailer, ObjectProvider<Clock> clocks,
+			@Value("${app.invitation.link-base-url}") String linkBaseUrl, @Value("${app.invitation.ttl}") Duration ttl) {
+		this(users, invitations, revocations, mailer, clocks.getIfAvailable(Clock::systemUTC), linkBaseUrl, ttl);
 	}
 
-	AdminInvitationService(UserAccountRepository users, InvitationRepository invitations, InvitationMailer mailer, Clock clock,
-			String linkBaseUrl, Duration ttl) {
+	AdminInvitationService(UserAccountRepository users, InvitationRepository invitations,
+			InvitationRevocationRepository revocations, InvitationMailer mailer, Clock clock, String linkBaseUrl, Duration ttl) {
 		this.users = users;
 		this.invitations = invitations;
+		this.revocations = revocations;
 		this.mailer = mailer;
 		this.clock = clock;
 		this.linkBaseUrl = linkBaseUrl;
@@ -65,6 +69,37 @@ public class AdminInvitationService {
 		return invitations.findPendingByCompany(admin.getCompany().getId()).stream()
 				.map(invitation -> ManagedInvitationResponse.from(invitation, now))
 				.toList();
+	}
+
+	@Transactional
+	public WithdrawnInvitationResponse withdraw(com.drift.backend.account.authentication.AuthenticatedUser principal,
+			Long invitationId) {
+		UserAccount admin = managingAdmin(principal);
+		Invitation invitation = invitations.findForWithdrawal(invitationId).orElseThrow(InvitationAccessDeniedException::new);
+		if (invitation.getCompany() == null || !admin.getCompany().getId().equals(invitation.getCompany().getId())) {
+			throw new InvitationAccessDeniedException();
+		}
+		if (invitation.getStatus() == InvitationStatus.REVOKED) {
+			throw new InvitationAlreadyWithdrawnException();
+		}
+		if (invitation.getStatus() == InvitationStatus.CONSUMED) {
+			throw new InvitationAlreadyAcceptedException();
+		}
+		Instant now = clock.instant();
+		if (!invitation.getExpiresAt().isAfter(now)) {
+			throw new InvitationExpiredException();
+		}
+		invitation.revoke();
+		invitations.saveAndFlush(invitation);
+		try {
+			revocations.saveAndFlush(new InvitationRevocation(invitation, admin, admin.getCompany(), now));
+		} catch (DataIntegrityViolationException ex) {
+			if (mentions(ex, REVOCATION_CONSTRAINT)) {
+				throw new InvitationAlreadyWithdrawnException();
+			}
+			throw ex;
+		}
+		return WithdrawnInvitationResponse.from(invitation, now);
 	}
 
 	@Transactional

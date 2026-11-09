@@ -155,6 +155,13 @@ async function createShipment(request: APIRequestContext, token: string): Promis
 }
 
 async function linkShipment(request: APIRequestContext, token: string, shipmentId: number, importerCompanyId: number) {
+  sql(`INSERT INTO forwarder_importer_relationships
+      (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+    SELECT shipment.company_id, ${importerCompanyId}, TRUE, NOW(), actor.id, NOW(), actor.id
+    FROM shipments shipment JOIN users actor ON actor.company_id = shipment.company_id
+    WHERE shipment.id = ${shipmentId} ORDER BY actor.id LIMIT 1
+    ON CONFLICT (forwarder_company_id, importer_company_id)
+    DO UPDATE SET active = TRUE, updated_at = NOW(), updated_by_user_id = EXCLUDED.updated_by_user_id;`);
   const response = await request.patch(`/api/shipments/${shipmentId}/link-importer`, {
     headers: bearer(token),
     data: { importerCompanyId },

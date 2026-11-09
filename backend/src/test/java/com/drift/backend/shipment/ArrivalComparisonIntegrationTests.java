@@ -117,6 +117,7 @@ class ArrivalComparisonIntegrationTests {
 
 	@Test
 	void linkedImporterReceivesTheSameComparison() throws Exception {
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, availableShipmentId, importerCompanyId);
 		MvcResult linked = mvc.perform(patch("/api/shipments/" + availableShipmentId + "/link-importer")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)

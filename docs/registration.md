@@ -30,7 +30,8 @@ provision invitations in a deployed system and deliver links to the intended rec
 
 No fixed invitation tokens or account passwords are checked into the repository.
 Only SHA-256 token hashes are stored. Invalid, expired, revoked, consumed invitations and
-inactive companies are rejected. Creating a user and consuming the locked invitation occur
+inactive companies are rejected. A revoked invitation tells the visitor that it is no longer
+valid, and does not say whether an account exists. Creating a user and consuming the locked invitation occur
 in one database transaction. An unsuccessful registration does not consume the invitation.
 
 ## API
