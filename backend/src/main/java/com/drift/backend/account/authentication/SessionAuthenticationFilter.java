@@ -20,7 +20,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
 
-	static final String BEARER = "Bearer ";
+	public static final String BEARER = "Bearer ";
 
 	private final JwtSessionTokens tokens;
 	private final UserAccountRepository users;
@@ -33,13 +33,14 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
-		String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-		if (header == null || !header.startsWith(BEARER)) {
+		String token = bearer(request);
+		if (token == null) token = cookie(request);
+		if (token == null) {
 			chain.doFilter(request, response);
 			return;
 		}
 		try {
-			AuthenticatedUser user = tokens.parse(header.substring(BEARER.length()).trim());
+			AuthenticatedUser user = tokens.parse(token);
 			long generation = users.findSessionGenerationById(user.id()).orElseThrow(SessionEndedException::new);
 			if (generation != user.sessionGeneration()) {
 				throw new SessionEndedException();
@@ -52,6 +53,23 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 			SecurityContextHolder.clearContext();
 			unauthorized(response, ex.getMessage());
 		}
+	}
+
+	private static String bearer(HttpServletRequest request) {
+		String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+		if (header == null || !header.startsWith(BEARER)) return null;
+		String token = header.substring(BEARER.length()).trim();
+		return token.isEmpty() ? null : token;
+	}
+
+	private static String cookie(HttpServletRequest request) {
+		if (request.getCookies() == null) return null;
+		for (var cookie : request.getCookies()) {
+			if (SessionCookie.NAME.equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+				return cookie.getValue();
+			}
+		}
+		return null;
 	}
 
 	public static void unauthorized(HttpServletResponse response, String message) throws IOException {

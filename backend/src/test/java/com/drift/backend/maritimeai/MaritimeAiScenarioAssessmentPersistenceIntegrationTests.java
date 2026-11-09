@@ -1,0 +1,446 @@
+package com.drift.backend.maritimeai;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.drift.backend.account.authentication.AuthenticatedUser;
+import com.drift.backend.maritimecontext.MaritimeContextService;
+import com.drift.backend.maritimecontext.MaritimeEvidence;
+import com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture;
+import com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture.Scenario;
+import com.drift.backend.shipment.ControlledScenarioProperties;
+import com.jayway.jsonpath.JsonPath;
+
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+/** Authenticated persistence and exact-context retrieval through PostgreSQL with a local-only client stub. */
+@SpringBootTest(properties = {
+		"spring.datasource.url=${DRIFT_CDG289_JDBC_URL}",
+		"spring.datasource.username=${DRIFT_CDG289_DB_USERNAME}",
+		"spring.datasource.password=${DRIFT_CDG289_DB_PASSWORD}",
+		"spring.flyway.url=${DRIFT_CDG289_JDBC_URL}",
+		"spring.flyway.user=${DRIFT_CDG289_DB_USERNAME}",
+		"spring.flyway.password=${DRIFT_CDG289_DB_PASSWORD}",
+		"spring.flyway.out-of-order=false",
+		"drift.startup-guard.expected-url=${DRIFT_CDG289_JDBC_URL}",
+		"drift.startup-guard.ownership-token=${DRIFT_CDG289_OWNERSHIP_TOKEN}",
+		"app.ais.enabled=false",
+		"app.risk-alerts.activation.command=false",
+		"app.risk-alerts.evaluation.enabled=false",
+		"app.risk-alerts.mail.enabled=false",
+		"app.risk-alerts.mail.dispatch-enabled=false",
+		"app.maritime-ai.enabled=true",
+		"app.maritime-ai.scenario-enabled=true",
+		"app.maritime-ai.external-requests-approved=false",
+		"app.maritime-ai.provider=",
+		"app.maritime-ai.model=",
+		"app.maritime-ai.endpoint=",
+		"app.maritime-ai.api-key=",
+		"app.maritime-context.demo-enabled=false",
+		"app.controlled-scenario.enabled=false",
+		"app.controlled-scenario.session-ttl=PT1M",
+		"app.jwt.expiration-ms=604800000"
+})
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@ContextConfiguration(initializers = Cdg289ScenarioAssessmentDatabaseGuard.class)
+@Import(MaritimeAiScenarioAssessmentPersistenceIntegrationTests.TestAiConfiguration.class)
+class MaritimeAiScenarioAssessmentPersistenceIntegrationTests {
+	private static final String PASSWORD = "Example123";
+	private static final MutableClock TEST_CLOCK = new MutableClock(Instant.parse("2026-11-04T00:00:00Z"));
+	private static final AtomicReference<String> RESPONSE_MODE = new AtomicReference<>("VALID");
+	private static final AtomicInteger STUB_CALLS = new AtomicInteger();
+
+	@Autowired MockMvc mvc;
+	@Autowired JdbcTemplate jdbc;
+	@Autowired PasswordEncoder passwords;
+	@Autowired ObjectMapper json;
+	@Autowired ControlledScenarioProperties scenarioProperties;
+
+	@BeforeEach void resetTestState() {
+		TEST_CLOCK.set(Instant.parse("2026-11-04T00:00:00Z"));
+		RESPONSE_MODE.set("VALID");
+		STUB_CALLS.set(0);
+		scenarioProperties.setEnabled(false);
+		scenarioProperties.setDemoCompanyId(null);
+		scenarioProperties.setAllowedUserIds(Set.of());
+		scenarioProperties.setShipmentAId(null);
+		scenarioProperties.setShipmentBId(null);
+	}
+
+	@AfterEach void disableScenario() {
+		scenarioProperties.setEnabled(false);
+		scenarioProperties.setDemoCompanyId(null);
+		scenarioProperties.setAllowedUserIds(Set.of());
+		scenarioProperties.setShipmentAId(null);
+		scenarioProperties.setShipmentBId(null);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void persistsAndRetrievesOnlyTheExactAuthenticatedSessionShipmentAndSnapshot() throws Exception {
+		Harness harness = harness();
+		UUID sessionId = UUID.randomUUID();
+		JsonNode change = startAtChange(harness, sessionId, harness.shipmentAId());
+		JsonNode response = generate(harness, sessionId, change, "A", harness.shipmentAId(), "VALID");
+		String assessmentId = response.at("/assessment/assessmentId").asText();
+		assertThat(response.at("/assessment/state").asText()).isEqualTo("GENERATED");
+		assertThat(response.at("/assessment/validationStatus").asText()).isEqualTo("VALID");
+		assertThat(response.at("/scenarioShipmentKey").asText()).isEqualTo("A");
+		assertThat(response.at("/stage").asText()).isEqualTo("CHANGE");
+		assertThat(response.path("evidenceHash").asText()).matches("[0-9a-f]{64}");
+		assertThat(response.path("contextHash").asText()).matches("[0-9a-f]{64}");
+		assertThat(STUB_CALLS.get()).isEqualTo(1);
+
+		String outputJson = jdbc.queryForObject("SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId);
+		JsonNode stored = json.readTree(outputJson);
+		assertThat(jdbc.queryForObject("SELECT record_type FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId))
+				.isEqualTo(MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT);
+		assertThat(stored.path("recordType").asText()).isEqualTo(MaritimeAiStoredAssessmentContent.CONTROLLED_SCENARIO_ASSESSMENT);
+		assertThat(stored.at("/scenarioContext/sessionId").asText()).isEqualTo(sessionId.toString());
+		assertThat(stored.at("/scenarioContext/epochId").asText()).isEqualTo(change.path("epochId").asText());
+		assertThat(stored.at("/scenarioContext/revision").asLong()).isEqualTo(change.path("revision").asLong());
+		assertThat(stored.at("/scenarioContext/snapshotId").asText()).isEqualTo(change.at("/snapshot/snapshotId").asText());
+		assertThat(stored.at("/scenarioContext/simulationCutoffUtc").asText()).isEqualTo(change.at("/snapshot/simulationCutoffUtc").asText());
+		assertThat(stored.at("/scenarioContext/scenarioShipmentKey").asText()).isEqualTo("A");
+		assertThat(stored.at("/scenarioContext/shipmentId").asLong()).isEqualTo(harness.shipmentAId());
+		assertThat(stored.at("/scenarioContext/evidenceHash").asText()).isEqualTo(response.path("evidenceHash").asText());
+		assertThat(stored.at("/scenarioContext/contextHash").asText()).isEqualTo(response.path("contextHash").asText());
+		assertThat(stored.at("/scenarioContext/managingCompanyId").asLong()).isEqualTo(harness.forwarderCompanyId());
+		assertThat(stored.at("/scenarioContext/importerCompanyId").isNull()).isTrue();
+
+		mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.managerToken())))
+				.andExpect(status().isOk());
+		MvcResult wrongShipment = mvc.perform(get(assessmentPath(sessionId, harness.shipmentBId(), assessmentId))
+				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isNotFound()).andReturn();
+		assertThat(json.readTree(wrongShipment.getResponse().getContentAsString()).path("code").asText())
+				.isEqualTo("SCENARIO_ASSESSMENT_NOT_FOUND");
+
+		UUID otherSession = UUID.randomUUID();
+		scenarioCreate(otherSession, harness.managerToken(), harness.shipmentBId());
+		mvc.perform(get(assessmentPath(otherSession, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.managerToken())))
+				.andExpect(status().isNotFound());
+		mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.otherTenantToken())))
+				.andExpect(status().isForbidden());
+
+		MvcResult ordinaryHistory = mvc.perform(get("/api/shipments/" + harness.shipmentAId() + "/maritime-ai-assessments")
+				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
+		assertThat(json.readTree(ordinaryHistory.getResponse().getContentAsString()).size()).isZero();
+		assertRetrievedScenarioMatches(sessionId, harness, assessmentId, change, response);
+
+		ObjectNode missingDiscriminators = (ObjectNode) stored.deepCopy();
+		missingDiscriminators.remove(List.of("recordType", "scenarioContext"));
+		ObjectNode nullDiscriminators = (ObjectNode) stored.deepCopy();
+		nullDiscriminators.putNull("recordType");
+		nullDiscriminators.putNull("scenarioContext");
+		ObjectNode malformedDiscriminators = (ObjectNode) stored.deepCopy();
+		malformedDiscriminators.put("recordType", 34);
+		malformedDiscriminators.put("scenarioContext", "not-an-object");
+		for (ObjectNode damagedEnvelope : List.of(missingDiscriminators, nullDiscriminators, malformedDiscriminators)) {
+			jdbc.update("UPDATE maritime_ai_assessments SET output_json = ? WHERE assessment_id = ?",
+					json.writeValueAsString(damagedEnvelope), assessmentId);
+			mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId))
+					.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isNotFound());
+			MvcResult malformedOrdinaryHistory = mvc.perform(get("/api/shipments/" + harness.shipmentAId() + "/maritime-ai-assessments")
+					.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
+			assertThat(json.readTree(malformedOrdinaryHistory.getResponse().getContentAsString()).size()).isZero();
+		}
+
+		jdbc.update("UPDATE shipments SET importer_company_id = ? WHERE id = ?", harness.otherCompanyId(), harness.shipmentAId());
+		mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.managerToken())))
+				.andExpect(status().isNotFound());
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE assessment_id = ?", Long.class, assessmentId)).isEqualTo(1L);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void resetAndExpiryHideSavedRecordsWithoutDeletingThem() throws Exception {
+		Harness harness = harness();
+		UUID sessionId = UUID.randomUUID();
+		JsonNode change = startAtChange(harness, sessionId, harness.shipmentAId());
+		JsonNode generated = generate(harness, sessionId, change, "A", harness.shipmentAId(), "VALID");
+		String assessmentId = generated.at("/assessment/assessmentId").asText();
+		JsonNode reset = scenarioCommand(sessionId, harness.managerToken(), "reset", change, "reset-after-ai", 200);
+		assertThat(reset.at("/epochId").asText()).isNotEqualTo(change.at("/epochId").asText());
+		mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId)).header("Authorization", bearer(harness.managerToken())))
+				.andExpect(status().isNotFound());
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE assessment_id = ?", Long.class, assessmentId)).isEqualTo(1L);
+
+		UUID expiringSession = UUID.randomUUID();
+		JsonNode active = startAtChange(harness, expiringSession, harness.shipmentBId());
+		JsonNode second = generate(harness, expiringSession, active, "B", harness.shipmentBId(), "VALID");
+		String secondId = second.at("/assessment/assessmentId").asText();
+		TEST_CLOCK.set(TEST_CLOCK.instant().plusSeconds(120));
+		mvc.perform(get(assessmentPath(expiringSession, harness.shipmentBId(), secondId))
+				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isNotFound());
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE assessment_id IN (?, ?)",
+				Long.class, assessmentId, secondId)).isEqualTo(2L);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void invalidAndAbstainedLaterGenerationsAppendWithoutChangingPriorSuccesses() throws Exception {
+		long initialAssessmentCount = jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class);
+		Harness harness = harness();
+		UUID failedSession = UUID.randomUUID();
+		JsonNode change = startAtChange(harness, failedSession, harness.shipmentAId());
+		JsonNode priorSuccess = generate(harness, failedSession, change, "A", harness.shipmentAId(), "VALID");
+		JsonNode worsened = scenarioCommand(failedSession, harness.managerToken(), "next", change, "next-invalid", 200);
+		JsonNode invalid = generate(harness, failedSession, worsened, "A", harness.shipmentAId(), "INVALID");
+		assertThat(invalid.at("/assessment/state").asText()).isEqualTo("FAILED");
+		assertThat(invalid.at("/assessment/validationStatus").asText()).isEqualTo("SCENARIO_PROSE_MISMATCH");
+		assertThat(invalid.at("/assessment/interpretation").isMissingNode()
+				|| invalid.at("/assessment/interpretation").isNull()).isTrue();
+		String invalidAssessmentId = invalid.at("/assessment/assessmentId").asText();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+				String.class, invalidAssessmentId)).isEqualTo("FAILED");
+		JsonNode invalidStored = json.readTree(jdbc.queryForObject(
+				"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, invalidAssessmentId));
+		assertThat(invalidStored.path("interpretation").isMissingNode() || invalidStored.path("interpretation").isNull()).isTrue();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?", String.class,
+				priorSuccess.at("/assessment/assessmentId").asText())).isEqualTo("GENERATED");
+
+		UUID abstainSession = UUID.randomUUID();
+		JsonNode secondChange = startAtChange(harness, abstainSession, harness.shipmentBId());
+		JsonNode secondSuccess = generate(harness, abstainSession, secondChange, "B", harness.shipmentBId(), "VALID");
+		JsonNode secondWorsened = scenarioCommand(abstainSession, harness.managerToken(), "next", secondChange, "next-abstain", 200);
+		JsonNode abstained = generate(harness, abstainSession, secondWorsened, "B", harness.shipmentBId(), "ABSTAIN");
+		assertThat(abstained.at("/assessment/state").asText()).isEqualTo("ABSTAINED");
+		assertThat(abstained.at("/assessment/validationStatus").asText()).isEqualTo("INSUFFICIENT_MODEL_EVIDENCE");
+		assertThat(abstained.at("/assessment/interpretation").isMissingNode()
+				|| abstained.at("/assessment/interpretation").isNull()).isTrue();
+		String abstainedAssessmentId = abstained.at("/assessment/assessmentId").asText();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+				String.class, abstainedAssessmentId)).isEqualTo("ABSTAINED");
+		JsonNode abstainedStored = json.readTree(jdbc.queryForObject(
+				"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, abstainedAssessmentId));
+		assertThat(abstainedStored.path("interpretation").isMissingNode() || abstainedStored.path("interpretation").isNull()).isTrue();
+		assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?", String.class,
+				secondSuccess.at("/assessment/assessmentId").asText())).isEqualTo("GENERATED");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class))
+				.isEqualTo(initialAssessmentCount + 4);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void refusalAndIncompleteOutputsPersistAsFailuresWhileProviderUnavailableRemainsAbstained() throws Exception {
+		long initialAssessmentCount = jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class);
+		Harness harness = harness();
+		List<ExpectedProviderResult> cases = List.of(
+				new ExpectedProviderResult("REFUSAL", "FAILED", "PROVIDER_REFUSAL"),
+				new ExpectedProviderResult("INCOMPLETE", "FAILED", "INCOMPLETE_PROVIDER_OUTPUT"),
+				new ExpectedProviderResult("UNAVAILABLE", "ABSTAINED", "MODEL_UNAVAILABLE"));
+		for (ExpectedProviderResult expected : cases) {
+			UUID sessionId = UUID.randomUUID();
+			JsonNode change = startAtChange(harness, sessionId, harness.shipmentAId());
+			JsonNode result = generate(harness, sessionId, change, "A", harness.shipmentAId(), expected.mode());
+			assertThat(result.at("/assessment/state").asText()).isEqualTo(expected.state());
+			assertThat(result.at("/assessment/validationStatus").asText()).isEqualTo(expected.validationStatus());
+			assertThat(result.at("/assessment/interpretation").isMissingNode()
+					|| result.at("/assessment/interpretation").isNull()).isTrue();
+			String assessmentId = result.at("/assessment/assessmentId").asText();
+			assertThat(jdbc.queryForObject("SELECT generation_state FROM maritime_ai_assessments WHERE assessment_id = ?",
+					String.class, assessmentId)).isEqualTo(expected.state());
+			assertThat(jdbc.queryForObject("SELECT validation_status FROM maritime_ai_assessments WHERE assessment_id = ?",
+					String.class, assessmentId)).isEqualTo(expected.validationStatus());
+			JsonNode stored = json.readTree(jdbc.queryForObject(
+					"SELECT output_json FROM maritime_ai_assessments WHERE assessment_id = ?", String.class, assessmentId));
+			assertThat(stored.path("interpretation").isMissingNode() || stored.path("interpretation").isNull()).isTrue();
+		}
+		assertThat(STUB_CALLS.get()).isEqualTo(3);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments", Long.class))
+				.isEqualTo(initialAssessmentCount + 3);
+	}
+
+	private Harness harness() throws Exception {
+		Long forwarderCompanyId = company("HARBOURLINE_DEMO");
+		Long otherCompanyId = company("STRAITS_FRESH_DEMO");
+		String managerEmail = "cdg289-manager-" + UUID.randomUUID() + "@example.com";
+		String otherEmail = "cdg289-other-" + UUID.randomUUID() + "@example.com";
+		Long managerId = createUser(managerEmail, forwarderCompanyId, "FREIGHT_FORWARDER");
+		createUser(otherEmail, otherCompanyId, "IMPORTER");
+		String managerToken = login(managerEmail);
+		String otherTenantToken = login(otherEmail);
+		long shipmentA = createShipment(managerToken, "CDG289-A-" + UUID.randomUUID());
+		long shipmentB = createShipment(managerToken, "CDG289-B-" + UUID.randomUUID());
+		scenarioProperties.setEnabled(true);
+		scenarioProperties.setDemoCompanyId(forwarderCompanyId);
+		scenarioProperties.setAllowedUserIds(Set.of(managerId));
+		scenarioProperties.setShipmentAId(shipmentA);
+		scenarioProperties.setShipmentBId(shipmentB);
+		return new Harness(forwarderCompanyId, otherCompanyId, managerId, managerToken, otherTenantToken, shipmentA, shipmentB);
+	}
+
+	private long company(String code) {
+		return jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, code);
+	}
+	private Long createUser(String email, long companyId, String role) {
+		jdbc.update("INSERT INTO users (full_name, email, password_hash, role_id, company_id) SELECT ?, ?, ?, id, ? FROM roles WHERE code = ?",
+				"CDG-289 assessment test", email, passwords.encode(PASSWORD), companyId, role);
+		return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+	}
+	private String login(String email) throws Exception {
+		String body = json.writeValueAsString(Map.of("email", email, "password", PASSWORD));
+		MvcResult result = mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andReturn();
+		return JsonPath.read(result.getResponse().getContentAsString(), "$.token");
+	}
+	private long createShipment(String token, String reference) throws Exception {
+		String body = """
+				{"shipmentReference":"%s","origin":"Manila, PH","destination":"Surabaya, ID","transshipmentPort":"Singapore",
+				"motherVessel":"CDG289 Synthetic Mother","plannedMotherArrivalAt":"2026-11-04T08:00:00Z",
+				"feederVessel":"CDG289 Synthetic Feeder","plannedFeederDepartureAt":"2026-11-05T08:00:00Z"}
+				""".formatted(reference);
+		MvcResult result = mvc.perform(post("/api/shipments").header("Authorization", bearer(token))
+				.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated()).andReturn();
+		return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.id")).longValue();
+	}
+	private JsonNode startAtChange(Harness harness, UUID sessionId, long anchorShipmentId) throws Exception {
+		JsonNode created = scenarioCreate(sessionId, harness.managerToken(), anchorShipmentId);
+		JsonNode baseline = scenarioCommand(sessionId, harness.managerToken(), "start", created, "start-" + UUID.randomUUID(), 200);
+		return scenarioCommand(sessionId, harness.managerToken(), "next", baseline, "change-" + UUID.randomUUID(), 200);
+	}
+	private JsonNode scenarioCreate(UUID sessionId, String token, long anchorId) throws Exception {
+		MvcResult result = mvc.perform(put("/api/scenarios/v1/sessions/" + sessionId).header("Authorization", bearer(token))
+				.contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("anchorShipmentId", anchorId))))
+				.andExpect(status().isOk()).andReturn();
+		return json.readTree(result.getResponse().getContentAsString());
+	}
+	private JsonNode scenarioCommand(UUID sessionId, String token, String action, JsonNode expected,
+			String key, int expectedStatus) throws Exception {
+		String body = json.writeValueAsString(Map.of("expectedEpochId", expected.path("epochId").asText(),
+				"expectedRevision", expected.path("revision").asLong()));
+		MvcResult result = mvc.perform(post("/api/scenarios/v1/sessions/" + sessionId + "/" + action)
+				.header("Authorization", bearer(token)).header("Idempotency-Key", key)
+				.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().is(expectedStatus)).andReturn();
+		return json.readTree(result.getResponse().getContentAsString());
+	}
+	private JsonNode generate(Harness harness, UUID sessionId, JsonNode state, String key, long shipmentId,
+			String responseMode) throws Exception {
+		RESPONSE_MODE.set(responseMode);
+		JsonNode snapshot = state.path("snapshot");
+		Map<String, Object> request = Map.of("scenarioShipmentKey", key, "expectedEpochId", state.path("epochId").asText(),
+				"expectedRevision", state.path("revision").asLong(), "expectedSnapshotId", snapshot.path("snapshotId").asText(),
+				"expectedSimulationCutoffUtc", snapshot.path("simulationCutoffUtc").asText());
+		MvcResult result = mvc.perform(post("/api/scenarios/v1/sessions/" + sessionId + "/shipments/" + shipmentId + "/interpretation")
+				.header("Authorization", bearer(harness.managerToken())).contentType(MediaType.APPLICATION_JSON)
+				.content(json.writeValueAsString(request))).andExpect(status().isOk()).andReturn();
+		return json.readTree(result.getResponse().getContentAsString());
+	}
+	private void assertRetrievedScenarioMatches(UUID sessionId, Harness harness, String assessmentId, JsonNode state,
+			JsonNode posted) throws Exception {
+		MvcResult result = mvc.perform(get(assessmentPath(sessionId, harness.shipmentAId(), assessmentId))
+				.header("Authorization", bearer(harness.managerToken()))).andExpect(status().isOk()).andReturn();
+		JsonNode retrieved = json.readTree(result.getResponse().getContentAsString());
+		assertThat(retrieved.path("assessment")).isEqualTo(posted.path("assessment"));
+		assertThat(retrieved.path("sessionId").asText()).isEqualTo(sessionId.toString());
+		assertThat(retrieved.path("epochId").asText()).isEqualTo(state.path("epochId").asText());
+		assertThat(retrieved.path("revision").asLong()).isEqualTo(state.path("revision").asLong());
+		assertThat(retrieved.path("snapshotId").asText()).isEqualTo(state.at("/snapshot/snapshotId").asText());
+		assertThat(retrieved.path("simulationCutoffUtc").asText()).isEqualTo(state.at("/snapshot/simulationCutoffUtc").asText());
+		assertThat(retrieved.path("scenarioShipmentKey").asText()).isEqualTo("A");
+	}
+	private static String assessmentPath(UUID sessionId, long shipmentId, String assessmentId) {
+		return "/api/scenarios/v1/sessions/" + sessionId + "/shipments/" + shipmentId + "/assessments/" + assessmentId;
+	}
+	private static String bearer(String token) { return "Bearer " + token; }
+
+	private static String scenarioOutput(MaritimeAiEvidencePackage input, String mode) {
+		if ("REFUSAL".equals(mode) || "INCOMPLETE".equals(mode)) return "{\"assessment\":null}";
+		if ("ABSTAIN".equals(mode)) return "{\"assessment\":null}";
+		String valid = ScenarioQualityStubClient.fixtureOutputText(input);
+		if (!"INVALID".equals(mode)) return valid;
+		try {
+			ObjectNode output = (ObjectNode) new ObjectMapper().readTree(valid);
+			ObjectNode risk = (ObjectNode) output.at("/assessment/risk");
+			risk.put("statement", risk.path("statement").asString() + " The shipment is urgent.");
+			return new ObjectMapper().writeValueAsString(output);
+		} catch (Exception failure) {
+			throw new IllegalStateException("The offline v1.6 persistence fixture could not be built.", failure);
+		}
+	}
+
+	private record Harness(long forwarderCompanyId, long otherCompanyId, long managerUserId, String managerToken,
+			String otherTenantToken, long shipmentAId, long shipmentBId) { }
+	private record ExpectedProviderResult(String mode, String state, String validationStatus) { }
+
+	@TestConfiguration
+	static class TestAiConfiguration {
+		private static final Scenario SCENARIO = SyntheticDisruptionScenarioFixture.create("Api");
+		@Bean @Primary Clock scenarioClock() { return TEST_CLOCK; }
+		@Bean @Primary MaritimeContextService scenarioContext() { return SCENARIO.contextForClock(TEST_CLOCK); }
+		@Bean @Primary ConfiguredMaritimeAiClient scenarioStub(ObjectMapper json) {
+			return new ConfiguredMaritimeAiClient("openai-responses", "cdg289-test", "offline-only-key",
+					"https://stub.invalid/v1/responses", true, 20, 800, json,
+					(request, body) -> { throw new AssertionError("The offline v1.6 persistence fixture must not use HTTP."); }) {
+				@Override public MaritimeAiClientResult interpret(MaritimeAiEvidencePackage input) {
+					STUB_CALLS.incrementAndGet();
+					String mode = RESPONSE_MODE.getAndSet("VALID");
+					String version = ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION;
+					return switch (mode) {
+						case "REFUSAL" -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, "The Responses API refused the controlled-scenario request.", null,
+								"refusal", "PROVIDER_REFUSAL");
+						case "INCOMPLETE" -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, "The Responses API did not complete its assistant message.", "{\"assessment\":null}",
+								"incomplete_message", "INCOMPLETE_PROVIDER_OUTPUT");
+						case "UNAVAILABLE" -> new MaritimeAiClientResult("UNCONFIGURED", "", version,
+								null, "Inference gateway returned HTTP 503.", null, "http_error", null);
+						default -> new MaritimeAiClientResult("openai-responses", "cdg289-test", version,
+								null, null, scenarioOutput(input, mode), "completed", null);
+					};
+				}
+			};
+		}
+	}
+
+	private static final class MutableClock extends Clock {
+		private final AtomicReference<Instant> current;
+		private MutableClock(Instant initial) { current = new AtomicReference<>(initial); }
+		void set(Instant value) { current.set(value); }
+		@Override public ZoneId getZone() { return ZoneOffset.UTC; }
+		@Override public Clock withZone(ZoneId zone) {
+			if (!ZoneOffset.UTC.equals(zone)) throw new UnsupportedOperationException("UTC only");
+			return this;
+		}
+		@Override public Instant instant() { return current.get(); }
+	}
+}

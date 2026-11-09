@@ -11,6 +11,7 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 import com.drift.backend.shipment.ShipmentRisk;
 import com.drift.backend.shipment.ShipmentRiskContribution;
 import com.drift.backend.shipment.ShipmentRiskContributions;
+import com.drift.backend.shipment.ControlledScenarioSnapshot;
 
 /** Minimized snapshot of the authorized backend risk result and the inputs that produced it.
  * It is planning context, never retrieved maritime evidence or an instruction to recalculate risk. */
@@ -46,6 +47,36 @@ public record MaritimeAiConnectionRiskContext(boolean assessed, String unavailab
 						remaining.totalSeconds(), remaining.missedBySeconds()),
 				arrivalEstimate(shipment.arrivalComparison()),
 				assumptions(shipment.assessmentExplanation()));
+	}
+
+	/** Projects only backend-calculated scenario values; it does not recalculate risk or windows. */
+	static MaritimeAiConnectionRiskContext fromScenario(ControlledScenarioSnapshot.ShipmentRead shipment) {
+		if (shipment == null) return null;
+		var planned = shipment.plannedConnectionWindow();
+		var remaining = shipment.remainingConnectionWindow();
+		var estimate = shipment.arrivalEstimate();
+		boolean assessed = shipment.risk() != null;
+		RiskBasis basis = !assessed ? null : remaining != null
+				? RiskBasis.AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE : RiskBasis.PLANNED_SHIPMENT_SCHEDULE;
+		PlannedWindow plannedWindow = planned == null ? null : new PlannedWindow(
+				switch (planned.status()) {
+					case AVAILABLE -> WindowState.AVAILABLE;
+					case INVALID -> WindowState.INVALID;
+					case INCOMPLETE -> WindowState.INCOMPLETE;
+				}, planned.window() == null ? null : planned.window().totalSeconds());
+		RemainingWindow remainingWindow = remaining == null ? null : new RemainingWindow(remaining.status().name(),
+				remaining.totalSeconds(), remaining.missedBySeconds());
+		ArrivalEstimateFact estimateFact;
+		if (estimate == null) estimateFact = new ArrivalEstimateFact(EstimateState.UNKNOWN, null, null, null);
+		else if (estimate.unavailableReason() != null) estimateFact = new ArrivalEstimateFact(
+				EstimateState.UNAVAILABLE, null, null, estimate.unavailableReason().code());
+		else estimateFact = new ArrivalEstimateFact(Boolean.TRUE.equals(estimate.possiblyOutdated())
+				? EstimateState.STALE : EstimateState.AVAILABLE, estimate.estimatedArrivalAt(),
+				estimate.lastReceivedAt(), null);
+		String unavailable = assessed ? null : planned == null ? "RISK_NOT_RECORDED" : "PLANNED_WINDOW_" + planned.status();
+		return new MaritimeAiConnectionRiskContext(assessed, unavailable,
+				shipment.risk() == null ? null : shipment.risk().level(), basis, plannedWindow,
+				remainingWindow, estimateFact, List.of());
 	}
 
 	private static ArrivalEstimateFact arrivalEstimate(com.drift.backend.shipment.ArrivalEstimate value) {

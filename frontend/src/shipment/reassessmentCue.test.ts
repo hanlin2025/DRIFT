@@ -41,6 +41,11 @@ describe('reassessment cue', () => {
     expect(result.detail).not.toMatch(/\b(GENERATED|VALID)\b/);
   });
 
+  it('treats a null change magnitude as unrecorded rather than as a change', () => {
+    const result = reassessmentCue(context({}, [evidence({ changeMagnitude: null })]));
+    expect(result.state).toBe('stale');
+  });
+
   it('marks review without a recorded change as pending', () => {
     const result = reassessmentCue(context({}, [evidence({ humanReviewRequired: true, sourceType: 'MPA_OFFICIAL_NOTICE', sourceMode: 'SYNTHETIC_DEMONSTRATION' })]));
     expect(result.state).toBe('pending');

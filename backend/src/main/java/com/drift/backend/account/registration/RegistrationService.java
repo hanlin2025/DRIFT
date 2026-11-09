@@ -17,6 +17,7 @@ import com.drift.backend.account.exception.IneligibleInvitationException;
 import com.drift.backend.account.registration.invitation.Invitation;
 import com.drift.backend.account.registration.invitation.InvitationRepository;
 import com.drift.backend.account.registration.invitation.InvitationResponse;
+import com.drift.backend.account.registration.invitation.InvitationStatus;
 import com.drift.backend.account.registration.invitation.InvitationToken;
 
 @Service
@@ -78,6 +79,9 @@ public class RegistrationService {
 	}
 
 	private void checkEligibility(Invitation invitation) {
+		if (invitation.getStatus() == InvitationStatus.REVOKED) {
+			throw new IneligibleInvitationException(IneligibleInvitationException.WITHDRAWN);
+		}
 		if (!invitation.isEligible(Instant.now())) {
 			throw new IneligibleInvitationException();
 		}

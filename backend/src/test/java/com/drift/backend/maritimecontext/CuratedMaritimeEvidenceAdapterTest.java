@@ -76,7 +76,7 @@ class CuratedMaritimeEvidenceAdapterTest {
 		assertThat(bundle.notices()).singleElement().extracting(MaritimeNoticeEvidence::noticeId).isEqualTo("DEMO-MPA-245-001");
 	}
 
-	private static ShipmentDetailResponse shipment(String imo) { return new ShipmentDetailResponse(1L, 1L, "REF", "SG", "ID", "Singapore", "KOTA LARIS", OffsetDateTime.parse("2026-10-29T02:00:00+08:00"), imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE, null, java.util.List.of()); }
+	private static ShipmentDetailResponse shipment(String imo) { return new ShipmentDetailResponse(1L, 1L, "REF", "SG", "ID", "Singapore", "KOTA LARIS", OffsetDateTime.parse("2026-10-29T02:00:00+08:00"), imo, null, null, null, null, null, null, null, Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null, null, ShipmentStatus.ACTIVE, null, java.util.List.of()); }
 
 	private static CuratedMaritimeEvidenceAdapter.Snapshot snapshot(String sourceType, String sourceMode,
 			String collectionLabel, String retrievedAtUtc) {
