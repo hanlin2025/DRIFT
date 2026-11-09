@@ -58,7 +58,7 @@ class OrganisationSearchIntegrationTests {
 		insertCompany("IDLE_" + UUID.randomUUID(), "Idle Imports", false);
 
 		mvc.perform(get("/api/organisations").param("type", "importer")
-				.header("Authorization", "Bearer " + forwarderToken))
+				.header("Authorization", "Bearer " + importerToken))
 				.andExpect(status().isOk())
 				.andExpect(header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.page").value(0))
@@ -79,13 +79,13 @@ class OrganisationSearchIntegrationTests {
 				.andExpect(jsonPath("$.items[0].name").value("Straits Fresh Imports (Demo)"));
 
 		mvc.perform(get("/api/organisations").param("type", "importer").param("name", "%")
-				.header("Authorization", "Bearer " + forwarderToken))
+				.header("Authorization", "Bearer " + importerToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.total").value(1))
 				.andExpect(jsonPath("$.items[0].name").value("100% Cold Chain"));
 
 		mvc.perform(get("/api/organisations").param("type", "importer").param("name", "harbourline")
-				.header("Authorization", "Bearer " + forwarderToken))
+				.header("Authorization", "Bearer " + importerToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.total").value(0))
 				.andExpect(jsonPath("$.items", hasSize(0)));
@@ -98,7 +98,7 @@ class OrganisationSearchIntegrationTests {
 
 		mvc.perform(get("/api/organisations").param("type", "importer").param("name", "imports")
 				.param("page", "1").param("size", "1")
-				.header("Authorization", "Bearer " + forwarderToken))
+				.header("Authorization", "Bearer " + importerToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page").value(1))
 				.andExpect(jsonPath("$.size").value(1))
@@ -107,10 +107,36 @@ class OrganisationSearchIntegrationTests {
 				.andExpect(jsonPath("$.items[0].name").value("Gamma Imports"));
 
 		mvc.perform(get("/api/organisations").param("type", "importer").param("page", "9").param("size", "20")
-				.header("Authorization", "Bearer " + forwarderToken))
+				.header("Authorization", "Bearer " + importerToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items", hasSize(0)))
 				.andExpect(jsonPath("$.total").value(3));
+	}
+
+	@Test
+	void aFreightForwarderSeesOnlyActiveAuthorisations() throws Exception {
+		Long extraId = insertCompany("EXTRA_" + UUID.randomUUID(), "Extra Imports");
+		Long straitsId = companyId("STRAITS_FRESH_DEMO");
+		Long actorId = jdbc.queryForObject("""
+				SELECT id FROM users WHERE company_id = ? AND email LIKE 'cdg120-ff-%' ORDER BY id DESC LIMIT 1
+				""", Long.class, harbourlineId);
+		jdbc.update("""
+				INSERT INTO forwarder_importer_relationships (
+					forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+				VALUES (?, ?, TRUE, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?)
+				""", harbourlineId, straitsId, actorId, actorId);
+
+		mvc.perform(get("/api/organisations").param("type", "importer")
+				.header("Authorization", "Bearer " + forwarderToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.total").value(1))
+				.andExpect(jsonPath("$.items[0].code").value("STRAITS_FRESH_DEMO"))
+				.andExpect(jsonPath("$.items[?(@.id == " + extraId + ")]").isEmpty());
+
+		mvc.perform(get("/api/organisations").param("type", "importer")
+				.header("Authorization", "Bearer " + importerToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.id == " + extraId + ")].id", contains(extraId.intValue())));
 	}
 
 	@Test
