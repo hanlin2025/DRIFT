@@ -102,6 +102,11 @@ class ImporterAuthorisationFlowIntegrationTests {
 				.andExpect(jsonPath("$.active").value(true))
 				.andReturn();
 		int authorisationId = JsonPath.read(granted.getResponse().getContentAsString(), "$.id");
+		mvc.perform(get("/api/importer-authorisations").header("Authorization", "Bearer " + admin))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.authorisations", hasSize(1)))
+				.andExpect(jsonPath("$.authorisations[0].id").value(authorisationId))
+				.andExpect(jsonPath("$.authorisations[0].active").value(true));
 		mvc.perform(get("/api/importer-authorisations").header("Authorization", "Bearer " + outsider))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.authorisations", hasSize(0)))
