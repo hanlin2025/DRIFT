@@ -165,7 +165,7 @@ describe('connection window on the shipment detail', () => {
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }, { timeout: 10_000 }));
     expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
     expect(await screen.findByText('Disabled.')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
@@ -1239,7 +1239,7 @@ describe('vessel track history on the shipment detail', () => {
     const user = userEvent.setup();
     const history = await screen.findByRole('region', { name: 'Track history' });
 
-    expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24);
+    await waitFor(() => expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24));
     expect(within(history).getByRole('button', { name: 'Mother vessel' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(history).getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
     expect(await within(history).findByText('3 positions in the last 24 hours · 1 slowdown segment')).toBeInTheDocument();
@@ -1257,6 +1257,16 @@ describe('vessel track history on the shipment detail', () => {
     expect(within(quiet).getByText('0.4 kn')).toBeInTheDocument();
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveTextContent('Not reported');
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveClass('is-missing');
+  });
+
+  it('shows backend-calculated shipment facts before the separate AI interpretation panel', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const facts = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const aiPanel = screen.getByRole('region', { name: 'AI maritime interpretation' });
+    expect(screen.getByRole('region', { name: 'Backend-calculated shipment assessment' }))
+      .toHaveTextContent('The AI interpretation is shown separately and does not approve or apply a change.');
+    expect(facts.compareDocumentPosition(aiPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps the selected observation across polls and clears it once that observation leaves the window', async () => {
@@ -1356,14 +1366,77 @@ describe('vessel track history on the shipment detail', () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, vessel: 'FEEDER', vesselName: 'Straits Feeder', mmsi: null, windowHours: 6, points: [] });
     await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
     expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6);
-    expect(await within(history).findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
+    expect(await within(history).findByText('No positions were received in this window.')).toBeInTheDocument();
+  });
+
+  it('keeps recorded mode and its receipt cutoff when changing vessel and window', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    const history = await screen.findByRole('region', { name: 'Track history' });
+    await within(history).findByText(/3 positions/);
+    const recorded = {
+      ...track,
+      context: 'SEEDED' as const,
+      status: 'OFFLINE' as const,
+      cutoff: track.to,
+      timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+    };
+    vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded);
+    await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+    await within(history).findByText('Seeded rehearsal data · not an authentic AIS capture');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', points: [] });
+    await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 24, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', windowHours: 6, points: [] });
+    await user.click(within(history).getByRole('button', { name: '6h' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows insufficient history for a single observation', async () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: track.points.slice(0, 1) });
     open(forwarder, '/freight-forwarder/shipments/7');
-    expect(await screen.findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Track points' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/Insufficient history to draw a track for this window\./)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Track points' })).toBeInTheDocument();
+    expect(screen.getByText(/This observation is shown at its recorded time/)).toBeInTheDocument();
+  });
+
+  it('uses receipt-time cutoffs for recorded playback and stops polling live positions', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      await within(history).findByText(/3 positions/);
+      const recorded = {
+        ...track,
+        cutoff: track.to,
+        timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+        context: 'RECORDED' as const,
+        status: 'AVAILABLE' as const,
+        feedStatus: 'OFFLINE' as const,
+        fallbackUsed: false,
+        points: track.points.map(point => ({ ...point, source: 'AIS_STREAM' as const, positionValid: true })),
+      };
+      const firstPointCutoff = { ...recorded, cutoff: track.points[0].ingestedAt, points: [recorded.points[0]] };
+      vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded).mockResolvedValueOnce(firstPointCutoff);
+      await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+      expect(await within(history).findByText('Recorded AIS · receipt-time observations')).toBeInTheDocument();
+      expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.to });
+      expect(within(history).getByRole('list', { name: 'Track points' })).toHaveTextContent(/Recorded AIS_STREAM/);
+
+      const liveTrackingCalls = vi.mocked(getShipmentTracking).mock.calls.length;
+      await user.click(within(history).getByRole('button', { name: 'Next position' }));
+      await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.points[0].ingestedAt }));
+      expect(within(history).getByLabelText('Selected track point').querySelector('time')).toHaveAttribute('dateTime', track.points[0].ingestedAt);
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getShipmentTracking).toHaveBeenCalledTimes(liveTrackingCalls);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('disables the feeder track when no feeder vessel is assigned', async () => {
@@ -1597,8 +1670,8 @@ describe('late-arrival chance on the shipment detail', () => {
 
 const PREPARE_WORDING = "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints.";
 const NO_ACTION_WORDING = "No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.";
-const IMPACT_DETAIL = 'The impact assessment has not been returned.';
-const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact assessment has not been returned.';
+const IMPACT_DETAIL = 'The delay comparison is unavailable.';
+const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact comparison is unavailable.';
 
 const prepareRecommendation: ShipmentRecommendation = {
   available: true,

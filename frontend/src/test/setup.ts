@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 configure({ asyncUtilTimeout: 4000 });
 
@@ -19,4 +19,7 @@ if (typeof HTMLDialogElement !== 'undefined') {
   }
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
