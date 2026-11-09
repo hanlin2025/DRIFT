@@ -1,0 +1,59 @@
+{
+  "captureFormatVersion": "cdg247.synthetic-multisource.capture.v3.bounded-grounding",
+  "provider": "openai-responses",
+  "model": "gpt-4.1-mini",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.1",
+  "validationStatus": "CONTEXTUAL_EVIDENCE_OVERSTATED",
+  "citationIds": ["synthetic-mpa-schedule-001", "synthetic-notice-001", "synthetic-nea-rainfall-001"],
+  "limitations": [
+    "Fictional verified association only: the fixture deliberately joins its fictional shipment and vessel. It establishes no real ETA, cargo, booking, or disruption.",
+    "Fictional official-notice-style content. It is contextual only and does not establish a vessel impact, causal link, berth, cargo, or missed connection.",
+    "Fictional regional weather context only. It does not establish vessel-specific conditions or causation."
+  ],
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {
+        "statement": "The documented revision warrants schedule review.",
+        "evidenceIds": ["synthetic-mpa-schedule-001"],
+        "applicability": "VERIFIED",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": ["evidence:synthetic-mpa-schedule-001", "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"],
+        "relationshipType": "SCHEDULE_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The cited port-area maintenance notice provides contextual port information and does not establish vessel impact or shipment disruption.",
+        "evidenceIds": ["synthetic-notice-001"],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "PORT_CONTEXT",
+        "factReferences": ["evidence:synthetic-notice-001"],
+        "relationshipType": "PORT_CONTEXT_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The cited regional rainfall observation offers contextual weather information without establishing vessel-specific conditions or causation relevant to the shipment.",
+        "evidenceIds": ["synthetic-nea-rainfall-001"],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "REGIONAL_CONTEXT",
+        "factReferences": ["evidence:synthetic-nea-rainfall-001"],
+        "relationshipType": "REGIONAL_WEATHER_CONTEXT",
+        "riskReview": null
+      }
+    ],
+    "uncertainties": ["The evidence does not establish whether this shipment is urgent."],
+    "followUpConsiderations": [
+      "Verify whether the current vessel position aligns with the planned schedule.",
+      "Check for any updates regarding vessel arrival estimates or port conditions.",
+      "Confirm no changes have been made to the planned feeder departure schedule."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}

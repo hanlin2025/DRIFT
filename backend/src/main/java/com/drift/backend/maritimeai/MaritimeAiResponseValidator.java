@@ -47,6 +47,9 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
 	private static final Pattern QUALIFIED_SHIPMENT_APPLICABILITY = Pattern.compile("(?i)\\b(?:uncertain|unclear|unverified|not verified|conditional)\\s+applicability\\s+(?:for|to)\\s+(?:the\\s+)?shipment\\s+planning\\b");
 	private static final Pattern EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION = Pattern.compile("(?i)\\b(?:any\\s+)?shipment(?:-specific)?\\s+(?:association|relevance)\\s+(?:is|remains)\\s+(?:conditional(?:\\s+and\\s+unverified)?|unverified|not verified)\\b");
+	/* Remove only a complete, explicitly negated statement of what contextual evidence does
+	 * not establish. Any separate affirmative shipment assertion remains for the broad guard. */
+	private static final Pattern EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION = Pattern.compile("(?i)\\b(?:does\\s+not|doesn't|cannot|can't|without)\\s+(?:establish(?:ing)?|support(?:ing)?|show(?:ing)?|indicat(?:e|ing)|confirm(?:ing)?|demonstrat(?:e|ing)|prov(?:e|ing))\\b[^.!?;]{0,120}\\b(?:shipment(?:-specific)?\\s+(?:impact|disruption|delay|association|applicability|relevance)|causation\\s+relevant\\s+to\\s+(?:the\\s+)?shipment)\\b");
 	private static final Pattern SHIPMENT_OR_CARGO_WORD = Pattern.compile("(?i)\\b(?:shipment|cargo)\\b");
 	private static final Pattern SYNTHETIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:synthetic|fictional)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
 	private static final Pattern AUTHENTIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:authentic|real(?:-world)?|historical|retrospective)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
@@ -1040,7 +1043,9 @@ final class MaritimeAiResponseValidator {
 		String applicability = applicabilityText == null ? "" : applicabilityText.toLowerCase(Locale.ROOT);
 		String qualifiedOnly = QUALIFIED_SHIPMENT_APPLICABILITY.matcher(statement).replaceAll(" ");
 		String withoutExplicitUnverifiedAssociation = EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION.matcher(qualifiedOnly).replaceAll(" ");
-		return SHIPMENT_OR_CARGO_WORD.matcher(withoutExplicitUnverifiedAssociation).find()
+		String withoutExplicitlyNegatedContextualAssertion = EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION
+				.matcher(withoutExplicitUnverifiedAssociation).replaceAll(" ");
+		return SHIPMENT_OR_CARGO_WORD.matcher(withoutExplicitlyNegatedContextualAssertion).find()
 				|| applicability.contains("shipment_specific");
 	}
 

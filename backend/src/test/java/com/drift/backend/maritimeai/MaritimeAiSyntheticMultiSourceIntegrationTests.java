@@ -129,6 +129,33 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	}
 
 	@Test
+	void replaysTheCapturedV20ResponseThroughAuthorizedPostGetAndTransactionalPersistence() throws Exception {
+		assertThat(client).isInstanceOf(CapturingSyntheticClient.class);
+		MaritimeAiInterpretation captured;
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-capture.json")) {
+			assertThat(captureStream).isNotNull();
+			var capture = new tools.jackson.databind.ObjectMapper().readTree(captureStream);
+			captured = new tools.jackson.databind.ObjectMapper().treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+		}
+		CapturingSyntheticClient stub = (CapturingSyntheticClient) client;
+		stub.setNextResult(new MaritimeAiClient.MaritimeAiClientResult("openai-responses", "gpt-4.1-mini",
+				ConfiguredMaritimeAiClient.PROMPT_VERSION, captured, null));
+		try {
+			mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.state").value("GENERATED"))
+					.andExpect(jsonPath("$.validationStatus").value("VALID"));
+			mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$[0].state").value("GENERATED"))
+					.andExpect(jsonPath("$[0].interpretation.claims").isArray());
+			assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE shipment_id = ?", Long.class, shipmentId)).isEqualTo(1L);
+		} finally {
+			stub.clearNextResult();
+		}
+	}
+
+	@Test
 	void realClientModeCannotStartWithoutTheExternalRequestApprovalGate() {
 		assertThatThrownBy(() -> new MultiSourceConfiguration().multiSourceClient(true, "openai-responses", "gpt-4.1-mini",
 				"not-a-key", "https://example.invalid/v1/responses", false, 20, 800, new tools.jackson.databind.ObjectMapper(), false, ""))

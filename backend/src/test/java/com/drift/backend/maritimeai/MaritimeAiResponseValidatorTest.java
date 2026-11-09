@@ -921,6 +921,30 @@ class MaritimeAiResponseValidatorTest {
 				List.of(unsupportedCausation), List.of(), List.of(), true, null))).isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
 	}
 
+	@Test void acceptsExplicitlyNegatedContextualShipmentStatementsButNotMixedAffirmativeClaims() {
+		MaritimeAiEvidencePackage input = savedSyntheticOpenAiFixture();
+		MaritimeAiClaim port = new MaritimeAiClaim(
+				"The cited port-area maintenance notice provides contextual port information and does not establish vessel impact or shipment disruption.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "CONTEXTUAL", null, null, "PORT_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "PORT_CONTEXT_REVIEW");
+		MaritimeAiClaim weather = new MaritimeAiClaim(
+				"The cited regional rainfall observation offers contextual weather information without establishing vessel-specific conditions or causation relevant to the shipment.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "CONTEXTUAL", null, null, "REGIONAL_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "REGIONAL_WEATHER_CONTEXT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(port), List.of(), List.of(), true, null), input)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(weather), List.of(), List.of(), true, null), input)).isNull();
+
+		MaritimeAiClaim mixedImpact = new MaritimeAiClaim(port.statement() + " The shipment is affected by the notice.",
+				port.evidenceIds(), port.applicability(), null, null, port.associationScope(), port.factReferences(), port.relationshipType());
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(mixedImpact), List.of(), List.of(), true, null), input))
+				.isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+
+		MaritimeAiClaim mixedCausation = new MaritimeAiClaim(weather.statement() + " Rainfall caused a shipment delay.",
+				weather.evidenceIds(), weather.applicability(), null, null, weather.associationScope(), weather.factReferences(), weather.relationshipType());
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(mixedCausation), List.of(), List.of(), true, null), input))
+				.isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+	}
+
 	@Test void rejectsIncorrectSourceModeLabelsButAcceptsCorrectModeDescriptions() {
 		MaritimeEvidence retrospectiveMpa = new MaritimeEvidence("MPA_ETA_REVISION", "RETROSPECTIVE_ANALYSIS", "retrospective-mpa",
 				"Historical MPA expected-arrival revision", "MPA", "", "Curated historical MPA record.",
@@ -971,6 +995,22 @@ class MaritimeAiResponseValidatorTest {
 			assertThat(overlapClaim.factReferences()).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 			assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, input)).isNull();
+		}
+	}
+
+	@Test void replaysTheEntireSavedV20OpenAiResponseAgainstTheOriginalThreeSourceFixture() throws Exception {
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-capture.json")) {
+			assertThat(captureStream).as("sanitized v20 synthetic replay fixture").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(captureStream);
+			assertThat(capture.path("provider").asString()).isEqualTo("openai-responses");
+			assertThat(capture.path("model").asString()).isEqualTo("gpt-4.1-mini");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.1");
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			assertThat(capturedOutput.claims()).hasSize(3);
+			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, savedSyntheticOpenAiFixture())).isNull();
 		}
 	}
 
