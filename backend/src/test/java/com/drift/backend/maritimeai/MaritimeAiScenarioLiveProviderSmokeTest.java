@@ -102,6 +102,8 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 		String modelName = System.getenv("MARITIME_AI_MODEL");
 		String endpoint = System.getenv("MARITIME_AI_ENDPOINT");
 		String key = System.getenv("MARITIME_AI_API_KEY");
+		int timeoutSeconds = configuredTimeout();
+		int maxOutputTokens = configuredMaxOutputTokens();
 		assumeTrue("true".equalsIgnoreCase(approval), "Owner opt-in MARITIME_AI_SCENARIO_LIVE_SMOKE_APPROVED is required.");
 		assumeTrue("true".equalsIgnoreCase(globalEnabled) && "true".equalsIgnoreCase(scenarioEnabled)
 				&& "true".equalsIgnoreCase(externalApproval),
@@ -110,7 +112,7 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 				"Configured provider, model, endpoint and key are required.");
 
 		ObjectMapper json = new ObjectMapper();
-		var client = new ConfiguredMaritimeAiClient(providerName, modelName, key, endpoint, true, 20, 800, json,
+		var client = new ConfiguredMaritimeAiClient(providerName, modelName, key, endpoint, true, timeoutSeconds, maxOutputTokens, json,
 				(request, body) -> {
 					var response = java.net.http.HttpClient.newHttpClient().send(request,
 							java.net.http.HttpResponse.BodyHandlers.ofString());
@@ -136,6 +138,18 @@ class MaritimeAiScenarioLiveProviderSmokeTest {
 	}
 
 	private static boolean nonblank(String value) { return value != null && !value.isBlank(); }
+	private static int configuredTimeout() {
+		return configuredBoundedInt("MARITIME_AI_TIMEOUT_SECONDS", 20);
+	}
+	private static int configuredMaxOutputTokens() {
+		return configuredBoundedInt("MARITIME_AI_MAX_OUTPUT_TOKENS", 800);
+	}
+	private static int configuredBoundedInt(String name, int fallback) {
+		String configured = System.getenv(name);
+		if (configured == null || configured.isBlank()) return fallback;
+		try { return Integer.parseInt(configured); }
+		catch (NumberFormatException invalid) { return fallback; }
+	}
 
 	private static MaritimeAiEvidencePackage scenarioInput() {
 		return ScenarioQualityStubClientTest.worsenedShipmentAInput("LiveSmoke");
