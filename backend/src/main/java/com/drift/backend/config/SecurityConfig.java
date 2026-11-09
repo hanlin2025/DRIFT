@@ -39,8 +39,9 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/livez", "/readyz").permitAll()
 						.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/setup/status").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/register", "/api/invitations/resolve", "/api/login",
-								"/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+								"/api/auth/forgot-password", "/api/auth/reset-password", "/api/setup/administrator").permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, authException) ->
 						SessionAuthenticationFilter.unauthorized(response, SessionEndedException.MESSAGE)))

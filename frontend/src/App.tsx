@@ -8,6 +8,7 @@ import { ForgotPasswordPage } from './passwordreset/ForgotPasswordPage';
 import { ResetPasswordPage } from './passwordreset/ResetPasswordPage';
 import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
+import { SetupPage } from './setup/SetupPage';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
 
@@ -28,6 +29,7 @@ function HomeRedirect() {
 export function AppRoutes() {
   return <Routes>
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
+    <Route path="/setup" element={<AuthLayout><SetupPage /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
     <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordPage /></AuthLayout>} />
     <Route path="/reset-password" element={<AuthLayout><ResetPasswordPage /></AuthLayout>} />

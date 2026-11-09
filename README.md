@@ -201,6 +201,14 @@ On Windows, set the same switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'`,
 See [registration setup](docs/registration.md) for preset companies, local invitation links,
 API details, database migration notes, and registration integration tests.
 
+## First administrator
+
+A new installation does not have an administrator until an operator creates one. Set
+`DRIFT_SETUP_TOKEN` to a private value of at least 32 bytes, start the backend, and open
+http://localhost:5173/setup. The credential is not stored in the repository or the browser.
+After that one administrator exists, setup refuses a second account. Colleagues still join
+by invitation. See [first administrator setup](docs/first-administrator.md).
+
 ## Frontend
 
 In a second terminal, run `cd frontend`, `npm ci`, then `npm run dev`.

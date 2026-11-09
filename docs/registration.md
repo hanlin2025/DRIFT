@@ -1,7 +1,8 @@
 # Company-linked registration (CDG-17)
 
 Registration is invitation-only. The backend assigns company and role from the invitation;
-values submitted by the browser cannot grant membership or change the role.
+values submitted by the browser cannot grant membership or change the role. The first
+administrator is created separately by an operator. See [first administrator setup](first-administrator.md).
 
 ## Local setup
 
