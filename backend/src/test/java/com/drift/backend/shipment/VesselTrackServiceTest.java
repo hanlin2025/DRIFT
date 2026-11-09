@@ -8,9 +8,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -24,6 +26,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.drift.backend.account.Role;
 import com.drift.backend.account.authentication.AuthenticatedUser;
+import com.drift.backend.ais.capture.RecordedAisCaptureReader;
+import com.drift.backend.ais.capture.VerifiedAisCapture;
+import com.drift.backend.ais.feed.AisFeedStatus;
+import com.drift.backend.ais.feed.AisFeedStatusService;
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.LatestAisPositions;
@@ -40,12 +46,15 @@ class VesselTrackServiceTest {
 
 	@Mock private ShipmentService shipments;
 	@Mock private LatestAisPositions positions;
+	@Mock private RecordedAisCaptureReader captures;
+	@Mock private AisFeedStatusService feedStatus;
 
 	private VesselTrackService service;
 
 	@BeforeEach
 	void setUp() {
-		service = new VesselTrackService(shipments, positions, Clock.fixed(NOW, ZoneOffset.UTC));
+		lenient().when(feedStatus.current()).thenReturn(new AisFeedStatus(AisFeedStatus.Status.OFFLINE, null));
+		service = new VesselTrackService(shipments, positions, captures, feedStatus, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
 	@Test
@@ -148,8 +157,80 @@ class VesselTrackServiceTest {
 		verify(shipments).tracking(USER, 4L);
 	}
 
+	@Test
+	void readsOnlySeededObservationsAtOrBeforeTheCutoffAndKeepsStableTies() {
+		Instant cutoff = NOW;
+		when(shipments.trackIdentity(USER, 4L)).thenReturn(identity());
+		when(positions.hasSourceInWindow("563001234", cutoff.minus(Duration.ofHours(72)), cutoff, AisPositionSource.AIS_STREAM))
+				.thenReturn(false);
+		when(positions.history("563001234", cutoff.minus(Duration.ofHours(72)), cutoff,
+				VesselTrackService.MAX_POINTS + 1, AisPositionSource.SEEDED)).thenReturn(List.of(
+				fix(14, cutoff.plusSeconds(1).toString(), "7.0"),
+				fix(13, cutoff.toString(), "6.3"), fix(12, cutoff.toString(), "6.2"),
+				fix(11, cutoff.minusSeconds(1).toString(), "6.1"),
+				fix(9, cutoff.minus(Duration.ofHours(6)).toString(), "4.1"),
+				fix(10, cutoff.minus(Duration.ofHours(7)).toString(), "4.0")));
+
+		VesselTrackResponse result = service.history(USER, 4L, "MOTHER", "6", cutoff.toString(), null);
+
+		assertThat(result.cutoff()).isEqualTo(cutoff);
+		assertThat(result.context()).isEqualTo(TrackContext.SEEDED);
+		assertThat(result.points()).extracting(TrackPoint::id).containsExactly(11L, 12L, 13L);
+		assertThat(result.points()).allSatisfy(point -> assertThat(!point.ingestedAt().isAfter(cutoff)).isTrue());
+		assertThat(result.points().get(1).speedOverGroundKnots()).isEqualByComparingTo("6.2");
+		assertThat(result.lastKnownPosition().id()).isEqualTo(13L);
+		verifyNoInteractions(captures);
+	}
+
+	@Test
+	void retrievesVerifiedAuthenticCaptureOnlyAfterShipmentIdentityIsResolved() {
+		Instant cutoff = NOW;
+		TrackPoint point = trackPoint(31, cutoff.minusSeconds(5), AisPositionSource.AIS_STREAM);
+		when(shipments.trackIdentity(USER, 4L)).thenReturn(identity());
+		when(captures.read("capture-uuid", TrackVessel.MOTHER, "9387421", "563001234", cutoff))
+				.thenReturn(new VerifiedAisCapture("capture-uuid", "MOTHER", "MV Pacific Horizon", "563001234",
+						cutoff.minus(Duration.ofHours(1)), cutoff, java.time.LocalDate.of(2026, 10, 30), List.of(point)));
+
+		VesselTrackResponse result = service.history(USER, 4L, "MOTHER", "6", cutoff.toString(), "capture-uuid");
+
+		assertThat(result.context()).isEqualTo(TrackContext.RECORDED);
+		assertThat(result.captureId()).isEqualTo("capture-uuid");
+		assertThat(result.points()).containsExactly(point);
+		verify(shipments).trackIdentity(USER, 4L);
+		verifyNoInteractions(positions);
+	}
+
+	@Test
+	void refusesDatabaseAisStreamPlaybackWithoutAnApprovedCaptureId() {
+		Instant cutoff = NOW;
+		when(shipments.trackIdentity(USER, 4L)).thenReturn(identity());
+		when(positions.hasSourceInWindow("563001234", cutoff.minus(Duration.ofHours(72)), cutoff, AisPositionSource.AIS_STREAM))
+				.thenReturn(true);
+
+		assertThatThrownBy(() -> service.history(USER, 4L, "MOTHER", "24", cutoff.toString(), null))
+				.isInstanceOfSatisfying(InvalidShipmentRequestException.class, ex ->
+						assertThat(ex.getErrors()).containsEntry("captureId", VesselTrackService.AUTHENTIC_CAPTURE_REQUIRED));
+		verify(shipments).trackIdentity(USER, 4L);
+		verifyNoInteractions(captures);
+	}
+
+	@Test
+	void checksShipmentVisibilityBeforeOpeningARequestedCapture() {
+		Instant cutoff = NOW;
+		when(shipments.trackIdentity(USER, 4L)).thenThrow(new ShipmentNotFoundException());
+
+		assertThatThrownBy(() -> service.history(USER, 4L, "MOTHER", "24", cutoff.toString(), "capture-uuid"))
+				.isInstanceOf(ShipmentNotFoundException.class);
+		verifyNoInteractions(captures, positions);
+	}
+
 	private static ShipmentTrackingResponse tracking(VesselPosition mother, VesselPosition feeder) {
 		return new ShipmentTrackingResponse("MV Pacific Horizon", mother, null, "MV Strait Runner", feeder, null);
+	}
+
+	private static ShipmentTrackIdentity identity() {
+		return new ShipmentTrackIdentity("MV Pacific Horizon", "9387421", "563001234",
+				"MV Strait Runner", "9411889", "533000111");
 	}
 
 	private static VesselPosition latest(String mmsi) {
@@ -161,5 +242,10 @@ class VesselTrackServiceTest {
 		return new StoredAisPosition(id, new AisPosition("563001234", "PACIFIC HORIZON", new BigDecimal("1.264"), new BigDecimal("103.82"),
 				new BigDecimal(speed), new BigDecimal("175.0"), 176, 0, true, 12, Instant.parse(at),
 				AisPositionSource.SEEDED));
+	}
+
+	private static TrackPoint trackPoint(long id, Instant at, AisPositionSource source) {
+		return new TrackPoint(id, new BigDecimal("1.264"), new BigDecimal("103.82"), new BigDecimal("8.0"),
+				new BigDecimal("175.0"), 176, at, source, true);
 	}
 }

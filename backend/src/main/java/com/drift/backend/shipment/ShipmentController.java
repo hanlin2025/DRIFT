@@ -58,14 +58,16 @@ public class ShipmentController {
 			+ "Each shipment includes the planned connection window calculated from its stored schedule, "
 			+ "the risk calculated in the same way as the shipment detail, including a usable live AIS arrival estimate "
 			+ "(null when not assessed), the linked importer organisation (null when not linked), "
-			+ "and who last updated it and when. AIS positions for the whole list are read in one batch. "
-			+ "Optional filters are combined with AND, including atRisk. "
-			+ "Use sort=risk for CRITICAL first; shipments that are not assessed come last.",
+			+ "the delay comparison against the current importer's recorded deadline, "
+			+ "and who last updated it and when. AIS positions and deadlines for the whole list are read in one batch. "
+			+ "Optional filters are combined with AND, including atRisk and exceedsDeadline. "
+			+ "Use sort=risk for CRITICAL first; within a level, shipments predicted to exceed the importer's deadline come first, "
+			+ "and shipments that are not assessed come last.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Shipments of the company, possibly empty", content = @Content(
 						mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ShipmentResponse.class)))),
-				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Invalid filter value, including a malformed arrival date, unsupported status, unsupported sort, or non-boolean atRisk or exceedsDeadline", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"arrivalDate":"Arrival date must use ISO format YYYY-MM-DD"}}
 								"""))),
@@ -85,14 +87,15 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional planned mother-arrival date in Asia/Singapore, using ISO YYYY-MM-DD", example = "2026-10-12")
 			@DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate arrivalDate,
 			@io.swagger.v3.oas.annotations.Parameter(description = "Optional exact shipment status", schema = @Schema(implementation = ShipmentStatus.class), example = "ARCHIVED") @RequestParam(required = false) ShipmentStatus status,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed, with ties ordered by the soonest planned feeder departure. Omit for newest first.", schema = @Schema(allowableValues = { "risk" }), example = "risk") @RequestParam(required = false) String sort,
-			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ordering. risk lists CRITICAL, HIGH, MEDIUM, LOW, then shipments that are not assessed; within a level, shipments predicted to exceed the importer's deadline come first, then the soonest planned feeder departure. Omit for newest first.", schema = @Schema(allowableValues = { "risk" }), example = "risk") @RequestParam(required = false) String sort,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments with HIGH or CRITICAL risk", example = "true") @RequestParam(required = false) Boolean atRisk,
+			@io.swagger.v3.oas.annotations.Parameter(description = "When true, keeps only shipments whose predicted mother-vessel arrival exceeds the current importer's recorded deadline", example = "true") @RequestParam(required = false) Boolean exceedsDeadline) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
 				.body(shipmentService.list(user,
-						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk),
+						ShipmentFilterCriteria.of(reference, vessel, customer, arrivalDate, status, atRisk, exceedsDeadline),
 						ShipmentSort.fromListParameter(sort)));
 	}
 
@@ -190,13 +193,14 @@ public class ShipmentController {
 			+ "The window is the last 6, 24 or 72 hours, 24 by default. Observations flagged as invalid positions are left out. "
 			+ "At most 500 points are returned; when the window holds more, the newest are kept and truncated is true. "
 			+ "Segments slower than slowdownThresholdKnots are slowdowns. "
-			+ "A vessel with no retained AIS report returns no points. "
+			+ "An optional cutoff retrieves only observations received at or before that instant. Cutoff retrieval without a captureId is limited to SEEDED rehearsal data; AIS_STREAM playback requires a verified CDG-285 capture manifest with approved replay permission and current retention. "
+			+ "Timestamps are DRIFT receipt times, not original AIS event times. No positions are interpolated. "
 			+ "A shipment of another company is reported as not found.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 				@ApiResponse(responseCode = "200", description = "Track history for the vessel, possibly with no points", content = @Content(
 						mediaType = "application/json", schema = @Schema(implementation = VesselTrackResponse.class))),
-				@ApiResponse(responseCode = "400", description = "Unknown vessel or unsupported window", content = @Content(
+				@ApiResponse(responseCode = "400", description = "Unknown vessel, unsupported window or cutoff, or rejected capture manifest", content = @Content(
 						mediaType = "application/json", examples = @ExampleObject(value = """
 								{"message":"Shipment information is missing or invalid","errors":{"hours":"Window must be 6, 24 or 72 hours"}}
 								"""))),
@@ -216,12 +220,14 @@ public class ShipmentController {
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long shipmentId,
 			@io.swagger.v3.oas.annotations.Parameter(description = "MOTHER or FEEDER; MOTHER by default", example = "MOTHER") @RequestParam(required = false) String vessel,
-			@io.swagger.v3.oas.annotations.Parameter(description = "Window length in hours: 6, 24 or 72; 24 by default", example = "24") @RequestParam(required = false) String hours) {
+			@io.swagger.v3.oas.annotations.Parameter(description = "Window length in hours: 6, 24 or 72; 24 by default", example = "24") @RequestParam(required = false) String hours,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional ISO-8601 cutoff with an offset. Uses DRIFT receipt time and cannot be in the future.", example = "2026-10-30T12:01:00Z") @RequestParam(required = false) String cutoff,
+			@io.swagger.v3.oas.annotations.Parameter(description = "Optional CDG-285 capture UUID. Required to replay AIS_STREAM observations; omit for SEEDED rehearsal tracks.") @RequestParam(required = false) String captureId) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-				.body(vesselTracks.history(user, shipmentId, vessel, hours));
+				.body(vesselTracks.history(user, shipmentId, vessel, hours, cutoff, captureId));
 	}
 
 	@PostMapping("/api/shipments")

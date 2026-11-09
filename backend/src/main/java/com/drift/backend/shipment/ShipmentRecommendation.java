@@ -7,12 +7,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * Calculated when the shipment is read and not stored. A missing risk, an unavailable impact,
  * and a completed recommendation that no action is needed stay distinct.
  */
-@Schema(description = "One recommended response from the connection risk on this read and the impact result. Calculated when the shipment is read and not stored. Low risk with no predicted impact is NO_ACTION. Low risk that affects the constraints is MONITOR_CONSTRAINTS. Medium is NOTE_TIMING or REVIEW_PLAN. High is WATCH_CONNECTION or PREPARE_INTERVENTION. Critical, including a missed remaining window and a planned window that is not positive, is CONFIRM_CONNECTION or ACT_ON_CONNECTION. The recommendation is unavailable when the risk is absent or the impact is unavailable, including when the impact assessment has not been returned. That result is not NO_ACTION. riskLevel and riskExplanation are the connection risk on this response.")
+@Schema(description = "One recommended response from the connection risk on this read and the impact result. Calculated when the shipment is read and not stored. Low risk with no predicted impact is NO_ACTION. Low risk that affects the constraints is MONITOR_CONSTRAINTS. Medium is NOTE_TIMING or REVIEW_PLAN. High is WATCH_CONNECTION or PREPARE_INTERVENTION. Critical, including a missed remaining window and a planned window that is not positive, is CONFIRM_CONNECTION or ACT_ON_CONNECTION. The recommendation is unavailable when the risk is absent or the impact is unavailable. That result is not NO_ACTION. riskLevel and riskExplanation are the connection risk on this response.")
 public record ShipmentRecommendation(
 		@Schema(description = "True when both inputs were read and one response was selected, including a recommendation that no action is needed.")
 		boolean available,
 		@Schema(description = "Why no response was selected. Null when a response was selected.", nullable = true,
-				example = "A recommendation is not available because the impact assessment has not been returned.")
+				example = "A recommendation is not available because the impact assessment is unavailable. No mother-vessel transshipment-arrival deadline is recorded for the current importer.")
 		String unavailable,
 		@Schema(description = "The selected response. Null when the recommendation is unavailable.", nullable = true)
 		ShipmentRecommendedResponse response,
@@ -25,8 +25,6 @@ public record ShipmentRecommendation(
 		ShipmentRecommendationImpact impact) {
 
 	static final String RISK_NOT_ASSESSED = "A recommendation is not available because the connection risk is not assessed.";
-	static final String IMPACT_NOT_RETURNED = "A recommendation is not available because the impact assessment has not been returned.";
-	static final String BOTH_NOT_RETURNED = "A recommendation is not available because the connection risk is not assessed and the impact assessment has not been returned.";
 	static final String IMPACT_UNAVAILABLE = "A recommendation is not available because the impact assessment is unavailable. ";
 	static final String BOTH_UNAVAILABLE = "A recommendation is not available because the connection risk is not assessed and the impact assessment is unavailable. ";
 
@@ -62,8 +60,7 @@ public record ShipmentRecommendation(
 
 	/**
 	 * Selects the recorded response from the connection risk and the delay comparison on this read.
-	 * A null risk has not been assessed. A missing, stale, or incompatible comparison stays unavailable.
-	 */
+	 * A null risk has not been assessed. A missing, stale, or incompatible comparison stays unavailable.	 */
 	static ShipmentRecommendation of(ShipmentRisk risk, ShipmentRecommendationImpact impact) {
 		if (impact == null) {
 			throw new IllegalArgumentException("A recommendation needs the impact it used");
@@ -102,16 +99,10 @@ public record ShipmentRecommendation(
 			throw new IllegalArgumentException("A completed recommendation has no unavailable sentence");
 		}
 		if (riskMissing && impactMissing) {
-			if (ShipmentRecommendationImpact.NOT_RETURNED.equals(impact.detail())) {
-				return BOTH_NOT_RETURNED;
-			}
 			return BOTH_UNAVAILABLE + impact.detail();
 		}
 		if (riskMissing) {
 			return RISK_NOT_ASSESSED;
-		}
-		if (ShipmentRecommendationImpact.NOT_RETURNED.equals(impact.detail())) {
-			return IMPACT_NOT_RETURNED;
 		}
 		return IMPACT_UNAVAILABLE + impact.detail();
 	}

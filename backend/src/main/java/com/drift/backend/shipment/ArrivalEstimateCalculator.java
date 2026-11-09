@@ -34,6 +34,15 @@ public final class ArrivalEstimateCalculator {
 	}
 
 	public ArrivalEstimate estimate(ArrivalFix fix, String transshipmentPort, OffsetDateTime plannedArrival, Clock clock) {
+		return estimate(fix, transshipmentPort, plannedArrival, clock, null);
+	}
+
+	/**
+	 * Calculates a controlled synthetic replay using its fixture-owned fictional port coordinates.
+	 * Normal shipment reads continue to resolve ports through the shared route catalog.
+	 */
+	ArrivalEstimate estimate(ArrivalFix fix, String transshipmentPort, OffsetDateTime plannedArrival,
+			Clock clock, Coordinates controlledPortCoordinates) {
 		if (plannedArrival == null || clock == null) {
 			throw new IllegalArgumentException("A planned arrival and a clock are required");
 		}
@@ -46,7 +55,9 @@ public final class ArrivalEstimateCalculator {
 		if (transshipmentPort == null || transshipmentPort.isBlank()) {
 			return ArrivalEstimate.unavailable(MISSING_PORT, "The transshipment port is missing.");
 		}
-		Coordinates port = ports.locate(transshipmentPort).orElse(null);
+		Coordinates port = controlledPortCoordinates == null
+				? ports.locate(transshipmentPort).orElse(null)
+				: controlledPortCoordinates;
 		if (port == null) {
 			return ArrivalEstimate.unavailable(UNKNOWN_PORT,
 					"The transshipment port is not on the route map, so its coordinates cannot be used.");

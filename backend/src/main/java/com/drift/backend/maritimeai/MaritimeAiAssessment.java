@@ -20,6 +20,7 @@ public class MaritimeAiAssessment {
 	@Column(name = "prompt_version", nullable = false, length = 100) private String promptVersion;
 	@Enumerated(EnumType.STRING) @Column(name = "generation_state", nullable = false, length = 16) private MaritimeAiGenerationState generationState;
 	@Column(name = "validation_status", nullable = false, length = 64) private String validationStatus;
+	@Column(name = "record_type", nullable = false, length = 40) private String recordType;
 	// V28 deliberately uses PostgreSQL TEXT, not an OID large object.
 	@Column(name = "output_json", columnDefinition = "text") private String outputJson;
 	@Column(name = "failure_metadata", columnDefinition = "text") private String failureMetadata;
@@ -27,15 +28,18 @@ public class MaritimeAiAssessment {
 	protected MaritimeAiAssessment() { }
 	MaritimeAiAssessment(Shipment shipment, String assessmentId, String bundleVersion, String bundleHash, Instant cutoff,
 			String provider, String model, String promptVersion, MaritimeAiGenerationState state, String validation,
-			String outputJson, String failure, Instant createdAt) {
+			String recordType, String outputJson, String failure, Instant createdAt) {
 		this.shipment = shipment; this.assessmentId = assessmentId; this.owningCompanyId = shipment.getCompany().getId();
 		this.bundleVersion = bundleVersion; this.bundleHash = bundleHash; this.assessmentCutoffUtc = cutoff;
 		this.provider = provider; this.model = model; this.promptVersion = promptVersion; this.generationState = state;
 		this.validationStatus = validation; this.outputJson = outputJson; this.failureMetadata = failure; this.createdAt = createdAt;
+		this.recordType = recordType;
 	}
 	public String getAssessmentId() { return assessmentId; } public MaritimeAiGenerationState getGenerationState() { return generationState; }
+	public Long getShipmentId() { return shipment == null ? null : shipment.getId(); }
 	public Long getOwningCompanyId() { return owningCompanyId; }
 	public String getValidationStatus() { return validationStatus; } public String getOutputJson() { return outputJson; }
+	public String getRecordType() { return recordType; }
 	public String getFailureMetadata() { return failureMetadata; } public String getBundleVersion() { return bundleVersion; }
 	public String getBundleHash() { return bundleHash; } public Instant getAssessmentCutoffUtc() { return assessmentCutoffUtc; }
 	public String getProvider() { return provider; } public String getModel() { return model; } public String getPromptVersion() { return promptVersion; }

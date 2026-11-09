@@ -57,7 +57,7 @@ public final class SharedEvidenceShipmentPairFixture {
 		return new ShipmentDetailResponse(1L, 1L, "CDG262-FIXTURE", "Synthetic origin", "Synthetic destination",
 				"Synthetic Multi-source Port", "Synthetic Multi-source Vessel", EARLIER_ARRIVAL, "9000002", null, null,
 				"Synthetic Multi-source Feeder", OffsetDateTime.parse("2026-10-01T14:00:00+08:00"), null, null, null,
-				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null,
+				Instant.EPOCH, 0L, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,null, null,  null,
 				null, ShipmentStatus.ACTIVE, null, java.util.List.of());
 	}
 }
