@@ -22,6 +22,14 @@ public class Company {
 
 	protected Company() { }
 
+	public static Company createActive(String code, String name) {
+		Company company = new Company();
+		company.code = code;
+		company.name = name;
+		company.active = true;
+		return company;
+	}
+
 	public Long getId() { return id; }
 	public String getCode() { return code; }
 	public String getName() { return name; }

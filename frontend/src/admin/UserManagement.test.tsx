@@ -8,7 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
-import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, reactivateUser, removeUser } from './api';
+import { assignUser, createOrganisation, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, reactivateUser, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
@@ -21,6 +21,7 @@ vi.mock('./api', () => ({
   removeUser: vi.fn(),
   reactivateUser: vi.fn(),
   listAccountStatusAudits: vi.fn(),
+  createOrganisation: vi.fn(),
 }));
 
 const admin: Session = {
@@ -103,6 +104,23 @@ describe('user management', () => {
     expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 2, 'IMPORTER');
     expect(await screen.findByText('User assigned successfully')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('adds an organisation without offering it for assignment in this company', async () => {
+    vi.mocked(createOrganisation).mockResolvedValue({ id: 44, code: 'PACIFIC_GATE', name: 'Pacific Gate Imports' });
+    writeSession(admin);
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'Add an organisation' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Organisation code'), 'PACIFIC_GATE');
+    await user.type(screen.getByLabelText('Organisation name'), 'Pacific Gate Imports');
+    await user.click(screen.getByRole('button', { name: /Add organisation/ }));
+
+    expect(createOrganisation).toHaveBeenCalledWith('admin-token', 'PACIFIC_GATE', 'Pacific Gate Imports');
+    expect(await screen.findByText('Pacific Gate Imports (PACIFIC_GATE) was added.')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Organisation')).queryByRole('option', { name: 'Pacific Gate Imports' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Harbourline Logistics (Demo)' })).toBeInTheDocument();
   });
 
   it('shows the assignment history after a change is saved', async () => {

@@ -13,6 +13,9 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
 
 	Optional<Company> findByCode(String code);
 
+	@Query("SELECT company FROM Company company WHERE UPPER(company.code) = :code")
+	Optional<Company> findByNormalisedCode(@Param("code") String code);
+
 	List<Company> findByActiveTrueOrderByNameAscIdAsc();
 
 	@Query("""

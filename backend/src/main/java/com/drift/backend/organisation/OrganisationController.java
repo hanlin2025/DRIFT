@@ -25,7 +25,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
-@Tag(name = "Organisations", description = "Search importer organisations the authenticated user can link to a shipment.")
+@Tag(name = "Organisations", description = "Search importer organisations the authenticated user can link to a shipment, and add an organisation from the administrator workspace.")
 public class OrganisationController {
 
 	private final OrganisationService organisations;
