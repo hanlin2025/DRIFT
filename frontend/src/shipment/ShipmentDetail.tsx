@@ -672,17 +672,22 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
         </dl>
       </article>
-      <Cdg201EvidencePanel evidence={cdg201Evidence} />
-      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
-      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
-      <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+<RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
         decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
         archived={shipment.status === 'ARCHIVED'}
         onSessionEnded={onSessionEnded} onRecorded={onDecision} />
+      <Cdg201EvidencePanel evidence={cdg201Evidence} />
+      <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
+      <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       {changeHistory}
     </>
   );
 }
+
+const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
+  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
+  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
+};
 
 // Neutral wording on purpose: this is an uncalibrated chance, not a risk level, so it has no badge or colour.
 function lateArrivalChanceFact(chance: Shipment['lateArrivalChance']) {
@@ -709,11 +714,6 @@ function lateArrivalChanceFact(chance: Shipment['lateArrivalChance']) {
     </div>
   );
 }
-
-const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
-  AFFECTS_CONSTRAINTS: "Affects the importer's constraints",
-  NO_PREDICTED_IMPACT: "Does not affect the importer's constraints",
-};
 
 const PORT_OUTCOME_LABELS: Record<NonNullable<PortConditionComparison['outcome']>, string> = {
   MATCHES_NORMAL: 'Matches own reports',

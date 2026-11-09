@@ -9,7 +9,8 @@ public record ShipmentFilterCriteria(
 		String customer,
 		LocalDate arrivalDate,
 		ShipmentStatus status,
-		boolean atRisk) {
+		boolean atRisk,
+		boolean exceedsDeadline) {
 
 	public ShipmentFilterCriteria {
 		reference = optionalText(reference);
@@ -28,16 +29,27 @@ public record ShipmentFilterCriteria(
 
 	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate,
 			ShipmentStatus status, Boolean atRisk) {
-		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate, status, Boolean.TRUE.equals(atRisk));
+		return of(reference, vessel, customer, arrivalDate, status, atRisk, null);
+	}
+
+	public static ShipmentFilterCriteria of(String reference, String vessel, String customer, LocalDate arrivalDate,
+			ShipmentStatus status, Boolean atRisk, Boolean exceedsDeadline) {
+		return new ShipmentFilterCriteria(reference, vessel, customer, arrivalDate, status, Boolean.TRUE.equals(atRisk),
+				Boolean.TRUE.equals(exceedsDeadline));
 	}
 
 	public static ShipmentFilterCriteria none() {
-		return new ShipmentFilterCriteria(null, null, null, null, null, false);
+		return new ShipmentFilterCriteria(null, null, null, null, null, false, false);
 	}
 
 	/** HIGH and CRITICAL count as at risk. A shipment without a risk level is not at risk. */
 	static boolean isAtRisk(ShipmentRisk risk) {
 		return risk != null && (risk.level() == ShipmentRisk.Level.HIGH || risk.level() == ShipmentRisk.Level.CRITICAL);
+	}
+
+	/** Filters calculated on read run on the mapped rows, so paging must happen after them. */
+	boolean computed() {
+		return atRisk || exceedsDeadline;
 	}
 
 	private static String optionalText(String value) {

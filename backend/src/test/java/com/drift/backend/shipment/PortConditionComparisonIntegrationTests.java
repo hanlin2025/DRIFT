@@ -93,6 +93,8 @@ class PortConditionComparisonIntegrationTests {
 				.isNotEqualTo(match.get("risk").get("explanation").asText());
 		assertThat(match.get("delayComparison").get("outcome").isNull()).isTrue();
 		assertThat(match.get("recommendation").get("available").asBoolean()).isFalse();
+		assertThat(match.get("recommendation").get("unavailable").asText())
+				.isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + match.get("delayComparison").get("message").asText());
 		assertThat(match.get("recommendation").get("impact").get("detail").asText())
 				.isEqualTo(match.get("delayComparison").get("message").asText());
 		assertThat(match.get("delayComparison").isNull()).isFalse();
