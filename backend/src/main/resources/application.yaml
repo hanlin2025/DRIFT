@@ -46,6 +46,10 @@ app:
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
     ttl: ${PASSWORD_RESET_TTL:1h}
     from: ${PASSWORD_RESET_FROM:noreply@localhost}
+    rate-limit:
+      email: ${PASSWORD_RESET_EMAIL_LIMIT:5}
+      ip: ${PASSWORD_RESET_IP_LIMIT:20}
+      window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   invitation:
     link-base-url: ${INVITATION_LINK_BASE_URL:http://localhost:5173/signup}
     ttl: ${INVITATION_TTL:7d}
@@ -69,6 +73,7 @@ app:
       batch-size: ${RISK_ALERTS_BATCH_SIZE:50}
   ais:
     enabled: ${AIS_ENABLED:false}
+    capture-directory: ${AIS_CAPTURE_DIRECTORY:}
     stream-uri: wss://stream.aisstream.io/v0/stream
     api-key: ${AISSTREAM_API_KEY:}
     southwest-latitude: ${AIS_SOUTHWEST_LATITUDE:}
@@ -85,8 +90,20 @@ app:
     # Local/staging-only fictional replay; stage changes require an application restart.
     controlled-replay-enabled: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED:false}
     controlled-replay-stage: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_STAGE:BASELINE}
+  controlled-scenario:
+    # Keep the session API absent from usable deployments unless explicitly configured for an isolated demo.
+    enabled: ${CONTROLLED_SCENARIO_ENABLED:false}
+    demo-company-id: ${CONTROLLED_SCENARIO_DEMO_COMPANY_ID:}
+    allowed-user-ids: ${CONTROLLED_SCENARIO_ALLOWED_USER_IDS:}
+    shipment-a-id: ${CONTROLLED_SCENARIO_SHIPMENT_A_ID:}
+    shipment-b-id: ${CONTROLLED_SCENARIO_SHIPMENT_B_ID:}
+    session-ttl: ${CONTROLLED_SCENARIO_SESSION_TTL:4h}
+    max-sessions: ${CONTROLLED_SCENARIO_MAX_SESSIONS:100}
+    max-commands-per-session: ${CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION:64}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
+    # Separate explicit UI-requested controlled-scenario inference gate; the provider approval gate still applies.
+    scenario-enabled: ${MARITIME_AI_SCENARIO_ENABLED:false}
     # Offline-only client for the controlled fictional replay. Never sends a provider request.
     controlled-replay-stub-enabled: ${MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED:false}
     provider: ${MARITIME_AI_PROVIDER:}

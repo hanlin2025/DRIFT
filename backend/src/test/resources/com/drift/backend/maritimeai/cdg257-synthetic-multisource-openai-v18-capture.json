@@ -1,0 +1,110 @@
+{
+  "validationStatus": "CONTEXTUAL_EVIDENCE_OVERSTATED",
+  "promptVersion": "cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1",
+  "provider": "openai-responses",
+  "model": "gpt-4.1-mini",
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {
+        "statement": "The documented revision warrants schedule review.",
+        "evidenceIds": [
+          "synthetic-mpa-schedule-001"
+        ],
+        "applicability": "VERIFIED",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": [
+          "evidence:synthetic-mpa-schedule-001",
+          "schedule:MOTHER:PLANNED_ARRIVAL",
+          "schedule:FEEDER:PLANNED_DEPARTURE"
+        ],
+        "relationshipType": "SCHEDULE_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic official notice provides contextual port maintenance information relevant to the transshipment port but does not establish a vessel impact or causation and has uncertain applicability for shipment planning.",
+        "evidenceIds": [
+          "synthetic-notice-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "PORT_CONTEXT",
+        "factReferences": [
+          "evidence:synthetic-notice-001"
+        ],
+        "relationshipType": "PORT_CONTEXT_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The timing of the documented expected arrival overlaps with the port contextual maintenance period, warranting attention to timing relationships without implying causation.",
+        "evidenceIds": [
+          "synthetic-notice-001",
+          "synthetic-mpa-schedule-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "PORT_CONTEXT",
+        "factReferences": [
+          "relationship:PORT_CONTEXT_OVERLAPS_REVISED_EXPECTED_ARRIVAL",
+          "evidence:synthetic-notice-001",
+          "evidence:synthetic-mpa-schedule-001"
+        ],
+        "relationshipType": "PORT_TIME_OVERLAP_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic regional rainfall observation offers contextual weather information for the transshipment port area that does not provide verified vessel-specific conditions or causal links and is of uncertain applicability for shipment planning.",
+        "evidenceIds": [
+          "synthetic-nea-rainfall-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "REGIONAL_CONTEXT",
+        "factReferences": [
+          "evidence:synthetic-nea-rainfall-001"
+        ],
+        "relationshipType": "REGIONAL_WEATHER_CONTEXT",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic expected arrival observation warrants human review alongside backend HIGH risk based on the available planned connection window. The AIS estimate is unavailable due to no position.",
+        "evidenceIds": [
+          "synthetic-mpa-schedule-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": [
+          "evidence:synthetic-mpa-schedule-001",
+          "risk:CONNECTION_SEVERITY",
+          "risk:PLANNED_CONNECTION_WINDOW",
+          "risk:ARRIVAL_ESTIMATE_NOT_USED",
+          "risk:ARRIVAL_ESTIMATE_FRESHNESS"
+        ],
+        "relationshipType": "RISK_BUFFER_REVIEW",
+        "riskReview": {
+          "severity": "HIGH",
+          "selectedWindowBasis": "PLANNED_SHIPMENT_SCHEDULE",
+          "selectedWindowState": "AVAILABLE",
+          "estimateFreshness": "UNAVAILABLE"
+        }
+      }
+    ],
+    "uncertainties": [
+      "The evidence does not establish whether this shipment is urgent."
+    ],
+    "followUpConsiderations": [
+      "Verify whether a transshipment-arrival deadline is recorded for this shipment.",
+      "Ask a designated human reviewer or carrier operations team to verify the current vessel position and expected arrival time relative to the planned connection window.",
+      "Confirm current port maintenance status and its possible impact with the port authority or operations team."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}

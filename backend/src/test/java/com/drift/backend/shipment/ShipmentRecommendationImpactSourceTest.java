@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -22,7 +23,7 @@ class ShipmentRecommendationImpactSourceTest {
 
 	@Test
 	void aMissingStaleOrIncompatibleComparisonStaysUnavailable() {
-		assertThat(impacts.fromComparison(null)).isEqualTo(ShipmentRecommendationImpact.notReturned());
+		assertThatThrownBy(() -> impacts.fromComparison(null)).isInstanceOf(IllegalArgumentException.class);
 		assertThat(impacts.fromComparison(DelayComparison.of(null, null)).detail())
 				.isEqualTo(DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(impacts.fromComparison(DelayComparison.of(fresh("2026-10-28T16:00:00Z"), null)).detail())

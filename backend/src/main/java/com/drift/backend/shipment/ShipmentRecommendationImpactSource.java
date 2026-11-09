@@ -12,16 +12,6 @@ import org.springframework.stereotype.Component;
 class ShipmentRecommendationImpactSource {
 
 	ShipmentRecommendationImpact fromComparison(DelayComparison comparison) {
-		if (comparison == null) {
-			return ShipmentRecommendationImpact.notReturned();
-		}
-		DelayComparison.Outcome outcome = comparison.outcome();
-		if (outcome == null) {
-			return ShipmentRecommendationImpact.unavailable(comparison.message());
-		}
-		return switch (outcome) {
-			case NO_PREDICTED_IMPACT -> ShipmentRecommendationImpact.noPredictedImpact();
-			case EXCEEDS_DEADLINE -> ShipmentRecommendationImpact.affectsConstraints();
-		};
+		return ShipmentRecommendationImpact.from(comparison);
 	}
 }

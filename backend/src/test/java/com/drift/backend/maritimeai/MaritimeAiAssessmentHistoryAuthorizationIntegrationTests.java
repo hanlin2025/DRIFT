@@ -87,6 +87,27 @@ class MaritimeAiAssessmentHistoryAuthorizationIntegrationTests {
 	}
 
 	@Test
+	void legacyOrdinaryHistoryRemainsVisibleWhenScenarioContextIsAbsentOrNull() throws Exception {
+		MvcResult generated = generate(originalImporterToken)
+				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED")).andReturn();
+		String assessmentId = JsonPath.read(generated.getResponse().getContentAsString(), "$.assessmentId");
+		assertThat(jdbc.queryForObject("SELECT record_type FROM maritime_ai_assessments WHERE assessment_id = ?", String.class,
+				assessmentId)).isEqualTo(MaritimeAiStoredAssessmentContent.SHIPMENT_ASSESSMENT);
+
+		jdbc.update("UPDATE maritime_ai_assessments SET output_json = (output_json::jsonb - 'recordType' - 'scenarioContext')::text WHERE assessment_id = ?",
+				assessmentId);
+		MvcResult absentContext = history(originalImporterToken).andExpect(status().isOk()).andReturn();
+		assertThat(json.readTree(absentContext.getResponse().getContentAsString()).size()).isEqualTo(1);
+		assertThat(absentContext.getResponse().getContentAsString()).contains(assessmentId);
+
+		jdbc.update("UPDATE maritime_ai_assessments SET output_json = jsonb_set(output_json::jsonb, '{scenarioContext}', 'null'::jsonb, TRUE)::text WHERE assessment_id = ?",
+				assessmentId);
+		MvcResult nullContext = history(originalImporterToken).andExpect(status().isOk()).andReturn();
+		assertThat(json.readTree(nullContext.getResponse().getContentAsString()).size()).isEqualTo(1);
+		assertThat(nullContext.getResponse().getContentAsString()).contains(assessmentId);
+	}
+
+	@Test
 	void authorizedHistoryIsScopedToTheCapturedImporterAndTheManagingCompany() throws Exception {
 		MvcResult success = generate(originalImporterToken)
 				.andExpect(status().isOk()).andExpect(jsonPath("$.state").value("GENERATED")).andReturn();
