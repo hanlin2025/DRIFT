@@ -1,6 +1,7 @@
 package com.drift.backend.importerauthorisation;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -84,6 +86,8 @@ class ImporterAuthorisationFlowIntegrationTests {
 		String importerCode = "CDG341" + suffix + "I";
 		String admin = token(user(forwarderId, "ADMIN"));
 		String forwarder = token(user(forwarderId, "FREIGHT_FORWARDER"));
+		String sameCompanyImporter = token(user(forwarderId, "IMPORTER"));
+		String manager = token(user(forwarderId, "LOGISTICS_MANAGER"));
 		String importer = token(user(importerId, "IMPORTER"));
 		String outsider = token(user(outsiderId, "ADMIN"));
 
@@ -91,9 +95,6 @@ class ImporterAuthorisationFlowIntegrationTests {
 				.contentType(MediaType.APPLICATION_JSON).content("{\"importerCompanyId\":" + importerId + "}"))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
-		mvc.perform(get("/api/importer-authorisations").header("Authorization", "Bearer " + outsider))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.authorisations", hasSize(0)));
 
 		MvcResult granted = mvc.perform(post("/api/importer-authorisations").header("Authorization", "Bearer " + admin)
 				.contentType(MediaType.APPLICATION_JSON).content("{\"importerCompanyId\":" + importerId + "}"))
@@ -101,6 +102,19 @@ class ImporterAuthorisationFlowIntegrationTests {
 				.andExpect(jsonPath("$.active").value(true))
 				.andReturn();
 		int authorisationId = JsonPath.read(granted.getResponse().getContentAsString(), "$.id");
+		mvc.perform(get("/api/importer-authorisations").header("Authorization", "Bearer " + outsider))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.authorisations", hasSize(0)))
+				.andExpect(jsonPath("$.authorisations[?(@.id == " + authorisationId + ")]").isEmpty());
+		for (String caller : new String[] { sameCompanyImporter, manager }) {
+			mvc.perform(post("/api/importer-authorisations").header("Authorization", "Bearer " + caller)
+					.contentType(MediaType.APPLICATION_JSON).content("{\"importerCompanyId\":" + importerId + "}"))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
+			mvc.perform(post("/api/importer-authorisations/" + authorisationId + "/end").header("Authorization", "Bearer " + caller))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.message").value(ImporterAuthorisationForbiddenException.CHANGE));
+		}
 		mvc.perform(post("/api/importer-authorisations").header("Authorization", "Bearer " + admin)
 				.contentType(MediaType.APPLICATION_JSON).content("{\"importerCompanyId\":" + importerId + "}"))
 				.andExpect(status().isOk())
@@ -157,7 +171,7 @@ class ImporterAuthorisationFlowIntegrationTests {
 				SELECT COUNT(*) FROM forwarder_importer_relationships
 				WHERE forwarder_company_id = ? AND importer_company_id = ?
 				""", Integer.class, forwarderId, importerId);
-		org.junit.jupiter.api.Assertions.assertEquals(1, rows);
+		assertEquals(1, rows);
 	}
 
 	@Test
@@ -168,7 +182,7 @@ class ImporterAuthorisationFlowIntegrationTests {
 		ExecutorService pool = Executors.newFixedThreadPool(4);
 		CountDownLatch start = new CountDownLatch(1);
 		try {
-			List<Future<Integer>> results = new java.util.ArrayList<>();
+			List<Future<Integer>> results = new ArrayList<>();
 			for (int attempt = 0; attempt < 4; attempt++) {
 				results.add(pool.submit(() -> {
 					start.await();
@@ -182,7 +196,7 @@ class ImporterAuthorisationFlowIntegrationTests {
 			start.countDown();
 			int first = results.get(0).get();
 			for (Future<Integer> result : results) {
-				org.junit.jupiter.api.Assertions.assertEquals(first, result.get());
+				assertEquals(first, result.get());
 			}
 		} finally {
 			pool.shutdownNow();
@@ -191,7 +205,7 @@ class ImporterAuthorisationFlowIntegrationTests {
 				SELECT COUNT(*) FROM forwarder_importer_relationships
 				WHERE forwarder_company_id = ? AND importer_company_id = ? AND active = TRUE
 				""", Integer.class, forwarderId, importerId);
-		org.junit.jupiter.api.Assertions.assertEquals(1, rows);
+		assertEquals(1, rows);
 	}
 
 	private long upload(String token, String reference, String importerCode) throws Exception {
