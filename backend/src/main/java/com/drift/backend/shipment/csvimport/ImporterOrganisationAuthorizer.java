@@ -12,6 +12,8 @@ import com.drift.backend.company.ForwarderImporterRelationshipRepository;
 @Component
 public class ImporterOrganisationAuthorizer {
 
+	public static final String UNAUTHORIZED_MESSAGE = "Your organisation is not authorized to import shipments for this importer";
+
 	private final CompanyRepository companies;
 	private final ForwarderImporterRelationshipRepository relationships;
 
@@ -41,8 +43,7 @@ public class ImporterOrganisationAuthorizer {
 		if (managingCompanyId.equals(importer.getId())
 				|| !relationships.existsByForwarderCompanyIdAndImporterCompanyIdAndActiveTrue(
 						managingCompanyId, importer.getId())) {
-			return rejected(row, "UNAUTHORIZED_IMPORTER_ORGANISATION",
-					"Your organisation is not authorized to import shipments for this importer");
+			return rejected(row, "UNAUTHORIZED_IMPORTER_ORGANISATION", UNAUTHORIZED_MESSAGE);
 		}
 		return ImporterOrganisationResolution.authorized(importer);
 	}

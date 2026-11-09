@@ -57,6 +57,7 @@ class ShipmentLinkIntegrationTests {
 	@Test
 	void linksAnotherActiveCompanyAndReturnsTheShipmentDetails() throws Exception {
 		Long shipmentId = createShipment(token);
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -81,6 +82,8 @@ class ShipmentLinkIntegrationTests {
 	void replacesTheLinkAndThenRemovesIt() throws Exception {
 		Long shipmentId = createShipment(token);
 		Long replacementId = insertCompany("CDG121_OTHER", "Other Imports", true);
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, replacementId);
 		link(token, shipmentId, importerId).andExpect(status().isOk());
 		link(token, shipmentId, replacementId)
 				.andExpect(status().isOk())
@@ -116,6 +119,42 @@ class ShipmentLinkIntegrationTests {
 	}
 
 	@Test
+	void rejectsAnActiveCompanyThatHasNoAuthorisation() throws Exception {
+		Long shipmentId = createShipment(token);
+		Long unaffiliatedId = insertCompany("CDG339_UNAUTHORISED_" + UUID.randomUUID().toString().substring(0, 8), "Unaffiliated Imports", true);
+		link(token, shipmentId, unaffiliatedId)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(com.drift.backend.shipment.exception.UnauthorizedImporterLinkException.MESSAGE));
+		assertThat(jdbc.queryForObject("SELECT importer_company_id FROM shipments WHERE id = ?", Long.class, shipmentId))
+				.isNull();
+	}
+
+	@Test
+	void endingTheAuthorisationBlocksANewLinkAndKeepsTheExistingOne() throws Exception {
+		Long shipmentId = createShipment(token);
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
+		link(token, shipmentId, importerId).andExpect(status().isOk());
+		String adminEmail = "cdg339-admin-" + UUID.randomUUID() + "@example.com";
+		createAccount(adminEmail, companyId, "ADMIN");
+		Number authorisationId = JsonPath.read(mvc.perform(post("/api/importer-authorisations")
+				.header("Authorization", "Bearer " + tokenFor(adminEmail))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"importerCompanyId\":" + importerId + "}"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString(), "$.id");
+		mvc.perform(post("/api/importer-authorisations/" + authorisationId.longValue() + "/end")
+				.header("Authorization", "Bearer " + tokenFor(adminEmail)))
+				.andExpect(status().isOk());
+
+		link(token, shipmentId, importerId)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(com.drift.backend.shipment.exception.UnauthorizedImporterLinkException.MESSAGE));
+		assertThat(jdbc.queryForObject("SELECT importer_company_id FROM shipments WHERE id = ?", Long.class, shipmentId))
+				.isEqualTo(importerId);
+		link(token, shipmentId, null).andExpect(status().isOk());
+	}
+
+	@Test
 	void rejectsAnImporterAndAFreightForwarderFromAnotherCompany() throws Exception {
 		Long shipmentId = createShipment(token);
 		String importerEmail = "cdg121-importer-" + UUID.randomUUID() + "@example.com";
@@ -136,6 +175,7 @@ class ShipmentLinkIntegrationTests {
 	@Test
 	void rejectsAMissingBodyWithoutClearingAnExistingLink() throws Exception {
 		Long shipmentId = createShipment(token);
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
 		link(token, shipmentId, importerId).andExpect(status().isOk());
 
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")

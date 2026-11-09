@@ -20,6 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.Role;
+import com.drift.backend.company.TestAuthorisations;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.maritimecontext.MaritimeEvidence;
 import com.drift.backend.shipment.CreateShipmentRequest;
@@ -114,6 +115,7 @@ class MaritimeReassessmentIntegrationTests {
 		assertThat(history.versions()).extracting(MaritimeReassessmentVersion::assessmentCutoffUtc)
 				.containsOnly(CUTOFF);
 
+		TestAuthorisations.allowShipment(jdbc, shipmentId, importerId);
 		links.link(forwarder, shipmentId, importerId);
 		assertThat(reassessments.history(importer, shipmentId).latestValidated().assessmentId())
 				.isEqualTo(history.latestValidated().assessmentId());

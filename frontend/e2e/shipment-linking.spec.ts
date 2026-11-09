@@ -153,6 +153,19 @@ async function createShipment(request: APIRequestContext, token: string, vessel:
   return { id: created.id as number, shipmentReference, vessel, version: created.version as number };
 }
 
+function authoriseImporter(shipmentId: number, importerCompanyId: number) {
+  sql(`INSERT INTO forwarder_importer_relationships
+      (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+    SELECT shipment.company_id, ${importerCompanyId}, TRUE, NOW(), actor.id, NOW(), actor.id
+    FROM shipments shipment
+    JOIN users actor ON actor.company_id = shipment.company_id
+    WHERE shipment.id = ${shipmentId}
+    ORDER BY actor.id
+    LIMIT 1
+    ON CONFLICT (forwarder_company_id, importer_company_id)
+    DO UPDATE SET active = TRUE, updated_at = NOW(), updated_by_user_id = EXCLUDED.updated_by_user_id;`);
+}
+
 async function linkImporter(request: APIRequestContext, token: string | null, shipmentId: string | number, importerCompanyId: number | null) {
   return request.patch(`/api/shipments/${shipmentId}/link-importer`, {
     ...(token ? { headers: bearer(token) } : {}),
@@ -330,6 +343,7 @@ test('an invalid, inactive, or missing importer is rejected and the current link
     await expectMessage(await linkImporter(request, forwarder.token, shipment.id, forwarder.companyId), 400, INVALID);
 
     const straitsId = companyId('STRAITS_FRESH_DEMO');
+    authoriseImporter(shipment.id, straitsId);
     const linked = await linkImporter(request, forwarder.token, shipment.id, straitsId);
     expect(linked.status(), await linked.text()).toBe(200);
     await expectMessage(await request.patch(`/api/shipments/${shipment.id}/link-importer`, {
@@ -364,6 +378,8 @@ test('re-linking and unlinking move the shipment between importer dashboards', {
       .find(item => item.code === pacificCode);
     expect(straitsOrg).toBeTruthy();
     expect(pacificOrg).toBeTruthy();
+    authoriseImporter(first.id, straitsOrg!.id);
+    authoriseImporter(first.id, pacificOrg!.id);
 
     await signIn(forwarderPage, forwarder.email, '/freight-forwarder');
     await linkThroughEditor(forwarderPage, first.id, 'Straits', 'Straits Fresh Imports (Demo)');
