@@ -233,6 +233,14 @@ export async function listPendingInvitations(token: string): Promise<ManagedInvi
   });
 }
 
+export async function withdrawInvitation(token: string, invitationId: number): Promise<void> {
+  const data = await send(`/api/admin/invitations/${invitationId}/withdraw`, token, { method: 'POST' });
+  if (!isRecord(data) || data.status !== 'REVOKED' || typeof data.id !== 'number' || data.id !== invitationId
+    || INVITATION_SECRET_KEYS.some(key => key in data)) {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+}
+
 export async function inviteColleague(token: string, organisationId: number, role: Role, email: string): Promise<IssuedInvitation> {
   const data = await send('/api/admin/invitations', token, {
     method: 'POST',

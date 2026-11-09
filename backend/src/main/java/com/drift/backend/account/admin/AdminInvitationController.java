@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,6 +57,37 @@ public class AdminInvitationController {
 			throw new SessionEndedException();
 		}
 		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(invitations.pending(user));
+	}
+
+	@PostMapping("/api/admin/invitations/{invitationId}/withdraw")
+	@Operation(summary = "Withdraw a pending invitation", description = "Withdraws one pending invitation in the administrator's own organisation. "
+			+ "The invitation becomes revoked and one revocation record stores who withdrew it and when. "
+			+ "A missing invitation and an invitation for another organisation are refused without revealing it. "
+			+ "An accepted, expired, or already withdrawn invitation is refused and left unchanged. "
+			+ "The invitation token is not included.",
+			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Invitation withdrawn", content = @Content(
+					mediaType = "application/json", schema = @Schema(implementation = WithdrawnInvitationResponse.class))),
+			@ApiResponse(responseCode = "401", description = "Missing, expired, or invalid bearer token", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Your session has ended. Log in again."}
+							"""))),
+			@ApiResponse(responseCode = "403", description = "The caller cannot manage this invitation", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"You cannot manage this invitation."}
+							"""))),
+			@ApiResponse(responseCode = "409", description = "The invitation is already withdrawn, already accepted, or expired", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"This invitation is already withdrawn."}
+							"""))) })
+	public ResponseEntity<WithdrawnInvitationResponse> withdraw(
+			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable Long invitationId) {
+		if (user == null) {
+			throw new SessionEndedException();
+		}
+		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(invitations.withdraw(user, invitationId));
 	}
 
 	@PostMapping("/api/admin/invitations")
