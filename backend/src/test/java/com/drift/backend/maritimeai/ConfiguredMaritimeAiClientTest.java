@@ -141,9 +141,12 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("The AIS estimate leaves no positive remaining connection window.")
 				.contains("does not establish / does not confirm / cannot establish")
 				.contains("whether the latest arrival estimate remains current at the scenario cutoff")
+				.contains("exact backend-provided direction and numerical margin")
+				.contains("Naming the shipment is optional")
 				.contains("Shipment A")
 				.contains("20 hours");
 		assertThat(systemPrompt).doesNotContain("Leave numeric values and timestamps to the backend facts panel");
+		assertThat(systemPrompt).doesNotContain("may omit the shipment name and numeric margin");
 		assertThat(facts.at("/stage").asString()).isEqualTo("WORSENED");
 		assertThat(facts.at("/scenarioShipmentKey").asString()).isEqualTo("A");
 		assertThat(facts.at("/comparison/outcome").asString()).isEqualTo("EXCEEDS_DEADLINE");

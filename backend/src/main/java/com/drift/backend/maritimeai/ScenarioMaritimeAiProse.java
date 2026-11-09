@@ -110,15 +110,13 @@ final class ScenarioMaritimeAiProse {
 				result.add(arrival + " exceeds the applicable transshipment-arrival deadline by " + impact.magnitude());
 				result.add(arrival + " is " + impact.magnitude() + " later than the applicable transshipment-arrival deadline");
 				result.add(arrival + " is " + impact.magnitude() + " beyond the applicable transshipment-arrival deadline");
-				result.add(arrival + " exceeds the applicable transshipment-arrival deadline");
-				result.add(arrival + " is after the applicable transshipment-arrival deadline");
 			}
 			case BEFORE_DEADLINE -> {
 				result.add(arrival + " is " + impact.magnitude() + " before the applicable transshipment-arrival deadline");
 				result.add(arrival + " is " + impact.magnitude() + " earlier than the applicable transshipment-arrival deadline");
-				result.add(arrival + " is before the applicable transshipment-arrival deadline");
 			}
-			case AT_DEADLINE -> result.add(arrival + " is at the applicable transshipment-arrival deadline");
+			case AT_DEADLINE -> result.add(arrival + " is at the applicable transshipment-arrival deadline with a margin of "
+					+ impact.magnitude());
 			}
 		}
 		return List.copyOf(result);
@@ -161,8 +159,7 @@ final class ScenarioMaritimeAiProse {
 				+ "The revision sentence and risk facts block may be in either order; keep the three risk-fact sentences together and in that order. "
 				+ "Deadline relevance: 'The synthetic [" + choices(REVISION_NOUNS) + "] [" + choices(DEADLINE_RELEVANCE_VERBS)
 				+ "] the arrival estimate against the recorded [" + choices(DEADLINE_TARGETS)
-				+ "].' Prefer a second deadline sentence that names the supplied shipment key and reports the exact backend-provided direction and margin; its complete case-specific patterns are supplied separately. "
-				+ "A concise alternative may omit the shipment name and numeric margin because this request is bound to one scenario shipment and the backend facts panel displays the exact comparison. It must still state the correct before/after direction; never omit or reverse that direction, or substitute a generic no-impact statement for an exceedance. The deadline revision sentence and comparison sentence may be in either order. Uncertainty: 'The synthetic ["
+				+ "].' Follow with a deadline sentence that states the exact backend-provided direction and numerical margin; its complete case-specific patterns are supplied separately. The shipment name is optional because the request is bound to one shipment, but the correct direction and margin are required. Never omit or reverse either one, or substitute a generic no-impact statement for an exceedance. The deadline revision sentence and comparison sentence may be in either order. Uncertainty: 'The synthetic ["
 				+ choices(UNCERTAINTY_SUBJECTS) + "] [" + choices(UNCERTAINTY_VERBS) + "] ["
 				+ choices(UNCERTAINTY_OBJECTS) + "].' ETA check: 'Ask the [" + choices(ETA_TEAMS) + "] to ["
 				+ choices(CHECK_VERBS) + "] [" + choices(ETA_TARGETS) + "].' Deadline check: 'Ask the ["
@@ -175,14 +172,13 @@ final class ScenarioMaritimeAiProse {
 		if (shipmentKey == null || !Set.of("A", "B").contains(shipmentKey) || comparison == null) return "";
 		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
 		if (impact == null || ScenarioDeadlineImpact.expectedOutcome(impact) != comparison.outcome()) return "";
-		String relationship = switch (impact.direction()) {
-		case AFTER_DEADLINE -> "is " + impact.magnitude() + " after";
-		case BEFORE_DEADLINE -> "is " + impact.magnitude() + " before";
-		case AT_DEADLINE -> "is at";
+		String relationshipSentence = switch (impact.direction()) {
+		case AFTER_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " after its applicable recorded deadline";
+		case BEFORE_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " before its applicable recorded deadline";
+		case AT_DEADLINE -> "its predicted arrival is at its applicable recorded deadline with a margin of " + impact.magnitude();
 		};
-		return "For this request, backend comparison facts identify Shipment " + shipmentKey + "; its predicted arrival "
-				+ relationship + " its applicable recorded deadline. Prefer naming this shipment and repeating the exact direction and margin without recalculating. "
-				+ "A concise statement may omit the shipment name and numeric margin because this request is bound to one shipment and the backend facts panel displays the exact comparison. Always state the correct direction. "
+		return "For this request, backend comparison facts identify Shipment " + shipmentKey + "; " + relationshipSentence
+				+ ". State the exact backend-provided direction and numerical margin without recalculating. Naming the shipment is optional because the request is bound to one shipment. "
 				+ "The comparison sentence must begin 'The backend comparison [for Shipment " + shipmentKey + "] ["
 				+ choices(COMPARISON_VERBS) + "]' and continue with exactly one of ["
 				+ choices(deadlineOutcomePhrases(impact)) + "]. The statement must explain this shipment-specific consequence, not only repeat the shared risk category.";

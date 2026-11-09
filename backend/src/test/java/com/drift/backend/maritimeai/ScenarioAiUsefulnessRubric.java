@@ -3,9 +3,8 @@ package com.drift.backend.maritimeai;
 import java.util.List;
 
 /**
- * Shared two-point usefulness rubric: a cited AI-authored deadline direction that matches the typed
- * comparison, plus two concrete human checks. The backend facts panel owns the comparison and displays
- * the outcome and the estimate/deadline timestamps used to derive its numeric margin.
+ * Shared two-point usefulness rubric: a cited AI-authored deadline direction and exact numerical margin
+ * that match the typed comparison, plus two concrete human checks. Backend facts remain authoritative.
  */
 final class ScenarioAiUsefulnessRubric {
 	private ScenarioAiUsefulnessRubric() { }
@@ -31,8 +30,10 @@ final class ScenarioAiUsefulnessRubric {
 					&& eligibleEvidenceIds.containsAll(evidenceIds);
 			boolean evidenceReferences = eligibleCitation && factReferences != null
 					&& factReferences.contains("evidence:" + evidenceIds.getFirst());
-			groundedOutcome = ScenarioMaritimeAiProse.matchesDeadline(business.statement(),
+			ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+			groundedOutcome = impact != null && ScenarioMaritimeAiProse.matchesDeadline(business.statement(),
 					input.shipmentContext().scenario().shipmentKey(), comparison)
+					&& business.statement().toLowerCase(java.util.Locale.ROOT).contains(impact.magnitude().toLowerCase(java.util.Locale.ROOT))
 					&& evidenceReferences
 					&& factReferences.containsAll(MaritimeAiCanonicalFactReferences.businessReferences(input));
 		}

@@ -1,5 +1,6 @@
 package com.drift.backend.maritimeai;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -37,7 +38,7 @@ record ScenarioMaritimeAiOutput(Assessment assessment) {
 			Boolean applicableToCurrentPort) { }
 	record ComparisonPromptFacts(String state, String outcome, String estimatedArrivalAt,
 			String comparedDeadline, String recordedTransshipmentPort, DeadlineImpactPromptFacts deadlineImpact) { }
-	record DeadlineImpactPromptFacts(String direction, long magnitudeSeconds, String magnitude) { }
+	record DeadlineImpactPromptFacts(String direction, BigDecimal magnitudeSeconds, String magnitude) { }
 	record PromptData(String stage, String cutoffUtc, String scenarioShipmentKey, String currentTransshipmentPort, RiskPromptFacts risk,
 			DeadlinePromptFacts deadline, ComparisonPromptFacts comparison, List<RevisionChoice> eligibleRevisions) { }
 
@@ -237,7 +238,7 @@ record ScenarioMaritimeAiOutput(Assessment assessment) {
 				|| !deadline.recordedTransshipmentPort().equalsIgnoreCase(currentTransshipmentPort)) return false;
 		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
 		return risk.arrivalEstimate().estimatedArrivalAt().toInstant().equals(comparison.estimatedArrivalAt().toInstant())
-				&& impact != null && impact.direction() != ScenarioDeadlineImpact.Direction.AT_DEADLINE
+				&& impact != null
 				&& ScenarioDeadlineImpact.expectedOutcome(impact) == comparison.outcome();
 	}
 

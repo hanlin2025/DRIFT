@@ -1,5 +1,6 @@
 package com.drift.backend.maritimeai;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -8,7 +9,7 @@ import java.util.List;
 import com.drift.backend.shipment.DelayComparison;
 
 /** Backend-derived signed distance between the predicted arrival and the applicable deadline. */
-record ScenarioDeadlineImpact(Direction direction, long magnitudeSeconds, String magnitude) {
+record ScenarioDeadlineImpact(Direction direction, BigDecimal magnitudeSeconds, String magnitude) {
 	enum Direction { AFTER_DEADLINE, BEFORE_DEADLINE, AT_DEADLINE }
 
 	static ScenarioDeadlineImpact from(MaritimeAiBusinessContext.Comparison comparison) {
@@ -17,11 +18,13 @@ record ScenarioDeadlineImpact(Direction direction, long magnitudeSeconds, String
 		OffsetDateTime estimated = comparison.estimatedArrivalAt();
 		OffsetDateTime deadline = comparison.comparedDeadline();
 		Duration signed = Duration.between(deadline.toInstant(), estimated.toInstant());
-		if (signed.isZero()) return new ScenarioDeadlineImpact(Direction.AT_DEADLINE, 0, "0 seconds");
-		if (signed.getNano() != 0) return null;
-		long seconds = Math.abs(signed.getSeconds());
-		Direction direction = signed.isNegative() ? Direction.BEFORE_DEADLINE : Direction.AFTER_DEADLINE;
-		return new ScenarioDeadlineImpact(direction, seconds, describe(seconds));
+		Duration magnitude = signed.abs();
+		Direction direction = signed.isZero() ? Direction.AT_DEADLINE
+				: signed.isNegative() ? Direction.BEFORE_DEADLINE : Direction.AFTER_DEADLINE;
+		BigDecimal seconds = BigDecimal.valueOf(magnitude.getSeconds())
+				.add(BigDecimal.valueOf(magnitude.getNano(), 9));
+		seconds = new BigDecimal(seconds.stripTrailingZeros().toPlainString());
+		return new ScenarioDeadlineImpact(direction, seconds, describe(magnitude));
 	}
 
 	static DelayComparison.Outcome expectedOutcome(ScenarioDeadlineImpact impact) {
@@ -30,14 +33,21 @@ record ScenarioDeadlineImpact(Direction direction, long magnitudeSeconds, String
 				? DelayComparison.Outcome.EXCEEDS_DEADLINE : DelayComparison.Outcome.NO_PREDICTED_IMPACT;
 	}
 
-	private static String describe(long seconds) {
+	private static String describe(Duration duration) {
 		List<String> units = new ArrayList<>();
-		long hours = seconds / 3600;
-		long minutes = (seconds % 3600) / 60;
-		long remainder = seconds % 60;
+		long hours = duration.toHours();
+		Duration remainder = duration.minusHours(hours);
+		long minutes = remainder.toMinutes();
+		remainder = remainder.minusMinutes(minutes);
+		long wholeSeconds = remainder.getSeconds();
+		int nanos = remainder.getNano();
 		if (hours > 0) units.add(unit(hours, "hour"));
 		if (minutes > 0) units.add(unit(minutes, "minute"));
-		if (remainder > 0 || units.isEmpty()) units.add(unit(remainder, "second"));
+		if (wholeSeconds > 0 || nanos > 0 || units.isEmpty()) {
+			BigDecimal seconds = BigDecimal.valueOf(wholeSeconds).add(BigDecimal.valueOf(nanos, 9));
+			String count = seconds.stripTrailingZeros().toPlainString();
+			units.add(count + (seconds.compareTo(BigDecimal.ONE) == 0 ? " second" : " seconds"));
+		}
 		return units.size() == 1 ? units.getFirst() : String.join(" and ", units);
 	}
 
