@@ -72,7 +72,7 @@ final class MaritimeAiResponseValidator {
 				|| "INSUFFICIENT_SCENARIO_CONTEXT".equals(validationStatus); }
 	}
 
-	/** Dedicated v1.6 validator. It validates typed meaning and whole authored sentences before projection. */
+	/** Controlled-scenario validator: checks typed backend facts and whole authored sentences before projection. */
 	static ScenarioValidation validateScenarioV16(String outputText, MaritimeAiEvidencePackage input) {
 		String preflightField = ScenarioMaritimeAiOutput.preflightFailureField(input);
 		if (preflightField != null) return new ScenarioValidation("INSUFFICIENT_SCENARIO_CONTEXT", preflightField, null);
@@ -104,7 +104,8 @@ final class MaritimeAiResponseValidator {
 		if (!ScenarioMaritimeAiProse.matchesRisk(assessment.risk().statement(), expectedRisk.severity(),
 				expectedRisk.selectedWindowState()))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.risk.statement", null);
-		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(), comparison.outcome()))
+		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(),
+				input.shipmentContext().scenario().shipmentKey(), comparison))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadline.statement", null);
 		if (!ScenarioMaritimeAiProse.matchesUncertainty(assessment.uncertainty()))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.uncertainty", null);

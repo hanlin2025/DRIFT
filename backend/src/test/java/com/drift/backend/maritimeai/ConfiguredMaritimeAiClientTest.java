@@ -117,7 +117,7 @@ class ConfiguredMaritimeAiClientTest {
 
 		var result = client.interpret(input);
 
-		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.6")
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.7.1")
 				.isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
 		assertThat(result.scenarioOutputText()).isEqualTo(outputText);
 		assertThat(result.scenarioEnvelopeStatus()).isEqualTo("completed");
@@ -131,7 +131,7 @@ class ConfiguredMaritimeAiClientTest {
 		JsonNode schema = request.at("/text/format/schema");
 		assertThat(body.get()).contains("\"model\":\"model\"")
 				.contains("\"max_output_tokens\":800").contains("\"store\":false")
-				.contains("\"name\":\"maritime_ai_controlled_scenario_v16\"")
+				.contains("\"name\":\"maritime_ai_controlled_scenario_v17\"")
 				.contains("\"strict\":true").contains("\"additionalProperties\":false")
 				.doesNotContain("https://example.invalid", "CDG279-SYNTHETIC", "Fictional", "citation", "sourceUrl");
 		assertThat(systemPrompt).contains("copy its evidenceRef exactly")
@@ -141,10 +141,19 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("The AIS estimate leaves no positive remaining connection window.")
 				.contains("does not establish / does not confirm / cannot establish")
 				.contains("whether the latest arrival estimate remains current at the scenario cutoff")
-				.contains("NO_PREDICTED_IMPACT");
+				.contains("exact backend-provided direction and numerical margin")
+				.contains("Naming the shipment is optional")
+				.contains("Shipment A")
+				.contains("20 hours");
+		assertThat(systemPrompt).doesNotContain("Leave numeric values and timestamps to the backend facts panel");
+		assertThat(systemPrompt).doesNotContain("may omit the shipment name and numeric margin");
 		assertThat(facts.at("/stage").asString()).isEqualTo("WORSENED");
 		assertThat(facts.at("/scenarioShipmentKey").asString()).isEqualTo("A");
+		assertThat(facts.at("/comparison/outcome").asString()).isEqualTo("EXCEEDS_DEADLINE");
 		assertThat(facts.at("/deadline/deadlineAt").asString()).isEqualTo("2026-10-01T12:00Z");
+		assertThat(facts.at("/comparison/deadlineImpact/direction").asString()).isEqualTo("AFTER_DEADLINE");
+		assertThat(facts.at("/comparison/deadlineImpact/magnitudeSeconds").asLong()).isEqualTo(72_000L);
+		assertThat(facts.at("/comparison/deadlineImpact/magnitude").asString()).isEqualTo("20 hours");
 		assertThat(facts.at("/eligibleRevisions/0/evidenceRef").asString()).isEqualTo("evidence:cdg279-v1-revision-1");
 		assertThat(schema.path("type").asString()).isEqualTo("object");
 		assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
