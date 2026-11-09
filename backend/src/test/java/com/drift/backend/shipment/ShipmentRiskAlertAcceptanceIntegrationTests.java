@@ -267,7 +267,7 @@ class ShipmentRiskAlertAcceptanceIntegrationTests {
 		return transactions.execute(status -> {
 			Shipment shipment = shipmentRepository.findAll().stream()
 					.filter(candidate -> reference.equals(candidate.getShipmentReference())).findFirst().orElseThrow();
-			return ShipmentResponse.from(shipment, connectionRisk.assess(shipment));
+			return ShipmentResponse.from(shipment, connectionRisk.assess(shipment), null);
 		});
 	}
 
