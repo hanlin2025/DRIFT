@@ -54,4 +54,4 @@ export const RECOMMENDATION_RESPONSES: Record<RecommendationCode, { label: strin
   },
 };
 
-export const IMPACT_NOT_RETURNED = 'A recommendation is not available because the impact assessment has not been returned.';
+export const IMPACT_NOT_RETURNED = 'A recommendation is not available because the impact comparison is unavailable.';

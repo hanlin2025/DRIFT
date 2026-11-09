@@ -97,8 +97,9 @@ public record ShipmentDetailResponse(
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
 			RecommendationDecisionResponse recommendationDecision,
 			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
+		DelayComparison comparison = DelayComparison.of(connection.arrivalComparison(), transshipmentArrivalDeadline);
 		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
-				recommendationDecisionHistory, ShipmentRecommendationImpact.notReturned());
+				recommendationDecisionHistory, ShipmentRecommendationImpact.from(comparison), comparison);
 	}
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
@@ -106,6 +107,19 @@ public record ShipmentDetailResponse(
 			RecommendationDecisionResponse recommendationDecision,
 			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
 			ShipmentRecommendationImpact impact) {
+		DelayComparison comparison = DelayComparison.of(connection.arrivalComparison(), transshipmentArrivalDeadline);
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
+				recommendationDecisionHistory, impact, comparison);
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
+			ShipmentRecommendationImpact impact, DelayComparison delayComparison) {
+		if (delayComparison == null) {
+			throw new IllegalArgumentException("A shipment detail needs its delay comparison");
+		}
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -116,6 +130,8 @@ public record ShipmentDetailResponse(
 				shipment.getTransshipmentPort());
 		ShipmentOperationalStates.ObservedVessel feeder = ShipmentOperationalStates.observed(shipment.getFeederVessel(),
 				shipment.getTransshipmentPort());
+		ShipmentRecommendationImpact effectiveImpact = impact == null
+				? ShipmentRecommendationImpact.from(delayComparison) : impact;
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -127,7 +143,7 @@ public record ShipmentDetailResponse(
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
-				ShipmentRecommendation.of(risk, impact == null ? ShipmentRecommendationImpact.notReturned() : impact),
+				ShipmentRecommendation.of(risk, effectiveImpact),
 				connection.lateArrivalChance(),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
@@ -138,7 +154,7 @@ public record ShipmentDetailResponse(
 						mother.position()),
 				arrivalComparison,
 				transshipmentArrivalDeadline,
-				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
+				delayComparison,
 				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision,
 				recommendationDecisionHistory == null ? java.util.List.of() : recommendationDecisionHistory);
 	}

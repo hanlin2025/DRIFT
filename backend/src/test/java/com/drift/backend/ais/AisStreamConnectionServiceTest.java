@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.net.URI;
+import java.net.http.HttpClient;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -86,6 +87,6 @@ class AisStreamConnectionServiceTest {
 
 	private AisStreamConnectionService service(VesselObservationRepository observations) {
 		return new AisStreamConnectionService(PROPERTIES, objectMapper, new AisPositionParser(objectMapper),
-				new LatestAisPositions(observations));
+				new LatestAisPositions(observations), mock(HttpClient.class));
 	}
 }

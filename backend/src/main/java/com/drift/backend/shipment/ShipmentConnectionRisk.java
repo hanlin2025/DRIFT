@@ -2,17 +2,20 @@ package com.drift.backend.shipment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.LatestAisPositions;
+import com.drift.backend.shipment.PortCatalog.Coordinates;
 
 /**
  * Connection-window risk for one shipment. Shipment detail and risk evaluation both use this,
@@ -26,12 +29,18 @@ class ShipmentConnectionRisk {
 	private final ArrivalEstimateCalculator arrivalEstimates;
 	private final Clock clock;
 
+	@Autowired
 	ShipmentConnectionRisk(ConnectionWindowService connectionWindows, LatestAisPositions latestPositions,
 			ArrivalEstimateCalculator arrivalEstimates, ObjectProvider<Clock> clocks) {
+		this(connectionWindows, latestPositions, arrivalEstimates, clocks.getIfAvailable(Clock::systemUTC));
+	}
+
+	ShipmentConnectionRisk(ConnectionWindowService connectionWindows, LatestAisPositions latestPositions,
+			ArrivalEstimateCalculator arrivalEstimates, Clock clock) {
 		this.connectionWindows = connectionWindows;
 		this.latestPositions = latestPositions;
 		this.arrivalEstimates = arrivalEstimates;
-		this.clock = clocks.getIfAvailable(Clock::systemUTC);
+		this.clock = clock;
 	}
 
 	Snapshot assess(Shipment shipment) {
@@ -55,6 +64,30 @@ class ShipmentConnectionRisk {
 				.map(VesselPosition::from)
 				.orElse(null);
 		return shipments.stream().map(shipment -> assess(shipment, positions)).toList();
+	}
+
+	/**
+	 * Calculates risk against an immutable, scenario-owned AIS snapshot and simulation clock. This
+	 * seam deliberately bypasses the live AIS store while using the same arrival, window, and risk
+	 * calculations as ordinary shipment reads.
+	 */
+	Snapshot assessControlledSnapshot(OffsetDateTime plannedMotherArrivalAt, String transshipmentPort,
+			OffsetDateTime plannedFeederDepartureAt, AisPosition mother, AisPosition feeder,
+			Coordinates controlledPortCoordinates, Clock simulationClock) {
+		Instant now = simulationClock.instant();
+		Clock assessmentClock = Clock.fixed(now, simulationClock.getZone());
+		VesselPosition motherPosition = mother == null ? null : VesselPosition.from(mother);
+		VesselPosition feederPosition = feeder == null ? null : VesselPosition.from(feeder);
+		ArrivalEstimate arrivalComparison = plannedMotherArrivalAt == null ? null
+				: arrivalEstimates.estimate(ArrivalFix.from(motherPosition), transshipmentPort,
+						plannedMotherArrivalAt, assessmentClock, controlledPortCoordinates);
+		ConnectionWindowCalculation planned = connectionWindows.calculate(plannedMotherArrivalAt,
+				plannedFeederDepartureAt);
+		RemainingConnectionWindow remaining = connectionWindows.remaining(plannedFeederDepartureAt, arrivalComparison);
+		LateArrivalChance lateArrivalChance = LateArrivalChance.of(arrivalComparison, plannedMotherArrivalAt,
+				plannedFeederDepartureAt, planned, now);
+		return new Snapshot(planned, remaining, motherPosition, feederPosition, arrivalComparison,
+				ShipmentRisk.of(planned, remaining), lateArrivalChance);
 	}
 
 	private Snapshot assess(Shipment shipment, Function<String, VesselPosition> positions) {

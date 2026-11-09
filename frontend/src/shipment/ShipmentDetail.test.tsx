@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Cdg201ArrivalEvidence, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -165,7 +165,7 @@ describe('connection window on the shipment detail', () => {
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }));
+    await user.click(await screen.findByRole('button', { name: 'Generate AI maritime interpretation' }, { timeout: 10_000 }));
     expect(generateMaritimeAiAssessment).toHaveBeenCalledWith('forwarder-token', '7');
     expect(await screen.findByText('Disabled.')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
@@ -1239,7 +1239,7 @@ describe('vessel track history on the shipment detail', () => {
     const user = userEvent.setup();
     const history = await screen.findByRole('region', { name: 'Track history' });
 
-    expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24);
+    await waitFor(() => expect(getVesselTrack).toHaveBeenCalledWith('forwarder-token', '7', 'MOTHER', 24));
     expect(within(history).getByRole('button', { name: 'Mother vessel' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(history).getByRole('button', { name: '24h' })).toHaveAttribute('aria-pressed', 'true');
     expect(await within(history).findByText('3 positions in the last 24 hours · 1 slowdown segment')).toBeInTheDocument();
@@ -1257,6 +1257,16 @@ describe('vessel track history on the shipment detail', () => {
     expect(within(quiet).getByText('0.4 kn')).toBeInTheDocument();
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveTextContent('Not reported');
     expect(within(quiet).getByText('Heading').nextElementSibling).toHaveClass('is-missing');
+  });
+
+  it('shows backend-calculated shipment facts before the separate AI interpretation panel', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const facts = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const aiPanel = screen.getByRole('region', { name: 'AI maritime interpretation' });
+    expect(screen.getByRole('region', { name: 'Backend-calculated shipment assessment' }))
+      .toHaveTextContent('The AI interpretation is shown separately and does not approve or apply a change.');
+    expect(facts.compareDocumentPosition(aiPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps the selected observation across polls and clears it once that observation leaves the window', async () => {
@@ -1356,14 +1366,77 @@ describe('vessel track history on the shipment detail', () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, vessel: 'FEEDER', vesselName: 'Straits Feeder', mmsi: null, windowHours: 6, points: [] });
     await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
     expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6);
-    expect(await within(history).findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
+    expect(await within(history).findByText('No positions were received in this window.')).toBeInTheDocument();
+  });
+
+  it('keeps recorded mode and its receipt cutoff when changing vessel and window', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const user = userEvent.setup();
+    const history = await screen.findByRole('region', { name: 'Track history' });
+    await within(history).findByText(/3 positions/);
+    const recorded = {
+      ...track,
+      context: 'SEEDED' as const,
+      status: 'OFFLINE' as const,
+      cutoff: track.to,
+      timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+    };
+    vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded);
+    await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+    await within(history).findByText('Seeded rehearsal data · not an authentic AIS capture');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', points: [] });
+    await user.click(within(history).getByRole('button', { name: 'Feeder vessel' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 24, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
+
+    vi.mocked(getVesselTrack).mockResolvedValueOnce({ ...recorded, vessel: 'FEEDER', vesselName: 'Straits Feeder', windowHours: 6, points: [] });
+    await user.click(within(history).getByRole('button', { name: '6h' }));
+    await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'FEEDER', 6, { cutoff: track.to }));
+    expect(within(history).getByRole('button', { name: 'Recorded AIS' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows insufficient history for a single observation', async () => {
     vi.mocked(getVesselTrack).mockResolvedValue({ ...track, points: track.points.slice(0, 1) });
     open(forwarder, '/freight-forwarder/shipments/7');
-    expect(await screen.findByText('Insufficient history to draw a track for this window.')).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Track points' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/Insufficient history to draw a track for this window\./)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Track points' })).toBeInTheDocument();
+    expect(screen.getByText(/This observation is shown at its recorded time/)).toBeInTheDocument();
+  });
+
+  it('uses receipt-time cutoffs for recorded playback and stops polling live positions', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      open(forwarder, '/freight-forwarder/shipments/7');
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const history = await screen.findByRole('region', { name: 'Track history' });
+      await within(history).findByText(/3 positions/);
+      const recorded = {
+        ...track,
+        cutoff: track.to,
+        timestampSemantics: 'DRIFT_RECEIPT_TIME' as const,
+        context: 'RECORDED' as const,
+        status: 'AVAILABLE' as const,
+        feedStatus: 'OFFLINE' as const,
+        fallbackUsed: false,
+        points: track.points.map(point => ({ ...point, source: 'AIS_STREAM' as const, positionValid: true })),
+      };
+      const firstPointCutoff = { ...recorded, cutoff: track.points[0].ingestedAt, points: [recorded.points[0]] };
+      vi.mocked(getVesselTrack).mockResolvedValueOnce(recorded).mockResolvedValueOnce(firstPointCutoff);
+      await user.click(within(history).getByRole('button', { name: 'Recorded AIS' }));
+      expect(await within(history).findByText('Recorded AIS · receipt-time observations')).toBeInTheDocument();
+      expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.to });
+      expect(within(history).getByRole('list', { name: 'Track points' })).toHaveTextContent(/Recorded AIS_STREAM/);
+
+      const liveTrackingCalls = vi.mocked(getShipmentTracking).mock.calls.length;
+      await user.click(within(history).getByRole('button', { name: 'Next position' }));
+      await waitFor(() => expect(getVesselTrack).toHaveBeenLastCalledWith('forwarder-token', '7', 'MOTHER', 24, { cutoff: track.points[0].ingestedAt }));
+      expect(within(history).getByLabelText('Selected track point').querySelector('time')).toHaveAttribute('dateTime', track.points[0].ingestedAt);
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getShipmentTracking).toHaveBeenCalledTimes(liveTrackingCalls);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('disables the feeder track when no feeder vessel is assigned', async () => {
@@ -1597,8 +1670,8 @@ describe('late-arrival chance on the shipment detail', () => {
 
 const PREPARE_WORDING = "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints.";
 const NO_ACTION_WORDING = "No action is needed. The connection risk is low, and the prediction does not affect the importer's constraints.";
-const IMPACT_DETAIL = 'The impact assessment has not been returned.';
-const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact assessment has not been returned.';
+const IMPACT_DETAIL = 'The delay comparison is unavailable.';
+const UNAVAILABLE_RECOMMENDATION = 'A recommendation is not available because the impact comparison is unavailable.';
 
 const prepareRecommendation: ShipmentRecommendation = {
   available: true,
@@ -1713,6 +1786,50 @@ describe('recommendation on the shipment detail', () => {
 
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
     expect(await screen.findByRole('article', { name: 'Recommendation' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+  });
+
+  it('points a recorded arrival revision at the connection risk already on the shipment', async () => {
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(replayEvidence(180));
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const reading = factValue(record, 'Recorded arrival change');
+    expect(reading).toHaveTextContent('KOTA LARIS, IMO 9351048, has a recorded expected-arrival revision from 2026-10-28 23:00:00 to 2026-10-29 02:00:00, 180 minutes later.');
+    expect(reading).toHaveTextContent('This recorded revision is not an actual arrival.');
+    expect(reading).toHaveTextContent('The connection risk to act on is the one already on this shipment: Low. At least 24 hours to transfer cargo between vessels.');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+    const replay = screen.getByRole('article', { name: 'CDG-201 external arrival evidence' });
+    expect(replay).toHaveTextContent('CDG-201 · READ-ONLY REPLAY');
+    expect(replay).toHaveTextContent('Not the production shipment risk.');
+    expect(replay).toHaveTextContent('Margin: 780 → 600 minutes');
+    expect(replay).toHaveTextContent('Illustrative classification: MEDIUM → HIGH.');
+    expect(reading).not.toHaveTextContent('780');
+    expect(reading).not.toHaveTextContent('MEDIUM');
+    expect(reading).not.toHaveTextContent('booking');
+  });
+
+  it('describes a missing connection risk as not assessed when replay evidence is present', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...shipment, risk: null });
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(replayEvidence(-30));
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    const reading = factValue(record, 'Recorded arrival change');
+    expect(reading).toHaveTextContent('30 minutes earlier');
+    expect(reading).toHaveTextContent('The connection risk on this shipment is not assessed.');
+    expect(reading).not.toHaveTextContent('HIGH');
+    expect(factValue(record, 'Risk')).toHaveTextContent('Not assessed');
+    expect(screen.getByRole('article', { name: 'CDG-201 external arrival evidence' })).toHaveTextContent('Illustrative classification: MEDIUM → HIGH.');
+  });
+
+  it('adds no arrival-change sentence when the replay is absent', async () => {
+    open(forwarder, '/freight-forwarder/shipments/7');
+
+    const record = await screen.findByRole('article', { name: 'Shipment HL-1001' });
+    expect(within(record).queryByText('Recorded arrival change')).not.toBeInTheDocument();
+    expect(factValue(record, 'Risk')).toHaveTextContent('Low At least 24 hours to transfer cargo between vessels.');
+    expect(factValue(record, 'Connection window')).toHaveTextContent('1 day 10 hours');
     expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
   });
 
@@ -2052,6 +2169,29 @@ describe('recommendation decision on the shipment page', () => {
 const MATCHES_WORDING = "The mother vessel's movement matches its own retained reports near this port. This is not a measured congestion index.";
 const SLOWER_WORDING = 'The mother vessel is moving slower than its own retained reports near this port. This is not a measured congestion index.';
 const NO_REPORT_WORDING = 'The mother vessel has no retained AIS report.';
+
+function replayEvidence(revisionMinutes: number): Cdg201ArrivalEvidence {
+  return {
+    contractVersion: 'cdg201.drift-arrival-evidence.v1', evidenceState: 'RECORDED_EVIDENCE_REPLAY',
+    vesselName: 'KOTA LARIS', vesselImo: '9351048', previousExpectedArrival: '2026-10-28 23:00:00',
+    revisedExpectedArrival: '2026-10-29 02:00:00', previousExpectedArrivalSgt: '2026-10-28T23:00:00+08:00',
+    previousExpectedArrivalUtc: '2026-10-28T15:00:00+00:00', revisedExpectedArrivalSgt: '2026-10-29T02:00:00+08:00',
+    revisedExpectedArrivalUtc: '2026-10-28T18:00:00+00:00', revisionMinutes,
+    previousCollectionUtc: '2026-10-26T15:10:22.248554Z', latestCollectionUtc: '2026-10-26T15:46:03.213897Z',
+    previousCollectionRunId: 'run-one', latestCollectionRunId: 'run-two',
+    previousSourceManifest: 'prior-evidence.manifest.json', previousSourceRawFile: 'prior-evidence.json',
+    sourceManifest: 'evidence.manifest.json', sourceRawFile: 'evidence.json',
+    confidence: 'conservative_context_time_continuity', ambiguity: 'NONE_FOR_REPLAY_EVENT',
+    sourceTimestampSemantics: 'Source timezone is Asia/Singapore.', locationFrom: 'SEA', locationTo: 'PEBGA',
+    locationMappingStatus: 'UNKNOWN_MPA_CODE_NOT_MAPPED_TO_DRIFT_PORT',
+    locationReferences: [], shipmentAssociation: 'UNVERIFIED_IMO_ONLY', limitations: 'Not a verified shipment.',
+    simulatedScenario: {
+      state: 'SIMULATED_CONNECTION_ASSUMPTIONS', originalConnectionMarginMinutes: 780,
+      revisedConnectionMarginMinutes: 600, reductionMinutes: 180, simulatedRiskBefore: 'MEDIUM', simulatedRiskAfter: 'HIGH',
+      disclaimer: 'Not a production risk result.',
+    },
+  };
+}
 
 function completedPort(outcome: NonNullable<PortConditionComparison['outcome']>): PortConditionComparison {
   const slower = outcome === 'SLOWER_THAN_OWN_REPORTS';
