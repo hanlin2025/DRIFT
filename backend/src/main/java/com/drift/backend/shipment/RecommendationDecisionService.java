@@ -61,7 +61,11 @@ class RecommendationDecisionService {
 	}
 
 	ShipmentRecommendationImpact impactFor(ArrivalEstimate estimate, TransshipmentArrivalDeadlineResponse recorded) {
-		return impacts.fromComparison(DelayComparison.of(estimate, recorded));
+		return impactFor(DelayComparison.of(estimate, recorded));
+	}
+
+	ShipmentRecommendationImpact impactFor(DelayComparison comparison) {
+		return impacts.fromComparison(comparison);
 	}
 
 	@Transactional

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import jakarta.servlet.http.HttpServletRequest;
 
 import com.drift.backend.account.exception.SessionEndedException;
+import com.drift.backend.ais.capture.InvalidRecordedCaptureException;
 import com.drift.backend.shipment.exception.DuplicateShipmentReferenceException;
 import com.drift.backend.shipment.exception.InvalidItineraryException;
 import com.drift.backend.shipment.exception.InvalidShipmentRequestException;
@@ -62,6 +63,12 @@ public class ShipmentExceptionHandler {
 	public ResponseEntity<Map<String, Object>> handleInvalidShipmentRequest(InvalidShipmentRequestException ex) {
 		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 				.body(body(ex.getMessage(), ex.getErrors()));
+	}
+
+	@ExceptionHandler(InvalidRecordedCaptureException.class)
+	public ResponseEntity<Map<String, String>> handleInvalidRecordedCapture(InvalidRecordedCaptureException ex) {
+		return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage()));
 	}
 
 	@ExceptionHandler(DuplicateShipmentReferenceException.class)
@@ -145,7 +152,7 @@ public class ShipmentExceptionHandler {
 		if (Boolean.class.equals(exception.getRequiredType())) {
 			return ResponseEntity.badRequest().cacheControl(CacheControl.noStore())
 					.body(body("Shipment information is missing or invalid",
-							Map.of(exception.getName(), "atRisk must be true or false")));
+							Map.of(exception.getName(), exception.getName() + " must be true or false")));
 		}
 		if ("shipmentId".equals(exception.getName()) && "PATCH".equals(request.getMethod())
 				&& request.getRequestURI() != null && request.getRequestURI().endsWith("/status")) {

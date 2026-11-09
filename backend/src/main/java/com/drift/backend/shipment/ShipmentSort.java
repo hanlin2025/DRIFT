@@ -16,7 +16,10 @@ public record ShipmentSort(Field field, Direction direction) {
 
 	public static final ShipmentSort CREATED_DATE_DESCENDING = new ShipmentSort(Field.CREATED_AT, Direction.DESC);
 
-	/** CRITICAL, HIGH, MEDIUM, LOW, then not assessed; ties go to the soonest planned feeder departure. */
+	/**
+	 * CRITICAL, HIGH, MEDIUM, LOW, then not assessed. Within a level, a predicted arrival after the importer's deadline
+	 * comes first; remaining ties go to the soonest planned feeder departure.
+	 */
 	public static final ShipmentSort RISK_FIRST = new ShipmentSort(Field.RISK, Direction.DESC);
 
 	private static final Comparator<ShipmentResponse> BY_ID = Comparator.comparing(ShipmentResponse::id);
@@ -26,6 +29,7 @@ public record ShipmentSort(Field field, Direction direction) {
 
 	private static final Comparator<ShipmentResponse> BY_RISK = Comparator
 			.comparingInt((ShipmentResponse response) -> riskRank(response.risk()))
+			.thenComparing(response -> !exceedsDeadline(response.delayComparison()))
 			.thenComparing(BY_FEEDER_DEPARTURE)
 			.thenComparing(BY_ID);
 
@@ -71,6 +75,10 @@ public record ShipmentSort(Field field, Direction direction) {
 
 	private static int riskRank(ShipmentRisk risk) {
 		return risk == null ? Integer.MAX_VALUE : -risk.level().ordinal();
+	}
+
+	static boolean exceedsDeadline(DelayComparison comparison) {
+		return comparison != null && comparison.outcome() == DelayComparison.Outcome.EXCEEDS_DEADLINE;
 	}
 
 	public enum Field {

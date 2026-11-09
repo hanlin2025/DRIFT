@@ -30,7 +30,7 @@ function readable(item: MaritimeEvidence) {
 }
 
 function changed(item: MaritimeEvidence) {
-  return item.changeMagnitude.trim() !== '';
+  return item.changeMagnitude !== null && item.changeMagnitude.trim() !== '';
 }
 
 function live(item: MaritimeEvidence) {

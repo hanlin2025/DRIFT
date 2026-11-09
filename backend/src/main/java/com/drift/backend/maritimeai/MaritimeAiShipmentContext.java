@@ -8,15 +8,22 @@ import java.time.OffsetDateTime;
  * evidence ID that a generated claim may cite.
  */
 public record MaritimeAiShipmentContext(String transshipmentPort, Vessel motherVessel, Vessel feederVessel,
-		MaritimeAiConnectionRiskContext connectionRisk, MaritimeAiBusinessContext businessContext) {
+		MaritimeAiConnectionRiskContext connectionRisk, MaritimeAiBusinessContext businessContext,
+		Scenario scenario) {
 	/** Existing callers without a risk snapshot remain valid; unknown context is not synthesized. */
 	public MaritimeAiShipmentContext(String transshipmentPort, Vessel motherVessel, Vessel feederVessel) {
-		this(transshipmentPort, motherVessel, feederVessel, null, null);
+		this(transshipmentPort, motherVessel, feederVessel, null, null, null);
 	}
 	/** Existing risk-aware callers remain valid while business context stays unknown. */
 	public MaritimeAiShipmentContext(String transshipmentPort, Vessel motherVessel, Vessel feederVessel,
 			MaritimeAiConnectionRiskContext connectionRisk) {
-		this(transshipmentPort, motherVessel, feederVessel, connectionRisk, null);
+		this(transshipmentPort, motherVessel, feederVessel, connectionRisk, null, null);
+	}
+	public MaritimeAiShipmentContext(String transshipmentPort, Vessel motherVessel, Vessel feederVessel,
+			MaritimeAiConnectionRiskContext connectionRisk, MaritimeAiBusinessContext businessContext) {
+		this(transshipmentPort, motherVessel, feederVessel, connectionRisk, businessContext, null);
 	}
 	public record Vessel(String role, String name, String imo, String plannedMovementType, OffsetDateTime plannedTime) { }
+	/** Scenario identity is explanatory provenance only; session IDs and credentials are never sent to a provider. */
+	public record Scenario(String shipmentKey, String shipmentReference, String stage, String simulationCutoffUtc) { }
 }
