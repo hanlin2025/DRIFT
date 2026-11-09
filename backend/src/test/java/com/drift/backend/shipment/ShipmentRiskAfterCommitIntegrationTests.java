@@ -28,8 +28,8 @@ import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 @SpringBootTest
 @ActiveProfiles("test")
 class ShipmentRiskAfterCommitIntegrationTests {
-	private static final String SHIPMENT_REFERENCE_PREFIX = "CDG198-AFTER-";
-	private static final String USER_EMAIL_PATTERN = "cdg198-after-%@example.test";
+	private static final String SHIPMENT_REFERENCE_PREFIX = "CDG302-AFTER-";
+	private static final String USER_EMAIL_PATTERN = "cdg302-after-%@example.test";
 
 	@Autowired TransactionTemplate transactions;
 	@Autowired CompanyRepository companies;
@@ -51,7 +51,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
-			UserAccount user = new UserAccount("After commit", "cdg198-after-" + UUID.randomUUID() + "@example.test", "hash", role, company);
+			UserAccount user = new UserAccount("After commit", "cdg302-after-" + UUID.randomUUID() + "@example.test", "hash", role, company);
 			user.chooseRiskNotifications(true, RiskNotificationLevel.LOW);
 			users.save(user);
 			principal = new AuthenticatedUser(user.getId(), user.getEmail(), Role.LOGISTICS_MANAGER, java.time.Instant.now());

@@ -44,7 +44,7 @@ import com.drift.backend.company.CompanyRepository;
 @Import(ShipmentRiskAlertEndToEndIntegrationTests.MailDouble.class)
 class ShipmentRiskAlertEndToEndIntegrationTests {
 	private static final String SHIPMENT_REFERENCE_PREFIX = "CDG198-E2E-";
-	private static final String USER_EMAIL_PATTERN = "cdg198-e2e-%@example.test";
+	private static final String USER_EMAIL_PATTERN = "cdg302-e2e-%@example.test";
 
 	@Autowired TransactionTemplate transactions;
 	@Autowired CompanyRepository companies;
@@ -67,7 +67,7 @@ class ShipmentRiskAlertEndToEndIntegrationTests {
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
-			UserAccount user = new UserAccount("End to end", "cdg198-e2e-" + UUID.randomUUID() + "@example.test", "hash", role, company);
+			UserAccount user = new UserAccount("End to end", "cdg302-e2e-" + UUID.randomUUID() + "@example.test", "hash", role, company);
 			user.chooseRiskNotifications(true, RiskNotificationLevel.LOW);
 			users.save(user);
 			principal = new AuthenticatedUser(user.getId(), user.getEmail(), Role.LOGISTICS_MANAGER, java.time.Instant.now());
