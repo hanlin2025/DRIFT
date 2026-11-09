@@ -29,10 +29,10 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
 			assertThat(result.promptVersion())
-					.isEqualTo("cdg247.evidence.v19.cdg252-source-mode-provenance.1")
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.1")
 					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
 			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
-					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1");
+					.isEqualTo("cdg247.evidence.v19.cdg252-source-mode-provenance.1");
 			assertThat(ConfiguredMaritimeAiClient.V16_PROMPT_VERSION)
 					.isEqualTo("cdg247.evidence.v16.cdg252-risk-citation-unknown-business.1");
 			assertThat(ConfiguredMaritimeAiClient.V15_PROMPT_VERSION)
@@ -106,6 +106,22 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("DELAY_COMPARISON_REVIEW")
 				.contains("Clearly keep observed MPA/NEA evidence, stored schedule facts, backend-computed risk")
 				.contains("NO_REMAINING_WINDOW means the calculation has no positive buffer");
+	}
+
+	@Test void asksForSelectiveThreeSourceCoverageOnlyWhenTheEligibleBundleSupportsIt() throws Exception {
+		AtomicReference<String> requestBody = new AtomicReference<>();
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "test-structured-model", "test-key", "https://example.invalid/v1/responses", true,
+				20, 2000, new ObjectMapper(), (request, body) -> {
+					requestBody.set(body);
+					return new ConfiguredMaritimeAiClient.TransportResponse(200, responsesEnvelope());
+				});
+
+		client.interpret(MaritimeAiSyntheticMultiSourceIntegrationTests.syntheticEvidencePackage());
+
+		assertThat(requestBody.get()).contains("\"max_output_tokens\":2000")
+				.contains("Address each in its own bounded claim")
+				.contains("a SCHEDULE_REVIEW for the revision, a PORT_CONTEXT_REVIEW for the notice, and a REGIONAL_WEATHER_CONTEXT for the weather")
+				.contains("Never cite an irrelevant, insufficient, or unsupported source merely to reach a source count");
 	}
 
 	@Test void usesTheStrictV16SchemaAndMinimizedFactsForOpenAiScenarioInputs() {
