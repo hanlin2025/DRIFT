@@ -946,7 +946,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		String deadline = key.equals("A") ? "2026-10-01T12:00:00Z" : "2026-10-02T10:00:00Z";
 		long marginHours = Math.abs(java.time.Duration.between(java.time.Instant.parse(deadline),
 				java.time.Instant.parse(expected.eta())).toHours());
-		assertThat(businessStatement).contains("shipment " + key, marginHours + " hours");
+		assertThat(businessStatement).contains("shipment " + key.toLowerCase(Locale.ROOT), marginHours + " hours");
 		if ("EXCEEDS_DEADLINE".equals(expectedOutcome))
 			assertThat(businessStatement).contains("predicted arrival exceeds the applicable transshipment-arrival deadline by "
 					+ marginHours + " hours");
