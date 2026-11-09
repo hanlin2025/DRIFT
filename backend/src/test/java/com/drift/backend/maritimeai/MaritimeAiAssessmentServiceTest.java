@@ -133,9 +133,14 @@ class MaritimeAiAssessmentServiceTest {
 	private static ShipmentDetailResponse detail(Long id, Long companyId) throws Exception {
 		var components = ShipmentDetailResponse.class.getRecordComponents();
 		Object[] values = new Object[components.length];
-		values[0] = id;
-		values[1] = companyId;
-		values[values.length - 1] = ShipmentStatus.ACTIVE;
+		for (int index = 0; index < components.length; index++) {
+			switch (components[index].getName()) {
+				case "id" -> values[index] = id;
+				case "companyId" -> values[index] = companyId;
+				case "status" -> values[index] = ShipmentStatus.ACTIVE;
+				default -> { }
+			}
+		}
 		Class<?>[] parameterTypes = java.util.Arrays.stream(components).map(component -> component.getType()).toArray(Class<?>[]::new);
 		return ShipmentDetailResponse.class.getDeclaredConstructor(parameterTypes).newInstance(values);
 	}

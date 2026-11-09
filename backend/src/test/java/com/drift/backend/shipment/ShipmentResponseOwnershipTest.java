@@ -53,7 +53,7 @@ class ShipmentResponseOwnershipTest {
 		assertThat(listedJson.has("recommendation")).isFalse();
 		assertThat(listedJson.has("portConditionComparison")).isFalse();
 		assertThat(listedJson.has("remainingConnectionWindow")).isFalse();
-		assertThat(listedJson.has("delayComparison")).isFalse();
+		assertThat(listedJson.get("delayComparison")).isEqualTo(detailJson.get("delayComparison"));
 		assertThat(listedJson.has("transshipmentArrivalDeadline")).isFalse();
 		assertThat(detailJson.get("delayComparison").get("outcome").isNull()).isTrue();
 		assertThat(detailJson.get("delayComparison").get("reason").asString()).isEqualTo("MISSING_PREDICTION");
@@ -64,14 +64,14 @@ class ShipmentResponseOwnershipTest {
 				.isEqualTo("No AIS position has been received for the mother vessel.");
 		assertThat(detailJson.get("recommendation").get("available").asBoolean()).isFalse();
 		assertThat(detailJson.get("recommendation").get("unavailable").asText())
-				.isEqualTo(ShipmentRecommendation.IMPACT_NOT_RETURNED);
+				.isEqualTo(ShipmentRecommendation.IMPACT_UNAVAILABLE + DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(detailJson.get("recommendation").get("response").isNull()).isTrue();
 		assertThat(detailJson.get("recommendation").get("riskLevel").asText()).isEqualTo("LOW");
 		assertThat(detailJson.get("recommendation").get("riskExplanation").asText())
 				.isEqualTo(detailJson.get("risk").get("explanation").asText());
 		assertThat(detailJson.get("recommendation").get("impact").get("outcome").asText()).isEqualTo("UNAVAILABLE");
 		assertThat(detailJson.get("recommendation").get("impact").get("detail").asText())
-				.isEqualTo(ShipmentRecommendationImpact.NOT_RETURNED);
+				.isEqualTo(DelayComparison.MISSING_PREDICTION_MESSAGE);
 		assertThat(detailJson.get("portConditionComparison").get("vessel").asText()).isEqualTo("MOTHER");
 		assertThat(detailJson.get("portConditionComparison").get("outcome").isNull()).isTrue();
 		assertThat(detailJson.get("portConditionComparison").get("reason").asText()).isEqualTo("NO_REPORT");
@@ -167,7 +167,7 @@ class ShipmentResponseOwnershipTest {
 	}
 
 	private static ShipmentResponse listed(Shipment shipment) {
-		return ShipmentResponse.from(shipment, connection(shipment));
+		return ShipmentResponse.from(shipment, connection(shipment), null);
 	}
 
 	private static ShipmentDetailResponse detail(Shipment shipment) {
@@ -183,7 +183,7 @@ class ShipmentResponseOwnershipTest {
 				"No AIS position has been received for the mother vessel.");
 		RemainingConnectionWindow remaining = windows.remaining(shipment.getPlannedFeederDepartureAt(), estimate);
 		return new ShipmentConnectionRisk.Snapshot(planned, remaining, null, null, estimate,
-				ShipmentRisk.of(planned, remaining));
+				ShipmentRisk.of(planned, remaining), null);
 	}
 
 	private static Shipment shipment(Company owner) {

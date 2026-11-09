@@ -107,6 +107,7 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		assertThat(delivery.getAttemptCount()).isEqualTo(1);
 		assertThat(delivery.getSentAt()).isNotNull();
 		assertThat(delivery.getClaimToken()).isNull();
+		assertThat(sent[0].getTo()).containsExactly(fixture.email());
 		assertThat(sent[0].getSubject()).contains(fixture.reference()).contains("HIGH");
 		assertThat(sent[0].getText()).contains("Stored explanation: schedule changed.")
 				.contains("https://app.example.test/importer/shipments/" + fixture.shipmentId())
@@ -138,7 +139,74 @@ class ShipmentRiskAlertDeliveryServiceIntegrationTests {
 		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
 		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
 		assertThat(delivery.getAttemptCount()).isZero();
-		assertThat(delivery.getSuppressionReason()).contains("disabled");
+		assertThat(delivery.getSuppressionReason()).isEqualTo("Risk alert mail is disabled");
+		assertThat(delivery.getNextAttemptAt()).isNull();
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.NOT_PENDING);
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void pollerSendsOneDueDeliveryWhenMailAndDispatchAreEnabled() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
+		SimpleMailMessage[] sent = new SimpleMailMessage[1];
+		doAnswer(invocation -> {
+			SimpleMailMessage message = invocation.getArgument(0);
+			if (message.getTo() != null && message.getTo().length == 1 && fixture.email().equals(message.getTo()[0])) {
+				sent[0] = message;
+			}
+			return null;
+		}).when(mailSender).send(any(SimpleMailMessage.class));
+
+		poller.dispatchDueDeliveries();
+
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SENT);
+		assertThat(delivery.getSentAt()).isNotNull();
+		assertThat(delivery.getAttemptCount()).isEqualTo(1);
+		assertThat(sent[0]).isNotNull();
+		assertThat(sent[0].getTo()).containsExactly(fixture.email());
+		assertThat(sent[0].getText()).contains("/freight-forwarder/shipments/" + fixture.shipmentId());
+		poller.dispatchDueDeliveries();
+		assertThat(deliveries.findById(fixture.deliveryId()).orElseThrow().getAttemptCount()).isEqualTo(1);
+	}
+
+	@Test
+	void suppressesADeliveryFromAnotherActivationGenerationWithoutSending() {
+		DeliveryFixture fixture = createDelivery(Role.FREIGHT_FORWARDER, RiskNotificationLevel.LOW, "snapshot");
+		jdbc.update("UPDATE shipment_risk_transitions SET activation_generation = 0 WHERE id = ?", fixture.transitionId());
+
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+		ShipmentRiskAlertDelivery delivery = deliveries.findById(fixture.deliveryId()).orElseThrow();
+		assertThat(delivery.getStatus()).isEqualTo(ShipmentRiskAlertDeliveryStatus.SUPPRESSED);
+		assertThat(delivery.getSuppressionReason()).isEqualTo("Risk alert delivery predates the active activation generation");
+		assertThat(delivery.getNextAttemptAt()).isNull();
+		assertThat(service.sendDelivery(fixture.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.NOT_PENDING);
+		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
+	}
+
+	@Test
+	void suppressesABlankSenderAddressAndAnUnusableFrontendBaseUrl() {
+		String from = mailProperties.getFrom();
+		String frontendBaseUrl = mailProperties.getFrontendBaseUrl();
+		try {
+			DeliveryFixture blankFrom = createDelivery(Role.ADMIN, RiskNotificationLevel.LOW, "snapshot");
+			mailProperties.setFrom(" ");
+			assertThat(service.sendDelivery(blankFrom.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+			assertThat(deliveries.findById(blankFrom.deliveryId()).orElseThrow().getSuppressionReason())
+					.isEqualTo("Risk alert sender address is not configured");
+
+			mailProperties.setFrom(from);
+			for (String baseUrl : new String[] { " ", "localhost:5173", "http://localhost:5173?next=1" }) {
+				DeliveryFixture unusable = createDelivery(Role.LOGISTICS_MANAGER, RiskNotificationLevel.LOW, "snapshot");
+				mailProperties.setFrontendBaseUrl(baseUrl);
+				assertThat(service.sendDelivery(unusable.deliveryId())).isEqualTo(ShipmentRiskAlertDeliveryResult.SUPPRESSED);
+				assertThat(deliveries.findById(unusable.deliveryId()).orElseThrow().getSuppressionReason())
+						.isEqualTo("Risk alert frontend base URL is not configured");
+			}
+		} finally {
+			mailProperties.setFrom(from);
+			mailProperties.setFrontendBaseUrl(frontendBaseUrl);
+		}
 		verify(mailSender, times(0)).send(any(SimpleMailMessage.class));
 	}
 

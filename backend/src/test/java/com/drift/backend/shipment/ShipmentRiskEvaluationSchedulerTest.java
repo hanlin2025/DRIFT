@@ -25,6 +25,16 @@ class ShipmentRiskEvaluationSchedulerTest {
 		verifyNoInteractions(repository, evaluator, activation);
 	}
 
+	@Test void anInactiveGateDoesNotEvaluate() {
+		var repository = mock(ShipmentRepository.class); var evaluator = mock(ShipmentRiskEvaluator.class);
+		var activation = mock(ShipmentRiskAlertActivationStore.class); var properties = new ShipmentRiskAlertEvaluationProperties();
+		properties.setEnabled(true);
+		var gate = mock(ShipmentRiskAlertActivation.class); when(gate.isActive()).thenReturn(false); when(activation.lockForRiskInput()).thenReturn(gate);
+		new ShipmentRiskEvaluationScheduler(repository, evaluator, activation, properties).sweep();
+		verify(activation).lockForRiskInput();
+		verifyNoInteractions(repository, evaluator);
+	}
+
 	@Test void pagesActiveShipmentsAndIsolatesEvaluatorFailures() {
 		var repository = mock(ShipmentRepository.class); var evaluator = mock(ShipmentRiskEvaluator.class);
 		var activation = mock(ShipmentRiskAlertActivationStore.class); var properties = new ShipmentRiskAlertEvaluationProperties(); properties.setEnabled(true); properties.setBatchSize(2);
