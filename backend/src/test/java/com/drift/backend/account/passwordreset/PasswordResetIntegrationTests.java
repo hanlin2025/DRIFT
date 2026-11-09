@@ -17,9 +17,13 @@ import jakarta.persistence.EntityManager;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -37,12 +41,18 @@ import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.account.registration.PasswordPolicy;
 import com.jayway.jsonpath.JsonPath;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
 @Import(PasswordResetIntegrationTests.CapturingMail.class)
+@ExtendWith(OutputCaptureExtension.class)
 class PasswordResetIntegrationTests {
+
+	private static final String FAKE_TOKEN = "b".repeat(43);
 
 	@Autowired MockMvc mvc;
 	@Autowired JdbcTemplate jdbc;
@@ -260,7 +270,7 @@ class PasswordResetIntegrationTests {
 		mvc.perform(get("/api/session").header("Authorization", "Bearer " + first))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
-		mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + second))
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + second))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value(SessionEndedException.MESSAGE));
 
@@ -291,6 +301,110 @@ class PasswordResetIntegrationTests {
 				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE));
 		assertThat(passwordHash()).isEqualTo("hash");
 		assertThat(usedAt()).isNull();
+	}
+
+	@Test
+	void aRemovedAccountsLinkIsRejectedLikeAnInvalidOne() throws Exception {
+		String token = issuedToken();
+		String unknown = invalidLinkResponse(FAKE_TOKEN);
+		long generation = sessionGeneration();
+		jdbc.update("UPDATE users SET status = 'REMOVED' WHERE email = ?", email);
+		entityManager.clear();
+
+		String removed = mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isBadRequest())
+				.andExpect(header().string("Cache-Control", "no-store"))
+				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE))
+				.andReturn().getResponse().getContentAsString();
+		assertThat(removed).isEqualTo(unknown);
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+		assertThat(sessionGeneration()).isEqualTo(generation);
+	}
+
+	@Test
+	void aLinkReplacedByANewerRequestIsRejected() throws Exception {
+		String first = issuedToken();
+		String second = issuedToken();
+		String unknown = invalidLinkResponse(FAKE_TOKEN);
+
+		assertThat(invalidLinkResponse(first)).isEqualTo(unknown);
+		assertThat(passwordHash()).isEqualTo("hash");
+		assertThat(usedAt()).isNull();
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(second, "NewPass1")))
+				.andExpect(status().isOk());
+	}
+
+	@Test
+	void aSuccessfulResetRemovesTheUsersOtherUnusedLinks() throws Exception {
+		String older = ResetTokens.generate();
+		insertUnusedToken(email, older);
+		String token = ResetTokens.generate();
+		insertUnusedToken(email, token);
+		String newer = ResetTokens.generate();
+		insertUnusedToken(email, newer);
+		String other = "other-" + email;
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role_id)
+				SELECT 'Other', ?, 'hash', id
+				FROM roles WHERE code = 'IMPORTER'
+				""", other);
+		insertUnusedToken(other, ResetTokens.generate());
+		assertThat(countTokens(email)).isEqualTo(3);
+
+		mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isOk());
+
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM password_reset_tokens t
+				JOIN users u ON u.id = t.user_id
+				WHERE u.email = ? AND t.used_at IS NULL
+				""", Integer.class, email)).isZero();
+		assertThat(countTokens(email)).isEqualTo(1);
+		assertThat(usedAt()).isNotNull();
+		assertThat(countTokens(other)).isEqualTo(1);
+		assertThat(invalidLinkResponse(newer)).isEqualTo(invalidLinkResponse(FAKE_TOKEN));
+		assertThat(invalidLinkResponse(older)).isEqualTo(invalidLinkResponse(FAKE_TOKEN));
+	}
+
+	@Test
+	void neitherTheTokenNorThePasswordIsLogged(CapturedOutput output) throws Exception {
+		String token = issuedToken();
+		String tampered = token.substring(0, token.length() - 1) + (token.endsWith("a") ? "b" : "a");
+		String weak = "weakpass9";
+		String chosen = "Chosen9Secret";
+		Logger web = (Logger) LoggerFactory.getLogger("org.springframework.web");
+		Logger app = (Logger) LoggerFactory.getLogger("com.drift.backend");
+		Level webLevel = web.getLevel();
+		Level appLevel = app.getLevel();
+		web.setLevel(Level.DEBUG);
+		app.setLevel(Level.DEBUG);
+		try {
+			mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+					.content(resetBody(tampered, chosen)))
+					.andExpect(status().isBadRequest());
+			mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+					.content(resetBody(token, weak)))
+					.andExpect(status().isBadRequest())
+					.andExpect(jsonPath("$.errors.password").value(PasswordPolicy.MESSAGE));
+			mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+					.content(resetBody(token, chosen)))
+					.andExpect(status().isOk());
+			mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+					.content(resetBody(token, chosen)))
+					.andExpect(status().isBadRequest());
+		} finally {
+			web.setLevel(webLevel);
+			app.setLevel(appLevel);
+		}
+
+		// The request body is logged at DEBUG, so the capture really sees it, but only in redacted form.
+		assertThat(output.getAll()).contains("ResetPasswordRequest[redacted]");
+		assertThat(output.getAll()).doesNotContain(token, tampered, weak, chosen);
 	}
 
 	private String loginToken(String password) throws Exception {
@@ -330,6 +444,26 @@ class PasswordResetIntegrationTests {
 				JOIN users u ON u.id = t.user_id
 				WHERE u.email = ?
 				""", Instant.class, email);
+	}
+
+	private void insertUnusedToken(String accountEmail, String rawToken) {
+		jdbc.update("""
+				INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+				SELECT id, ?, now() + interval '1 hour' FROM users WHERE email = ?
+				""", ResetTokens.hash(rawToken), accountEmail);
+	}
+
+	private String invalidLinkResponse(String token) throws Exception {
+		return mvc.perform(post("/api/auth/reset-password").contentType(MediaType.APPLICATION_JSON)
+				.content(resetBody(token, "NewPass1")))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(InvalidResetTokenException.MESSAGE))
+				.andExpect(jsonPath("$.errors.token").value(InvalidResetTokenException.MESSAGE))
+				.andReturn().getResponse().getContentAsString();
+	}
+
+	private long sessionGeneration() {
+		return jdbc.queryForObject("SELECT session_generation FROM users WHERE email = ?", Long.class, email);
 	}
 
 	private int countTokens(String accountEmail) {

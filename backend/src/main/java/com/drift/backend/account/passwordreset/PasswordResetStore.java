@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 
@@ -58,9 +59,15 @@ public class PasswordResetStore {
 		if (token == null || token.getUsedAt() != null || !token.getExpiresAt().isAfter(now)) {
 			return false;
 		}
-		token.getUser().replacePasswordHash(encodedPassword);
+		UserAccount account = token.getUser();
+		if (account.getStatus() == AccountStatus.REMOVED) {
+			return false;
+		}
+		// Bumps sessionGeneration, which ends every session issued before the reset.
+		account.replacePasswordHash(encodedPassword);
 		token.markUsed(now);
 		tokens.saveAndFlush(token);
+		tokens.deleteAllUnused(account.getId());
 		return true;
 	}
 
