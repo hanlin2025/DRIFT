@@ -9,3 +9,13 @@ An invitation lasts seven days unless `INVITATION_TTL` is set. `INVITATION_LINK_
 Someone who is not an administrator, or an administrator choosing another organisation, cannot send the invitation. An expired, revoked, or already used code cannot register an account.
 
 The same administrator can list the pending invitations for that organisation. The list shows the invited email, role, organisation and expiry. An invitation that is still pending after its expiry is shown as expired. Consumed invitations, invitations for another organisation, and the invitation code are omitted. An administrator who cannot send, someone who is not an administrator, and a signed-out caller cannot load the list. An authenticated refusal is 403. An organisation with nothing pending is an empty list. Retrying a failed load does not change an invitation.
+
+Withdrawing is a separate confirmation. It uses the same permission as sending and does not send a replacement. The rules are:
+
+- A pending invitation that has not expired becomes `REVOKED`. One revocation record stores the administrator and the time.
+- An accepted invitation cannot be withdrawn, and the account that used it is unchanged.
+- An expired invitation stays expired and pending. Withdraw does not make it valid, and it still cannot register.
+- An invitation that is already revoked stays as it is. A second withdrawal does not add another revocation record and says that it is already withdrawn. Reissuing an invitation still revokes the previous pending row and does not write a withdrawal record.
+- A missing invitation and an invitation in another organisation get the same 403. The response does not include that invitation. A signed-out caller gets 401.
+- A withdrawal that fails before it is saved leaves the invitation pending. The page shows an error that can be tried again.
+- Opening or submitting a revoked invitation does not create an account. The signup page says the invitation is no longer valid, without saying whether an account exists.

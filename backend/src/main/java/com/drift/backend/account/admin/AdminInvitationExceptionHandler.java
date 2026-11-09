@@ -9,6 +9,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.exception.DuplicateAccountException;
@@ -30,6 +31,17 @@ public class AdminInvitationExceptionHandler {
 	@ExceptionHandler(InvitationManagementForbiddenException.class)
 	public ResponseEntity<Map<String, String>> cannotManage(InvitationManagementForbiddenException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler({ InvitationAccessDeniedException.class, MethodArgumentTypeMismatchException.class })
+	public ResponseEntity<Map<String, String>> inaccessible(Exception ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", InvitationAccessDeniedException.MESSAGE));
+	}
+
+	@ExceptionHandler({ InvitationAlreadyWithdrawnException.class, InvitationAlreadyAcceptedException.class,
+			InvitationExpiredException.class })
+	public ResponseEntity<Map<String, String>> unchanged(RuntimeException ex) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
 	}
 
 	@ExceptionHandler(NoEligibleOrganisationException.class)

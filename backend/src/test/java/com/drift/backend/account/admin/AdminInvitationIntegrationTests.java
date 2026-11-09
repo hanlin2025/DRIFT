@@ -7,7 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -23,11 +27,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.drift.backend.account.exception.IneligibleInvitationException;
 import com.jayway.jsonpath.JsonPath;
 
 import ch.qos.logback.classic.Logger;
@@ -63,6 +70,11 @@ class AdminInvitationIntegrationTests {
 
 	@AfterEach
 	void removeRows() {
+		jdbc.update("""
+				DELETE FROM invitation_revocations
+				WHERE invitation_id IN (SELECT id FROM invitations WHERE email LIKE 'cdg310-%')
+				   OR operator_user_id IN (SELECT id FROM users WHERE email LIKE 'cdg310-%')
+				""");
 		jdbc.update("DELETE FROM users WHERE email LIKE 'cdg310-%'");
 		jdbc.update("DELETE FROM invitations WHERE email LIKE 'cdg310-%'");
 	}
@@ -264,6 +276,158 @@ class AdminInvitationIntegrationTests {
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM invitations WHERE email = ?", Integer.class, guestEmail)).isZero();
 	}
 
+	@Test
+	void anAdministratorWithdrawsAPendingInvitationAndItCannotRegister() throws Exception {
+		send(adminEmail, harbourline, "FREIGHT_FORWARDER", guestEmail);
+		String code = mailer.lastCode.get();
+		Long invitationId = invitationId(guestEmail);
+		Long adminId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, adminEmail);
+
+		MvcResult withdrawn = mvc.perform(post("/api/admin/invitations/" + invitationId + "/withdraw")
+				.header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(invitationId))
+				.andExpect(jsonPath("$.email").value(guestEmail))
+				.andExpect(jsonPath("$.status").value("REVOKED"))
+				.andExpect(jsonPath("$.token").doesNotExist())
+				.andExpect(jsonPath("$.code").doesNotExist())
+				.andReturn();
+		assertThat(withdrawn.getResponse().getContentAsString()).doesNotContain(code);
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, invitationId)).isEqualTo("REVOKED");
+		assertThat(revocations(invitationId)).isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT operator_user_id FROM invitation_revocations WHERE invitation_id = ?", Long.class, invitationId))
+				.isEqualTo(adminId);
+		assertThat(jdbc.queryForObject("SELECT recorded_at IS NOT NULL FROM invitation_revocations WHERE invitation_id = ?", Boolean.class, invitationId))
+				.isTrue();
+
+		mvc.perform(post("/api/invitations/resolve").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"token\":\"" + code + "\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(IneligibleInvitationException.WITHDRAWN));
+		mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(registration(code)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value(IneligibleInvitationException.WITHDRAWN));
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, guestEmail)).isZero();
+
+		String recordedAt = jdbc.queryForObject("SELECT recorded_at::text FROM invitation_revocations WHERE invitation_id = ?", String.class, invitationId);
+		mvc.perform(post("/api/admin/invitations/" + invitationId + "/withdraw").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(InvitationAlreadyWithdrawnException.MESSAGE));
+		assertThat(revocations(invitationId)).isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT recorded_at::text FROM invitation_revocations WHERE invitation_id = ?", String.class, invitationId))
+				.isEqualTo(recordedAt);
+	}
+
+	@Test
+	void anAcceptedInvitationCannotBeWithdrawnAndTheAccountStays() throws Exception {
+		send(adminEmail, harbourline, "IMPORTER", guestEmail);
+		String code = mailer.lastCode.get();
+		mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(registration(code)))
+				.andExpect(status().isCreated());
+		Long invitationId = invitationId(guestEmail);
+		String passwordHash = jdbc.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, guestEmail);
+		mvc.perform(post("/api/admin/invitations/" + invitationId + "/withdraw").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(InvitationAlreadyAcceptedException.MESSAGE));
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, invitationId)).isEqualTo("CONSUMED");
+		assertThat(revocations(invitationId)).isZero();
+		assertThat(jdbc.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, guestEmail)).isEqualTo(passwordHash);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, guestEmail)).isEqualTo(1);
+	}
+
+	@Test
+	void anExpiredInvitationStaysUnusableWhenWithdrawIsRefused() throws Exception {
+		String code = "expired-withdraw-code-should-stay-hidden";
+		insertInvitation(guestEmail, harbourline, "LOGISTICS_MANAGER", hash(code), "PENDING", "-1 hour", false);
+		Long invitationId = invitationId(guestEmail);
+		String expiry = jdbc.queryForObject("SELECT expires_at::text FROM invitations WHERE id = ?", String.class, invitationId);
+		mvc.perform(post("/api/admin/invitations/" + invitationId + "/withdraw").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(InvitationExpiredException.MESSAGE));
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, invitationId)).isEqualTo("PENDING");
+		assertThat(jdbc.queryForObject("SELECT expires_at::text FROM invitations WHERE id = ?", String.class, invitationId)).isEqualTo(expiry);
+		assertThat(revocations(invitationId)).isZero();
+		mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(registration(code)))
+				.andExpect(status().isBadRequest());
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, guestEmail)).isZero();
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, invitationId)).isEqualTo("PENDING");
+	}
+
+	@Test
+	void missingAndInaccessibleInvitationsAreNotRevealed() throws Exception {
+		String foreign = "cdg310-hidden-" + UUID.randomUUID() + "@example.com";
+		insertInvitation(foreign, straits, "IMPORTER", "c".repeat(64), "PENDING", "1 day", false);
+		Long foreignId = invitationId(foreign);
+		String forwarder = "cdg310-forwarder-" + UUID.randomUUID() + "@example.com";
+		insertUser(forwarder, "FREIGHT_FORWARDER", harbourline);
+
+		MvcResult hidden = mvc.perform(post("/api/admin/invitations/" + foreignId + "/withdraw").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(InvitationAccessDeniedException.MESSAGE))
+				.andExpect(jsonPath("$.email").doesNotExist())
+				.andReturn();
+		assertThat(hidden.getResponse().getContentAsString()).doesNotContain(foreign);
+		mvc.perform(post("/api/admin/invitations/999999999/withdraw").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value(InvitationAccessDeniedException.MESSAGE));
+		mvc.perform(post("/api/admin/invitations/" + foreignId + "/withdraw").header("Authorization", "Bearer " + token(forwarder)))
+				.andExpect(status().isForbidden());
+		mvc.perform(post("/api/admin/invitations/" + foreignId + "/withdraw"))
+				.andExpect(status().isUnauthorized());
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, foreignId)).isEqualTo("PENDING");
+		assertThat(revocations(foreignId)).isZero();
+	}
+
+	@Test
+	void replacingAnInvitationDoesNotRecordAWithdrawal() throws Exception {
+		send(adminEmail, harbourline, "FREIGHT_FORWARDER", guestEmail);
+		Long first = invitationId(guestEmail);
+		send(adminEmail, harbourline, "IMPORTER", guestEmail);
+		assertThat(jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, first)).isEqualTo("REVOKED");
+		assertThat(revocations(first)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM invitations WHERE email = ? AND status = 'PENDING'", Integer.class, guestEmail))
+				.isEqualTo(1);
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void withdrawalAndAcceptanceCannotBothSucceed() throws Exception {
+		send(adminEmail, harbourline, "FREIGHT_FORWARDER", guestEmail);
+		String code = mailer.lastCode.get();
+		Long invitationId = invitationId(guestEmail);
+		String bearer = token(adminEmail);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var start = new CountDownLatch(1);
+			var withdrawn = executor.submit(() -> {
+				start.await();
+				return mvc.perform(post("/api/admin/invitations/" + invitationId + "/withdraw")
+						.header("Authorization", "Bearer " + bearer)).andReturn().getResponse().getStatus();
+			});
+			var registered = executor.submit(() -> {
+				start.await();
+				return mvc.perform(post("/api/register").contentType(MediaType.APPLICATION_JSON).content(registration(code)))
+						.andReturn().getResponse().getStatus();
+			});
+			start.countDown();
+			int withdrawStatus = withdrawn.get(20, TimeUnit.SECONDS);
+			int registerStatus = registered.get(20, TimeUnit.SECONDS);
+			Integer accounts = jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class, guestEmail);
+			String status = jdbc.queryForObject("SELECT status FROM invitations WHERE id = ?", String.class, invitationId);
+			int recorded = revocations(invitationId);
+			if (registerStatus == 201) {
+				assertThat(withdrawStatus).isEqualTo(409);
+				assertThat(accounts).isEqualTo(1);
+				assertThat(status).isEqualTo("CONSUMED");
+				assertThat(recorded).isZero();
+			} else {
+				assertThat(List.of(registerStatus, withdrawStatus)).containsExactly(400, 200);
+				assertThat(accounts).isZero();
+				assertThat(status).isEqualTo("REVOKED");
+				assertThat(recorded).isEqualTo(1);
+			}
+		}
+	}
+
 	private void send(String admin, Long organisationId, String role, String email) throws Exception {
 		mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(admin))
 				.contentType(MediaType.APPLICATION_JSON).content(invite(organisationId, role, email)))
@@ -310,6 +474,14 @@ class AdminInvitationIntegrationTests {
 				INSERT INTO invitations (email, company_id, role, token_hash, expires_at, status)
 				VALUES (?, ?, ?, ?, NOW() + CAST(? AS interval), ?)
 				""", email, companyId, role, tokenHash, expiry, status);
+	}
+
+	private Long invitationId(String email) {
+		return jdbc.queryForObject("SELECT id FROM invitations WHERE email = ? ORDER BY id DESC LIMIT 1", Long.class, email);
+	}
+
+	private int revocations(Long invitationId) {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM invitation_revocations WHERE invitation_id = ?", Integer.class, invitationId);
 	}
 
 	private static String hash(String code) {
