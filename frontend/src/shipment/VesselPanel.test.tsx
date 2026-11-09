@@ -74,7 +74,7 @@ describe('mother vessel AIS panel', () => {
   it('labels a seeded position without dropping its age or stale badge', () => {
     const { rerender } = render(<VesselPanel name="MV Pacific Horizon" position={fix(minutesAgo(12), { source: 'SEEDED' })} />);
     expect(screen.getByText('Seeded')).toBeInTheDocument();
-    expect(screen.getByText('This is not a live AIS fix.')).toBeInTheDocument();
+    expect(screen.getByText('Rehearsal data; not an authentic AIS capture.')).toBeInTheDocument();
     expect(reading('Last report')).toHaveTextContent('Updated 12 min ago');
     expect(screen.queryByText('Stale')).not.toBeInTheDocument();
 

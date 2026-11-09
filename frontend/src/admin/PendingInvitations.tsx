@@ -64,21 +64,23 @@ export function PendingInvitations({ token, roles, onSessionEnded }: {
               <span>{label(invitation)} at {invitation.organisation.name}</span>
               <span>{invitation.expired ? 'Expired' : 'Pending'}</span>
               <time dateTime={invitation.expiresAt}>Expires {formatExpiry(invitation.expiresAt)}</time>
-              <WithdrawInvitation
-                token={token}
-                invitation={invitation}
-                onSessionEnded={onSessionEnded}
-                onWithdrawn={() => {
-                  setActionError('');
-                  setSaved(`Invitation for ${invitation.email} withdrawn.`);
-                  setAttempt(value => value + 1);
-                }}
-                onRejected={error => {
-                  setSaved('');
-                  setActionError(error.message);
-                  setAttempt(value => value + 1);
-                }}
-              />
+              {invitation.expired ? null : (
+                <WithdrawInvitation
+                  token={token}
+                  invitation={invitation}
+                  onSessionEnded={onSessionEnded}
+                  onWithdrawn={() => {
+                    setActionError('');
+                    setSaved(`Invitation for ${invitation.email} withdrawn.`);
+                    setAttempt(value => value + 1);
+                  }}
+                  onRejected={error => {
+                    setSaved('');
+                    setActionError(error.message);
+                    setAttempt(value => value + 1);
+                  }}
+                />
+              )}
             </li>
           ))}
         </ul>

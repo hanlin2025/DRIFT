@@ -40,6 +40,8 @@ describe('pending invitations', () => {
     expect(screen.getByText('Pending')).toBeInTheDocument();
     expect(screen.getByText('late@example.com')).toBeInTheDocument();
     expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Withdraw invitation for guest@example.com' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Withdraw invitation for late@example.com' })).not.toBeInTheDocument();
     expect(screen.getAllByText(/Expires/)).toHaveLength(2);
     expect(document.body.textContent).not.toContain('plain-invitation-token');
   });
@@ -85,16 +87,13 @@ describe('pending invitations', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Withdraw invitation for guest@example.com' })).not.toBeInTheDocument());
   });
 
-  it('explains an expired invitation and leaves it expired', async () => {
+  it('does not offer withdrawal when the invitation is already expired', async () => {
     const expired = { id: 5, email: 'late@example.com', role: 'IMPORTER' as const, organisation, expiresAt: '2020-01-01T00:00:00Z', expired: true };
     vi.mocked(listPendingInvitations).mockResolvedValue([expired]);
-    vi.mocked(withdrawInvitation).mockRejectedValue(new ApiError('This invitation has expired.', 409));
-    const user = userEvent.setup();
     render(<PendingInvitations token="token" roles={roles} onSessionEnded={vi.fn()} />);
-    await user.click(await screen.findByRole('button', { name: 'Withdraw invitation for late@example.com' }));
-    await user.click(screen.getByRole('button', { name: /^Withdraw$/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('This invitation has expired.');
-    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(await screen.findByText('Expired')).toBeInTheDocument();
     expect(screen.getByText('late@example.com')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Withdraw invitation for late@example.com' })).not.toBeInTheDocument();
+    expect(withdrawInvitation).not.toHaveBeenCalled();
   });
 });

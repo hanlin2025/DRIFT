@@ -83,7 +83,7 @@ class MaritimeSnapshotChangeIntegrationTests {
 				""", String.class)).contains("UNIQUE").contains("WHERE head");
 		assertThat(jdbc.queryForList(
 				"SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.endsWith("29", "30", "31", "32");
+				.endsWith("31", "32", "33", "34", "35", "36", "37");
 	}
 
 	private static MaritimeSnapshot revision(String retrievedAt, String current) {
