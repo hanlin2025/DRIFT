@@ -30,6 +30,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.drift.backend.account.Role;
+import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
 import com.drift.backend.ais.position.LatestAisPositions;
@@ -60,9 +62,11 @@ class ShipmentImpactIntegrationTests {
 	@Autowired ObjectMapper json;
 	@Autowired EntityManager entityManager;
 	@Autowired LatestAisPositions latestPositions;
+	@Autowired ShipmentService shipments;
 
 	private final Coordinates singapore = PortCatalog.load().locate("Singapore").orElseThrow();
 	private final String prefix = "HBL-47-" + UUID.randomUUID().toString().substring(0, 8) + "-";
+	private String forwarderEmail;
 	private String forwarderToken;
 	private String importerToken;
 	private String outsiderToken;
@@ -75,7 +79,8 @@ class ShipmentImpactIntegrationTests {
 		Long forwarderCompanyId = companyId("HARBOURLINE_DEMO");
 		importerCompanyId = companyId("STRAITS_FRESH_DEMO");
 		otherImporterCompanyId = createCompany();
-		forwarderToken = login(account("FREIGHT_FORWARDER", forwarderCompanyId));
+		forwarderEmail = account("FREIGHT_FORWARDER", forwarderCompanyId);
+		forwarderToken = login(forwarderEmail);
 		importerToken = login(account("IMPORTER", importerCompanyId));
 		outsiderToken = login(account("FREIGHT_FORWARDER", createCompany()));
 	}
@@ -153,6 +158,35 @@ class ShipmentImpactIntegrationTests {
 				.header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errors.exceedsDeadline").value("exceedsDeadline must be true or false"));
+	}
+
+	@Test
+	void theExceedsDeadlineFilterIsAppliedBeforeThePageIsCut() throws Exception {
+		List<Long> late = new ArrayList<>();
+		for (int i = 0; i < ShipmentService.PAGE_SIZE + 1; i++) {
+			late.add(linked("LATE-" + String.format("%02d", i), Duration.ofHours(6), importerCompanyId,
+					NOW.minus(Duration.ofHours(1))));
+		}
+		long onTime = linked("ONTIME", Duration.ofHours(6), importerCompanyId, NOW.plus(Duration.ofHours(1)));
+		long noDeadline = linked("NODEADLINE", Duration.ofHours(6), importerCompanyId, null);
+		Long forwarderId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, forwarderEmail);
+		AuthenticatedUser forwarder = new AuthenticatedUser(forwarderId, forwarderEmail, Role.FREIGHT_FORWARDER,
+				Instant.parse("2030-01-01T00:00:00Z"));
+		ShipmentFilterCriteria exceeding = ShipmentFilterCriteria.of(prefix, null, null, null, null, null, true);
+
+		for (ShipmentSort sort : List.of(ShipmentSort.CREATED_DATE_DESCENDING, ShipmentSort.RISK_FIRST)) {
+			ShipmentPage first = shipments.listPage(forwarder, exceeding, 1, sort);
+			ShipmentPage second = shipments.listPage(forwarder, exceeding, 2, sort);
+			assertThat(first.total()).isEqualTo(late.size());
+			assertThat(second.total()).isEqualTo(late.size());
+			assertThat(first.items()).hasSize(ShipmentService.PAGE_SIZE);
+			assertThat(second.items()).hasSize(1);
+			List<Long> paged = new ArrayList<>(first.items().stream().map(ShipmentResponse::id).toList());
+			paged.addAll(second.items().stream().map(ShipmentResponse::id).toList());
+			assertThat(paged).containsExactlyInAnyOrderElementsOf(late).doesNotContain(onTime, noDeadline);
+			assertThat(paged).doesNotHaveDuplicates();
+		}
+		assertThat(shipments.listPage(forwarder, exceeding, 3, ShipmentSort.CREATED_DATE_DESCENDING).items()).isEmpty();
 	}
 
 	/** A shipment linked to the importer whose mother vessel is at the port now, so its estimated arrival is NOW. */

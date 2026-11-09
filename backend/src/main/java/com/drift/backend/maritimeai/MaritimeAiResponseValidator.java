@@ -45,6 +45,11 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern UNSUPPORTED_ALTERNATIVE_PLAN_FOLLOW_UP = Pattern.compile("(?i)\\b(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b[^.!?;]{0,80}\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b|\\b(?:alternative|alternate|other)\\s+(?:shipment\\s+)?(?:plans?|routes?|mitigations?)\\b[^.!?;]{0,80}\\b(?:should|could|may|need(?:s)? to|can)\\s+(?:be\\s+)?(?:evaluat|assess|compar|consider|recommend|select|choos|explor|develop|propos|optimi[sz])\\w*\\b");
 	private static final Pattern NO_WINDOW_ASSERTION = Pattern.compile("(?i)\\b(?:(?:no|zero)\\s+(?:(?:positive|remaining|available)\\s+)?(?:connection\\s+)?(?:windows?|buffers?)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:(?:is|has(?:\\s+been)?)\\s+)?(?:exhausted|unavailable|zero|ended|expired|gone|depleted|consumed|run\\s+out|not\\s+available|used\\s+up)|(?:connection\\s+)?(?:windows?|buffers?)\\s+(?:has\\s+)?no\\s+positive\\s+buffer)\\b");
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
+	private static final Pattern QUALIFIED_SHIPMENT_APPLICABILITY = Pattern.compile("(?i)\\b(?:uncertain|unclear|unverified|not verified|conditional)\\s+applicability\\s+(?:for|to)\\s+(?:the\\s+)?shipment\\s+planning\\b");
+	private static final Pattern EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION = Pattern.compile("(?i)\\b(?:any\\s+)?shipment(?:-specific)?\\s+(?:association|relevance)\\s+(?:is|remains)\\s+(?:conditional(?:\\s+and\\s+unverified)?|unverified|not verified)\\b");
+	private static final Pattern SHIPMENT_OR_CARGO_WORD = Pattern.compile("(?i)\\b(?:shipment|cargo)\\b");
+	private static final Pattern SYNTHETIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:synthetic|fictional)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
+	private static final Pattern AUTHENTIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:authentic|real(?:-world)?|historical|retrospective)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
 	/* Uncertainty-only exception for a fully scoped, explicitly negative evidence statement.
 	 * It does not authorize urgency assertions or claims that urgency affects a deadline/risk. */
 	private static final Pattern SCOPED_URGENCY_UNCERTAINTY = Pattern.compile("(?i)^(?:the\\s+)?(?:supplied\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|confirm|determine|show|indicate|support)\\s+whether\\s+(?:this|the\\s+current)\\s+shipment\\s+is\\s+(?:urgent|time[- ]sensitive)\\.?$");
@@ -72,7 +77,7 @@ final class MaritimeAiResponseValidator {
 				|| "INSUFFICIENT_SCENARIO_CONTEXT".equals(validationStatus); }
 	}
 
-	/** Dedicated v1.6 validator. It validates typed meaning and whole authored sentences before projection. */
+	/** Controlled-scenario validator: checks typed backend facts and whole authored sentences before projection. */
 	static ScenarioValidation validateScenarioV16(String outputText, MaritimeAiEvidencePackage input) {
 		String preflightField = ScenarioMaritimeAiOutput.preflightFailureField(input);
 		if (preflightField != null) return new ScenarioValidation("INSUFFICIENT_SCENARIO_CONTEXT", preflightField, null);
@@ -104,7 +109,8 @@ final class MaritimeAiResponseValidator {
 		if (!ScenarioMaritimeAiProse.matchesRisk(assessment.risk().statement(), expectedRisk.severity(),
 				expectedRisk.selectedWindowState()))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.risk.statement", null);
-		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(), comparison.outcome()))
+		if (!ScenarioMaritimeAiProse.matchesDeadline(assessment.deadline().statement(),
+				input.shipmentContext().scenario().shipmentKey(), comparison))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.deadline.statement", null);
 		if (!ScenarioMaritimeAiProse.matchesUncertainty(assessment.uncertainty()))
 			return new ScenarioValidation("SCENARIO_PROSE_MISMATCH", "assessment.uncertainty", null);
@@ -143,6 +149,7 @@ final class MaritimeAiResponseValidator {
 				|| output.uncertainties() == null || output.followUpConsiderations() == null
 				|| (output.evidenceSufficient() && output.claims().isEmpty())) return "MALFORMED_OUTPUT";
 		List<String> authoredText = authoredText(output);
+		if (hasSourceModeContradiction(authoredText, input.evidence())) return "EVIDENCE_SOURCE_MODE_MISMATCH";
 		if (authoredText.stream().anyMatch(MaritimeAiResponseValidator::containsCargoReference)) return "UNSUPPORTED_CARGO_ASSERTION";
 		if (claimsUnsupportedBusinessConstraint(output, input))
 			return "UNSUPPORTED_BUSINESS_CONSTRAINT";
@@ -173,6 +180,7 @@ final class MaritimeAiResponseValidator {
 			if (claim == null || claim.statement() == null || claim.statement().isBlank() || claim.evidenceIds() == null || claim.evidenceIds().isEmpty()) return "MISSING_CITATION";
 			if (!ids.containsAll(claim.evidenceIds())) return "UNKNOWN_EVIDENCE_ID";
 			List<MaritimeEvidence> cited = input.evidence().stream().filter(item -> claim.evidenceIds().contains(item.evidenceId())).toList();
+			if (hasSourceModeContradiction(List.of(claim.statement()), cited)) return "EVIDENCE_SOURCE_MODE_MISMATCH";
 			if (claim.factReferences() != null && !claim.factReferences().isEmpty()) {
 				if (!allowedFactReferences.containsAll(claim.factReferences())) return "UNKNOWN_FACT_REFERENCE";
 				if (containsGeneratedFactualDetail(output.summary(), input, null, List.of())) return "UNSTRUCTURED_FACTUAL_DETAIL";
@@ -266,10 +274,11 @@ final class MaritimeAiResponseValidator {
 			MaritimeAiEvidencePackage input) {
 		boolean scheduleReview = "SCHEDULE_REVIEW".equals(claim.relationshipType());
 		String statement = claim.statement().toLowerCase();
+		boolean neutralPortOverlap = isNeutralPortOverlapClaim(claim, cited);
 		String role = singleKnown(cited.stream().map(MaritimeEvidence::vesselRole).toList());
-		if (role != null && !role.equals(claim.vesselRole())) return "VESSEL_ROLE_MISMATCH";
-		if (role == null && hasKnown(cited.stream().map(MaritimeEvidence::vesselRole).toList()) && claim.vesselRole() != null) return "AMBIGUOUS_VESSEL_ROLE";
-		if (role == null && claim.vesselRole() != null) return "UNSUPPORTED_VESSEL_ROLE";
+		if (!neutralPortOverlap && role != null && !role.equals(claim.vesselRole())) return "VESSEL_ROLE_MISMATCH";
+		if (!neutralPortOverlap && role == null && hasKnown(cited.stream().map(MaritimeEvidence::vesselRole).toList()) && claim.vesselRole() != null) return "AMBIGUOUS_VESSEL_ROLE";
+		if (!neutralPortOverlap && role == null && claim.vesselRole() != null) return "UNSUPPORTED_VESSEL_ROLE";
 		if ("MOTHER".equals(role) && mentionsFeederArrivalOrRevision(statement)) return "VESSEL_ROLE_MISMATCH";
 		if ("FEEDER".equals(role) && mentionsMotherArrivalOrRevision(statement)) return "VESSEL_ROLE_MISMATCH";
 		if (mentionsFeederDeparture(statement) && !"FEEDER".equals(role)
@@ -278,18 +287,18 @@ final class MaritimeAiResponseValidator {
 		}
 
 		String observation = singleKnown(cited.stream().map(MaritimeEvidence::observationType).toList());
-		if (observation != null && !observation.equals(claim.observationType())) return "OBSERVATION_TYPE_MISMATCH";
-		if (observation == null && hasKnown(cited.stream().map(MaritimeEvidence::observationType).toList()) && claim.observationType() != null) return "AMBIGUOUS_OBSERVATION_TYPE";
-		if (observation == null && claim.observationType() != null) return "UNSUPPORTED_OBSERVATION_TYPE";
+		if (!neutralPortOverlap && observation != null && !observation.equals(claim.observationType())) return "OBSERVATION_TYPE_MISMATCH";
+		if (!neutralPortOverlap && observation == null && hasKnown(cited.stream().map(MaritimeEvidence::observationType).toList()) && claim.observationType() != null) return "AMBIGUOUS_OBSERVATION_TYPE";
+		if (!neutralPortOverlap && observation == null && claim.observationType() != null) return "UNSUPPORTED_OBSERVATION_TYPE";
 		if ("EXPECTED_ARRIVAL".equals(observation) && statement.contains("departure")
 				&& (!scheduleReview || mentionsMotherDeparture(statement) || !mentionsPlannedFeederDeparture(statement)
 						|| !hasPlannedFeederDeparture(input.shipmentContext()))) return "OBSERVATION_TYPE_MISMATCH";
 		if ("EXPECTED_DEPARTURE".equals(observation) && statement.contains("arrival")) return "OBSERVATION_TYPE_MISMATCH";
 
 		String scope = singleKnown(cited.stream().map(MaritimeEvidence::associationScope).toList());
-		if (scope != null && !scope.equals(claim.associationScope())) return "ASSOCIATION_SCOPE_MISMATCH";
-		if (scope == null && hasKnown(cited.stream().map(MaritimeEvidence::associationScope).toList()) && claim.associationScope() != null) return "AMBIGUOUS_ASSOCIATION_SCOPE";
-		if (scope == null && claim.associationScope() != null) return "UNSUPPORTED_ASSOCIATION_SCOPE";
+		if (!neutralPortOverlap && scope != null && !scope.equals(claim.associationScope())) return "ASSOCIATION_SCOPE_MISMATCH";
+		if (!neutralPortOverlap && scope == null && hasKnown(cited.stream().map(MaritimeEvidence::associationScope).toList()) && claim.associationScope() != null) return "AMBIGUOUS_ASSOCIATION_SCOPE";
+		if (!neutralPortOverlap && scope == null && claim.associationScope() != null) return "UNSUPPORTED_ASSOCIATION_SCOPE";
 		if (hasContextOnlySource(cited) && ("SHIPMENT_SPECIFIC".equals(claim.applicability())
 				|| "VERIFIED".equalsIgnoreCase(claim.applicability())
 				|| referencesShipmentAsFact(claim.statement(), claim.applicability()))) {
@@ -315,7 +324,7 @@ final class MaritimeAiResponseValidator {
 					&& refs.contains("schedule:FEEDER:PLANNED_DEPARTURE") ? null : "UNSUPPORTED_SCHEDULE_RELATIONSHIP";
 			case "PORT_CONTEXT_REVIEW" -> cited.stream().anyMatch(item -> "PORT_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_PORT_CONTEXT_RELATIONSHIP";
-			case "PORT_TIME_OVERLAP_REVIEW" -> cited.stream().anyMatch(item -> "PORT_CONTEXT".equals(item.associationScope()))
+			case "PORT_TIME_OVERLAP_REVIEW" -> hasPortContext(cited) && hasMotherExpectedArrival(cited)
 					&& refs.contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE) ? null : "UNSUPPORTED_PORT_TIME_OVERLAP";
 			case "REGIONAL_WEATHER_CONTEXT" -> cited.stream().anyMatch(item -> "REGIONAL_CONTEXT".equals(item.associationScope()))
 					? null : "UNSUPPORTED_REGIONAL_WEATHER_RELATIONSHIP";
@@ -848,6 +857,33 @@ final class MaritimeAiResponseValidator {
 				&& "EXPECTED_ARRIVAL".equals(item.observationType()));
 	}
 
+	private static boolean hasSourceModeContradiction(List<String> authoredText, List<MaritimeEvidence> evidence) {
+		Set<String> sourceModes = evidence.stream().map(MaritimeEvidence::sourceMode)
+				.filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+		if (sourceModes.size() != 1) return false;
+		Pattern contradiction = switch (sourceModes.iterator().next()) {
+			case "RETROSPECTIVE_ANALYSIS" -> SYNTHETIC_SOURCE_LABEL;
+			case "SYNTHETIC_DEMONSTRATION" -> AUTHENTIC_SOURCE_LABEL;
+			default -> null;
+		};
+		return contradiction != null && authoredText.stream().filter(java.util.Objects::nonNull)
+				.anyMatch(text -> contradiction.matcher(text).find());
+	}
+
+	private static boolean isNeutralPortOverlapClaim(MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
+		return "PORT_TIME_OVERLAP_REVIEW".equals(claim.relationshipType())
+				&& "CONTEXTUAL".equalsIgnoreCase(claim.applicability())
+				&& claim.vesselRole() == null && claim.observationType() == null
+				&& "PORT_CONTEXT".equals(claim.associationScope())
+				&& claim.factReferences() != null
+				&& claim.factReferences().contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE)
+				&& hasPortContext(cited) && hasMotherExpectedArrival(cited);
+	}
+
+	private static boolean hasPortContext(List<MaritimeEvidence> evidence) {
+		return evidence.stream().anyMatch(item -> "PORT_CONTEXT".equals(item.associationScope()));
+	}
+
 	private static boolean hasContextOnlySource(List<MaritimeEvidence> evidence) {
 		return evidence.stream().map(MaritimeEvidence::associationScope)
 				.anyMatch(scope -> "PORT_CONTEXT".equals(scope) || "REGIONAL_CONTEXT".equals(scope));
@@ -1000,11 +1036,11 @@ final class MaritimeAiResponseValidator {
 	}
 
 	private static boolean referencesShipmentAsFact(String statementText, String applicabilityText) {
-		String statement = statementText == null ? "" : statementText.toLowerCase();
-		String applicability = applicabilityText == null ? "" : applicabilityText.toLowerCase();
-		boolean marksUncertainty = statement.contains("unverified") || statement.contains("not verified")
-				|| statement.contains("conditional") || statement.contains("if the association");
-		return (!marksUncertainty && (statement.contains("shipment") || statement.contains("cargo")))
+		String statement = statementText == null ? "" : statementText;
+		String applicability = applicabilityText == null ? "" : applicabilityText.toLowerCase(Locale.ROOT);
+		String qualifiedOnly = QUALIFIED_SHIPMENT_APPLICABILITY.matcher(statement).replaceAll(" ");
+		String withoutExplicitUnverifiedAssociation = EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION.matcher(qualifiedOnly).replaceAll(" ");
+		return SHIPMENT_OR_CARGO_WORD.matcher(withoutExplicitUnverifiedAssociation).find()
 				|| applicability.contains("shipment_specific");
 	}
 

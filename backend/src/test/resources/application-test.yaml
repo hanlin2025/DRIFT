@@ -9,6 +9,13 @@ spring:
 app:
   jwt:
     secret: test-only-jwt-secret-not-used-outside-tests
+  password-reset:
+    rate-limit:
+      # High enough that the shared in-memory limiter never throttles other tests;
+      # PasswordResetSecurityTests sets low limits for its own context.
+      email: 1000
+      ip: 1000
+      window: 15m
   ais:
     enabled: false
   shipment-import:
