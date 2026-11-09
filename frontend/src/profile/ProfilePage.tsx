@@ -90,7 +90,7 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
     <form className="profile-page" onSubmit={save}>
       <p className="eyebrow">YOUR ACCOUNT</p>
       <h2>Profile</h2>
-      <p className="intro">Update your name, password, and the shipment-risk email you want stored. Nothing is emailed from this page.</p>
+      <p className="intro">Update your name and password. Saving this page does not send an email. A later rise sends the existing risk email when a shipment you can view reaches the saved level.</p>
       {saved ? <div className="success-notice" role="status">{saved}</div> : null}
       {problem ? <div className="error-notice" role="alert">{problem}</div> : null}
       <div className="field">
@@ -120,7 +120,7 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
           <select id="profile-risk-level" value={minimumLevel} onChange={event => setMinimumLevel(event.target.value as RiskLevel)} disabled={submitting}>
             {RISK_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
           </select>
-          <p className="field-hint">HIGH means HIGH and CRITICAL. The choice is stored only.</p>
+          <p className="field-hint">HIGH means HIGH and CRITICAL.</p>
         </div>
       </fieldset>
       <fieldset>

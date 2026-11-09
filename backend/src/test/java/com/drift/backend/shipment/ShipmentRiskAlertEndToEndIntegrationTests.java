@@ -43,24 +43,27 @@ import com.drift.backend.company.CompanyRepository;
 @ActiveProfiles("test")
 @Import(ShipmentRiskAlertEndToEndIntegrationTests.MailDouble.class)
 class ShipmentRiskAlertEndToEndIntegrationTests {
+	private static final String SHIPMENT_REFERENCE_PREFIX = "CDG198-E2E-";
+	private static final String USER_EMAIL_PATTERN = "cdg302-e2e-%@example.test";
+
 	@Autowired TransactionTemplate transactions;
 	@Autowired CompanyRepository companies;
 	@Autowired AccountRoleRepository roles;
 	@Autowired UserAccountRepository users;
+	@Autowired JdbcTemplate jdbc;
 	@Autowired ShipmentService shipments;
 	@Autowired ShipmentRiskAlertActivationService activation;
 	@Autowired ShipmentRiskTransitionRepository transitions;
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskAlertDeliveryService deliveryService;
 	@Autowired JavaMailSender mailSender;
-	@Autowired JdbcTemplate jdbc;
 
 	private AuthenticatedUser principal;
 
 	@BeforeEach
 	void activateAndCreateEligibleUser() {
+		cleanupTestData();
 		reset(mailSender);
-		removeCommittedFixtures();
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
@@ -73,26 +76,14 @@ class ShipmentRiskAlertEndToEndIntegrationTests {
 	}
 
 	@AfterEach
-	void removeCommittedFixtures() {
-		transactions.executeWithoutResult(status -> {
-			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN "
-					+ "(SELECT id FROM shipment_risk_transitions WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%'))");
-			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE user_id IN "
-					+ "(SELECT id FROM users WHERE email LIKE 'cdg302-e2e-%@example.test')");
-			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%')");
-			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%')");
-			jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE 'CDG198-E2E-%'");
-			jdbc.update("DELETE FROM users WHERE email LIKE 'cdg302-e2e-%@example.test'");
-		});
+	void cleanUp() {
+		cleanupTestData();
 	}
 
 	@Test
 	void sendsAnInitialAlertCreatedByTheRealAfterCommitWorkflow() {
 		OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
-		ShipmentResponse shipment = shipments.create(principal, new CreateShipmentRequest("CDG198-E2E-" + UUID.randomUUID(),
+		ShipmentResponse shipment = shipments.create(principal, new CreateShipmentRequest(SHIPMENT_REFERENCE_PREFIX + UUID.randomUUID(),
 				"A", "B", "C", "Mother", arrival, "Feeder", arrival.plusHours(25), null, null, null, null, null, null));
 		var persistedTransitions = transitions.findByShipmentIdOrderBySequenceAsc(shipment.id());
 		assertThat(persistedTransitions).hasSize(1);
@@ -114,5 +105,27 @@ class ShipmentRiskAlertEndToEndIntegrationTests {
 	@TestConfiguration
 	static class MailDouble {
 		@Bean @Primary JavaMailSender mailSender() { return mock(JavaMailSender.class); }
+	}
+
+	private void cleanupTestData() {
+		String shipmentPattern = SHIPMENT_REFERENCE_PREFIX + "%";
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.shipment_reference LIKE ?
+				)
+				""", shipmentPattern);
+		jdbc.update("""
+				DELETE FROM shipment_risk_transitions
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)
+				""", shipmentPattern);
+		jdbc.update("""
+				DELETE FROM shipment_risk_states
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)
+				""", shipmentPattern);
+		jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE ?", shipmentPattern);
+		jdbc.update("DELETE FROM users WHERE email LIKE ?", USER_EMAIL_PATTERN);
 	}
 }

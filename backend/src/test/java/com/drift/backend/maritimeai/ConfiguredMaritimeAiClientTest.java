@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 class ConfiguredMaritimeAiClientTest {
@@ -28,9 +29,15 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
 			assertThat(result.promptVersion())
-					.isEqualTo("cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1")
+					.isEqualTo("cdg247.evidence.v18.cdg252-unknown-business-risk-state-separation.1")
 					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
 			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v17.cdg252-risk-provenance-human-follow-up.1");
+			assertThat(ConfiguredMaritimeAiClient.V16_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v16.cdg252-risk-citation-unknown-business.1");
+			assertThat(ConfiguredMaritimeAiClient.V15_PROMPT_VERSION)
+					.isEqualTo("cdg247.evidence.v15.cdg252-grounded-risk-state-human-verification.1");
+			assertThat(ConfiguredMaritimeAiClient.V14_PROMPT_VERSION)
 					.isEqualTo("cdg247.evidence.v14.cdg252-abstract-revision-business-context.1");
 			assertThat(result.interpretation().claims().get(0).vesselRole()).isNull();
 			assertThat(result.interpretation().claims().get(0).observationType()).isNull();
@@ -50,7 +57,7 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("Association verification is evidence-item-specific")
 					.contains("never call a synthetic notice official or real")
 					.contains("say only that the documented revision warrants schedule review")
-					.contains("Do not state its magnitude or previous/current values")
+					.contains("Do not state the revision's magnitude or previous/current values")
 					.contains("Never call the revision additional, further, another, or subsequent")
 					.contains("shipmentContext is deterministic planned schedule context, not retrieved maritime evidence")
 					.contains("Canonical factReferences (use these instead of restating facts)")
@@ -76,11 +83,115 @@ class ConfiguredMaritimeAiClientTest {
 				.contains("asking the carrier or operations team to verify the current vessel position")
 				.contains("a concrete verification activity")
 				.contains("Do not recommend evaluating alternative shipment plans, routes, or mitigations")
-				.contains("shipmentContext.businessContext is a minimized authorized projection")
+				.contains("shipmentContext.businessContext is a minimized authorized projection from the shipment detail service")
+				.contains("For an ordinary shipment request without scenario context")
+					.contains("If deadline state is UNKNOWN, do not mention deadline or comparison status/reason in the summary, claims, or uncertainties")
+					.contains("do not assert or infer urgency, business consequences, applicability, or the unknown deadline's relevance to operational risk")
+					.contains("The evidence does not establish whether this shipment is urgent.")
+					.contains("Do not put that uncertainty in a claim, summary, or follow-up")
+					.contains("Do not append a purpose, comparison result, or consequence to that question")
+					.contains("a risk-only claim with only risk references")
+					.contains("the risk claim itself must include its own evidence:<id> reference")
+					.contains("A separate evidence-grounded SCHEDULE_REVIEW claim does not ground a separate RISK_BUFFER_REVIEW claim")
+					.contains("also cite risk:ARRIVAL_ESTIMATE_NOT_USED")
+					.contains("Set the risk claim's applicability to CONTEXTUAL or UNCERTAIN")
+					.contains("A planned connection window and AIS-estimate freshness are separate backend facts")
+					.contains("Never call a planned connection window an estimate")
+					.contains("Do not describe an AVAILABLE planned window as an available AIS estimate")
 				.contains("never describe an unavailable comparison as NO_PREDICTED_IMPACT")
 				.contains("DELAY_COMPARISON_REVIEW")
 				.contains("Clearly keep observed MPA/NEA evidence, stored schedule facts, backend-computed risk")
 				.contains("NO_REMAINING_WINDOW means the calculation has no positive buffer");
+	}
+
+	@Test void usesTheStrictV16SchemaAndMinimizedFactsForOpenAiScenarioInputs() {
+		AtomicReference<String> body = new AtomicReference<>();
+		var input = ScenarioQualityStubClientTest.worsenedShipmentAInput("PromptV16");
+		String outputText = ScenarioQualityStubClient.fixtureOutputText(input);
+		var client = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true,
+				20, 800, new ObjectMapper(), (request, requestBody) -> {
+					body.set(requestBody);
+					return new ConfiguredMaritimeAiClient.TransportResponse(200,
+							ScenarioQualityStubClient.fixtureResponsesEnvelope(outputText));
+				});
+
+		var result = client.interpret(input);
+
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.6")
+				.isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
+		assertThat(result.scenarioOutputText()).isEqualTo(outputText);
+		assertThat(result.scenarioEnvelopeStatus()).isEqualTo("completed");
+		assertThat(MaritimeAiResponseValidator.validateScenarioV16(result.scenarioOutputText(), input).valid()).isTrue();
+		assertThat(ConfiguredMaritimeAiClient.PREVIOUS_SCENARIO_PROMPT_VERSION).isEqualTo("cdg290.scenario-grounded-v1.4");
+		assertThat(ConfiguredMaritimeAiClient.SCENARIO_PROMPT_VERSION_V13).isEqualTo("cdg290.scenario-grounded-v1.3");
+		JsonNode request = new ObjectMapper().readTree(body.get());
+		String systemPrompt = request.at("/input/0/content/0/text").asString();
+		String userContent = request.at("/input/1/content/0/text").asString();
+		JsonNode facts = new ObjectMapper().readTree(userContent.substring(userContent.indexOf('\n') + 1));
+		JsonNode schema = request.at("/text/format/schema");
+		assertThat(body.get()).contains("\"model\":\"model\"")
+				.contains("\"max_output_tokens\":800").contains("\"store\":false")
+				.contains("\"name\":\"maritime_ai_controlled_scenario_v16\"")
+				.contains("\"strict\":true").contains("\"additionalProperties\":false")
+				.doesNotContain("https://example.invalid", "CDG279-SYNTHETIC", "Fictional", "citation", "sourceUrl");
+		assertThat(systemPrompt).contains("copy its evidenceRef exactly")
+				.contains("warrants human review of / gives the operations team a reason to recheck")
+				.contains("warrants review of / gives the operations team a reason to check")
+				.contains("Use 'The AIS-estimated remaining connection window is available.' for AVAILABLE")
+				.contains("The AIS estimate leaves no positive remaining connection window.")
+				.contains("does not establish / does not confirm / cannot establish")
+				.contains("whether the latest arrival estimate remains current at the scenario cutoff")
+				.contains("NO_PREDICTED_IMPACT");
+		assertThat(facts.at("/stage").asString()).isEqualTo("WORSENED");
+		assertThat(facts.at("/scenarioShipmentKey").asString()).isEqualTo("A");
+		assertThat(facts.at("/deadline/deadlineAt").asString()).isEqualTo("2026-10-01T12:00Z");
+		assertThat(facts.at("/eligibleRevisions/0/evidenceRef").asString()).isEqualTo("evidence:cdg279-v1-revision-1");
+		assertThat(schema.path("type").asString()).isEqualTo("object");
+		assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
+		assertThat(schema.findValue("minLength")).isNull();
+		assertThat(schema.findValue("maxLength")).isNull();
+	}
+
+	@Test void v16EnvelopeSeparatesRefusalIncompleteAndAmbiguousOutputText() {
+		String refusal = """
+				{"status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"Not available"}]}]}
+				""";
+		var refused = scenarioClient(refusal).interpret(ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeRefusal"));
+		assertThat(refused.scenarioEnvelopeStatus()).isEqualTo("refusal");
+		assertThat(refused.scenarioOutputText()).isNull();
+		assertThat(refused.failure()).contains("refused");
+		assertThat(refused.scenarioFailureCode()).isEqualTo("PROVIDER_REFUSAL");
+
+		String incomplete = """
+				{"status":"incomplete","output":[{"type":"message","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"{\\"assessment\\":null}"}]}]}
+				""";
+		var partial = scenarioClient(incomplete).interpret(ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeIncomplete"));
+		assertThat(partial.scenarioEnvelopeStatus()).isEqualTo("incomplete_message");
+		assertThat(partial.scenarioOutputText()).isEqualTo("{\"assessment\":null}");
+		assertThat(partial.failure()).contains("did not complete");
+		assertThat(partial.scenarioFailureCode()).isEqualTo("INCOMPLETE_PROVIDER_OUTPUT");
+
+		String multiple = """
+				{"status":"completed","output":[
+				 {"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{}"}]},
+				 {"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"{}"}]}]}
+				""";
+		var ambiguous = scenarioClient(multiple).interpret(ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeMultiple"));
+		assertThat(ambiguous.scenarioEnvelopeStatus()).isEqualTo("multiple_output_text");
+		assertThat(ambiguous.scenarioOutputText()).isNull();
+		assertThat(ambiguous.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
+	}
+
+	@Test void malformedAndMissingCompletedOutputAreRejectedAsInvalidScenarioOutput() {
+		var malformed = scenarioClient("not-json").interpret(
+				ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeMalformed"));
+		assertThat(malformed.scenarioEnvelopeStatus()).isEqualTo("invalid_envelope");
+		assertThat(malformed.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
+
+		var missingOutput = scenarioClient("{\"status\":\"completed\",\"output\":[]}").interpret(
+				ScenarioQualityStubClientTest.worsenedShipmentAInput("EnvelopeMissingOutput"));
+		assertThat(missingOutput.scenarioEnvelopeStatus()).isEqualTo("missing_output_text");
+		assertThat(missingOutput.scenarioFailureCode()).isEqualTo("INVALID_SCENARIO_OUTPUT");
 	}
 
 	@Test void readsHistoricalClaimsWithoutTheOptionalRiskReviewField() throws Exception {
@@ -174,6 +285,11 @@ class ConfiguredMaritimeAiClientTest {
 				.interpret(EVIDENCE);
 		assertThat(result.interpretation()).isNull();
 		assertThat(result.failure()).contains("Inference gateway failure");
+	}
+
+	private ConfiguredMaritimeAiClient scenarioClient(String response) {
+		return new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key", "https://example.invalid/v1/responses", true,
+				20, 800, new ObjectMapper(), (request, body) -> new ConfiguredMaritimeAiClient.TransportResponse(200, response));
 	}
 
 	private static String responsesEnvelope() {

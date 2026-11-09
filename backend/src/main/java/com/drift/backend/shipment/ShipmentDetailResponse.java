@@ -46,8 +46,10 @@ public record ShipmentDetailResponse(
 		AssessmentExplanation assessmentExplanation,
 		@Schema(description = "Inputs that produced the connection risk on this read. Taken from the same planned window and remaining window, and not stored.")
 		ShipmentRiskContributions riskContributions,
-		@Schema(description = "Recommended response from the connection risk on this read and the impact result. The impact assessment is not returned on this read, so the recommendation is unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
+		@Schema(description = "Recommended response from the connection risk on this read and the delay comparison on this read. A completed comparison that meets the recorded deadline has no predicted impact. A completed comparison that exceeds that deadline affects the importer's constraints. A missing, stale, or incompatible comparison leaves the impact unavailable and names that reason. Calculated on read and not stored. Reading it does not send an alert and does not perform the response. An archived shipment the viewer can open receives the same recommendation.")
 		ShipmentRecommendation recommendation,
+		@Schema(description = "Chance that the mother vessel arrives after the planned feeder departure, from the arrival estimate on this read. Calculated when the shipment is read and not stored. It is not the risk level and does not change the risk, the remaining window, or alerts. The parameters are not calibrated, so it is a rough estimate. With the handling threshold at 0 hours it only means arriving after the planned feeder departure, not a confirmed missed transshipment. An archived shipment the viewer can open receives the same chance.")
+		LateArrivalChance lateArrivalChance,
 		@Schema(description = "Latest retained AIS position whose vessel name matches the mother vessel. Null when the livestream has not retained one.")
 		VesselPosition motherVesselPosition,
 		@Schema(description = "Set when that AIS position names a different vessel from the stored mother vessel. Null when there is no position, the position has no name, or the names match after trimming and case folding.", nullable = true)
@@ -73,10 +75,51 @@ public record ShipmentDetailResponse(
 		@Schema(description = "Importer organisation linked to this shipment. Null when the shipment is not linked.", nullable = true)
 		OrganisationResponse importer,
 		@Schema(description = "Lifecycle status stored for this shipment.", example = "ACTIVE")
-		ShipmentStatus status) {
+		ShipmentStatus status,
+		@Schema(description = "The current recommendation decision, when one has been recorded. Null when no decision is stored. Opening the shipment again returns the outcome, the recommendation it was made against, the actor, and the time.",
+				types = { "object", "null" }, implementation = RecommendationDecisionResponse.class)
+		RecommendationDecisionResponse recommendationDecision,
+		@Schema(description = "Accepted recommendation decisions for this shipment, newest decidedAt first and then highest id. Empty when no decision has been stored. Each entry keeps the recommendation snapshot, the decision-time actor name, and the server time.")
+		java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
 
 	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
 			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline) {
+		return from(shipment, connection, transshipmentArrivalDeadline, null, java.util.List.of());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision) {
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision, java.util.List.of());
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory) {
+		DelayComparison comparison = DelayComparison.of(connection.arrivalComparison(), transshipmentArrivalDeadline);
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
+				recommendationDecisionHistory, ShipmentRecommendationImpact.from(comparison), comparison);
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
+			ShipmentRecommendationImpact impact) {
+		DelayComparison comparison = DelayComparison.of(connection.arrivalComparison(), transshipmentArrivalDeadline);
+		return from(shipment, connection, transshipmentArrivalDeadline, recommendationDecision,
+				recommendationDecisionHistory, impact, comparison);
+	}
+
+	static ShipmentDetailResponse from(Shipment shipment, ShipmentConnectionRisk.Snapshot connection,
+			TransshipmentArrivalDeadlineResponse transshipmentArrivalDeadline,
+			RecommendationDecisionResponse recommendationDecision,
+			java.util.List<RecommendationDecisionHistoryResponse> recommendationDecisionHistory,
+			ShipmentRecommendationImpact impact, DelayComparison delayComparison) {
+		if (delayComparison == null) {
+			throw new IllegalArgumentException("A shipment detail needs its delay comparison");
+		}
 		ConnectionWindowCalculation calculation = connection.planned();
 		RemainingConnectionWindow remainingConnectionWindow = connection.remaining();
 		ArrivalEstimate arrivalComparison = connection.arrivalComparison();
@@ -87,6 +130,8 @@ public record ShipmentDetailResponse(
 				shipment.getTransshipmentPort());
 		ShipmentOperationalStates.ObservedVessel feeder = ShipmentOperationalStates.observed(shipment.getFeederVessel(),
 				shipment.getTransshipmentPort());
+		ShipmentRecommendationImpact effectiveImpact = impact == null
+				? ShipmentRecommendationImpact.from(delayComparison) : impact;
 		return new ShipmentDetailResponse(shipment.getId(), shipment.getCompany().getId(), shipment.getShipmentReference(), shipment.getOrigin(),
 				shipment.getDestination(), shipment.getTransshipmentPort(), shipment.getMotherVessel(),
 				shipment.getPlannedMotherArrivalAt(), shipment.getMotherVesselImo(), shipment.getMotherVesselMmsi(),
@@ -98,7 +143,8 @@ public record ShipmentDetailResponse(
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
 				ShipmentRiskContributions.of(calculation, remainingConnectionWindow, arrivalComparison,
 						shipment.getPlannedMotherArrivalAt(), shipment.getPlannedFeederDepartureAt()),
-				ShipmentRecommendation.of(risk, ShipmentRecommendationImpact.notReturned()),
+				ShipmentRecommendation.of(risk, effectiveImpact),
+				connection.lateArrivalChance(),
 				motherVesselPosition, VesselNames.warning(shipment.getMotherVessel(), motherVesselPosition, VesselNames.MOTHER_MISMATCH),
 				feederVesselPosition, VesselNames.warning(shipment.getFeederVessel(), feederVesselPosition, VesselNames.FEEDER_MISMATCH),
 				mother.state(),
@@ -108,8 +154,9 @@ public record ShipmentDetailResponse(
 						mother.position()),
 				arrivalComparison,
 				transshipmentArrivalDeadline,
-				DelayComparison.of(arrivalComparison, transshipmentArrivalDeadline),
-				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus());
+				delayComparison,
+				ShipmentResponse.importer(shipment.getImporterCompany()), shipment.getStatus(), recommendationDecision,
+				recommendationDecisionHistory == null ? java.util.List.of() : recommendationDecisionHistory);
 	}
 
 }

@@ -1,5 +1,6 @@
 package com.drift.backend.shipment.history;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -85,6 +88,22 @@ class ShipmentHistoryApiIntegrationTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"importerCompanyId\":" + importerCompanyId + "}"))
 				.andExpect(status().isOk());
+
+		// The API sorts persisted event timestamps; keep this fixture independent of wall-clock adjustments.
+		Instant createdAt = Instant.parse("2026-10-01T00:00:00Z");
+		int timestampedEvents = jdbc.update("""
+				UPDATE shipment_change_events
+				SET recorded_at = CASE change_type
+					WHEN 'CREATED' THEN ?
+					WHEN 'UPDATED' THEN ?
+					WHEN 'IMPORTER_LINKED' THEN ?
+					ELSE recorded_at
+				END
+				WHERE shipment_id = ? AND change_type IN ('CREATED', 'UPDATED', 'IMPORTER_LINKED')
+				""", Timestamp.from(createdAt), Timestamp.from(createdAt.plusSeconds(1)),
+				Timestamp.from(createdAt.plusSeconds(2)), shipmentId);
+		assertThat(timestampedEvents).isEqualTo(3);
+		entityManager.clear();
 
 		history(token, shipmentId)
 				.andExpect(status().isOk())

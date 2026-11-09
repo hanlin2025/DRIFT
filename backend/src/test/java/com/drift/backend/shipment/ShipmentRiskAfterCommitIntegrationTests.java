@@ -28,30 +28,30 @@ import com.drift.backend.shipment.csvimport.ShipmentImportRow;
 @SpringBootTest
 @ActiveProfiles("test")
 class ShipmentRiskAfterCommitIntegrationTests {
+	private static final String SHIPMENT_REFERENCE_PREFIX = "CDG302-AFTER-";
+	private static final String USER_EMAIL_PATTERN = "cdg302-after-%@example.test";
+
 	@Autowired TransactionTemplate transactions;
 	@Autowired CompanyRepository companies;
 	@Autowired UserAccountRepository users;
 	@Autowired AccountRoleRepository roles;
 	@Autowired ShipmentService shipments;
+	@Autowired JdbcTemplate jdbc;
 	@Autowired ShipmentRepository shipmentRepository;
 	@Autowired ShipmentRiskAlertActivationService activation;
 	@Autowired ShipmentRiskTransitionRepository transitions;
 	@Autowired ShipmentRiskAlertDeliveryRepository deliveries;
 	@Autowired ShipmentRiskEvaluator evaluator;
-	@Autowired JdbcTemplate jdbc;
-
-	private static final String SHIPMENT_PREFIX = "CDG302-AFTER-";
-	private static final String USER_EMAIL_PREFIX = "cdg302-after-";
 
 	private AuthenticatedUser principal;
 
 	@BeforeEach
 	void activateAndCreateEligibleUser() {
-		removeCommittedFixtures();
+		cleanupTestData();
 		transactions.executeWithoutResult(status -> {
 			Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 			AccountRole role = roles.findByCode(Role.LOGISTICS_MANAGER).orElseThrow();
-			UserAccount user = new UserAccount("After commit", USER_EMAIL_PREFIX + UUID.randomUUID() + "@example.test", "hash", role, company);
+			UserAccount user = new UserAccount("After commit", "cdg302-after-" + UUID.randomUUID() + "@example.test", "hash", role, company);
 			user.chooseRiskNotifications(true, RiskNotificationLevel.LOW);
 			users.save(user);
 			principal = new AuthenticatedUser(user.getId(), user.getEmail(), Role.LOGISTICS_MANAGER, java.time.Instant.now());
@@ -60,27 +60,13 @@ class ShipmentRiskAfterCommitIntegrationTests {
 	}
 
 	@AfterEach
-	void removeCommittedFixtures() {
-		transactions.executeWithoutResult(status -> {
-			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE transition_id IN "
-					+ "(SELECT id FROM shipment_risk_transitions WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE '" + SHIPMENT_PREFIX + "%'))");
-			jdbc.update("DELETE FROM shipment_risk_alert_deliveries WHERE user_id IN "
-					+ "(SELECT id FROM users WHERE email LIKE '" + USER_EMAIL_PREFIX + "%@example.test')");
-			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE '" + SHIPMENT_PREFIX + "%')");
-			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE '" + SHIPMENT_PREFIX + "%')");
-			jdbc.update("DELETE FROM shipment_importer_constraints WHERE shipment_id IN "
-					+ "(SELECT id FROM shipments WHERE shipment_reference LIKE '" + SHIPMENT_PREFIX + "%')");
-			jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE '" + SHIPMENT_PREFIX + "%'");
-			jdbc.update("DELETE FROM users WHERE email LIKE '" + USER_EMAIL_PREFIX + "%@example.test'");
-		});
+	void cleanUp() {
+		cleanupTestData();
 	}
 
 	@Test
 	void committedCreationCreatesOneInitialTransitionAndRecipientDelivery() {
-		String reference = SHIPMENT_PREFIX + "CREATE-" + UUID.randomUUID();
+		String reference = SHIPMENT_REFERENCE_PREFIX + UUID.randomUUID();
 		ShipmentResponse response = shipments.create(principal, request(reference));
 		assertThat(transitions.findByShipmentIdOrderBySequenceAsc(response.id())).hasSize(1);
 		ShipmentRiskTransition transition = transitions.findByShipmentIdOrderBySequenceAsc(response.id()).getFirst();
@@ -94,7 +80,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 
 	@Test
 	void rolledBackCreationDoesNotPublishAnAfterCommitEvaluation() {
-		String reference = SHIPMENT_PREFIX + "ROLLBACK-" + UUID.randomUUID();
+		String reference = SHIPMENT_REFERENCE_PREFIX + "ROLLBACK-" + UUID.randomUUID();
 		int transitionCountBefore = transitions.findAll().size();
 		transactions.executeWithoutResult(status -> {
 			shipments.create(principal, request(reference));
@@ -106,7 +92,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 
 	@Test
 	void committedScheduleUpdateEvaluatesTheNewScheduleAfterCommit() {
-		ShipmentResponse created = shipments.create(principal, request(SHIPMENT_PREFIX + "SCHEDULE-" + UUID.randomUUID()));
+		ShipmentResponse created = shipments.create(principal, request(SHIPMENT_REFERENCE_PREFIX + "SCHEDULE-" + UUID.randomUUID()));
 		OffsetDateTime arrival = created.plannedMotherArrivalAt().plusHours(1);
 		shipments.update(principal, created.id(), new UpdateShipmentRequest(created.shipmentReference(), created.origin(),
 				created.destination(), created.transshipmentPort(), created.motherVessel(), arrival, created.feederVessel(),
@@ -119,7 +105,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 
 	@Test
 	void committedCsvImportCreatesAnInitialTransitionAfterCommit() {
-		String reference = SHIPMENT_PREFIX + "IMPORT-" + UUID.randomUUID();
+		String reference = SHIPMENT_REFERENCE_PREFIX + "IMPORT-" + UUID.randomUUID();
 		OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
 		ShipmentImportRow row = new ShipmentImportRow(1, reference, "A", "B", "C", "Mother", arrival,
 				"Feeder", arrival.plusHours(25), null);
@@ -136,7 +122,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 
 	@Test
 	void rolledBackCsvImportDoesNotCreateShipmentOrTransition() {
-		String reference = SHIPMENT_PREFIX + "IMPORT-ROLLBACK-" + UUID.randomUUID();
+		String reference = SHIPMENT_REFERENCE_PREFIX + "IMPORT-ROLLBACK-" + UUID.randomUUID();
 		int transitionCountBefore = transitions.findAll().size();
 		OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
 		transactions.executeWithoutResult(status -> {
@@ -151,7 +137,7 @@ class ShipmentRiskAfterCommitIntegrationTests {
 
 	@Test
 	void metadataUpdateAndArchiveDoNotCreateAdditionalRiskTransitions() {
-		ShipmentResponse created = shipments.create(principal, request(SHIPMENT_PREFIX + "METADATA-" + UUID.randomUUID()));
+		ShipmentResponse created = shipments.create(principal, request(SHIPMENT_REFERENCE_PREFIX + "METADATA-" + UUID.randomUUID()));
 		ShipmentResponse metadataUpdate = shipments.update(principal, created.id(), new UpdateShipmentRequest(
 				created.shipmentReference(), "Updated origin", created.destination(), created.transshipmentPort(),
 				created.motherVessel(), created.plannedMotherArrivalAt(), created.feederVessel(),
@@ -166,5 +152,27 @@ class ShipmentRiskAfterCommitIntegrationTests {
 	private static CreateShipmentRequest request(String reference) {
 		OffsetDateTime arrival = OffsetDateTime.now().plusDays(2);
 		return new CreateShipmentRequest(reference, "A", "B", "C", "Mother", arrival, "Feeder", arrival.plusHours(25), null, null, null, null, null, null);
+	}
+
+	private void cleanupTestData() {
+		String shipmentPattern = SHIPMENT_REFERENCE_PREFIX + "%";
+		jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+					JOIN shipments shipment ON shipment.id = transition.shipment_id
+					WHERE shipment.shipment_reference LIKE ?
+				)
+				""", shipmentPattern);
+		jdbc.update("""
+				DELETE FROM shipment_risk_transitions
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)
+				""", shipmentPattern);
+		jdbc.update("""
+				DELETE FROM shipment_risk_states
+				WHERE shipment_id IN (SELECT id FROM shipments WHERE shipment_reference LIKE ?)
+				""", shipmentPattern);
+		jdbc.update("DELETE FROM shipments WHERE shipment_reference LIKE ?", shipmentPattern);
+		jdbc.update("DELETE FROM users WHERE email LIKE ?", USER_EMAIL_PATTERN);
 	}
 }

@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feature/CDG-290-clean-integrated-demo-candidate
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DRIFT_TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/drift_test
+  DRIFT_TEST_DATABASE_USERNAME: drift
+  DRIFT_TEST_DATABASE_PASSWORD: drift
+  JWT_SECRET: ci-only-jwt-secret-not-for-production-0000000000000000
+  MAIL_HOST: 127.0.0.1
+  MAIL_PORT: "1"
+  AIS_ENABLED: "false"
+  AISSTREAM_API_KEY: ""
+  MARITIME_CONTEXT_DEMO_ENABLED: "false"
+  MARITIME_CONTEXT_CURATED_SNAPSHOTS_ENABLED: "false"
+  MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED: "false"
+  MARITIME_AI_ENABLED: "false"
+  MARITIME_AI_SCENARIO_ENABLED: "false"
+  MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED: "false"
+  MARITIME_AI_PROVIDER: ""
+  MARITIME_AI_MODEL: ""
+  MARITIME_AI_ENDPOINT: ""
+  MARITIME_AI_API_KEY: ""
+  MARITIME_AI_EXTERNAL_REQUESTS_APPROVED: "false"
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_INFERENCE_APPROVED: "false"
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_SOURCE_TYPES_APPROVED: ""
+  MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED: ""
+  RISK_ALERTS_MAIL_ENABLED: "false"
+  RISK_ALERTS_DISPATCH_ENABLED: "false"
+  RISK_ALERTS_EVALUATION_ENABLED: "false"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: drift_test
+          POSTGRES_USER: drift
+          POSTGRES_PASSWORD: drift
+          POSTGRES_INITDB_ARGS: "--set=max_connections=500"
+        ports:
+          - 5432:5432
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U drift -d drift_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Compile and run the complete backend suite
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/ci/backend-checks.sh
+      - name: Confirm the database reached the latest Flyway migration
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          expected="$(python3 -c 'from pathlib import Path; print(max(int(p.name.split("__", 1)[0][1:]) for p in Path("backend/src/main/resources/db/migration").glob("V*__*.sql")))')"
+          latest="$(docker exec "$POSTGRES_CONTAINER_ID" psql -U drift -d drift_test -Atqc "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
+          if [[ "$latest" != "$expected" ]]; then
+            echo "Expected Flyway V$expected, found '$latest'." >&2
+            exit 1
+          fi
+          echo "Database reached latest checked-in migration V$latest."
+  database:
+    name: Database and Flyway
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_DB: drift_test
+          POSTGRES_USER: drift
+          POSTGRES_PASSWORD: drift
+          POSTGRES_INITDB_ARGS: "--set=max_connections=500"
+        ports:
+          - 5432:5432
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U drift -d drift_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Validate migration chain and database integration tests
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+          DRIFT_CDG289_ADMIN_JDBC_URL: jdbc:postgresql://127.0.0.1:5432/postgres
+          DRIFT_CDG289_DB_USERNAME: drift
+          DRIFT_CDG289_DB_PASSWORD: drift
+        run: bash scripts/ci/database-checks.sh
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked npm dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run Vitest
+        run: npm test -- --maxWorkers=2
+      - name: Type-check and build production frontend
+        run: npm run build
+
+  docker:
+    name: Docker builds (when configured)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build available deployable Docker images
+        run: bash scripts/ci/docker-builds.sh
