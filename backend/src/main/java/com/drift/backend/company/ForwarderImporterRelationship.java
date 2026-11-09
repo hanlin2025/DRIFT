@@ -67,12 +67,26 @@ public class ForwarderImporterRelationship {
 		return id;
 	}
 
+	public Company getForwarderCompany() {
+		return forwarderCompany;
+	}
+
+	public Company getImporterCompany() {
+		return importerCompany;
+	}
+
 	public boolean isActive() {
 		return active;
 	}
 
 	public void deactivate(UserAccount actor) {
 		active = false;
+		updatedAt = Instant.now();
+		updatedBy = actor;
+	}
+
+	public void reactivate(UserAccount actor) {
+		active = true;
 		updatedAt = Instant.now();
 		updatedBy = actor;
 	}

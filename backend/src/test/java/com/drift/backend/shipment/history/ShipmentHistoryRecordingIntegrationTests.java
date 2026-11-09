@@ -23,6 +23,7 @@ import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.company.Company;
+import com.drift.backend.company.TestAuthorisations;
 import com.drift.backend.shipment.CreateShipmentRequest;
 import com.drift.backend.shipment.Shipment;
 import com.drift.backend.shipment.ShipmentLinkService;
@@ -172,6 +173,7 @@ class ShipmentHistoryRecordingIntegrationTests {
 	void linkingAndReplacingTheImporterRecordsTheCompanyNames() {
 		Long shipmentId = create("HBL-CDG181-LINK");
 		String importerName = companyName(importerCompanyId);
+		TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
 
 		links.link(forwarder, shipmentId, importerCompanyId);
 		links.link(forwarder, shipmentId, importerCompanyId);

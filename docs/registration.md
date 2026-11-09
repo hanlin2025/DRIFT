@@ -1,7 +1,8 @@
 # Company-linked registration (CDG-17)
 
 Registration is invitation-only. The backend assigns company and role from the invitation;
-values submitted by the browser cannot grant membership or change the role.
+values submitted by the browser cannot grant membership or change the role. The first
+administrator is created separately by an operator. See [first administrator setup](first-administrator.md).
 
 ## Local setup
 
@@ -21,6 +22,9 @@ After the backend has applied migrations, run from the repository root:
 python3 scripts/create-invitation.py --email alice@example.com --company HARBOURLINE_DEMO --role FREIGHT_FORWARDER
 ```
 
+`--company` accepts any active organisation code, including one created through the admin
+workspace. The script rejects a missing or inactive code before writing an invitation.
+
 On Windows, use `python` instead of `python3`. The script uses the repository's Docker
 PostgreSQL container and prints a private, seven-day signup link. It does not send email.
 Reissuing an invitation revokes any previous pending invitation for that email. This is a
@@ -29,7 +33,8 @@ provision invitations in a deployed system and deliver links to the intended rec
 
 No fixed invitation tokens or account passwords are checked into the repository.
 Only SHA-256 token hashes are stored. Invalid, expired, revoked, consumed invitations and
-inactive companies are rejected. Creating a user and consuming the locked invitation occur
+inactive companies are rejected. A revoked invitation tells the visitor that it is no longer
+valid, and does not say whether an account exists. Creating a user and consuming the locked invitation occur
 in one database transaction. An unsuccessful registration does not consume the invitation.
 
 ## API

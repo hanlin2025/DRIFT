@@ -134,6 +134,7 @@ class RecommendationDecisionDelayComparisonIntegrationTests {
 	}
 
 	private void link(long shipmentId) throws Exception {
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + forwarderToken)
 				.contentType(MediaType.APPLICATION_JSON)

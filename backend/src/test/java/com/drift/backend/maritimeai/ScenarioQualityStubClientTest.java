@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 
 import com.drift.backend.maritimecontext.MaritimeEvidence;
 import com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture;
@@ -19,13 +20,77 @@ import com.drift.backend.shipment.DelayComparison;
 import com.drift.backend.shipment.RemainingConnectionWindow;
 import com.drift.backend.shipment.ShipmentRisk;
 
+import tools.jackson.databind.ObjectMapper;
+
 class ScenarioQualityStubClientTest {
 	static MaritimeAiEvidencePackage worsenedShipmentAInput(String runId) {
 		return input(SyntheticDisruptionScenarioFixture.create(runId), 2, 0);
 	}
 
 	@Test
-	void fourPositiveScenarioInterpretationsPassGroundingAndScoreTwoOutOfTwo() {
+	void sixCaseServiceMatrixAbstainsForBothBaselineShipmentsAndScoresAllPositiveAuthoredOutputTwoOutOfTwo() {
+		var fixture = SyntheticDisruptionScenarioFixture.create("SixCases");
+		var client = new ScenarioQualityStubClient();
+		var json = new ObjectMapper();
+		var beans = new DefaultListableBeanFactory();
+		var service = new MaritimeAiAssessmentService(null, null, null, client, null,
+				new MaritimeAiAssessmentHistoryAccessPolicy(), json, beans.getBeanProvider(java.time.Clock.class),
+				true, false, "", "");
+
+		for (int stageIndex = 0; stageIndex < 3; stageIndex++) {
+			for (int shipmentIndex = 0; shipmentIndex < 2; shipmentIndex++) {
+				MaritimeAiEvidencePackage input = input(fixture, stageIndex, shipmentIndex);
+				var context = input.shipmentContext();
+				String shipmentKey = shipmentIndex == 0 ? "A" : "B";
+				assertThat(context.scenario().shipmentKey()).isEqualTo(shipmentKey);
+				assertThat(context.connectionRisk().riskLevel()).isEqualTo(stageIndex == 0 ? ShipmentRisk.Level.LOW
+						: stageIndex == 1 ? ShipmentRisk.Level.MEDIUM : ShipmentRisk.Level.HIGH);
+				assertThat(context.connectionRisk().remainingWindow().remainingSeconds())
+						.isEqualTo(stageIndex == 0 ? 108_000L : stageIndex == 1 ? 72_000L : 14_400L);
+				assertThat(context.connectionRisk().plannedWindow().durationSeconds()).isEqualTo(108_000L);
+				var comparison = context.businessContext().comparison();
+				assertThat(comparison.outcome()).isEqualTo(stageIndex == 0 || shipmentIndex == 1
+						? DelayComparison.Outcome.NO_PREDICTED_IMPACT : DelayComparison.Outcome.EXCEEDS_DEADLINE);
+				ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+				String expectedMargin = stageIndex == 0
+						? shipmentIndex == 0 ? "6 hours" : "28 hours"
+						: stageIndex == 1 ? shipmentIndex == 0 ? "4 hours" : "18 hours"
+						: shipmentIndex == 0 ? "20 hours" : "2 hours";
+				assertThat(impact.magnitude()).isEqualTo(expectedMargin);
+				assertThat(impact.direction()).isEqualTo(stageIndex == 0 || shipmentIndex == 1
+						? ScenarioDeadlineImpact.Direction.BEFORE_DEADLINE : ScenarioDeadlineImpact.Direction.AFTER_DEADLINE);
+				var promptData = ScenarioMaritimeAiOutput.promptData(input);
+				assertThat(promptData.scenarioShipmentKey()).isEqualTo(shipmentKey);
+				assertThat(promptData.comparison().deadlineImpact().direction()).isEqualTo(impact.direction().name());
+				assertThat(promptData.comparison().deadlineImpact().magnitudeSeconds()).isEqualTo(impact.magnitudeSeconds());
+				assertThat(promptData.comparison().deadlineImpact().magnitude()).isEqualTo(impact.magnitude());
+
+				var response = service.generateScenarioTransient(input, true);
+				assertThat(response.assessmentId()).isNull();
+				if (stageIndex == 0) {
+					assertThat(response.state()).isEqualTo("ABSTAINED");
+					assertThat(response.validationStatus()).isEqualTo("INSUFFICIENT_EVIDENCE");
+					assertThat(response.interpretation()).isNull();
+					assertThat(client.scenarioInputs()).isEmpty();
+				} else {
+					assertThat(response.state()).isEqualTo("GENERATED");
+					assertThat(response.validationStatus()).isEqualTo("VALID");
+					assertThat(assertUsefulness(response.interpretation(), input)).isEqualTo(2);
+				}
+			}
+		}
+		assertThat(client.scenarioInputs()).hasSize(4);
+		for (int firstShipmentIndex : List.of(0, 2)) {
+			List<String> evidenceForA = client.scenarioInputs().get(firstShipmentIndex).evidence().stream()
+					.map(MaritimeEvidence::evidenceId).toList();
+			List<String> evidenceForB = client.scenarioInputs().get(firstShipmentIndex + 1).evidence().stream()
+					.map(MaritimeEvidence::evidenceId).toList();
+			assertThat(evidenceForA).isEqualTo(evidenceForB);
+		}
+	}
+
+	@Test
+	void fourPositiveScenarioInterpretationsExplainShipmentSpecificDeadlineMarginsAndScoreTwoOutOfTwo() {
 		var fixture = SyntheticDisruptionScenarioFixture.create("Quality");
 		var client = new ScenarioQualityStubClient();
 
@@ -44,6 +109,16 @@ class ScenarioQualityStubClientTest {
 						.isEqualTo(stageIndex == 1 ? "MEDIUM" : "HIGH");
 				assertThat(input.shipmentContext().businessContext().comparison().outcome().name())
 						.isEqualTo(shipmentIndex == 0 ? "EXCEEDS_DEADLINE" : "NO_PREDICTED_IMPACT");
+				ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(
+						input.shipmentContext().businessContext().comparison());
+				assertThat(impact).isNotNull();
+				String expectedMargin = stageIndex == 1
+						? shipmentIndex == 0 ? "4 hours" : "18 hours"
+						: shipmentIndex == 0 ? "20 hours" : "2 hours";
+				assertThat(impact.magnitude()).isEqualTo(expectedMargin);
+				assertThat(input.shipmentContext().connectionRisk().remainingWindow().remainingSeconds())
+						.isEqualTo(stageIndex == 1 ? 72_000L : 14_400L);
+				assertThat(result.scenarioOutputText()).contains("Shipment " + (shipmentIndex == 0 ? "A" : "B"), impact.magnitude());
 				assertUsefulness(validation.interpretation(), input);
 			}
 		}
@@ -113,17 +188,19 @@ class ScenarioQualityStubClientTest {
 		var stage = fixture.stages().get(stageIndex);
 		var shipment = fixture.shipments().get(shipmentIndex);
 		String key = shipmentIndex == 0 ? "A" : "B";
-		String eta = stageIndex == 1 ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z";
+		String eta = stageIndex == 0 ? "2026-10-01T06:00:00Z"
+				: stageIndex == 1 ? "2026-10-01T16:00:00Z" : "2026-10-02T08:00:00Z";
 		OffsetDateTime estimatedArrival = OffsetDateTime.parse(eta);
 		OffsetDateTime deadline = shipment.deadline();
 		String outcome = estimatedArrival.toInstant().isAfter(deadline.toInstant())
 				? "EXCEEDS_DEADLINE" : "NO_PREDICTED_IMPACT";
-		long remainingSeconds = stageIndex == 1 ? 72_000L : 14_400L;
-		long estimateDifferenceSeconds = stageIndex == 1 ? 36_000L : 93_600L;
-		ShipmentRisk.Level severity = stageIndex == 1 ? ShipmentRisk.Level.MEDIUM : ShipmentRisk.Level.HIGH;
+		long remainingSeconds = stageIndex == 0 ? 108_000L : stageIndex == 1 ? 72_000L : 14_400L;
+		long estimateDifferenceSeconds = stageIndex == 0 ? 0L : stageIndex == 1 ? 36_000L : 93_600L;
+		ShipmentRisk.Level severity = stageIndex == 0 ? ShipmentRisk.Level.LOW
+				: stageIndex == 1 ? ShipmentRisk.Level.MEDIUM : ShipmentRisk.Level.HIGH;
 		Instant cutoff = stage.cutoff();
 		var remaining = new RemainingConnectionWindow(RemainingConnectionWindow.Status.AVAILABLE,
-				stageIndex == 1 ? "20 hours" : "4 hours", remainingSeconds, null, null);
+				stageIndex == 0 ? "30 hours" : stageIndex == 1 ? "20 hours" : "4 hours", remainingSeconds, null, null);
 		var estimate = new ArrivalEstimate(estimatedArrival, ArrivalEstimate.LIMITATION, BigDecimal.valueOf(3),
 				ArrivalEstimate.Classification.BEHIND_PLAN, "Behind plan", estimateDifferenceSeconds, 0,
 				cutoff, false, null);
@@ -137,7 +214,7 @@ class ScenarioQualityStubClientTest {
 						new ConnectionWindow("30 hours", 108_000L)), remaining, estimate,
 				new ShipmentRisk(severity, "Backend-calculated scenario risk."), comparison);
 		var scenarioContext = new MaritimeAiShipmentContext.Scenario(key, shipment.shipment().shipmentReference(),
-				stageIndex == 1 ? "CHANGE" : "WORSENED", cutoff.toString());
+				stageIndex == 0 ? "BASELINE" : stageIndex == 1 ? "CHANGE" : "WORSENED", cutoff.toString());
 		var shipmentContext = new MaritimeAiShipmentContext(fixture.transshipmentPort(),
 				new MaritimeAiShipmentContext.Vessel("MOTHER", fixture.motherVessel(), null, "PLANNED_ARRIVAL",
 						shipment.shipment().plannedMotherArrivalAt()),
@@ -158,8 +235,11 @@ class ScenarioQualityStubClientTest {
 		assertThat(businessClaims).hasSize(1);
 		MaritimeAiClaim businessClaim = businessClaims.getFirst();
 		String businessStatement = businessClaim.statement().toLowerCase();
-		assertThat(ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(), comparison.outcome())).isTrue();
-		assertThat(businessStatement).contains("synthetic", "transshipment-arrival deadline", "applicable");
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(businessClaim.statement(),
+				input.shipmentContext().scenario().shipmentKey(), comparison)).isTrue();
+		assertThat(businessStatement).contains("synthetic", "transshipment-arrival deadline", "applicable",
+				("shipment " + input.shipmentContext().scenario().shipmentKey()).toLowerCase(),
+				ScenarioDeadlineImpact.from(comparison).magnitude());
 		assertThat(businessClaim.factReferences()).contains("evidence:" + businessClaim.evidenceIds().getFirst(),
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE, MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_PORT,
 				MaritimeAiCanonicalFactReferences.BUSINESS_DEADLINE_APPLICABILITY, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,

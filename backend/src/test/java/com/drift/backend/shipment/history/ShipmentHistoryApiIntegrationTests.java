@@ -83,6 +83,7 @@ class ShipmentHistoryApiIntegrationTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(shipmentJson("HBL-CDG182-EDIT", "Busan, KR", version(shipmentId))))
 				.andExpect(status().isOk());
+		com.drift.backend.company.TestAuthorisations.allowShipment(jdbc, shipmentId, importerCompanyId);
 		mvc.perform(patch("/api/shipments/" + shipmentId + "/link-importer")
 				.header("Authorization", "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

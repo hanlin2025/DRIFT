@@ -564,6 +564,11 @@ test('a user only sees shipments and functions authorised for their organisation
     expect(stillUnlinked.status(), stillUnlinkedBody).toBe(200);
     expect(JSON.parse(stillUnlinkedBody).importer).toBeNull();
 
+    sql(`INSERT INTO forwarder_importer_relationships
+        (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+      SELECT ${owner.companyId}, ${importer.companyId}, TRUE, NOW(), ${owner.id}, NOW(), ${owner.id}
+      ON CONFLICT (forwarder_company_id, importer_company_id)
+      DO UPDATE SET active = TRUE, updated_at = NOW(), updated_by_user_id = EXCLUDED.updated_by_user_id;`);
     const linked = await request.patch(`/api/shipments/${shipment.id}/link-importer`, {
       headers: bearer(owner.token),
       data: { importerCompanyId: importer.companyId },

@@ -5,11 +5,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import com.drift.backend.shipment.DelayComparison;
 import com.drift.backend.shipment.ShipmentRisk;
 
 /**
- * The deliberately narrow English grammar for the controlled v1.6 demo. It accepts only complete
+ * The deliberately bounded English grammar for the controlled scenario demo. It accepts only complete
  * sentence patterns listed here; it does not claim general semantic equivalence.
  */
 final class ScenarioMaritimeAiProse {
@@ -24,7 +23,6 @@ final class ScenarioMaritimeAiProse {
 	private static final List<String> COMPARISON_VERBS = List.of("shows", "indicates", "reports");
 	private static final List<String> ARRIVAL_ADJECTIVES = List.of("predicted", "estimated");
 	private static final List<String> ARRIVAL_ARTICLE_PREFIXES = List.of("the ", "");
-	private static final List<String> EXCEED_VERBS = List.of("exceeds", "is later than", "falls after");
 	private static final String AVAILABLE_WINDOW_STATE = "The AIS-estimated remaining connection window is available.";
 	private static final String NO_REMAINING_WINDOW_STATE = "The AIS estimate leaves no positive remaining connection window.";
 	private static final List<String> UNCERTAINTY_SUBJECTS = List.of("maritime evidence", "arrival revision");
@@ -48,8 +46,9 @@ final class ScenarioMaritimeAiProse {
 		return matches(statement, riskAlternatives(severity, state));
 	}
 
-	static boolean matchesDeadline(String statement, DelayComparison.Outcome outcome) {
-		return matches(statement, deadlineAlternatives(outcome));
+	static boolean matchesDeadline(String statement, String shipmentKey,
+			MaritimeAiBusinessContext.Comparison comparison) {
+		return matches(statement, deadlineAlternatives(shipmentKey, comparison));
 	}
 
 	static boolean matchesUncertainty(String statement) { return matches(statement, uncertaintyAlternatives()); }
@@ -77,28 +76,47 @@ final class ScenarioMaritimeAiProse {
 		return List.copyOf(result);
 	}
 
-	static List<String> deadlineAlternatives(DelayComparison.Outcome outcome) {
-		if (outcome == null) return List.of();
-		List<String> outcomes = new ArrayList<>();
-		if (outcome == DelayComparison.Outcome.EXCEEDS_DEADLINE) {
-			for (String arrival : arrivalPhrases()) for (String verb : EXCEED_VERBS)
-				outcomes.add(arrival + " " + verb + " the applicable transshipment-arrival deadline");
-		} else {
-			outcomes.add("no predicted impact on the applicable transshipment-arrival deadline");
-			for (String arrival : arrivalPhrases())
-				outcomes.add(arrival + " is at or before the applicable transshipment-arrival deadline");
-		}
+	static List<String> deadlineAlternatives(String shipmentKey, MaritimeAiBusinessContext.Comparison comparison) {
+		if (shipmentKey == null || !Set.of("A", "B").contains(shipmentKey) || comparison == null) return List.of();
+		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+		if (impact == null || ScenarioDeadlineImpact.expectedOutcome(impact) != comparison.outcome()) return List.of();
+		List<String> outcomes = deadlineOutcomePhrases(impact);
 		List<String> relevance = new ArrayList<>();
 		for (String noun : REVISION_NOUNS) for (String verb : DEADLINE_RELEVANCE_VERBS)
 			for (String target : DEADLINE_TARGETS)
 				relevance.add("The synthetic " + noun + " " + verb
 						+ " the arrival estimate against the recorded " + target + ".");
 		List<String> result = new ArrayList<>();
-		for (String comparison : COMPARISON_VERBS) for (String outcomeClause : outcomes) {
-			String outcomeSentence = "The backend comparison " + comparison + " " + outcomeClause + ".";
-			for (String relevanceSentence : relevance) {
-				result.add(relevanceSentence + " " + outcomeSentence);
-				result.add(outcomeSentence + " " + relevanceSentence);
+		for (String comparisonVerb : COMPARISON_VERBS) {
+			for (String outcomeClause : outcomes) {
+				for (String shipmentQualifier : List.of("for Shipment " + shipmentKey + " ", "")) {
+					String outcomeSentence = "The backend comparison " + shipmentQualifier + comparisonVerb + " "
+							+ outcomeClause + ".";
+					for (String relevanceSentence : relevance) {
+						result.add(relevanceSentence + " " + outcomeSentence);
+						result.add(outcomeSentence + " " + relevanceSentence);
+					}
+				}
+			}
+		}
+		return List.copyOf(result);
+	}
+
+	private static List<String> deadlineOutcomePhrases(ScenarioDeadlineImpact impact) {
+		List<String> result = new ArrayList<>();
+		for (String arrival : arrivalPhrases()) {
+			switch (impact.direction()) {
+			case AFTER_DEADLINE -> {
+				result.add(arrival + " exceeds the applicable transshipment-arrival deadline by " + impact.magnitude());
+				result.add(arrival + " is " + impact.magnitude() + " later than the applicable transshipment-arrival deadline");
+				result.add(arrival + " is " + impact.magnitude() + " beyond the applicable transshipment-arrival deadline");
+			}
+			case BEFORE_DEADLINE -> {
+				result.add(arrival + " is " + impact.magnitude() + " before the applicable transshipment-arrival deadline");
+				result.add(arrival + " is " + impact.magnitude() + " earlier than the applicable transshipment-arrival deadline");
+			}
+			case AT_DEADLINE -> result.add(arrival + " is at the applicable transshipment-arrival deadline with a margin of "
+					+ impact.magnitude());
 			}
 		}
 		return List.copyOf(result);
@@ -129,10 +147,10 @@ final class ScenarioMaritimeAiProse {
 		return List.copyOf(result);
 	}
 
-	/** The provider prompt and matcher draw every allowed phrase from the same alternatives above. */
+	/** The common prompt grammar and the matcher share every accepted choice. */
 	static String promptInstructions() {
 		return "Return exactly one complete sentence block for each risk and deadline statement, one uncertainty, and the two checks. "
-				+ "Use only these complete patterns and their listed choices; the grammar is intentionally narrow for this controlled demo. "
+				+ "Use only these complete patterns and their listed choices; this bounded English grammar supports the controlled demo, not general semantic equivalence. "
 				+ "Risk relevance: 'The synthetic [" + choices(REVISION_NOUNS) + "] [" + choices(RISK_RELEVANCE_VERBS)
 				+ "] the [" + choices(RISK_RELEVANCE_OBJECTS) + "].' Then state backend risk as 'The backend ["
 				+ choices(BACKEND_RISK_VERBS) + "] {severity} connection risk.' followed by the window-state sentence and 'The AIS estimate is available at the scenario cutoff.' "
@@ -141,11 +159,7 @@ final class ScenarioMaritimeAiProse {
 				+ "The revision sentence and risk facts block may be in either order; keep the three risk-fact sentences together and in that order. "
 				+ "Deadline relevance: 'The synthetic [" + choices(REVISION_NOUNS) + "] [" + choices(DEADLINE_RELEVANCE_VERBS)
 				+ "] the arrival estimate against the recorded [" + choices(DEADLINE_TARGETS)
-				+ "].' Then state the supplied comparison outcome in one sentence beginning 'The backend comparison ["
-				+ choices(COMPARISON_VERBS) + "]'. For EXCEEDS_DEADLINE, say one of [" + choices(arrivalPhrases())
-				+ "] [" + choices(EXCEED_VERBS) + "] the applicable transshipment-arrival deadline. For NO_PREDICTED_IMPACT, say 'no predicted impact on the applicable transshipment-arrival deadline' or one of ["
-				+ choices(arrivalPhrases()) + "] is at or before the applicable transshipment-arrival deadline. "
-				+ "The deadline revision sentence and comparison sentence may be in either order. Uncertainty: 'The synthetic ["
+				+ "].' Follow with a deadline sentence that states the exact backend-provided direction and numerical margin; its complete case-specific patterns are supplied separately. The shipment name is optional because the request is bound to one shipment, but the correct direction and margin are required. Never omit or reverse either one, or substitute a generic no-impact statement for an exceedance. The deadline revision sentence and comparison sentence may be in either order. Uncertainty: 'The synthetic ["
 				+ choices(UNCERTAINTY_SUBJECTS) + "] [" + choices(UNCERTAINTY_VERBS) + "] ["
 				+ choices(UNCERTAINTY_OBJECTS) + "].' ETA check: 'Ask the [" + choices(ETA_TEAMS) + "] to ["
 				+ choices(CHECK_VERBS) + "] [" + choices(ETA_TARGETS) + "].' Deadline check: 'Ask the ["
@@ -154,18 +168,23 @@ final class ScenarioMaritimeAiProse {
 				+ choices(PORT_NAMES) + "].' A final period or question mark is accepted for each check.";
 	}
 
-	static List<String> allAlternatives(ShipmentRisk.Level severity,
-			MaritimeAiClaim.RiskReview.SelectedWindowState state, DelayComparison.Outcome outcome) {
-		List<String> result = new ArrayList<>();
-		result.addAll(riskAlternatives(severity, state));
-		result.addAll(deadlineAlternatives(outcome));
-		result.addAll(uncertaintyAlternatives());
-		result.addAll(etaCheckAlternatives());
-		result.addAll(deadlineCheckAlternatives());
-		return List.copyOf(result);
+	static String deadlinePromptInstructions(String shipmentKey, MaritimeAiBusinessContext.Comparison comparison) {
+		if (shipmentKey == null || !Set.of("A", "B").contains(shipmentKey) || comparison == null) return "";
+		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
+		if (impact == null || ScenarioDeadlineImpact.expectedOutcome(impact) != comparison.outcome()) return "";
+		String relationshipSentence = switch (impact.direction()) {
+		case AFTER_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " after its applicable recorded deadline";
+		case BEFORE_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " before its applicable recorded deadline";
+		case AT_DEADLINE -> "its predicted arrival is at its applicable recorded deadline with a margin of " + impact.magnitude();
+		};
+		return "For this request, backend comparison facts identify Shipment " + shipmentKey + "; " + relationshipSentence
+				+ ". State the exact backend-provided direction and numerical margin without recalculating. Naming the shipment is optional because the request is bound to one shipment. "
+				+ "The comparison sentence must begin 'The backend comparison [for Shipment " + shipmentKey + "] ["
+				+ choices(COMPARISON_VERBS) + "]' and continue with exactly one of ["
+				+ choices(deadlineOutcomePhrases(impact)) + "]. The statement must explain this shipment-specific consequence, not only repeat the shared risk category.";
 	}
 
-	static List<String> promptChoicePhrases() {
+	static List<String> promptChoicePhrases(ScenarioDeadlineImpact impact) {
 		List<String> choices = new ArrayList<>();
 		choices.addAll(REVISION_NOUNS);
 		choices.addAll(RISK_RELEVANCE_VERBS);
@@ -174,8 +193,7 @@ final class ScenarioMaritimeAiProse {
 		choices.addAll(DEADLINE_RELEVANCE_VERBS);
 		choices.addAll(DEADLINE_TARGETS);
 		choices.addAll(COMPARISON_VERBS);
-		choices.addAll(arrivalPhrases());
-		choices.addAll(EXCEED_VERBS);
+		if (impact != null) choices.addAll(deadlineOutcomePhrases(impact));
 		choices.addAll(UNCERTAINTY_SUBJECTS);
 		choices.addAll(UNCERTAINTY_VERBS);
 		choices.addAll(UNCERTAINTY_OBJECTS);

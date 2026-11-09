@@ -144,6 +144,9 @@ test('an administrator adds an organisation that another company can select and 
   const option = page.getByRole('option', { name: new RegExp(name) });
   await expect(option).toBeVisible();
   await expect(option).toContainText(code);
+  await option.click();
+  await expect(field).toHaveValue(name);
   expect(sql('SELECT COUNT(*) FROM forwarder_importer_relationships')).toBe(String(relationshipsBefore));
   expect(sql(`SELECT COUNT(*) FROM shipments WHERE importer_company_id = (SELECT id FROM companies WHERE code = :'code')`, { code })).toBe('0');
+  expect(sql(`SELECT COUNT(*) FROM shipments WHERE id = :'id' AND importer_company_id IS NULL`, { id: String(shipmentId) })).toBe('1');
 });

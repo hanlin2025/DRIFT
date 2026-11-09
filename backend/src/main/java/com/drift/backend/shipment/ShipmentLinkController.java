@@ -36,7 +36,7 @@ public class ShipmentLinkController {
 	@Operation(summary = "Link a shipment to an importer", description = "Links one shipment owned by the authenticated freight forwarder's company to another active company, "
 			+ "or removes the link when importerCompanyId is null. A request with no body is rejected and does not remove the link. "
 			+ "The stored column is shipments.importer_company_id. "
-			+ "An importer organisation is any other active company, which is the same rule as the organisation search. "
+			+ "An importer organisation must be another active company with an active authorisation for the shipment's company. "
 			+ "A user who is not a freight forwarder in that company is forbidden.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({

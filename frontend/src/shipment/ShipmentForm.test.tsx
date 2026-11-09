@@ -254,7 +254,7 @@ describe('importer linking', () => {
     await waitFor(() => expect(searchImporterOrganisations).toHaveBeenCalledWith('session-token', 'Straits'));
   });
 
-  it('chooses the highlighted organisation with Enter and does not register the shipment', async () => {
+  it('chooses the highlighted organisation with Enter and does not register or link the shipment', async () => {
     vi.mocked(searchImporterOrganisations).mockResolvedValue({ items: [straits], page: 0, size: 20, total: 1 });
     await openPortfolio();
     const user = userEvent.setup();
@@ -263,6 +263,7 @@ describe('importer linking', () => {
     await user.keyboard('{Enter}');
     expect(screen.getByLabelText('Link importer')).toHaveValue('Straits Fresh Imports (Demo)');
     expect(createShipment).not.toHaveBeenCalled();
+    expect(linkShipmentImporter).not.toHaveBeenCalled();
   });
 
   it('asks for a listed organisation before registering free text', async () => {

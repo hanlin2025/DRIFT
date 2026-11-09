@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe('invitation and registration roles', () => {
-  it.each(['IMPORTER', 'FREIGHT_FORWARDER'] as const)('still accepts an invitation for %s', async role => {
+  it.each(['IMPORTER', 'FREIGHT_FORWARDER', 'LOGISTICS_MANAGER'] as const)('still accepts an invitation for %s', async role => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       email: 'alice@example.com',
       companyName: 'Harbourline Logistics (Demo)',
@@ -23,17 +23,17 @@ describe('invitation and registration roles', () => {
     await expect(resolveInvitation('invite-token')).resolves.toMatchObject({ role });
   });
 
-  it.each(['ADMIN', 'LOGISTICS_MANAGER'])('rejects an invitation for %s', async role => {
+  it('rejects an invitation that tries to grant administrator', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       email: 'alice@example.com',
       companyName: 'Harbourline Logistics (Demo)',
-      role,
+      role: 'ADMIN',
       expiresAt: '2030-01-01T00:00:00Z',
     })));
     await expect(resolveInvitation('invite-token')).rejects.toMatchObject({ status: 502 });
   });
 
-  it.each(['IMPORTER', 'FREIGHT_FORWARDER'] as const)('still accepts registration as %s', async role => {
+  it.each(['IMPORTER', 'FREIGHT_FORWARDER', 'LOGISTICS_MANAGER'] as const)('still accepts registration as %s', async role => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       id: 4,
       fullName: 'Alice Tan',
@@ -48,12 +48,12 @@ describe('invitation and registration roles', () => {
     })).resolves.toMatchObject({ role });
   });
 
-  it.each(['ADMIN', 'LOGISTICS_MANAGER'])('rejects registration as %s', async role => {
+  it('rejects registration that claims the administrator role', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       id: 4,
       fullName: 'Alice Tan',
       email: 'alice@example.com',
-      role,
+      role: 'ADMIN',
     })));
     await expect(registerAccount({
       fullName: 'Alice Tan',

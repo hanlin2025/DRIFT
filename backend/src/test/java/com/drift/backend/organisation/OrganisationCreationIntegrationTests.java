@@ -102,13 +102,22 @@ class OrganisationCreationIntegrationTests {
 				.andExpect(jsonPath("$.items[0].code").value(code))
 				.andExpect(jsonPath("$.items[0].name").value("Pacific Gate Imports"));
 
+		// Same path as scripts/create-invitation.py: look up the new active company by code, then insert.
+		String inviteEmail = "cdg313-" + UUID.randomUUID() + "@example.com";
+		Long invitedCompanyId = jdbc.queryForObject(
+				"SELECT id FROM companies WHERE UPPER(code) = ? AND active = TRUE", Long.class, code);
+		assertThat(invitedCompanyId).isEqualTo(createdId);
+		jdbc.update("""
+				UPDATE invitations SET status = 'REVOKED' WHERE email = ? AND status = 'PENDING'
+				""", inviteEmail);
 		jdbc.update("""
 				INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
 				VALUES (?, ?, 'IMPORTER', ?, NOW() + INTERVAL '1 hour')
-				""", "cdg313-" + UUID.randomUUID() + "@example.com", createdId, InvitationToken.hash(TOKEN));
+				""", inviteEmail, invitedCompanyId, InvitationToken.hash(TOKEN));
 		mvc.perform(post("/api/invitations/resolve").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"" + TOKEN + "\"}"))
 				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.email").value(inviteEmail))
 				.andExpect(jsonPath("$.companyName").value("Pacific Gate Imports"))
 				.andExpect(jsonPath("$.role").value("IMPORTER"));
 	}

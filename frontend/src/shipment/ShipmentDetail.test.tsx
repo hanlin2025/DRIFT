@@ -1999,9 +1999,13 @@ describe('recommendation decision on the shipment page', () => {
 
   it('stays on the access denied page when the shipment cannot be viewed', async () => {
     vi.mocked(getShipment).mockRejectedValue(new ApiError('You do not have access to this shipment', 403));
+    vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(replayEvidence(180));
     open(importer, '/importer/shipments/8');
     expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Recommendation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'CDG-201 external arrival evidence' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Recorded arrival change')).not.toBeInTheDocument();
+    expect(screen.queryByText(/recorded expected-arrival revision/)).not.toBeInTheDocument();
   });
 
   it('keeps the page and the stored decision when a write is forbidden', async () => {
