@@ -479,7 +479,15 @@ describe('workspace shipment retrieval', () => {
     openWorkspace();
     expect(await screen.findByText('No shipments yet. Shipments registered for your company will appear here.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Register a shipment' })).toBeInTheDocument();
+  });
+
+  it('opens registration as its own step', async () => {
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/shipments/new');
+    expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to shipments' })).toHaveAttribute('href', '/freight-forwarder');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(listShipments).not.toHaveBeenCalled();
   });
 
   it('keeps the normal empty state when only unrelated URL parameters are present', async () => {
@@ -656,7 +664,7 @@ describe('workspace shipment retrieval', () => {
     openWorkspace();
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Register a shipment' })).toBeInTheDocument();
   });
 
   it('does not apply a list response after the workspace unmounts', async () => {
@@ -686,7 +694,6 @@ describe('shipment removal', () => {
     vi.mocked(listShipments).mockResolvedValue([newer, linked]);
     openWorkspace(role);
     expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
-    expect(screen.getByText('You are signed in to the shipments registered for your company.')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Remove HBL-NEWER' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'HBL-NEWER' })).toHaveAttribute('href', role === 'ADMIN' ? '/admin/shipments/2' : '/logistics-manager/shipments/2');
     expect(screen.getByRole('link', { name: 'HBL-LINKED' })).toBeInTheDocument();

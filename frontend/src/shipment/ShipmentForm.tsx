@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { readSession } from '../session/session';
 import { ApiError } from '../signup/api';
 import { ImporterLinkField } from './ImporterLinkField';
@@ -23,6 +23,7 @@ const emptyFields: ShipmentFields = {
 };
 
 const fieldOrder = Object.keys(emptyFields) as (keyof ShipmentFields)[];
+const identityFields = ['motherVesselImo', 'motherVesselMmsi', 'motherVesselOperator', 'feederVesselImo', 'feederVesselMmsi', 'feederVesselOperator'] as const;
 // Keep this aligned with StaleShipmentVersionException.MESSAGE in the backend.
 const STALE_UPDATE_MESSAGE = 'This shipment was updated by another user. Refresh it and try again.';
 const STALE_UPDATE_NOTICE = 'This shipment was updated by someone else while you were editing it. Reload the latest details before trying again.';
@@ -51,6 +52,7 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered,
   const [linkHold, setLinkHold] = useState<Shipment | null>(null);
   const [linkedNow, setLinkedNow] = useState(false);
   const [savedRecord, setSavedRecord] = useState<Shipment | undefined>(shipment);
+  const [identityOpen, setIdentityOpen] = useState(() => identityFields.some(name => (shipment ? fieldsFromShipment(shipment)[name] : '') !== ''));
   const busy = useRef(false);
   const session = readSession();
   const canLink = session?.token === token && session.role === 'FREIGHT_FORWARDER';
@@ -69,6 +71,10 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered,
     setImporterError('');
     setLinkNotice('');
   }
+
+  useEffect(() => {
+    if (identityFields.some(name => errors[name])) setIdentityOpen(true);
+  }, [errors]);
 
   function change(field: keyof ShipmentFields, value: string) {
     const next = { ...fields, [field]: value };
@@ -109,7 +115,14 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered,
       const invalid = fieldOrder.filter(name => validation[name]);
       if (invalid.length) {
         const first = event.currentTarget.elements.namedItem(invalid[0]);
-        if (first instanceof HTMLElement) first.focus();
+        if (first instanceof HTMLElement) {
+          const details = first.closest('details');
+          if (details && !details.open) {
+            details.open = true;
+            setIdentityOpen(true);
+          }
+          first.focus();
+        }
         return;
       }
     }
@@ -206,36 +219,57 @@ export function ShipmentForm({ token, companyName, onSessionEnded, onRegistered,
   return (
     <section className="shipment-panel" aria-labelledby={editing ? 'edit-shipment' : 'register-shipment'}>
       <h3 id={editing ? 'edit-shipment' : 'register-shipment'}>{editing ? 'Edit shipment' : 'Register a shipment'}</h3>
-      <p className="intro">{editing ? 'Update the stored route, vessel identity, and planned connection details.' : 'Save the transshipment port, the mother vessel, the feeder vessel, and the planned connection between them. IMO, MMSI, and operator can be left blank.'}</p>
       {linkNotice && <div className="success-notice" role="status">{linkNotice}</div>}
       {problem && <div className="error-notice" role="alert">{problem}{stale && onReload && <><br /><button type="button" className="retry-button" onClick={onReload}>Reload latest details</button></>}</div>}
       {!editing && created && <RegisteredShipment shipment={created} />}
       <form onSubmit={submit} className="shipment-form" noValidate aria-busy={submitting}>
-        <TextField id="shipment-reference" name="shipmentReference" label="Shipment reference" placeholder="e.g. HL-1001" hint="The tracking or B/L number for this shipment." value={fields.shipmentReference} error={errors.shipmentReference} maxLength={100} autoComplete="off" spellCheck={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        <div className="pair-grid">
-          <TextField id="origin" name="origin" label="Origin" placeholder="e.g. Singapore" hint="Port where the mother vessel starts." value={fields.origin} error={errors.origin} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-          <TextField id="destination" name="destination" label="Destination" placeholder="e.g. Jakarta" hint="Port where the feeder vessel finishes." value={fields.destination} error={errors.destination} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        </div>
-        <TextField id="transshipment-port" name="transshipmentPort" label="Transshipment port" placeholder="e.g. Singapore" hint="Port where the shipment transfers from the mother vessel to the feeder vessel." value={fields.transshipmentPort} error={errors.transshipmentPort} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        <div className="pair-grid">
-          <TextField id="mother-vessel" name="motherVessel" label="Mother vessel" placeholder="e.g. Ever Steady" value={fields.motherVessel} error={errors.motherVessel} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-          <TextField id="feeder-vessel" name="feederVessel" label="Feeder vessel" placeholder="e.g. Straits Feeder" value={fields.feederVessel} error={errors.feederVessel} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        </div>
-        <div className="pair-grid">
-          <TextField id="mother-imo" name="motherVesselImo" label="Mother IMO" placeholder="e.g. 9387421" hint="Optional. Seven digits, stored with the shipment." value={fields.motherVesselImo} error={errors.motherVesselImo} maxLength={7} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-          <TextField id="mother-mmsi" name="motherVesselMmsi" label="Mother MMSI" placeholder="e.g. 563000111" hint="Optional. Nine digits." value={fields.motherVesselMmsi} error={errors.motherVesselMmsi} maxLength={9} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        </div>
-        <TextField id="mother-operator" name="motherVesselOperator" label="Mother operator" placeholder="e.g. Harbourline" hint="Optional. Who operates the mother vessel." value={fields.motherVesselOperator} error={errors.motherVesselOperator} maxLength={200} autoComplete="off" required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        <div className="pair-grid">
-          <TextField id="feeder-imo" name="feederVesselImo" label="Feeder IMO" placeholder="e.g. 9411882" hint="Optional. Seven digits." value={fields.feederVesselImo} error={errors.feederVesselImo} maxLength={7} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-          <TextField id="feeder-mmsi" name="feederVesselMmsi" label="Feeder MMSI" placeholder="e.g. 565987654" hint="Optional. Nine digits." value={fields.feederVesselMmsi} error={errors.feederVesselMmsi} maxLength={9} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        </div>
-        <TextField id="feeder-operator" name="feederVesselOperator" label="Feeder operator" placeholder="e.g. Strait Feeders" hint="Optional. Who operates the feeder vessel." value={fields.feederVesselOperator} error={errors.feederVesselOperator} maxLength={200} autoComplete="off" required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        <div className="pair-grid">
-          <TimeField id="mother-arrival" name="plannedMotherArrivalAt" label="Planned mother-vessel arrival" hint="When the mother vessel is planned to arrive for the connection." value={fields.plannedMotherArrivalAt} error={errors.plannedMotherArrivalAt} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-          <TimeField id="feeder-departure" name="plannedFeederDepartureAt" label="Planned feeder-vessel departure" hint="Must be after the mother vessel arrives." value={fields.plannedFeederDepartureAt} error={errors.plannedFeederDepartureAt} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
-        </div>
-        {canLink && <ImporterLinkField token={token} query={importerQuery} onQuery={editImporterQuery} selected={selectedImporter} onSelect={chooseImporter} disabled={submitting} error={importerError} onSessionEnded={onSessionEnded} />}
+        <section className="form-section">
+          <h4>Shipment</h4>
+          <TextField id="shipment-reference" name="shipmentReference" label="Shipment reference" placeholder="e.g. HL-1001" hint="The tracking or B/L number for this shipment." quiet value={fields.shipmentReference} error={errors.shipmentReference} maxLength={100} autoComplete="off" spellCheck={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+        </section>
+        <section className="form-section">
+          <h4>Route</h4>
+          <div className="route-grid">
+            <TextField id="origin" name="origin" label="Origin" placeholder="e.g. Singapore" hint="Port where the mother vessel starts." quiet value={fields.origin} error={errors.origin} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            <TextField id="transshipment-port" name="transshipmentPort" label="Transshipment port" placeholder="e.g. Singapore" hint="Port where the shipment transfers from the mother vessel to the feeder vessel." quiet value={fields.transshipmentPort} error={errors.transshipmentPort} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            <TextField id="destination" name="destination" label="Destination" placeholder="e.g. Jakarta" hint="Port where the feeder vessel finishes." quiet value={fields.destination} error={errors.destination} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+          </div>
+        </section>
+        <section className="form-section">
+          <h4>Vessels</h4>
+          <div className="connection-grid">
+            <div>
+              <TextField id="mother-vessel" name="motherVessel" label="Mother vessel" placeholder="e.g. Ever Steady" value={fields.motherVessel} error={errors.motherVessel} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+              <TimeField id="mother-arrival" name="plannedMotherArrivalAt" label="Planned mother-vessel arrival" hint="When the mother vessel is planned to arrive for the connection." value={fields.plannedMotherArrivalAt} error={errors.plannedMotherArrivalAt} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            </div>
+            <div>
+              <TextField id="feeder-vessel" name="feederVessel" label="Feeder vessel" placeholder="e.g. Straits Feeder" value={fields.feederVessel} error={errors.feederVessel} maxLength={200} autoComplete="off" disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+              <TimeField id="feeder-departure" name="plannedFeederDepartureAt" label="Planned feeder-vessel departure" hint="Must be after the mother vessel arrives." value={fields.plannedFeederDepartureAt} error={errors.plannedFeederDepartureAt} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            </div>
+          </div>
+        </section>
+        {canLink && <section className="form-section">
+          <h4>Customer</h4>
+          <ImporterLinkField token={token} query={importerQuery} onQuery={editImporterQuery} selected={selectedImporter} onSelect={chooseImporter} disabled={submitting} error={importerError} onSessionEnded={onSessionEnded} />
+        </section>}
+        <details className="form-section identity-fields" open={identityOpen} onToggle={event => setIdentityOpen(event.currentTarget.open)}>
+          <summary>
+            <span className="identity-title">Vessel identity</span>
+            <span className="identity-note">The live position uses the vessel name. Add the IMO and MMSI to play a recorded track.</span>
+          </summary>
+          <div className="identity-body">
+            <div className="pair-grid">
+              <TextField id="mother-imo" name="motherVesselImo" label="Mother IMO" placeholder="e.g. 9387421" hint="Optional. Seven digits, stored with the shipment." quiet value={fields.motherVesselImo} error={errors.motherVesselImo} maxLength={7} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+              <TextField id="mother-mmsi" name="motherVesselMmsi" label="Mother MMSI" placeholder="e.g. 563000111" hint="Optional. Nine digits." quiet value={fields.motherVesselMmsi} error={errors.motherVesselMmsi} maxLength={9} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            </div>
+            <TextField id="mother-operator" name="motherVesselOperator" label="Mother operator" placeholder="e.g. Harbourline" hint="Optional. Who operates the mother vessel." quiet value={fields.motherVesselOperator} error={errors.motherVesselOperator} maxLength={200} autoComplete="off" required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            <div className="pair-grid">
+              <TextField id="feeder-imo" name="feederVesselImo" label="Feeder IMO" placeholder="e.g. 9411882" hint="Optional. Seven digits." quiet value={fields.feederVesselImo} error={errors.feederVesselImo} maxLength={7} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+              <TextField id="feeder-mmsi" name="feederVesselMmsi" label="Feeder MMSI" placeholder="e.g. 565987654" hint="Optional. Nine digits." quiet value={fields.feederVesselMmsi} error={errors.feederVesselMmsi} maxLength={9} autoComplete="off" spellCheck={false} required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+            </div>
+            <TextField id="feeder-operator" name="feederVesselOperator" label="Feeder operator" placeholder="e.g. Strait Feeders" hint="Optional. Who operates the feeder vessel." quiet value={fields.feederVesselOperator} error={errors.feederVesselOperator} maxLength={200} autoComplete="off" required={false} disabled={submitting || linkHold !== null} onChange={change} onBlur={blur} />
+          </div>
+        </details>
         <div className="form-actions">
           {editing && <button type="button" className="secondary-button" disabled={submitting} onClick={() => linkedNow && savedRecord ? onUpdated?.(savedRecord) : onCancel?.()}>{linkedNow ? 'Back to shipment' : 'Cancel'}</button>}
           <button type="submit" className="primary-button" disabled={submitting}>{submitting
@@ -303,12 +337,13 @@ export function formatWhen(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function TextField({ id, name, label, placeholder, hint, value, error, maxLength, autoComplete, spellCheck, required = true, disabled, onChange, onBlur }: {
+function TextField({ id, name, label, placeholder, hint, quiet = false, value, error, maxLength, autoComplete, spellCheck, required = true, disabled, onChange, onBlur }: {
   id: string;
   name: keyof ShipmentFields;
   label: string;
   placeholder: string;
   hint?: string;
+  quiet?: boolean;
   value: string;
   error?: string;
   maxLength: number;
@@ -323,7 +358,7 @@ function TextField({ id, name, label, placeholder, hint, value, error, maxLength
     <div className="field">
       <label htmlFor={id}>{label}</label>
       <input id={id} name={name} value={value} placeholder={placeholder} maxLength={maxLength} autoComplete={autoComplete} spellCheck={spellCheck} required={required} disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined} onChange={event => onChange(name, event.target.value)} onBlur={() => onBlur(name)} />
-      {error ? <p className="field-error" id={`${id}-error`}>{error}</p> : hint ? <p className="field-hint" id={`${id}-hint`}>{hint}</p> : null}
+      {error ? <p className="field-error" id={`${id}-error`}>{error}</p> : hint ? <p className={quiet ? 'field-hint sr-only' : 'field-hint'} id={`${id}-hint`}>{hint}</p> : null}
     </div>
   );
 }

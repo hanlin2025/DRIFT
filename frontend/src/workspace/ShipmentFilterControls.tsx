@@ -35,7 +35,7 @@ export function ShipmentFilterControls() {
   return (
     <form className="shipment-filters" onSubmit={apply}>
       <fieldset>
-        <legend>Search and filter shipments</legend>
+        <legend className="sr-only">Search and filter shipments</legend>
         <div className="shipment-filter-grid">
           <div className="field">
             <label htmlFor="shipment-filter-reference">Filter by shipment reference</label>
@@ -44,7 +44,7 @@ export function ShipmentFilterControls() {
           <div className="field">
             <label htmlFor="shipment-filter-vessel">Filter by vessel</label>
             <input id="shipment-filter-vessel" value={draft.vessel} onChange={event => update('vessel', event.target.value)} aria-describedby="shipment-filter-vessel-hint" />
-            <p className="field-hint" id="shipment-filter-vessel-hint">Searches mother or feeder vessel.</p>
+            <p className="field-hint sr-only" id="shipment-filter-vessel-hint">Searches mother or feeder vessel.</p>
           </div>
           <div className="field">
             <label htmlFor="shipment-filter-customer">Filter by customer</label>
@@ -69,22 +69,24 @@ export function ShipmentFilterControls() {
               <option value="">Newest first</option>
               <option value="risk">Risk level (Critical first)</option>
             </select>
-            <p className="field-hint" id="shipment-sort-hint">Risk level puts Critical first. Within a level, shipments that exceed the importer's deadline come first, then the soonest feeder departure. Unassessed shipments come last.</p>
+            <p className="field-hint sr-only" id="shipment-sort-hint">Risk level puts Critical first. Within a level, shipments that exceed the importer's deadline come first, then the soonest feeder departure. Unassessed shipments come last.</p>
           </div>
+        </div>
+        <div className="shipment-filter-actions">
           <div className="field field-checkbox">
             <input id="shipment-filter-at-risk" type="checkbox" checked={draft.atRisk === 'true'} onChange={event => update('atRisk', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-at-risk-hint" />
             <label htmlFor="shipment-filter-at-risk">At-risk only</label>
-            <p className="field-hint" id="shipment-filter-at-risk-hint">Shows High and Critical shipments.</p>
+            <p className="field-hint sr-only" id="shipment-filter-at-risk-hint">Shows High and Critical shipments.</p>
           </div>
           <div className="field field-checkbox">
             <input id="shipment-filter-exceeds-deadline" type="checkbox" checked={draft.exceedsDeadline === 'true'} onChange={event => update('exceedsDeadline', event.target.checked ? 'true' : '')} aria-describedby="shipment-filter-exceeds-deadline-hint" />
             <label htmlFor="shipment-filter-exceeds-deadline">Exceeds importer deadline only</label>
-            <p className="field-hint" id="shipment-filter-exceeds-deadline-hint">Shows shipments whose predicted arrival is after the importer's recorded deadline.</p>
+            <p className="field-hint sr-only" id="shipment-filter-exceeds-deadline-hint">Shows shipments whose predicted arrival is after the importer's recorded deadline.</p>
           </div>
-        </div>
-        <div className="shipment-filter-actions">
-          <button type="submit" className="primary-button">Apply filters</button>
-          <button type="button" className="secondary-button" onClick={clear}>Clear filters</button>
+          <div className="filter-buttons">
+            <button type="submit" className="primary-button">Apply filters</button>
+            <button type="button" className="secondary-button" onClick={clear}>Clear filters</button>
+          </div>
         </div>
       </fieldset>
     </form>
