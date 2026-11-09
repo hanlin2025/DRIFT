@@ -121,6 +121,8 @@ class ConfiguredMaritimeAiClientTest {
 		assertThat(requestBody.get()).contains("\"max_output_tokens\":2000")
 				.contains("Address each in its own bounded claim")
 				.contains("a SCHEDULE_REVIEW for the revision, a PORT_CONTEXT_REVIEW for the notice, and a REGIONAL_WEATHER_CONTEXT for the weather")
+				.contains("For this required PORT_CONTEXT_REVIEW, cite only the notice's own evidence:<id> reference")
+				.contains("That overlap reference is allowed only for PORT_TIME_OVERLAP_REVIEW")
 				.contains("Never cite an irrelevant, insufficient, or unsupported source merely to reach a source count");
 	}
 

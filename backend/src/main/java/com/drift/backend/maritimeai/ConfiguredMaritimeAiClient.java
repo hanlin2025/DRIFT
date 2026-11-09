@@ -311,6 +311,7 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 		if (!(arrival && port && weather)) return "";
 		return "This bundle contains a relevant mother expected-arrival revision, port-context notice, and regional-weather context. "
 				+ "Address each in its own bounded claim: a SCHEDULE_REVIEW for the revision, a PORT_CONTEXT_REVIEW for the notice, and a REGIONAL_WEATHER_CONTEXT for the weather. "
+				+ "For this required PORT_CONTEXT_REVIEW, cite only the notice's own evidence:<id> reference. Do not cite relationship:PORT_CONTEXT_OVERLAPS_REVISED_EXPECTED_ARRIVAL or describe a schedule overlap in that claim. That overlap reference is allowed only for PORT_TIME_OVERLAP_REVIEW, which must cite both the notice and the MPA revision; otherwise omit it. "
 				+ "The notice and weather claims must remain contextual, state their limitation without asserting vessel impact, shipment applicability, delay, or causation, and cite only their own supporting evidence. "
 				+ "This instruction applies only because all three supplied records are eligible and relevant. Never cite an irrelevant, insufficient, or unsupported source merely to reach a source count. ";
 	}

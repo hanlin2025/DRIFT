@@ -945,6 +945,17 @@ class MaritimeAiResponseValidatorTest {
 				.isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
 	}
 
+	@Test void rejectsTheCapturedV20PortContextShapeWhenItIncorrectlyCitesTheOverlapReference() {
+		MaritimeAiEvidencePackage input = savedSyntheticOpenAiFixture();
+		MaritimeAiClaim capturedPortClaim = new MaritimeAiClaim(
+				"The contextual port area maintenance notice warrants review for operational context alongside revised vessel scheduling; it does not establish vessel-specific impact or causation.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "CONTEXTUAL", null, null, "PORT_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID,
+						MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_CONTEXT_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+				List.of(capturedPortClaim), List.of(), List.of(), true, null), input)).isEqualTo("RELATIONSHIP_TYPE_MISMATCH");
+	}
+
 	@Test void rejectsIncorrectSourceModeLabelsButAcceptsCorrectModeDescriptions() {
 		MaritimeEvidence retrospectiveMpa = new MaritimeEvidence("MPA_ETA_REVISION", "RETROSPECTIVE_ANALYSIS", "retrospective-mpa",
 				"Historical MPA expected-arrival revision", "MPA", "", "Curated historical MPA record.",
