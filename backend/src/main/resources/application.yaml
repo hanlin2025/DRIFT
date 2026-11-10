@@ -27,7 +27,12 @@ spring:
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS_ENABLE:false}
+      mail.smtp.starttls.required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}
       mail.smtp.connectiontimeout: 3000
       mail.smtp.timeout: 3000
       mail.smtp.writetimeout: 3000
@@ -36,6 +41,10 @@ server:
   port: 8080
 
 app:
+  # One origin and sender identity are shared across invitation, reset, and risk-alert mail.
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+  mail:
+    from: ${MAIL_FROM_ADDRESS:noreply@localhost}
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:28800000}
@@ -47,17 +56,17 @@ app:
       # Local HTTP stays usable. Set SESSION_COOKIE_SECURE=true when the site is served only over HTTPS.
       secure: ${SESSION_COOKIE_SECURE:false}
   password-reset:
-    link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:5173/reset-password}
+    link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:${app.frontend-base-url}/reset-password}
     ttl: ${PASSWORD_RESET_TTL:1h}
-    from: ${PASSWORD_RESET_FROM:noreply@localhost}
+    from: ${app.mail.from}
     rate-limit:
       email: ${PASSWORD_RESET_EMAIL_LIMIT:5}
       ip: ${PASSWORD_RESET_IP_LIMIT:20}
       window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   invitation:
-    link-base-url: ${INVITATION_LINK_BASE_URL:http://localhost:5173/signup}
+    link-base-url: ${INVITATION_LINK_BASE_URL:${app.frontend-base-url}/signup}
     ttl: ${INVITATION_TTL:7d}
-    from: ${INVITATION_FROM:noreply@localhost}
+    from: ${app.mail.from}
   risk-alerts:
     activation:
       command: ${RISK_ALERTS_ACTIVATION_COMMAND:false}
@@ -67,10 +76,10 @@ app:
       interval: ${RISK_ALERTS_EVALUATION_INTERVAL:15m}
       batch-size: ${RISK_ALERTS_EVALUATION_BATCH_SIZE:100}
     mail:
-      # Stays off until an operator enables it. The local from address and frontend origin match password reset and stay overridable.
+      # Stays off until an operator enables it. Sender and frontend origin are shared with account mail.
       enabled: ${RISK_ALERTS_MAIL_ENABLED:false}
-      frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:http://localhost:5173}
-      from: ${RISK_ALERTS_FROM:noreply@localhost}
+      frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:${app.frontend-base-url}}
+      from: ${app.mail.from}
       claim-lease: ${RISK_ALERTS_CLAIM_LEASE:1m}
       dispatch-enabled: ${RISK_ALERTS_DISPATCH_ENABLED:false}
       poll-interval: ${RISK_ALERTS_POLL_INTERVAL:1m}

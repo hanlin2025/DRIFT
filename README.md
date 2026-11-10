@@ -169,7 +169,7 @@ All schema changes must go through Flyway.
 
 The shipment-risk email is the message CDG-49 already sends. It stays off until this terminal turns it on. Mailpit is the mailbox started with Postgres above: SMTP port `1025`, which `spring.mail` already uses, and a web view at http://localhost:8025.
 
-`RISK_ALERTS_FROM` defaults to `noreply@localhost`. `RISK_ALERTS_FRONTEND_BASE_URL` defaults to `http://localhost:5173`. Both match the local password-reset values and can be overridden in this terminal. Do not commit either value. The link is built from that origin plus the existing role path. It is not hardcoded in the mail composer.
+`MAIL_FROM_ADDRESS` defaults to `noreply@localhost` and is shared by invitation, password-reset, and risk-alert mail. `FRONTEND_BASE_URL` defaults to `http://localhost:5173` and is shared as the link origin. `RISK_ALERTS_FRONTEND_BASE_URL` remains an optional override. Production SMTP setup is documented in [Gmail SMTP production email](docs/gmail-smtp-production-email.md). Do not commit provider credentials.
 
 `RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server. The command baselines the current connection risk of every active shipment, suppresses unsent deliveries from an older generation with "Suppressed during risk-alert activation", sets the activation generation to 1, and then the process exits. A normal startup does not create a generation. A delivery recorded under another generation is suppressed as "Risk alert delivery predates the active activation generation" and is not sent. Turning the mail switches on does not activate the gate.
 

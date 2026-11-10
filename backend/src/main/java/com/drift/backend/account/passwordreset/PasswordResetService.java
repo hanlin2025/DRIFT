@@ -56,7 +56,7 @@ public class PasswordResetService {
 			mailer.sendResetLink(email, ResetTokens.link(linkBaseUrl, issued.rawToken()), ttl);
 		} catch (RuntimeException ex) {
 			store.discard(issued.id());
-			log.error("Password reset email could not be sent", ex);
+			log.error("Password reset email could not be sent ({})", ex.getClass().getSimpleName());
 			return;
 		}
 		try {
