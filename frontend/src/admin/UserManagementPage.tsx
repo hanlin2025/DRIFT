@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { endSession, homePath, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listInvitationOrganisations, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
+import { CreateOrganisation } from './CreateOrganisation';
 import { InviteColleague } from './InviteColleague';
 import { PendingInvitations } from './PendingInvitations';
 import { ReactivateUser } from './ReactivateUser';
@@ -34,6 +35,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [organisations, setOrganisations] = useState<AdminOrganisation[]>([]);
+  const [invitationOrganisations, setInvitationOrganisations] = useState<AdminOrganisation[]>([]);
   const [audits, setAudits] = useState<AssignmentAudit[]>([]);
   const [removals, setRemovals] = useState<AccountStatusAudit[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
@@ -56,13 +58,15 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
       listAssignableUsers(account.token),
       listAssignableRoles(account.token),
       listAssignableOrganisations(account.token),
+      listInvitationOrganisations(account.token),
       listAssignmentAudits(account.token),
       listAccountStatusAudits(account.token),
-    ]).then(([foundUsers, foundRoles, foundOrganisations, foundAudits, foundRemovals]) => {
+    ]).then(([foundUsers, foundRoles, foundOrganisations, foundInvitationOrganisations, foundAudits, foundRemovals]) => {
       if (!active) return;
       setUsers(foundUsers);
       setRoles(foundRoles);
       setOrganisations(foundOrganisations);
+      setInvitationOrganisations(foundInvitationOrganisations);
       setAudits(foundAudits);
       setRemovals(foundRemovals);
     }).catch((reason: unknown) => {
@@ -218,7 +222,19 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </div>
           </form>
         ) : null}
-        {users !== null ? <InviteColleague token={account.token} organisations={organisations} roles={roles} onSessionEnded={onSessionEnded} /> : null}
+        {users !== null ? (
+          <CreateOrganisation
+            token={account.token}
+            onSessionEnded={onSessionEnded}
+            onCreated={organisation => {
+              setInvitationOrganisations(current => {
+                if (current.some(item => item.id === organisation.id)) return current;
+                return [...current, organisation].sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id);
+              });
+            }}
+          />
+        ) : null}
+        {users !== null ? <InviteColleague token={account.token} organisations={invitationOrganisations} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <PendingInvitations token={account.token} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
         {users !== null ? <RemovalHistory removals={removals} /> : null}

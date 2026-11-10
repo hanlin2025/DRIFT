@@ -127,8 +127,28 @@ export async function listAssignableRoles(token: string): Promise<AdminRole[]> {
   });
 }
 
+export async function createOrganisation(token: string, code: string, name: string): Promise<AdminOrganisation> {
+  const data = await send('/api/admin/organisations', token, {
+    method: 'POST',
+    body: JSON.stringify({ code, name }),
+  });
+  const organisation = organisationOf(data);
+  if (!organisation) throw new ApiError(UNEXPECTED, 502);
+  return organisation;
+}
+
 export async function listAssignableOrganisations(token: string): Promise<AdminOrganisation[]> {
   const data = await send('/api/admin/organisations', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(item => {
+    const organisation = organisationOf(item);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return organisation;
+  });
+}
+
+export async function listInvitationOrganisations(token: string): Promise<AdminOrganisation[]> {
+  const data = await send('/api/admin/invitation-organisations', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
   return data.map(item => {
     const organisation = organisationOf(item);

@@ -72,21 +72,61 @@ function renderPanel(value: MaritimeAiAssessment, onGenerate = vi.fn(), scenario
 }
 
 describe('MaritimeAiAssessmentPanel', () => {
-  it('separates observed maritime evidence from the validated risk-review implication', () => {
+  it('shows a concise ordinary-shipment summary and keeps full evidence expandable', () => {
     renderPanel(assessment);
-    const evidence = screen.getByRole('region', { name: 'Observed maritime evidence' });
-    const risk = screen.getByRole('region', { name: 'Tentative risk-review implications' });
+    const panel = screen.getByRole('region', { name: 'AI maritime interpretation' });
+    const summarySection = within(panel).getByRole('region', { name: 'Validated interpretation summary' });
+    expect(within(summarySection).getByRole('heading', { name: 'Interpretation summary' })).toBeInTheDocument();
+    expect(within(summarySection).getByText('Generic orientation only; it does not describe business impact.')).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Relevant backend risk context' })).toHaveTextContent('High');
+    const riskSummary = within(panel).getAllByRole('region', { name: 'Tentative risk-review implications' }).find(region => !region.closest('details'))!;
+    expect(within(riskSummary).getByText(/The documented arrival revision warrants review alongside the backend HIGH planned connection window/)).toBeInTheDocument();
+    const uncertaintySummary = within(panel).getAllByRole('region', { name: 'Assessment uncertainty and human follow-up' }).find(region => !region.closest('details'))!;
+    expect(within(uncertaintySummary).getByText('The maritime observation does not establish a delay.')).toBeInTheDocument();
+    expect(within(uncertaintySummary).getByText("Verify the carrier's ETA with the operations team.")).toBeInTheDocument();
+    const limitationSummary = within(panel).getByRole('region', { name: 'Important evidence limitations' });
+    expect(within(limitationSummary).getByText('Matching IMO verifies vessel identity only.')).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Observed maritime evidence' })).not.toBeVisible();
+    expect(within(panel).getAllByRole('region', { name: 'Tentative risk-review implications' }).find(region => region.closest('details'))!).not.toBeVisible();
+    const summary = within(panel).getByText('Assessment and evidence details');
+    const details = summary.closest('details');
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    const evidence = within(details!).getByRole('region', { name: 'Observed maritime evidence' });
+    const risk = within(details!).getByRole('region', { name: 'Tentative risk-review implications' });
     expect(within(evidence).getByText((_, node) => node?.tagName === 'P' && node.textContent === 'MPA vessel-arrival revision · Expected Arrival')).toBeInTheDocument();
     expect(within(evidence).getByText('2026-10-29T01:00:00+08:00 → 2026-10-29T02:00:00+08:00')).toBeInTheDocument();
     expect(within(evidence).getByText('The observed mother-arrival revision is recorded for schedule review.')).toBeInTheDocument();
     expect(within(evidence).getByText(/Source citations: MPA vessel-arrival revision · Expected Arrival \(evidence mpa-approved\): approved MPA citation/)).toBeInTheDocument();
     expect(within(risk).getByText('The documented arrival revision warrants review alongside the backend HIGH planned connection window; the AIS estimate is unavailable.')).toBeInTheDocument();
     expect(within(risk).getByText(/Backend facts: Backend risk calculation/)).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'AI maritime interpretation' }))
+    expect(panel)
       .toHaveTextContent('Human review: Verify any cited source alongside the separate backend facts before changing a plan.');
-    const details = screen.getByText('Assessment and evidence details').closest('details');
-    expect(details).not.toBeNull();
     expect(within(details!).getByText('Generic orientation only; it does not describe business impact.')).toBeInTheDocument();
+    expect(screen.queryByText(/What changed|Why it matters/)).not.toBeInTheDocument();
+  });
+
+  it('labels scenario output and keeps the fictional shipment consequence consistent with its details', () => {
+    renderPanel(withBusinessSnapshot(), vi.fn(), true);
+    const panel = screen.getByRole('region', { name: 'Scenario AI interpretation' });
+    expect(within(panel).getByText('SYNTHETIC SCENARIO INTERPRETATION')).toBeInTheDocument();
+    expect(within(within(panel).getByRole('region', { name: 'Validated interpretation summary' }))
+      .getByText('Generic orientation only; it does not describe business impact.')).toBeInTheDocument();
+    const consequence = within(panel).getByRole('region', { name: 'Shipment-specific consequence' });
+    expect(within(consequence).getByText(businessClaim.statement)).toBeInTheDocument();
+    expect(within(consequence).getByText(/selected synthetic scenario snapshot/)).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Synthetic scenario evidence' })).not.toBeVisible();
+    fireEvent.click(within(panel).getByText('Assessment and evidence details'));
+    const details = within(panel).getByRole('region', { name: 'Synthetic scenario evidence' });
+    expect(within(details).getByText(/Source citations: MPA vessel-arrival revision/)).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Scenario business context' })).toBeInTheDocument();
+  });
+
+  it('does not invent a summary when validated output has no summary text', () => {
+    const noSummary = { ...assessment, interpretation: { ...assessment.interpretation!, summary: '  ' } };
+    renderPanel(noSummary);
+    expect(screen.getByText('The validated output did not include a summary.')).toBeInTheDocument();
     expect(screen.queryByText(/What changed|Why it matters/)).not.toBeInTheDocument();
   });
 
@@ -110,14 +150,14 @@ describe('MaritimeAiAssessmentPanel', () => {
 
   it('renders the persisted planned-window snapshot at assessment time with a valid duration', () => {
     renderPanel(assessment);
-    const risk = screen.getByRole('region', { name: 'Assessment-time connection risk' });
-    expect(within(risk).getByText(/Risk at assessment time · 2026-11-01T09:00:00Z/)).toBeInTheDocument();
+    const risk = screen.getByRole('region', { name: 'Relevant backend risk context' });
+    expect(within(risk).getByText(/Saved backend snapshot · 2026-11-01T09:00:00Z/)).toBeInTheDocument();
     expect(within(risk).getByText('Planned shipment schedule')).toBeInTheDocument();
-    expect(within(risk).getByText('Selected connection window')).toBeInTheDocument();
+    expect(within(risk).getByText('Connection window')).toBeInTheDocument();
     expect(within(risk).getByText('8 hours')).toBeInTheDocument();
     expect(within(risk).getByText('Available')).toBeInTheDocument();
     expect(within(risk).getByText('Unavailable')).toBeInTheDocument();
-    expect(within(risk).getByText(/does not describe the shipment's current operational state/)).toBeInTheDocument();
+    expect(within(risk).getByText(/does not describe the shipment’s current operational state/)).toBeInTheDocument();
   });
 
   it('shows distinct saved risk snapshots for two assessments with the same maritime evidence', () => {
@@ -149,6 +189,8 @@ describe('MaritimeAiAssessmentPanel', () => {
 
     const panels = screen.getAllByRole('region', { name: 'AI maritime interpretation' });
     expect(panels).toHaveLength(2);
+    fireEvent.click(within(panels[0]).getByText('Assessment and evidence details'));
+    fireEvent.click(within(panels[1]).getByText('Assessment and evidence details'));
     const highRisk = within(panels[0]).getByRole('region', { name: 'Assessment-time connection risk' });
     const lowRisk = within(panels[1]).getByRole('region', { name: 'Assessment-time connection risk' });
     expect(within(highRisk).getByText('High')).toBeInTheDocument();
@@ -187,7 +229,7 @@ describe('MaritimeAiAssessmentPanel', () => {
       },
     };
     renderPanel(aisAssessment);
-    const risk = screen.getByRole('region', { name: 'Assessment-time connection risk' });
+    const risk = screen.getByRole('region', { name: 'Relevant backend risk context' });
     expect(within(risk).getByText('AIS-estimated remaining connection window')).toBeInTheDocument();
     expect(within(risk).getByText('No positive remaining window (calculated)')).toBeInTheDocument();
     expect(within(risk).getByText('Calculated overrun')).toBeInTheDocument();
@@ -215,7 +257,7 @@ describe('MaritimeAiAssessmentPanel', () => {
       },
     };
     renderPanel(staleAssessment);
-    const risk = screen.getByRole('region', { name: 'Assessment-time connection risk' });
+    const risk = screen.getByRole('region', { name: 'Relevant backend risk context' });
     expect(within(risk).getByText('Stale')).toBeInTheDocument();
     expect(within(risk).getByText('Invalid window')).toBeInTheDocument();
     expect(within(risk).queryByText('Selected connection window')).not.toBeInTheDocument();
@@ -233,23 +275,24 @@ describe('MaritimeAiAssessmentPanel', () => {
       deterministicSummary: null,
     };
     renderPanel(legacy);
-    expect(screen.getByRole('region', { name: 'Observed maritime evidence' })).toBeInTheDocument();
-    expect(screen.getByText(/without a validated connection risk-review claim/)).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Why this shipment warrants review' })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/without a validated connection risk-review claim/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { name: 'Backend risk context' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Business implications' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Assessment-time importer business context' })).not.toBeInTheDocument();
     expect(screen.getByText(/Provider-generated assessment from openai-responses/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Assessment and evidence details'));
+    expect(screen.getByRole('region', { name: 'Observed maritime evidence' })).toBeInTheDocument();
   });
 
   it('shows a validated deadline comparison under Business implications and its saved facts in details', () => {
     renderPanel(withBusinessSnapshot());
-    const evidence = screen.getByRole('region', { name: 'Observed maritime evidence' });
-    const business = screen.getByRole('region', { name: 'Business implications' });
-    expect(within(evidence).queryByText(businessClaim.statement)).not.toBeInTheDocument();
-    expect(within(business).getByText('Validated importer deadline comparison')).toBeInTheDocument();
+    const business = screen.getByRole('region', { name: 'Shipment-specific consequence' });
     expect(within(business).getByText(businessClaim.statement)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Assessment and evidence details'));
+    const evidence = screen.getByRole('region', { name: 'Observed maritime evidence' });
+    expect(within(evidence).queryByText(businessClaim.statement)).not.toBeInTheDocument();
+    expect(screen.getByText('Validated importer deadline comparison')).toBeInTheDocument();
     const details = screen.getByRole('region', { name: 'Assessment-time importer business context' });
     expect(within(details).getByText('Recorded')).toBeInTheDocument();
     expect(within(details).getAllByText(recordedDeadline)).toHaveLength(2);
@@ -265,11 +308,12 @@ describe('MaritimeAiAssessmentPanel', () => {
 
   it('labels a synthetic deadline as scenario-defined instead of importer-confirmed', () => {
     renderPanel(withBusinessSnapshot(), vi.fn(), true);
-    const business = screen.getByRole('region', { name: 'Business implications' });
-    expect(within(business).getByText('Validated scenario deadline comparison')).toBeInTheDocument();
+    const business = screen.getByRole('region', { name: 'Shipment-specific consequence' });
+    expect(within(business).getByText(businessClaim.statement)).toBeInTheDocument();
     expect(within(business).getByText(/deadline defined for the selected synthetic scenario snapshot/)).toBeInTheDocument();
-    expect(within(business).queryByText('Validated importer deadline comparison')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Assessment and evidence details'));
+    expect(screen.getByText('Validated scenario deadline comparison')).toBeInTheDocument();
+    expect(screen.queryByText('Validated importer deadline comparison')).not.toBeInTheDocument();
     const details = screen.getByRole('region', { name: 'Scenario business context' });
     expect(within(details).getByText('Scenario-defined transshipment port')).toBeInTheDocument();
     expect(within(details).queryByText('Importer-confirmed transshipment port')).not.toBeInTheDocument();

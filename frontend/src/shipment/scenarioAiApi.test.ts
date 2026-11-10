@@ -121,6 +121,19 @@ describe('scenario AI transport', () => {
     expect(getInit.cache).toBe('no-store');
   });
 
+  it('uses same-origin cookie authentication for generation and retrieval when no bearer token is retained', async () => {
+    const body = persistedResponse('WORSENED', 'A', ASSESSMENT_IDS['WORSENED-A']);
+    const fetch = vi.fn().mockResolvedValueOnce(httpResponse(body)).mockResolvedValueOnce(httpResponse(body));
+    vi.stubGlobal('fetch', fetch);
+    await generateScenarioInterpretation('', SESSION_ID, 142, requestFor('A'), provenanceFor('WORSENED', 'A'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetch.mock.calls as unknown as [string, RequestInit][]) {
+      expect(init.credentials).toBe('include');
+      expect(new Headers(init.headers).get('X-DRIFT-Request')).toBe('1');
+      expect(new Headers(init.headers).get('Authorization')).toBeNull();
+    }
+  });
+
   it('retrieves and presents a persisted MODEL_UNAVAILABLE abstention without fabricating an interpretation', async () => {
     const id = ASSESSMENT_IDS.MODEL_UNAVAILABLE;
     const body = persistedResponse('CHANGE', 'A', id, { validationStatus: 'MODEL_UNAVAILABLE' });

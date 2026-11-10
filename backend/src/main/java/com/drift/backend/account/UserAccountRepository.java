@@ -12,6 +12,8 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 
 	boolean existsByEmailIgnoreCase(String email);
 
+	boolean existsByCompany_Id(Long companyId);
+
 	@EntityGraph(attributePaths = "company")
 	Optional<UserAccount> findByEmailIgnoreCase(String email);
 

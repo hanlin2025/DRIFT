@@ -13,7 +13,22 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
 
 	Optional<Company> findByCode(String code);
 
+	@Query("SELECT company FROM Company company WHERE UPPER(company.code) = :code")
+	Optional<Company> findByNormalisedCode(@Param("code") String code);
+
 	List<Company> findByActiveTrueOrderByNameAscIdAsc();
+
+	@Query("""
+			SELECT company FROM Company company
+			WHERE company.active = true
+			  AND company.createdBy.id = :creatorId
+			  AND NOT EXISTS (
+			    SELECT account.id FROM com.drift.backend.account.UserAccount account
+			    WHERE account.company = company
+			  )
+			ORDER BY company.name ASC, company.id ASC
+			""")
+	List<Company> findActiveEmptyCreatedBy(@Param("creatorId") Long creatorId);
 
 	@Query("""
 			SELECT company FROM Company company

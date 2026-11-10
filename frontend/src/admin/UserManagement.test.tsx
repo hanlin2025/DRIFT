@@ -8,7 +8,7 @@ import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
 import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
-import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listPendingInvitations, reactivateUser, removeUser } from './api';
+import { assignUser, createOrganisation, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listInvitationOrganisations, listPendingInvitations, reactivateUser, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
@@ -16,11 +16,13 @@ vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
   listAssignableOrganisations: vi.fn(),
+  listInvitationOrganisations: vi.fn(),
   listAssignmentAudits: vi.fn(),
   assignUser: vi.fn(),
   removeUser: vi.fn(),
   reactivateUser: vi.fn(),
   listAccountStatusAudits: vi.fn(),
+  createOrganisation: vi.fn(),
   inviteColleague: vi.fn(),
   listPendingInvitations: vi.fn(),
   withdrawInvitation: vi.fn(),
@@ -78,9 +80,10 @@ beforeEach(() => {
   vi.mocked(listShipments).mockResolvedValue([]);
   vi.mocked(listAssignableUsers).mockResolvedValue(users);
   vi.mocked(listAssignableRoles).mockResolvedValue(roles);
-  vi.mocked(listAssignableOrganisations).mockResolvedValue(organisations);
+  vi.mocked(listAssignableOrganisations).mockResolvedValue([organisations[0]]);
+  vi.mocked(listInvitationOrganisations).mockResolvedValue([organisations[0]]);
   vi.mocked(listAssignmentAudits).mockResolvedValue([]);
-  vi.mocked(assignUser).mockResolvedValue({ ...users[0], role: 'IMPORTER', organisation: organisations[1] });
+  vi.mocked(assignUser).mockResolvedValue({ ...users[0], role: 'IMPORTER', organisation: organisations[0] });
   vi.mocked(removeUser).mockResolvedValue({ ...users[0], status: 'REMOVED' });
   vi.mocked(reactivateUser).mockResolvedValue({ ...users[2], status: 'ACTIVE' });
   vi.mocked(listAccountStatusAudits).mockResolvedValue([]);
@@ -100,13 +103,33 @@ describe('user management', () => {
     await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
     expect(screen.getByLabelText('Organisation')).toHaveValue('1');
     expect(screen.getByLabelText('Role')).toHaveValue('FREIGHT_FORWARDER');
-    await user.selectOptions(screen.getByLabelText('Organisation'), 'Straits Fresh Imports (Demo)');
     await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
     await user.click(screen.getByRole('button', { name: /Save assignment/ }));
 
-    expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 2, 'IMPORTER');
+    expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 1, 'IMPORTER');
     expect(await screen.findByText('User assigned successfully')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('adds an organisation for invitation without offering it for assignment', async () => {
+    vi.mocked(createOrganisation).mockResolvedValue({ id: 44, code: 'PACIFIC_GATE', name: 'Pacific Gate Imports' });
+    writeSession(admin);
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'Add an organisation' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Organisation code'), 'PACIFIC_GATE');
+    await user.type(screen.getByLabelText('Organisation name'), 'Pacific Gate Imports');
+    await user.click(screen.getByRole('button', { name: /Add organisation/ }));
+
+    expect(createOrganisation).toHaveBeenCalledWith('admin-token', 'PACIFIC_GATE', 'Pacific Gate Imports');
+    expect(await screen.findByText('Pacific Gate Imports (PACIFIC_GATE) was added.')).toBeInTheDocument();
+    const assignmentOrganisation = within(screen.getByLabelText('Organisation'));
+    expect(assignmentOrganisation.queryByRole('option', { name: 'Pacific Gate Imports' })).not.toBeInTheDocument();
+    expect(assignmentOrganisation.getByRole('option', { name: 'Harbourline Logistics (Demo)' })).toBeInTheDocument();
+    const invitationOrganisation = within(screen.getByLabelText('Invitation organisation'));
+    expect(invitationOrganisation.getByRole('option', { name: 'Pacific Gate Imports' })).toBeInTheDocument();
+    expect(invitationOrganisation.getByRole('option', { name: 'Harbourline Logistics (Demo)' })).toBeInTheDocument();
   });
 
   it('shows the assignment history after a change is saved', async () => {
@@ -119,22 +142,21 @@ describe('user management', () => {
       previousRole: 'FREIGHT_FORWARDER' as const,
       assignedRole: 'IMPORTER' as const,
       previousOrganisation: organisations[0],
-      organisation: organisations[1],
+      organisation: organisations[0],
     };
     let saved = false;
     vi.mocked(listAssignmentAudits).mockImplementation(async () => saved ? [entry] : []);
     vi.mocked(assignUser).mockImplementation(async () => {
       saved = true;
-      return { ...users[0], role: 'IMPORTER', organisation: organisations[1] };
+      return { ...users[0], role: 'IMPORTER', organisation: organisations[0] };
     });
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /></MemoryRouter>);
     expect(await screen.findByText('No assignment changes yet.')).toBeInTheDocument();
     await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
-    await user.selectOptions(screen.getByLabelText('Organisation'), 'Straits Fresh Imports (Demo)');
     await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
     await user.click(screen.getByRole('button', { name: /Save assignment/ }));
-    expect(await screen.findByText('Freight forwarder at Harbourline Logistics (Demo) → Importer at Straits Fresh Imports (Demo)')).toBeInTheDocument();
+    expect(await screen.findByText('Freight forwarder at Harbourline Logistics (Demo) → Importer at Harbourline Logistics (Demo)')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Assignment history' })).toBeInTheDocument();
     expect(screen.queryByText('No assignment changes yet.')).not.toBeInTheDocument();
   });
@@ -153,6 +175,7 @@ describe('user management', () => {
 
   it('ends the administrator session when their own organisation changes', async () => {
     writeSession(admin);
+    vi.mocked(listAssignableOrganisations).mockResolvedValue(organisations);
     vi.mocked(assignUser).mockResolvedValueOnce({ ...users[1], organisation: organisations[1] });
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);

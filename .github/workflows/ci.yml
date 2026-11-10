@@ -146,6 +146,9 @@ jobs:
         run: npm test -- --maxWorkers=2
       - name: Type-check and build production frontend
         run: npm run build
+      - name: Run invitation helper unit tests
+        working-directory: .
+        run: python3 -m unittest scripts/test_create_invitation.py
 
   docker:
     name: Docker builds (when configured)

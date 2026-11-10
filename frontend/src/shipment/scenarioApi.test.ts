@@ -97,6 +97,14 @@ describe('v1 scenario transport', () => {
       method: 'GET', cache: 'no-store', body: undefined, headers: { Authorization: 'Bearer token' },
     }));
   });
+  it('uses same-origin cookie authentication when the browser does not retain a bearer token', async () => {
+    const fetchMock = mockResponse(unstarted());
+    await createScenarioSession('', sessionId, { anchorShipmentId: 142 });
+    expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({
+      method: 'PUT', credentials: 'include',
+      headers: { 'X-DRIFT-Request': '1', 'Content-Type': 'application/json' },
+    }));
+  });
   it('allows repeated PUT recovery of an already active session', async () => {
     mockResponse(staged('CHANGE'));
     expect(await createScenarioSession('token', sessionId, { anchorShipmentId: 142 })).toEqual(staged('CHANGE'));

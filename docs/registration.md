@@ -22,6 +22,9 @@ After the backend has applied migrations, run from the repository root:
 python3 scripts/create-invitation.py --email alice@example.com --company HARBOURLINE_DEMO --role FREIGHT_FORWARDER
 ```
 
+`--company` accepts any active organisation code, including one created through the admin
+workspace. The script rejects a missing or inactive code before writing an invitation.
+
 On Windows, use `python` instead of `python3`. The script uses the repository's Docker
 PostgreSQL container and prints a private, seven-day signup link. It does not send email.
 Reissuing an invitation revokes any previous pending invitation for that email. This is a

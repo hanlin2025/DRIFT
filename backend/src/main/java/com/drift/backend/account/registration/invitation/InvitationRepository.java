@@ -1,5 +1,6 @@
 package com.drift.backend.account.registration.invitation;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -34,4 +35,13 @@ public interface InvitationRepository extends JpaRepository<Invitation, Long> {
 			order by invitation.expiresAt asc, invitation.id asc
 			""")
 	List<Invitation> findPendingByCompany(@Param("companyId") Long companyId);
+
+	@Query("""
+			select invitation from Invitation invitation
+			join fetch invitation.company
+			where invitation.company.id in :companyIds
+			  and invitation.status = com.drift.backend.account.registration.invitation.InvitationStatus.PENDING
+			order by invitation.expiresAt asc, invitation.id asc
+			""")
+	List<Invitation> findPendingByCompanies(@Param("companyIds") Collection<Long> companyIds);
 }

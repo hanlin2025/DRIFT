@@ -207,10 +207,11 @@ async function sendSession(token: string, sessionId: string, suffix: string, met
     const response = await fetch(`/api/scenarios/v1/sessions/${encodeURIComponent(sessionId)}${suffix}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey }),
       },
+      credentials: 'include',
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       cache: 'no-store',

@@ -3,8 +3,11 @@ package com.drift.backend.account.admin;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.hibernate.exception.ConstraintViolationException;
@@ -27,6 +30,7 @@ import com.drift.backend.account.registration.invitation.InvitationRepository;
 import com.drift.backend.account.registration.invitation.InvitationStatus;
 import com.drift.backend.account.registration.invitation.InvitationToken;
 import com.drift.backend.company.Company;
+import com.drift.backend.company.CompanyRepository;
 
 @Service
 public class AdminInvitationService {
@@ -37,6 +41,7 @@ public class AdminInvitationService {
 	private static final Logger log = LoggerFactory.getLogger(AdminInvitationService.class);
 
 	private final UserAccountRepository users;
+	private final CompanyRepository companies;
 	private final InvitationRepository invitations;
 	private final InvitationRevocationRepository revocations;
 	private final InvitationMailer mailer;
@@ -45,15 +50,19 @@ public class AdminInvitationService {
 	private final Duration ttl;
 
 	@Autowired
-	public AdminInvitationService(UserAccountRepository users, InvitationRepository invitations,
-			InvitationRevocationRepository revocations, InvitationMailer mailer, ObjectProvider<Clock> clocks,
-			@Value("${app.invitation.link-base-url}") String linkBaseUrl, @Value("${app.invitation.ttl}") Duration ttl) {
-		this(users, invitations, revocations, mailer, clocks.getIfAvailable(Clock::systemUTC), linkBaseUrl, ttl);
+	public AdminInvitationService(UserAccountRepository users, CompanyRepository companies,
+			InvitationRepository invitations, InvitationRevocationRepository revocations, InvitationMailer mailer,
+			ObjectProvider<Clock> clocks, @Value("${app.invitation.link-base-url}") String linkBaseUrl,
+			@Value("${app.invitation.ttl}") Duration ttl) {
+		this(users, companies, invitations, revocations, mailer, clocks.getIfAvailable(Clock::systemUTC), linkBaseUrl,
+				ttl);
 	}
 
-	AdminInvitationService(UserAccountRepository users, InvitationRepository invitations,
-			InvitationRevocationRepository revocations, InvitationMailer mailer, Clock clock, String linkBaseUrl, Duration ttl) {
+	AdminInvitationService(UserAccountRepository users, CompanyRepository companies, InvitationRepository invitations,
+			InvitationRevocationRepository revocations, InvitationMailer mailer, Clock clock, String linkBaseUrl,
+			Duration ttl) {
 		this.users = users;
+		this.companies = companies;
 		this.invitations = invitations;
 		this.revocations = revocations;
 		this.mailer = mailer;
@@ -63,10 +72,20 @@ public class AdminInvitationService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<AdminOrganisationResponse> invitationOrganisations(
+			com.drift.backend.account.authentication.AuthenticatedUser principal) {
+		UserAccount admin = managingAdmin(principal);
+		return permittedCompanies(admin).stream()
+				.sorted(Comparator.comparing(Company::getName).thenComparing(Company::getId))
+				.map(AdminOrganisationResponse::from)
+				.toList();
+	}
+
+	@Transactional(readOnly = true)
 	public List<ManagedInvitationResponse> pending(com.drift.backend.account.authentication.AuthenticatedUser principal) {
 		UserAccount admin = managingAdmin(principal);
 		Instant now = clock.instant();
-		return invitations.findPendingByCompany(admin.getCompany().getId()).stream()
+		return invitations.findPendingByCompanies(permittedCompanyIds(admin)).stream()
 				.map(invitation -> ManagedInvitationResponse.from(invitation, now))
 				.toList();
 	}
@@ -76,7 +95,7 @@ public class AdminInvitationService {
 			Long invitationId) {
 		UserAccount admin = managingAdmin(principal);
 		Invitation invitation = invitations.findForWithdrawal(invitationId).orElseThrow(InvitationAccessDeniedException::new);
-		if (invitation.getCompany() == null || !admin.getCompany().getId().equals(invitation.getCompany().getId())) {
+		if (invitation.getCompany() == null || !mayInviteInto(admin, invitation.getCompany())) {
 			throw new InvitationAccessDeniedException();
 		}
 		if (invitation.getStatus() == InvitationStatus.REVOKED) {
@@ -109,11 +128,13 @@ public class AdminInvitationService {
 		if (admin.getRole() != Role.ADMIN) {
 			throw new com.drift.backend.account.admin.exception.AssignmentForbiddenException();
 		}
-		Company organisation = admin.getCompany();
-		if (organisation == null || !organisation.isActive()) {
+		Company own = admin.getCompany();
+		if (own == null || !own.isActive()) {
 			throw new NoEligibleOrganisationException();
 		}
-		if (!organisation.getId().equals(request.organisationId())) {
+		Company organisation = companies.findById(request.organisationId())
+				.orElseThrow(() -> new InvalidInvitationException("organisationId", "Choose your active organisation."));
+		if (!mayInviteInto(admin, organisation)) {
 			throw new InvalidInvitationException("organisationId", "Choose your active organisation.");
 		}
 		Role role = role(request.role());
@@ -155,6 +176,36 @@ public class AdminInvitationService {
 			throw new InvitationManagementForbiddenException();
 		}
 		return admin;
+	}
+
+	private Set<Long> permittedCompanyIds(UserAccount admin) {
+		Map<Long, Company> permitted = new LinkedHashMap<>();
+		for (Company company : permittedCompanies(admin)) {
+			permitted.put(company.getId(), company);
+		}
+		return permitted.keySet();
+	}
+
+	private List<Company> permittedCompanies(UserAccount admin) {
+		Map<Long, Company> permitted = new LinkedHashMap<>();
+		Company own = admin.getCompany();
+		permitted.put(own.getId(), own);
+		for (Company empty : companies.findActiveEmptyCreatedBy(admin.getId())) {
+			permitted.putIfAbsent(empty.getId(), empty);
+		}
+		return List.copyOf(permitted.values());
+	}
+
+	private boolean mayInviteInto(UserAccount admin, Company organisation) {
+		if (organisation == null || !organisation.isActive()) {
+			return false;
+		}
+		if (admin.getCompany().getId().equals(organisation.getId())) {
+			return true;
+		}
+		UserAccount creator = organisation.getCreatedBy();
+		return creator != null && admin.getId().equals(creator.getId())
+				&& !users.existsByCompany_Id(organisation.getId());
 	}
 
 	private static Role role(String code) {
