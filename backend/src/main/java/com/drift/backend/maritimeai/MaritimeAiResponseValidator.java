@@ -37,7 +37,9 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
 	private static final Pattern REVISION_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b");
 	private static final Pattern DIRECT_REVISION_BY = Pattern.compile("(?i)(?:\\brevised|\\bchanged)\\s+by\\s*$");
+	private static final Pattern REVISION_ATTRIBUTION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?)\\b");
 	private static final Pattern COMPARISON_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:exceed(?:s|ed)?|deadline)\\b");
+	private static final Pattern COMPARISON_BY_DURATION = Pattern.compile("(?i)\\bby\\s+(?:an?\\s+)?$");
 	private static final String NUMBER_WORD = "eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|dozen";
 	/** Number words and units parseQuantity cannot read. "several hours" stays ordinary wording. */
 	private static final Pattern UNRECOGNIZED_NUMBER_WORD_DURATION = Pattern.compile("(?i)\\b(?:%s)\\b(?:[-\\s]+(?:one|two|three|four|five|six|seven|eight|nine|ten|%s)\\b)*\\s*[- ]\\s*(?:minutes?|hours?|days?|weeks?|seconds?)\\b".formatted(NUMBER_WORD, NUMBER_WORD));
@@ -982,19 +984,33 @@ final class MaritimeAiResponseValidator {
 				|| containsIdentity(lower, input.shipmentContext().feederVessel()) ? "UNSTRUCTURED_FACTUAL_DETAIL" : null;
 	}
 
-	/** A comparison sentence is a margin unless the duration is "revised by" or "changed by". Otherwise a nearby revision word, or "by", names the revision. */
+	/** A duration keeps a revision attribution that governs it. A deadline word later in the sentence does not take that duration. "delayed by" inside a deadline sentence stays the comparison. */
 	private enum AttributedDuration { REVISION, COMPARISON, NONE }
 
 	private static AttributedDuration attributeDuration(String sentence, int start, int end) {
 		String prefix = sentence.substring(0, Math.max(0, Math.min(start, sentence.length()))).toLowerCase(Locale.ROOT);
 		String suffix = sentence.substring(Math.max(0, Math.min(end, sentence.length()))).toLowerCase(Locale.ROOT);
 		if (DURATION_BEFORE_DEADLINE.matcher(suffix).find()) return AttributedDuration.COMPARISON;
-		boolean comparisonSentence = COMPARISON_DURATION_KEYWORD.matcher(sentence).find();
-		if (comparisonSentence && !DIRECT_REVISION_BY.matcher(prefix).find()) return AttributedDuration.COMPARISON;
-		if (DIRECT_REVISION_BY.matcher(prefix).find() || revisionKeywordBefore(prefix)
-				|| REVISION_WORD_AFTER_DURATION.matcher(suffix).find() || prefix.matches("(?s).*\\bby\\s*"))
-			return AttributedDuration.REVISION;
+		if (ownRevision(prefix, suffix)) return AttributedDuration.REVISION;
+		if (COMPARISON_DURATION_KEYWORD.matcher(sentence).find()) return AttributedDuration.COMPARISON;
+		if (revisionKeywordBefore(prefix) || prefix.matches("(?s).*\\bby\\s*")) return AttributedDuration.REVISION;
 		return AttributedDuration.NONE;
+	}
+
+	/** The revision word belongs to this duration when it is closer than a deadline or exceeds word, or the duration is immediately a "revision". */
+	private static boolean ownRevision(String prefix, String suffix) {
+		if (REVISION_WORD_AFTER_DURATION.matcher(suffix).find() && !comparisonMarginBy(prefix)) return true;
+		if (DIRECT_REVISION_BY.matcher(prefix).find()) return true;
+		int revisionAt = lastMatchStart(REVISION_ATTRIBUTION_KEYWORD, prefix);
+		if (revisionAt < 0 || prefix.length() - revisionAt > 48) return false;
+		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
+		return comparisonAt < revisionAt;
+	}
+
+	private static boolean comparisonMarginBy(String prefix) {
+		if (!COMPARISON_BY_DURATION.matcher(prefix).find()) return false;
+		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
+		return comparisonAt >= 0 && prefix.length() - comparisonAt <= 48;
 	}
 
 	private static boolean revisionKeywordBefore(String prefix) {

@@ -166,6 +166,26 @@ class OrdinaryMaritimeAiContractTest {
 		}
 	}
 
+	@Test void keepsARevisionDurationWhenTheSameSentenceStatesTheDeadline() {
+		MaritimeAiEvidencePackage laterDeadlineMiss = shipment(DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
+				MaritimeAiBusinessContext.ComparisonState.AVAILABLE);
+		String revisionThenMargin = "The documented revision of 60 minutes warrants schedule review, and the predicted arrival exceeds the applicable transshipment-arrival deadline by 3 hours.";
+		String hyphenatedRevisionThenMargin = "A 60-minute revision warrants schedule review, and the predicted arrival exceeds the applicable transshipment-arrival deadline by 3 hours.";
+		String marginThenHyphenatedRevision = "The predicted arrival exceeds the applicable transshipment-arrival deadline by 3 hours, and a 60-minute revision warrants schedule review.";
+		String revisionWithTheRevisionDurationAsMargin = "The documented revision of 60 minutes warrants schedule review, and the predicted arrival exceeds the applicable transshipment-arrival deadline by 60 minutes.";
+		String marginNamedAsRevision = "The predicted arrival exceeds the applicable transshipment-arrival deadline by a 60-minute revision and warrants schedule review.";
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(revisionThenMargin, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(hyphenatedRevisionThenMargin, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginThenHyphenatedRevision, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(revisionWithTheRevisionDurationAsMargin, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginNamedAsRevision, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+	}
+
 	@Test void acceptsRevisionDurationsThatDoNotSitDirectlyAfterBy() {
 		MaritimeAiEvidencePackage input = shipment(DelayComparison.Outcome.EXCEEDS_DEADLINE, null,
 				MaritimeAiBusinessContext.ComparisonState.AVAILABLE);
