@@ -96,6 +96,7 @@ final class ScenarioMaritimeAiProse {
 						result.add(relevanceSentence + " " + outcomeSentence);
 						result.add(outcomeSentence + " " + relevanceSentence);
 					}
+					result.add(outcomeSentence);
 				}
 			}
 		}
@@ -110,6 +111,7 @@ final class ScenarioMaritimeAiProse {
 				result.add(arrival + " exceeds the applicable transshipment-arrival deadline by " + impact.magnitude());
 				result.add(arrival + " is " + impact.magnitude() + " later than the applicable transshipment-arrival deadline");
 				result.add(arrival + " is " + impact.magnitude() + " beyond the applicable transshipment-arrival deadline");
+				result.add(arrival + " is " + impact.magnitude() + " after the applicable transshipment-arrival deadline");
 			}
 			case BEFORE_DEADLINE -> {
 				result.add(arrival + " is " + impact.magnitude() + " before the applicable transshipment-arrival deadline");
@@ -118,6 +120,9 @@ final class ScenarioMaritimeAiProse {
 			case AT_DEADLINE -> result.add(arrival + " is at the applicable transshipment-arrival deadline with a margin of "
 					+ impact.magnitude());
 			}
+		}
+		if (impact.direction() == ScenarioDeadlineImpact.Direction.AFTER_DEADLINE) {
+			result.add("its predicted arrival is " + impact.magnitude() + " after its applicable recorded deadline");
 		}
 		return List.copyOf(result);
 	}
@@ -173,7 +178,7 @@ final class ScenarioMaritimeAiProse {
 		ScenarioDeadlineImpact impact = ScenarioDeadlineImpact.from(comparison);
 		if (impact == null || ScenarioDeadlineImpact.expectedOutcome(impact) != comparison.outcome()) return "";
 		String relationshipSentence = switch (impact.direction()) {
-		case AFTER_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " after its applicable recorded deadline";
+		case AFTER_DEADLINE -> "the predicted arrival exceeds the applicable transshipment-arrival deadline by " + impact.magnitude();
 		case BEFORE_DEADLINE -> "its predicted arrival is " + impact.magnitude() + " before its applicable recorded deadline";
 		case AT_DEADLINE -> "its predicted arrival is at its applicable recorded deadline with a margin of " + impact.magnitude();
 		};

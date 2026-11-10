@@ -142,7 +142,7 @@ class ConfiguredMaritimeAiClientTest {
 
 		var result = client.interpret(input);
 
-		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.7.1")
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.7.2")
 				.isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
 		assertThat(result.scenarioOutputText()).isEqualTo(outputText);
 		assertThat(result.scenarioEnvelopeStatus()).isEqualTo("completed");

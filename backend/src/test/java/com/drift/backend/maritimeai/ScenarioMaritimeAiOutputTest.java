@@ -131,6 +131,14 @@ class ScenarioMaritimeAiOutputTest {
 		String withAlternativeMeaning = valid.replace("shows the predicted arrival exceeds the applicable transshipment-arrival deadline by 20 hours",
 				"indicates the estimated arrival is 20 hours later than the applicable transshipment-arrival deadline");
 		assertThat(MaritimeAiResponseValidator.validateScenarioV16(withAlternativeMeaning, input).valid()).isTrue();
+		String promptedAfter = valid.replace("shows the predicted arrival exceeds the applicable transshipment-arrival deadline by 20 hours",
+				"shows the predicted arrival is 20 hours after the applicable transshipment-arrival deadline");
+		assertThat(MaritimeAiResponseValidator.validateScenarioV16(promptedAfter, input).valid()).isTrue();
+		String copiedDirection = "The backend comparison shows its predicted arrival is 20 hours after its applicable recorded deadline.";
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(copiedDirection, "A",
+				input.shipmentContext().businessContext().comparison())).isTrue();
+		assertThat(ScenarioMaritimeAiProse.matchesDeadline(copiedDirection.replace("20 hours", "4 hours"), "A",
+				input.shipmentContext().businessContext().comparison())).isFalse();
 		String conciseDirection = "The synthetic expected-arrival revision warrants review of the arrival estimate against the recorded milestone. "
 				+ "The backend comparison shows estimated arrival exceeds the applicable transshipment-arrival deadline.";
 		assertThat(ScenarioMaritimeAiProse.matchesDeadline(conciseDirection, "A",
