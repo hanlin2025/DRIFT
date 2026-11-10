@@ -140,7 +140,7 @@ class ConfiguredMaritimeAiClientTest {
 
 		var result = client.interpret(input);
 
-		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.7.1")
+		assertThat(result.promptVersion()).isEqualTo("cdg290.scenario-grounded-v1.7.2")
 				.isEqualTo(ConfiguredMaritimeAiClient.OPENAI_SCENARIO_PROMPT_VERSION);
 		assertThat(result.scenarioOutputText()).isEqualTo(outputText);
 		assertThat(result.scenarioEnvelopeStatus()).isEqualTo("completed");
@@ -182,6 +182,46 @@ class ConfiguredMaritimeAiClientTest {
 		assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
 		assertThat(schema.findValue("minLength")).isNull();
 		assertThat(schema.findValue("maxLength")).isNull();
+	}
+
+	@Test void constrainsBothShipmentSchemasToTheirOwnBackendFactsAndValidatesMockedResponses() throws Exception {
+		var fixture = com.drift.backend.maritimecontext.SyntheticDisruptionScenarioFixture.create("SchemaAB");
+		var json = new ObjectMapper();
+		for (int stage = 1; stage <= 2; stage++) for (int shipment = 0; shipment < 2; shipment++) {
+			var input = ScenarioQualityStubClientTest.input(fixture, stage, shipment);
+			var authored = ScenarioQualityStubClient.fixtureOutputText(input);
+			AtomicReference<String> requestBody = new AtomicReference<>();
+			var client = new ConfiguredMaritimeAiClient("openai-responses", "model", "test-key",
+					"https://example.invalid/v1/responses", true, 20, 2000, json, (request, body) -> {
+						requestBody.set(body);
+						return new ConfiguredMaritimeAiClient.TransportResponse(200,
+								ScenarioQualityStubClient.fixtureResponsesEnvelope(authored));
+					});
+			var result = client.interpret(input);
+			assertThat(MaritimeAiResponseValidator.validateScenarioV16(result.scenarioOutputText(), input).valid())
+					.as("stage %s shipment %s", stage, shipment).isTrue();
+			var schema = json.readTree(requestBody.get()).at("/text/format/schema");
+			var properties = schema.at("/properties/assessment/anyOf/1/properties");
+			var comparison = input.shipmentContext().businessContext().comparison();
+			var risk = MaritimeAiResponseValidator.expectedRiskReview(input.shipmentContext().connectionRisk());
+			String key = input.shipmentContext().scenario().shipmentKey();
+			assertThat(properties.at("/risk/properties/riskReview/properties/severity/enum/0").asString())
+					.isEqualTo(risk.severity().name());
+			assertThat(properties.at("/risk/properties/riskReview/properties/selectedWindowState/enum/0").asString())
+					.isEqualTo(risk.selectedWindowState().name());
+			assertThat(properties.at("/deadline/properties/outcome/enum/0").asString())
+					.isEqualTo(comparison.outcome().name());
+			assertThat(properties.at("/risk/properties/evidenceRef/enum/0").asString())
+					.isEqualTo("evidence:cdg279-v1-revision-1");
+			String selectedDeadline = properties.at("/deadline/properties/statement/enum/0").asString();
+			assertThat(ScenarioMaritimeAiProse.matchesDeadline(selectedDeadline, key, comparison)).isTrue();
+			assertThat(selectedDeadline).contains(ScenarioDeadlineImpact.from(comparison).magnitude());
+			assertThat(ScenarioMaritimeAiProse.matchesRisk(
+					properties.at("/risk/properties/statement/enum/0").asString(), risk.severity(),
+					risk.selectedWindowState())).isTrue();
+			assertThat(ScenarioMaritimeAiProse.matchesUncertainty(
+					properties.at("/uncertainty/enum/0").asString())).isTrue();
+		}
 	}
 
 	@Test void v16EnvelopeSeparatesRefusalIncompleteAndAmbiguousOutputText() {
