@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -95,6 +96,67 @@ class SyntheticMultiSourceMaritimeFixtureTest {
 	@Test
 	void controlledReplaySuppressesTheSeparateLiveNeaUnavailablePlaceholder() {
 		assertThat(new UnavailableNeaWeatherEvidenceAdapter(false, true).forShipment(fictionalShipment(), Instant.now())).isEmpty();
+	}
+
+	@Test
+	void controlledReplayRevealsTheLaterSourceSnapshotOnlyAfterItsRetrievalCutoff() {
+		MaritimeContextService context = new MaritimeContextService(true,
+				List.of(new ControlledScenarioReplayEvidenceAdapter(true, "MARITIME_CONTEXT")), Clock.systemUTC());
+
+		assertThat(context.forShipment(controlledReplayShipment(), Instant.parse("2026-09-30T20:45:00Z")).evidence()).isEmpty();
+		assertThat(context.forShipment(controlledReplayShipment(), Instant.parse("2026-09-30T21:15:00Z")).evidence())
+				.extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+		assertThat(context.forShipment(controlledReplayShipment(), Instant.parse("2026-09-30T22:20:00Z")).evidence())
+				.extracting(MaritimeEvidence::evidenceId).containsExactly(
+						"demo-synthetic-mpa-schedule-001", "demo-synthetic-notice-001",
+						"demo-synthetic-nea-rainfall-001", "demo-synthetic-mpa-schedule-002");
+
+		List<MaritimeEvidence> later = context.forShipment(controlledReplayShipment(), Instant.parse("2026-09-30T22:45:00Z")).evidence();
+		MaritimeEvidence revised = later.stream().filter(item -> item.evidenceId().equals("demo-synthetic-mpa-schedule-002")).findFirst().orElseThrow();
+		assertThat(revised.sourceIdentifier()).isEqualTo("SYNTHETIC-MPA-REVISION-001");
+		assertThat(revised.sourceMode()).isEqualTo("SYNTHETIC_DEMONSTRATION");
+		assertThat(revised.previousValue()).isEqualTo("2026-10-01T06:00:00+08:00");
+		assertThat(revised.currentValue()).isEqualTo("2026-10-01T08:00:00+08:00");
+		MaritimeEvidence irrelevant = later.stream().filter(item -> item.evidenceId().equals("demo-synthetic-notice-irrelevant-001")).findFirst().orElseThrow();
+		assertThat(irrelevant.compatibilityState()).isEqualTo("INCOMPATIBLE");
+		assertThat(new ControlledScenarioReplayEvidenceAdapter(true, "ARRIVAL_REVISION")
+				.forShipment(controlledReplayShipment(), Instant.parse("2026-09-30T22:45:00Z")))
+				.extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+	}
+
+	@Test
+	void configuredAssessmentCutoffSelectsOnlyTheSnapshotAvailableThen() {
+		MaritimeContextService context = new MaritimeContextService(true,
+				List.of(new ControlledScenarioReplayEvidenceAdapter(true, "MARITIME_CONTEXT")),
+				Clock.systemUTC(), Instant.parse("2026-09-30T21:15:00Z"));
+
+		assertThat(context.forShipment(controlledReplayShipment()).assessmentCutoffUtc()).isEqualTo("2026-09-30T21:15:00Z");
+		assertThat(context.forShipment(controlledReplayShipment()).evidence())
+				.extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+	}
+
+	@Test
+	void configuredAssessmentCutoffDoesNotRewriteOtherShipmentsOrAdapters() {
+		Instant now = Instant.parse("2026-11-10T00:00:00Z");
+		Instant cutoff = Instant.parse("2026-09-30T21:15:00Z");
+		Instant[] seen = new Instant[1];
+		MaritimeEvidenceSourceAdapter other = (shipment, instant) -> {
+			seen[0] = instant;
+			return List.of();
+		};
+		MaritimeContextService context = new MaritimeContextService(true, List.of(
+				new ControlledScenarioReplayEvidenceAdapter(true, "MARITIME_CONTEXT"), other),
+				Clock.fixed(now, ZoneOffset.UTC), cutoff);
+
+		MaritimeContextResponse replay = context.forShipment(controlledReplayShipment());
+		assertThat(seen[0]).isEqualTo(now);
+		assertThat(replay.assessmentCutoffUtc()).isEqualTo("2026-09-30T21:15:00Z");
+		assertThat(replay.evidence()).extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+
+		MaritimeContextResponse unrelated = context.forShipment(unrelatedShipment());
+		assertThat(seen[0]).isEqualTo(now);
+		assertThat(unrelated.assessmentCutoffUtc()).isEqualTo("2026-11-10T00:00:00Z");
+		assertThat(unrelated.evidence()).isEmpty();
 	}
 
 	@Test

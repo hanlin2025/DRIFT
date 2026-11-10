@@ -19,9 +19,11 @@ class ControlledScenarioReplayAiClient implements MaritimeAiClient {
 	private static final String SCENARIO_WEATHER = "cdg279-v1-weather-2";
 	private static final Set<String> SCENARIO_EVIDENCE = Set.of(SCENARIO_REVISION, SCENARIO_NOTICE, SCENARIO_WEATHER);
 	private static final String MPA = "demo-synthetic-mpa-schedule-001";
+	private static final String REVISED_MPA = "demo-synthetic-mpa-schedule-002";
 	private static final String NOTICE = "demo-synthetic-notice-001";
 	private static final String NEA = "demo-synthetic-nea-rainfall-001";
 	private static final Set<String> REQUIRED = Set.of(MPA, NOTICE, NEA);
+	private static final Set<String> WITH_LATER_SNAPSHOT = Set.of(MPA, NOTICE, NEA, REVISED_MPA);
 
 	boolean lacksRevisionForAvailableComparison(MaritimeAiEvidencePackage input) {
 		if (input.shipmentContext() == null || input.shipmentContext().scenario() == null
@@ -37,13 +39,17 @@ class ControlledScenarioReplayAiClient implements MaritimeAiClient {
 			return interpretControlledScenario(input);
 		}
 		Set<String> ids = input.evidence().stream().map(item -> item.evidenceId()).collect(java.util.stream.Collectors.toSet());
-		if (!REQUIRED.equals(ids) || input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
-			return MaritimeAiClientResult.unavailable("Controlled replay stub accepts only its three synthetic evidence records.");
+		boolean synthetic = input.evidence().stream().allMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()));
+		String citedSchedule = synthetic && REQUIRED.equals(ids) ? MPA
+				: synthetic && WITH_LATER_SNAPSHOT.equals(ids) ? REVISED_MPA : null;
+		if (citedSchedule == null) {
+			return MaritimeAiClientResult.unavailable(
+					"Controlled replay stub accepts its three synthetic evidence records, plus the later schedule snapshot once that snapshot has been retrieved.");
 		}
 		return new MaritimeAiClientResult("controlled-replay-stub", "offline", "cdg249.controlled-replay.stub.v1",
 				new MaritimeAiInterpretation("Simulated planning interpretation using separately displayed fictional schedule and source evidence.", List.of(
-						new MaritimeAiClaim("Review the documented schedule change against the separately displayed planning context.", List.of(MPA), "CONTEXTUAL",
-								"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:" + MPA,
+						new MaritimeAiClaim("Review the documented schedule change against the separately displayed planning context.", List.of(citedSchedule), "CONTEXTUAL",
+								"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:" + citedSchedule,
 										"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW"),
 						new MaritimeAiClaim("The synthetic port-area maintenance notice overlaps the revised expected arrival as contextual information only.", List.of(NOTICE), "CONTEXTUAL",
 								null, null, "PORT_CONTEXT", List.of("evidence:" + NOTICE,

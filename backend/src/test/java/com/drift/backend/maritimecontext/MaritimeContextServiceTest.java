@@ -1,6 +1,7 @@
 package com.drift.backend.maritimecontext;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -48,6 +49,16 @@ class MaritimeContextServiceTest {
 		assertThat(response.shipmentAssociationConfidence()).isEqualTo("UNAVAILABLE");
 		assertThat(response.evidence()).extracting(MaritimeEvidence::sourceType).containsExactly("NEA_WEATHER");
 		assertThat(response.sourceMode()).isEqualTo("UNAVAILABLE");
+	}
+
+	@Test
+	void assessmentCutoffWithoutControlledReplayFailsStartup() {
+		assertThatThrownBy(() -> MaritimeContextService.replayCutoff("2026-09-30T21:15:00Z", false))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("controlled-replay-enabled");
+		assertThat(MaritimeContextService.replayCutoff("2026-09-30T21:15:00Z", true))
+				.isEqualTo(Instant.parse("2026-09-30T21:15:00Z"));
+		assertThat(MaritimeContextService.replayCutoff("  ", true)).isNull();
 	}
 
 	@Test

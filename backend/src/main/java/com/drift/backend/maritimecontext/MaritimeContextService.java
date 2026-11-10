@@ -2,6 +2,7 @@ package com.drift.backend.maritimecontext;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,21 +16,57 @@ public class MaritimeContextService {
 	private final boolean demoEnabled;
 	private final List<MaritimeEvidenceSourceAdapter> adapters;
 	private final Clock clock;
+	private final Instant configuredCutoff;
 
 	@Autowired
 	public MaritimeContextService(@Value("${app.maritime-context.demo-enabled:false}") boolean demoEnabled,
-			List<MaritimeEvidenceSourceAdapter> adapters) {
-		this(demoEnabled, adapters, Clock.systemUTC());
+			List<MaritimeEvidenceSourceAdapter> adapters,
+			@Value("${app.maritime-context.assessment-cutoff:}") String assessmentCutoff,
+			@Value("${app.maritime-context.controlled-replay-enabled:false}") boolean controlledReplayEnabled) {
+		this(demoEnabled, adapters, Clock.systemUTC(), replayCutoff(assessmentCutoff, controlledReplayEnabled));
+	}
+
+	public MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters) {
+		this(demoEnabled, adapters, Clock.systemUTC(), null);
 	}
 
 	MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters, Clock clock) {
+		this(demoEnabled, adapters, clock, null);
+	}
+
+	MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters, Clock clock, Instant configuredCutoff) {
 		this.demoEnabled = demoEnabled;
 		this.adapters = List.copyOf(adapters);
 		this.clock = clock;
+		this.configuredCutoff = configuredCutoff;
 	}
 
 	public MaritimeContextResponse forShipment(ShipmentDetailResponse shipment) {
-		return forShipment(shipment, clock.instant());
+		if (!demoEnabled) return forShipment(shipment, clock.instant());
+		Instant now = clock.instant();
+		boolean replayShipment = configuredCutoff != null && adapters.stream()
+				.anyMatch(adapter -> adapter.usesConfiguredAssessmentCutoff(shipment));
+		List<MaritimeEvidence> evidence = adapters.stream().flatMap(adapter -> adapter.forShipment(shipment,
+				replayShipment && adapter.usesConfiguredAssessmentCutoff(shipment) ? configuredCutoff : now).stream()).toList();
+		return responseForEvidence(evidence, replayShipment ? configuredCutoff : now);
+	}
+
+	/** A configured cutoff is a local replay control. Startup rejects it unless controlled replay is enabled. */
+	static Instant replayCutoff(String value, boolean controlledReplayEnabled) {
+		Instant cutoff = parseCutoff(value);
+		if (cutoff != null && !controlledReplayEnabled) {
+			throw new IllegalStateException("app.maritime-context.assessment-cutoff requires app.maritime-context.controlled-replay-enabled=true");
+		}
+		return cutoff;
+	}
+
+	private static Instant parseCutoff(String value) {
+		if (value == null || value.isBlank()) return null;
+		try {
+			return Instant.parse(value.trim());
+		} catch (DateTimeParseException ex) {
+			throw new IllegalStateException("app.maritime-context.assessment-cutoff must be an ISO-8601 instant");
+		}
 	}
 
 	MaritimeContextResponse forShipment(ShipmentDetailResponse shipment, Instant assessmentCutoffUtc) {
