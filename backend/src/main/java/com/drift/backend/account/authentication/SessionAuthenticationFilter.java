@@ -33,8 +33,8 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 	@Override
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws ServletException, IOException {
-		String token = bearer(request);
-		if (token == null) token = cookie(request);
+		String presentedBearer = bearer(request);
+		String token = presentedBearer != null ? presentedBearer : cookie(request);
 		if (token == null) {
 			chain.doFilter(request, response);
 			return;
@@ -51,8 +51,21 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 			chain.doFilter(request, response);
 		} catch (SessionEndedException ex) {
 			SecurityContextHolder.clearContext();
+			// A password change invalidates the HttpOnly cookie before the browser can drop it.
+			// Fresh login credentials must still be checked; protected routes keep rejecting it.
+			if (presentedBearer == null && isCredentialLogin(request)) {
+				chain.doFilter(request, response);
+				return;
+			}
 			unauthorized(response, ex.getMessage());
 		}
+	}
+
+	private static boolean isCredentialLogin(HttpServletRequest request) {
+		if (!"POST".equalsIgnoreCase(request.getMethod())) return false;
+		String path = request.getServletPath();
+		if (path == null || path.isBlank()) path = request.getRequestURI();
+		return "/api/login".equals(path);
 	}
 
 	private static String bearer(HttpServletRequest request) {
