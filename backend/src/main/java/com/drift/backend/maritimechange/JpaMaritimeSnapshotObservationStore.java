@@ -1,6 +1,8 @@
 package com.drift.backend.maritimechange;
 
 import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
 
 import org.springframework.stereotype.Component;
 
@@ -61,5 +63,26 @@ class JpaMaritimeSnapshotObservationStore implements MaritimeSnapshotObservation
 		}
 		entityManager.persist(observation);
 		entityManager.flush();
+	}
+
+	@Override
+	public List<MaritimeSnapshotObservation> after(Instant detectedSince, Instant afterRecordedAt, long afterId, int limit) {
+		String jpql = afterRecordedAt == null ? """
+				SELECT observation FROM MaritimeSnapshotObservation observation
+				WHERE observation.recordedAt >= :detectedSince
+				ORDER BY observation.recordedAt ASC, observation.id ASC
+				""" : """
+				SELECT observation FROM MaritimeSnapshotObservation observation
+				WHERE observation.recordedAt >= :detectedSince
+					AND (observation.recordedAt > :afterRecordedAt
+						OR (observation.recordedAt = :afterRecordedAt AND observation.id > :afterId))
+				ORDER BY observation.recordedAt ASC, observation.id ASC
+				""";
+		var query = entityManager.createQuery(jpql, MaritimeSnapshotObservation.class)
+				.setParameter("detectedSince", detectedSince);
+		if (afterRecordedAt != null) {
+			query.setParameter("afterRecordedAt", afterRecordedAt).setParameter("afterId", afterId);
+		}
+		return query.setMaxResults(limit).getResultList();
 	}
 }

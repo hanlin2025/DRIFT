@@ -123,6 +123,20 @@ class MaritimeSnapshotChangeDetectorTest {
 	}
 
 	@Test
+	void aLaterRetrievedOlderHistoricalEventDoesNotReplaceTheHead() {
+		detector.accept(List.of(backfill("2026-11-01T00:00:00Z", "2026-11-01T00:00:00Z")));
+		MaritimeSnapshot lateBackfill = backfill("2026-11-02T00:00:00Z", "2026-10-31T00:00:00Z");
+
+		MaritimeSnapshotChangeBatch batch = detector.accept(List.of(lateBackfill));
+
+		assertThat(batch.changes()).singleElement().satisfies(change -> {
+			assertThat(change.ordering()).isEqualTo("BACKFILL");
+			assertThat(change.forwardLooking()).isFalse();
+		});
+		assertThat(memory.headValue("mpa:9351048:SIN:SIN")).isEqualTo("2026-11-01T00:00:00Z");
+	}
+
+	@Test
 	void aRecordedReplayKeepsItsSourceModeAndIsNotForwardLooking() {
 		MaritimeSnapshotChangeBatch replay = detector.accept(List.of(new MaritimeSnapshot(
 				"MPA_ETA_REVISION", "mpa:9351048:SIN:SIN", "Manifest due_to_arrive_20261026.manifest.json",
@@ -136,6 +150,21 @@ class MaritimeSnapshotChangeDetectorTest {
 			assertThat(change.freshness()).isEqualTo("UNKNOWN");
 			assertThat(change.sourceEventAt()).isEqualTo("2026-10-29 02:00:00");
 			assertThat(change.observedAt()).isEqualTo("2026-10-26T15:46:03.213897Z");
+		});
+	}
+
+	@Test
+	void anOlderSourceObservationCollectedLiveIsHistoricalButRetainsLiveMode() {
+		MaritimeSnapshotChangeBatch batch = detector.accept(List.of(new MaritimeSnapshot(
+				"NEA_WEATHER", "nea:rain:S306", "NEA live collector", "2026-10-20T00:00:00Z",
+				"2026-10-20T00:00:00Z", "2026-11-01T00:00:00Z", "LIVE", "HISTORICAL", null,
+				"Singapore", null, null, null, "0.2 mm", "UNKNOWN", "UNKNOWN", "UNKNOWN")));
+
+		assertThat(batch.rejections()).isEmpty();
+		assertThat(batch.changes()).singleElement().satisfies(change -> {
+			assertThat(change.sourceMode()).isEqualTo("LIVE");
+			assertThat(change.freshness()).isEqualTo("HISTORICAL");
+			assertThat(change.forwardLooking()).isFalse();
 		});
 	}
 
@@ -168,9 +197,6 @@ class MaritimeSnapshotChangeDetectorTest {
 				new MaritimeSnapshot("MPA_ETA_REVISION", "mpa:bad", "MPA", "2026-10-29 02:00:00", null,
 						"2026-10-26T15:46:03Z", "LIVE", null, "9387421", "Singapore", null, null, null, "2026-10-29 02:00:00",
 						null, null, null),
-				new MaritimeSnapshot("MPA_ETA_REVISION", "mpa:live-historical", "MPA", null, null,
-						"2026-10-26T15:46:03Z", "LIVE", "HISTORICAL", MOTHER, "Singapore", null, null, null, "2026-10-29 02:00:00",
-						null, null, null),
 				new MaritimeSnapshot("MPA_OFFICIAL_NOTICE", " ", "MPA", null, null, "2026-10-27T00:00:00Z", "LIVE", null,
 						null, "Tuas", null, null, null, "closed", null, null, null),
 				new MaritimeSnapshot("NEA_WEATHER", "nea:rain", "NEA", null, null, "2026-10-27T00:00:00Z", "LIVE", null,
@@ -182,7 +208,7 @@ class MaritimeSnapshotChangeDetectorTest {
 				valid));
 
 		assertThat(batch.rejections()).extracting(MaritimeSnapshotRejection::reason)
-				.containsExactly("SNAPSHOT", "RETRIEVED_AT", "IMO", "FRESHNESS", "SOURCE_IDENTITY", "LOCATION",
+				.containsExactly("SNAPSHOT", "RETRIEVED_AT", "IMO", "SOURCE_IDENTITY", "LOCATION",
 						"EFFECTIVE_PERIOD", "SOURCE_TYPE");
 		assertThat(batch.changes()).hasSize(1);
 		assertThat(memory.size()).isEqualTo(1);
@@ -226,7 +252,7 @@ class MaritimeSnapshotChangeDetectorTest {
 
 	private static MaritimeSnapshot backfill(String retrievedAt, String current) {
 		return new MaritimeSnapshot("MPA_ETA_REVISION", "mpa:9351048:SIN:SIN", "MPA historical collection",
-				current, retrievedAt, retrievedAt, "HISTORICAL_BACKFILL", "APPLICABLE", MOTHER, "Singapore", null, null,
+				current, retrievedAt, retrievedAt, "HISTORICAL_BACKFILL", "HISTORICAL", MOTHER, "Singapore", null, null,
 				null, current, null, null, null);
 	}
 

@@ -75,6 +75,10 @@ jobs:
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
         run: bash scripts/ci/backend-checks.sh
+      - name: Verify authenticated maritime change retrieval
+        env:
+          POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: bash scripts/ci/cdg358-change-event-checks.sh
       - name: Confirm the database reached the latest Flyway migration
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}

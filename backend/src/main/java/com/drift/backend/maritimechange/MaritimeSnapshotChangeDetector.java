@@ -81,7 +81,16 @@ public class MaritimeSnapshotChangeDetector {
 			return Optional.empty();
 		}
 		Optional<MaritimeSnapshotObservation> head = store.head(prepared.sourceType(), prepared.sourceIdentity());
-		boolean older = head.isPresent() && prepared.retrievedAt().isBefore(head.get().getRetrievedAtUtc());
+		if (head.isPresent() && prepared.currentValue().equals(head.get().getCurrentValue())) {
+			return Optional.empty();
+		}
+		String previousValue = head.map(MaritimeSnapshotObservation::getCurrentValue).orElse(prepared.previousValue());
+		boolean older = head.isPresent() && (prepared.retrievedAt().isBefore(head.get().getRetrievedAtUtc())
+				|| observedBefore(prepared.observedAt(), head.get().getObservedAt()));
+		if (head.isPresent() && HISTORICAL.equals(prepared.freshness())
+				&& sourceEventBefore(prepared.sourceEventAt(), head.get().getSourceEventAt())) {
+			older = true;
+		}
 		String ordering;
 		boolean becomesHead;
 		boolean forwardLooking;
@@ -107,15 +116,25 @@ public class MaritimeSnapshotChangeDetector {
 		store.add(MaritimeSnapshotObservation.record(prepared.sourceType(), prepared.sourceIdentity(), prepared.fingerprint(),
 				kind, ordering, forwardLooking, prepared.provenance(), prepared.sourceEventAt(), prepared.observedAt(),
 				prepared.retrievedAt(), prepared.sourceMode(), freshness, prepared.vesselImo(), prepared.location(),
-				prepared.effectiveFromInstant(), prepared.effectiveUntilInstant(), prepared.previousValue(),
+				prepared.effectiveFromInstant(), prepared.effectiveUntilInstant(), previousValue,
 				prepared.currentValue(), prepared.activityCompatibility(), prepared.locationCompatibility(),
 				prepared.timeCompatibility(), recordedAt), becomesHead);
 		return Optional.of(new MaritimeSnapshotChange(prepared.sourceType(), prepared.sourceIdentity(), prepared.fingerprint(),
 				kind, ordering, forwardLooking, prepared.provenance(), prepared.sourceEventAt(), prepared.observedAt(),
 				prepared.retrievedAtUtc(), prepared.retrievedAt(), prepared.sourceMode(), freshness, prepared.vesselImo(),
-				prepared.location(), prepared.effectiveFrom(), prepared.effectiveUntil(), prepared.previousValue(),
+				prepared.location(), prepared.effectiveFrom(), prepared.effectiveUntil(), previousValue,
 				prepared.currentValue(), prepared.activityCompatibility(), prepared.locationCompatibility(),
 				prepared.timeCompatibility(), recordedAt));
+	}
+
+	private static boolean observedBefore(String incoming, String stored) {
+		Instant incomingAt = parseInstant(incoming);
+		Instant storedAt = parseInstant(stored);
+		return incomingAt != null && storedAt != null && incomingAt.isBefore(storedAt);
+	}
+
+	private static boolean sourceEventBefore(String incoming, String stored) {
+		return observedBefore(incoming, stored);
 	}
 
 	private Prepared prepare(MaritimeSnapshot snapshot) {
@@ -146,9 +165,6 @@ public class MaritimeSnapshotChangeDetector {
 		}
 		String freshness = trim(snapshot.freshness());
 		if (freshness != null && !FRESHNESS.contains(freshness)) {
-			return Prepared.rejected(identity, "FRESHNESS");
-		}
-		if (LIVE.equals(sourceMode) && HISTORICAL.equals(freshness)) {
 			return Prepared.rejected(identity, "FRESHNESS");
 		}
 		if (freshness == null) {

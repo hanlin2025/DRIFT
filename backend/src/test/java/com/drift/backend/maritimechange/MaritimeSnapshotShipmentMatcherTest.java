@@ -150,8 +150,12 @@ class MaritimeSnapshotShipmentMatcherTest {
 				change("MPA_OFFICIAL_NOTICE", null, "Singapore", OPEN, CLOSE, null, "COMPATIBLE", null),
 				shipment(13L, "Singapore", MOTHER, FEEDER, null, null));
 
-		assertThat(match.candidates()).isEmpty();
-		assertThat(match.exclusions()).singleElement().extracting(MaritimeShipmentExclusion::reason).isEqualTo("MISSING_SCHEDULE");
+		assertThat(match.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.association()).isEqualTo("UNCONFIRMED_CONTEXT");
+			assertThat(candidate.vesselSpecificImpact()).isFalse();
+			assertThat(candidate.timeCompatibility()).isEqualTo("UNKNOWN");
+		});
+		assertThat(match.exclusions()).isEmpty();
 	}
 
 	@Test
