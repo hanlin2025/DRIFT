@@ -14,6 +14,8 @@ import com.drift.backend.account.admin.exception.AdminAssignmentConflictExceptio
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.InvalidAssignmentException;
+import com.drift.backend.account.admin.exception.LastAdministratorException;
+import com.drift.backend.account.admin.exception.SelfAssignmentException;
 import com.drift.backend.account.exception.SessionEndedException;
 
 @RestControllerAdvice(assignableTypes = AdminAssignmentController.class)
@@ -48,6 +50,16 @@ public class AdminAssignmentExceptionHandler {
 
 	@ExceptionHandler(AdminAssignmentConflictException.class)
 	public ResponseEntity<Map<String, String>> handleConflict(AdminAssignmentConflictException ex) {
+		return message(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(SelfAssignmentException.class)
+	public ResponseEntity<Map<String, String>> handleSelfAssignment(SelfAssignmentException ex) {
+		return message(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(LastAdministratorException.class)
+	public ResponseEntity<Map<String, String>> handleLastAdministrator(LastAdministratorException ex) {
 		return message(HttpStatus.CONFLICT, ex.getMessage());
 	}
 

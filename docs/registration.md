@@ -139,3 +139,24 @@ With the default settings the backend sends mail to Mailpit from `docker-compose
 
 Tests: `CompanySignupIntegrationTests`, `CompanySignupConcurrencyIntegrationTests`,
 `EmailVerificationIntegrationTests` and `EmailVerificationRateLimitIntegrationTests`.
+
+### End-to-end check (CDG-366)
+
+`npm --prefix frontend run test:e2e:company-signup` (runner `scripts/run-company-signup.mjs`,
+spec `frontend/e2e/company-signup.spec.ts`) creates a disposable database, starts the backend
+with real mail sent to Mailpit and AIS, AI and risk-alert mail turned off, and runs Playwright on
+desktop. It needs Docker Postgres and Mailpit (`docker compose up -d postgres mailpit`) and free
+ports 8080 and 5173. It covers:
+
+- creating a company, being refused sign-in before verification, opening the link from the real
+  Mailpit email, and signing in as the new administrator, who sees only the new company's users,
+  organisation and shipments;
+- replaying the same link (invalid-link message);
+- signing up again with the same email and a different company code: the first email's link is
+  rejected and the second activates the account;
+- a duplicate company code (field error; no company, user or email created);
+- the new administrator inviting a colleague, who joins with the email, company and role locked;
+- self-assignment: the administrator's own row is disabled, and a direct
+  `PATCH /api/admin/users/{ownId}/assign` from the page returns `409` with the role unchanged after
+  a reload;
+- isolation between the new company and a seeded company in both directions.

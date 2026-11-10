@@ -133,6 +133,9 @@ public class AdminAssignmentController {
 			+ "The user must already belong to that organisation, and the organisation in the request must be that same active company. "
 			+ "The role must be one of the stored roles. "
 			+ "A company can have only one administrator. "
+			+ "An administrator cannot change their own organisation or role, even to the same values. "
+			+ "A change that would leave the organisation without an active administrator is rejected. "
+			+ "A rejected assignment leaves the user unchanged and adds no audit entry. "
 			+ "A user from another organisation is reported as not found. "
 			+ "When the role changes, the user's existing session stops working, they must log in again, and the change is recorded in the assignment audit. "
 			+ "Saving the same organisation and role leaves the current session valid.",
@@ -156,10 +159,17 @@ public class AdminAssignmentController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
-			@ApiResponse(responseCode = "409", description = "The organisation already has an administrator", content = @Content(
-					mediaType = "application/json", examples = @ExampleObject(value = """
-							{"message":"A company can have only one admin."}
-							"""))) })
+			@ApiResponse(responseCode = "409", description = "The administrator tried to change their own assignment, the change would leave the organisation without an active administrator, or the organisation already has an administrator", content = @Content(
+					mediaType = "application/json", examples = {
+							@ExampleObject(name = "Own assignment", value = """
+									{"message":"You cannot change your own organisation or role."}
+									"""),
+							@ExampleObject(name = "Last administrator", value = """
+									{"message":"A company must keep at least one active administrator."}
+									"""),
+							@ExampleObject(name = "One admin", value = """
+									{"message":"A company can have only one admin."}
+									""") })) })
 	public ResponseEntity<AssignmentResponse> assign(
 			@io.swagger.v3.oas.annotations.Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable Long userId,

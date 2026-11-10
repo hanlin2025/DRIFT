@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ const INVALID = 'Invalid role or organisation selected.';
 const ASSIGNMENT_FORBIDDEN = 'Only an administrator can assign users';
 const USER_NOT_FOUND = 'User not found.';
 const ONE_ADMIN = 'A company can have only one admin.';
+const OWN_ASSIGNMENT = 'You cannot change your own organisation or role.';
 const MISSING_ASSIGNMENT = 'Assignment information is missing or invalid';
 const SESSION_ENDED = 'Your session has ended. Log in again.';
 const NO_ACCESS = 'You do not have access to this shipment';
@@ -197,9 +198,22 @@ async function uploadCsv(request: APIRequestContext, token: string, reference: s
 function cleanup(emails: string[], companies: string[] = []) {
   for (const email of emails) {
     sql(`DELETE FROM shipment_import_jobs WHERE requested_by_user_id = (SELECT id FROM users WHERE email = :'email');
+      DELETE FROM shipment_risk_alert_deliveries
+      WHERE user_id = (SELECT id FROM users WHERE email = :'email')
+         OR transition_id IN (
+           SELECT transitions.id FROM shipment_risk_transitions transitions
+           WHERE transitions.shipment_id IN (
+             SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')));
+      DELETE FROM shipment_risk_transitions
+      WHERE shipment_id IN (SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
+      DELETE FROM shipment_importer_constraints
+      WHERE shipment_id IN (SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
       DELETE FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM user_assignment_audits WHERE operator_user_id = (SELECT id FROM users WHERE email = :'email')
         OR target_user_id = (SELECT id FROM users WHERE email = :'email');
+      DELETE FROM forwarder_importer_relationships
+      WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email')
+         OR updated_by_user_id = (SELECT id FROM users WHERE email = :'email');
       DELETE FROM invitations WHERE email = :'email';
       DELETE FROM users WHERE email = :'email';`, { email });
   }
@@ -237,6 +251,10 @@ async function expectHiddenShipment(request: APIRequestContext, token: string, s
 test.beforeAll(() => {
   assertOwnedDatabase();
 });
+
+// The API request context keeps the session cookie from /api/login, so later unsafe requests need the
+// same CSRF header the app sends; without it CookieCsrfFilter rejects them with 403.
+test.use({ extraHTTPHeaders: { 'X-DRIFT-Request': '1' } });
 
 test('an administrator assigns a role in their own organisation and it takes effect at the next login', { tag: '@disposable-database' }, async ({ page, browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Assignment is covered once on desktop.');
@@ -277,7 +295,7 @@ test('an administrator assigns a role in their own organisation and it takes eff
     await adminPage.locator('#assignment-organisation').selectOption({ label: 'Harbourline Logistics (Demo)' });
     await adminPage.locator('#assignment-role').selectOption({ label: 'Logistics manager' });
     await adminPage.getByRole('button', { name: /Save assignment/ }).click();
-    await expect(adminPage.getByRole('status')).toHaveText(ASSIGNED);
+    await expect(adminPage.locator('.success-notice')).toHaveText(ASSIGNED);
     await expect(choice).toHaveAccessibleName(/Logistics manager/);
     await expect(choice).toHaveAccessibleName(/Harbourline Logistics \(Demo\)/);
 
@@ -298,7 +316,7 @@ test('an administrator assigns a role in their own organisation and it takes eff
     await signIn(page, member.email, '/logistics-manager');
     await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Register a shipment' })).toHaveCount(0);
-    await expect(page.locator('.company-card strong')).toHaveText('Harbourline Logistics (Demo)');
+    await expect(page.locator('.workspace-identity span')).toHaveText('Harbourline Logistics (Demo)');
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: shipment.shipmentReference })).toBeVisible();
 
@@ -308,6 +326,39 @@ test('an administrator assigns a role in their own organisation and it takes eff
   } finally {
     await adminPage.close();
     cleanup([member.email, administrator.email]);
+  }
+});
+
+test('an administrator cannot change their own organisation or role', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Assignment is covered once on desktop.');
+  test.setTimeout(90_000);
+  const suffix = randomBytes(3).toString('hex');
+  const colleague = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO', `Robin Colleague ${suffix}`);
+  const administrator = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO', `Casey Self ${suffix}`);
+  promoteToAdmin(administrator.email);
+  const adminSession = await signInApi(request, administrator.email);
+  try {
+    await signIn(page, administrator.email, '/admin');
+    await page.getByRole('radio', { name: new RegExp(`Casey Self ${suffix}`) }).check();
+    await expect(page.locator('#assignment-organisation')).toBeDisabled();
+    await expect(page.locator('#assignment-role')).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Save assignment/ })).toBeDisabled();
+    await expect(page.locator('#assignment-role')).toHaveAccessibleDescription(OWN_ASSIGNMENT);
+    await expect(page.getByRole('button', { name: /Save assignment/ })).toHaveAccessibleDescription(OWN_ASSIGNMENT);
+
+    await page.getByRole('radio', { name: new RegExp(`Robin Colleague ${suffix}`) }).check();
+    await expect(page.locator('#assignment-role')).toBeEnabled();
+    await expect(page.getByText(OWN_ASSIGNMENT)).toHaveCount(0);
+
+    await expectMessage(await assign(request, adminSession.token, adminSession.id, companyId('HARBOURLINE_DEMO'), 'IMPORTER'), 409, OWN_ASSIGNMENT);
+    await expectMessage(await assign(request, adminSession.token, adminSession.id, companyId('HARBOURLINE_DEMO'), 'ADMIN'), 409, OWN_ASSIGNMENT);
+    const stillAdmin = await request.get('/api/session', { headers: bearer(adminSession.token) });
+    const stillAdminBody = await stillAdmin.text();
+    expect(stillAdmin.status(), stillAdminBody).toBe(200);
+    expect(JSON.parse(stillAdminBody).role).toBe('ADMIN');
+    expect(JSON.parse(stillAdminBody).company.code).toBe('HARBOURLINE_DEMO');
+  } finally {
+    cleanup([colleague.email, administrator.email]);
   }
 });
 
@@ -387,8 +438,14 @@ test('someone who is not an administrator cannot assign users or open user manag
       await expectMessage(await request.get('/api/admin/roles', { headers: bearer(actor.token) }), 403, ASSIGNMENT_FORBIDDEN);
       await expectMessage(await request.get('/api/admin/organisations', { headers: bearer(actor.token) }), 403, ASSIGNMENT_FORBIDDEN);
     }
-    await expectMessage(await assign(request, null, target.id, importer.companyId, 'IMPORTER'), 401, SESSION_ENDED);
-    await expectMessage(await request.get('/api/admin/users'), 401, SESSION_ENDED);
+    // A fresh context carries no session cookie from the sign-ins above.
+    const anonymous = await playwrightRequest.newContext({ baseURL: testInfo.project.use.baseURL, extraHTTPHeaders: { 'X-DRIFT-Request': '1' } });
+    try {
+      await expectMessage(await assign(anonymous, null, target.id, importer.companyId, 'IMPORTER'), 401, SESSION_ENDED);
+      await expectMessage(await anonymous.get('/api/admin/users'), 401, SESSION_ENDED);
+    } finally {
+      await anonymous.dispose();
+    }
     await expectMessage(await request.patch(`/api/admin/users/${target.id}/assign`, { headers: bearer(importer.token) }), 403, ASSIGNMENT_FORBIDDEN);
 
     await signIn(page, importer.email, '/importer');
@@ -467,7 +524,7 @@ test('a real assignment ends the session and an unchanged assignment leaves it i
     expect(JSON.parse(stayedBody).role).toBe('FREIGHT_FORWARDER');
     expect(JSON.parse(stayedBody).company.code).toBe('HARBOURLINE_DEMO');
     await signIn(page, organisationOnly.email, '/freight-forwarder');
-    await expect(page.locator('.company-card strong')).toHaveText('Harbourline Logistics (Demo)');
+    await expect(page.locator('.workspace-identity span')).toHaveText('Harbourline Logistics (Demo)');
     await expect(page.getByRole('link', { name: organisationShipment.shipmentReference })).toBeVisible();
   } finally {
     cleanup([administrator.email, same.email, roleOnly.email, organisationOnly.email]);
