@@ -61,6 +61,8 @@ type LiveFix = {
   scenarioReferenceTime?: string | null;
 };
 
+const FUTURE_RECEIPT_SKEW_TOLERANCE_MS = 60_000;
+
 function liveFixes(tracking: ShipmentTracking | null | undefined, now: number): LiveFix[] {
   if (!tracking) return [];
   const fixes: LiveFix[] = [];
@@ -89,7 +91,9 @@ function positionKicker(role: 'MOTHER' | 'FEEDER', position: VesselPosition, now
   if (position.source === 'SEEDED') return `${role} SEEDED`;
   if (position.source !== 'AIS_STREAM') return `${role} POSITION SOURCE UNKNOWN`;
   const receivedAt = Date.parse(position.ingestedAt);
-  if (!Number.isFinite(receivedAt) || receivedAt > now) return `${role} AIS FRESHNESS UNKNOWN`;
+  if (!Number.isFinite(receivedAt) || receivedAt > now + FUTURE_RECEIPT_SKEW_TOLERANCE_MS) {
+    return `${role} AIS FRESHNESS UNKNOWN`;
+  }
   return isStalePosition(position.ingestedAt, now) ? `${role} LAST KNOWN AIS` : `${role} FRESH AIS`;
 }
 
@@ -156,9 +160,7 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
 }
 
 function updateLivePin(marker: InstanceType<MapLibre['Marker']>, fix: LiveFix) {
-  const root = marker.getElement();
-  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${fix.id}`;
-  root.title = markerTitle(fix);
+  applyLivePinPresentation(marker.getElement(), fix);
 }
 
 function routeIdentity(stops: Stop[]) {
@@ -289,18 +291,24 @@ function markSelected(handle: LiveGlobe, selectedId: number | null | undefined) 
 
 function livePin(fix: LiveFix) {
   const root = document.createElement('div');
-  const statusClass = fix.displayMode === 'scenario' ? 'synthetic'
-    : fix.kicker.includes('LAST KNOWN') ? 'stale'
-      : fix.kicker.includes('SEEDED') ? 'seeded'
-        : fix.kicker.includes('FRESH AIS') ? 'fresh' : 'unknown';
-  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${statusClass} ${fix.id}`;
-  root.title = markerTitle(fix);
-  root.setAttribute('aria-label', root.title);
-  root.tabIndex = 0;
+  applyLivePinPresentation(root, fix);
   const dot = document.createElement('span');
   dot.className = 'globe-dot';
   root.append(dot);
   return root;
+}
+
+function applyLivePinPresentation(root: HTMLElement, fix: LiveFix) {
+  const statusClass = fix.displayMode === 'scenario' ? 'synthetic'
+    : fix.kicker.includes('LAST KNOWN') ? 'stale'
+      : fix.kicker.includes('SEEDED') ? 'seeded'
+        : fix.kicker.includes('FRESH AIS') ? 'fresh' : 'unknown';
+  const label = markerTitle(fix);
+  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${statusClass} ${fix.id}`;
+  root.title = label;
+  root.setAttribute('aria-label', label);
+  root.setAttribute('role', 'img');
+  root.tabIndex = 0;
 }
 
 function markerTitle(fix: LiveFix) {
@@ -350,10 +358,11 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     const ticker = window.setInterval(() => setFreshnessNow(Date.now()), 30_000);
     return () => window.clearInterval(ticker);
   }, [displayMode, hasTracking]);
+  const liveNow = Math.max(freshnessNow, Date.now());
   const fixes = displayPositions
     ? displayFixes(displayPositions, displayMode, scenarioReferenceTime)
-    : displayMode === 'recorded' ? [] : liveFixes(tracking, freshnessNow);
-  const notice = displayMode === 'recorded' ? null : trackingNotice(tracking, freshnessNow);
+    : displayMode === 'recorded' ? [] : liveFixes(tracking, liveNow);
+  const notice = displayMode === 'recorded' ? null : trackingNotice(tracking, liveNow);
   fixesRef.current = fixes;
   const [mapState, setMapState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);

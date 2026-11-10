@@ -237,6 +237,64 @@ describe('shipment route display', () => {
     });
   });
 
+  it('updates freshness styling and accessibility text on the same marker when AIS becomes stale', async () => {
+    const { rerender } = render(<RouteMap shipment={shipment} tracking={loneTracking} />);
+    const marker = await waitFor(() => {
+      const element = mapCalls.markerElements.find(candidate => candidate.classList.contains('live')
+        && candidate.classList.contains('mother'));
+      expect(element).toBeDefined();
+      return element!;
+    });
+    expect(marker).toHaveClass('fresh');
+    expect(marker).toHaveAttribute('role', 'img');
+    expect(marker).toHaveAttribute('aria-label', expect.stringContaining('FRESH AIS'));
+
+    const receivedAt = Date.parse(loneTracking.motherVessel!.ingestedAt);
+    vi.setSystemTime(receivedAt + 6 * 60 * 60 * 1000 + 1);
+    rerender(<RouteMap shipment={shipment} tracking={{
+      ...loneTracking,
+      motherVessel: { ...loneTracking.motherVessel!, latitude: 1.265 },
+    }} />);
+
+    await waitFor(() => {
+      expect(mapCalls.markerElements.find(element => element.classList.contains('live')
+        && element.classList.contains('mother'))).toBe(marker);
+      expect(marker).toHaveClass('stale');
+      expect(marker).not.toHaveClass('fresh');
+      expect(marker).toHaveAttribute('aria-label', expect.stringContaining('LAST KNOWN AIS'));
+    });
+  });
+
+  it('labels an AIS position received between frontend freshness ticks as fresh', async () => {
+    const { rerender } = render(<RouteMap shipment={shipment} tracking={null} />);
+    vi.setSystemTime(new Date('2026-11-10T04:00:20Z'));
+    rerender(<RouteMap shipment={shipment} tracking={{
+      ...loneTracking,
+      motherVessel: { ...loneTracking.motherVessel!, ingestedAt: '2026-11-10T04:00:15Z' },
+    }} />);
+
+    expect(await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON/)).toBeInTheDocument();
+    const marker = mapCalls.markerElements.find(element => element.classList.contains('live')
+      && element.classList.contains('mother'));
+    expect(marker).toHaveClass('fresh');
+    expect(marker).toHaveAttribute('aria-label', expect.stringContaining('FRESH AIS'));
+  });
+
+  it('tolerates a small backend clock lead for a newly received AIS position', async () => {
+    const { rerender } = render(<RouteMap shipment={shipment} tracking={null} />);
+    vi.setSystemTime(new Date('2026-11-10T04:00:20Z'));
+    rerender(<RouteMap shipment={shipment} tracking={{
+      ...loneTracking,
+      motherVessel: { ...loneTracking.motherVessel!, ingestedAt: '2026-11-10T04:00:45Z' },
+    }} />);
+
+    expect(await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON/)).toBeInTheDocument();
+    const marker = mapCalls.markerElements.find(element => element.classList.contains('live')
+      && element.classList.contains('mother'));
+    expect(marker).toHaveClass('fresh');
+    expect(marker).not.toHaveClass('unknown');
+  });
+
   it('keeps the initial view when a live position arrives and no port can be placed', async () => {
     render(<RouteMap shipment={{
       ...shipment,
