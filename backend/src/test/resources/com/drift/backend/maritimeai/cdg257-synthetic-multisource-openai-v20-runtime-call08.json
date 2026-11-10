@@ -1,0 +1,111 @@
+{
+  "validationStatus": "VALID",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.2",
+  "provider": "openai-responses",
+  "evidence": [
+    {
+      "evidenceId": "demo-synthetic-mpa-schedule-001",
+      "sourceType": "MPA_ETA_REVISION",
+      "sourceMode": "SYNTHETIC_DEMONSTRATION"
+    },
+    {
+      "evidenceId": "demo-synthetic-notice-001",
+      "sourceType": "MPA_OFFICIAL_NOTICE",
+      "sourceMode": "SYNTHETIC_DEMONSTRATION"
+    },
+    {
+      "evidenceId": "demo-synthetic-nea-rainfall-001",
+      "sourceType": "NEA_WEATHER",
+      "sourceMode": "SYNTHETIC_DEMONSTRATION"
+    }
+  ],
+  "model": "gpt-4.1-mini",
+  "httpStatus": 200,
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {
+        "statement": "The documented revision warrants schedule review.",
+        "evidenceIds": [
+          "demo-synthetic-mpa-schedule-001"
+        ],
+        "applicability": "VERIFIED",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": [
+          "evidence:demo-synthetic-mpa-schedule-001",
+          "schedule:MOTHER:PLANNED_ARRIVAL",
+          "schedule:FEEDER:PLANNED_DEPARTURE"
+        ],
+        "relationshipType": "SCHEDULE_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic port-area maintenance notice warrants contextual review; it does not establish vessel impact or shipment disruption.",
+        "evidenceIds": [
+          "demo-synthetic-notice-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "PORT_CONTEXT",
+        "factReferences": [
+          "evidence:demo-synthetic-notice-001"
+        ],
+        "relationshipType": "PORT_CONTEXT_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic regional rainfall observation warrants contextual review; it does not establish vessel impact or shipment disruption.",
+        "evidenceIds": [
+          "demo-synthetic-nea-rainfall-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "REGIONAL_CONTEXT",
+        "factReferences": [
+          "evidence:demo-synthetic-nea-rainfall-001"
+        ],
+        "relationshipType": "REGIONAL_WEATHER_CONTEXT",
+        "riskReview": null
+      },
+      {
+        "statement": "The cited vessel observation warrants human review alongside backend HIGH risk based on the available planned connection window; the AIS estimate is unavailable.",
+        "evidenceIds": [
+          "demo-synthetic-mpa-schedule-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": [
+          "evidence:demo-synthetic-mpa-schedule-001",
+          "risk:CONNECTION_SEVERITY",
+          "risk:PLANNED_CONNECTION_WINDOW",
+          "risk:ARRIVAL_ESTIMATE_FRESHNESS",
+          "risk:ARRIVAL_ESTIMATE_NOT_USED"
+        ],
+        "relationshipType": "RISK_BUFFER_REVIEW",
+        "riskReview": {
+          "severity": "HIGH",
+          "selectedWindowBasis": "PLANNED_SHIPMENT_SCHEDULE",
+          "selectedWindowState": "AVAILABLE",
+          "estimateFreshness": "UNAVAILABLE"
+        }
+      }
+    ],
+    "uncertainties": [
+      "The evidence does not establish whether this shipment is urgent."
+    ],
+    "followUpConsiderations": [
+      "Verify the current operational vessel position and status with the carrier or relevant maritime operations team.",
+      "Confirm the planned arrival and departure schedules in the control systems for alignment with latest revisions.",
+      "Review the current port maintenance schedule and notices with port authority to assess potential operational impacts.",
+      "Check regional weather updates for any developments beyond the reported synthetic rainfall."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}

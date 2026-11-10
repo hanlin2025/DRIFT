@@ -47,12 +47,15 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern BUSINESS_CONSTRAINT_ASSERTION = Pattern.compile("(?i)\\b(?:urgent(?:ly)?|urgency|time[- ]sensitive|(?:final\\s+)?delivery\\s+deadline|commercial\\s+deadline|deadline|due\\s+(?:by|on|before|within)|(?:final\\s+)?delivery\\s+due|priority\\s+(?:handling|shipment))\\b");
 	private static final Pattern QUALIFIED_SHIPMENT_APPLICABILITY = Pattern.compile("(?i)\\b(?:uncertain|unclear|unverified|not verified|conditional)\\s+applicability\\s+(?:for|to)\\s+(?:the\\s+)?shipment\\s+planning\\b");
 	private static final Pattern EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION = Pattern.compile("(?i)\\b(?:any\\s+)?shipment(?:-specific)?\\s+(?:association|relevance)\\s+(?:is|remains)\\s+(?:conditional(?:\\s+and\\s+unverified)?|unverified|not verified)\\b");
+	/* Remove only a complete, explicitly negated statement of what contextual evidence does
+	 * not establish. Any separate affirmative shipment assertion remains for the broad guard. */
+	private static final Pattern EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION = Pattern.compile("(?i)(?:\\bwithout\\s+(?:direct\\s+evidence\\s+of\\s+vessel\\s+impact,\\s+shipment\\s+applicability,\\s+or\\s+cause\\s+for\\s+delay|establishing\\s+(?:a\\s+)?direct\\s+effect\\s+on\\s+(?:the\\s+)?vessel\\s+or\\s+shipment|confirming\\s+vessel\\s+impact\\s+or\\s+shipment\\s+disruption|establishing\\s+vessel-specific\\s+conditions\\s+or\\s+causation\\s+relevant\\s+to\\s+(?:the\\s+)?shipment|confirmed\\s+shipment\\s+impact\\s+or\\s+disruption|established\\s+effect\\s+on\\s+(?:the\\s+)?shipment\\s+or\\s+vessel\\s+schedule)\\b|\\b(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+(?:vessel\\s+impact,\\s+shipment\\s+disruption,\\s+or\\s+delay|(?:a\\s+)?vessel\\s+impact\\s+or\\s+shipment\\s+disruption)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|demonstrate|prove)\\s+(?:that\\s+)?(?:the\\s+)?shipment(?:-specific)?\\s+(?:impact|disruption|delay|outcome)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+that\\s+(?:the\\s+)?shipment\\s+will\\s+be\\s+delayed\\b)");
 	private static final Pattern SHIPMENT_OR_CARGO_WORD = Pattern.compile("(?i)\\b(?:shipment|cargo)\\b");
 	private static final Pattern SYNTHETIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:synthetic|fictional)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
 	private static final Pattern AUTHENTIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:authentic|real(?:-world)?|historical|retrospective)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
 	/* Uncertainty-only exception for a fully scoped, explicitly negative evidence statement.
 	 * It does not authorize urgency assertions or claims that urgency affects a deadline/risk. */
-	private static final Pattern SCOPED_URGENCY_UNCERTAINTY = Pattern.compile("(?i)^(?:the\\s+)?(?:supplied\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|confirm|determine|show|indicate|support)\\s+whether\\s+(?:this|the\\s+current)\\s+shipment\\s+is\\s+(?:urgent|time[- ]sensitive)\\.?$");
+	private static final Pattern SCOPED_URGENCY_UNCERTAINTY = Pattern.compile("(?i)^(?:the\\s+)?(?:supplied\\s+)?evidence(?:\\s+and\\s+(?:the\\s+)?estimate)?\\s+(?:(?:does|do)\\s+not|doesn't|cannot|can't)\\s+(?:establish|confirm|determine|show|indicate|support)\\s+whether\\s+(?:this|the\\s+current)\\s+shipment\\s+is\\s+(?:urgent|time[- ]sensitive)\\.?$");
 	private static final Pattern TRANSSHIPMENT_ARRIVAL_DEADLINE = Pattern.compile("(?i)\\btransshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern POSITIVE_DELAY_OUTCOME = Pattern.compile("(?i)\\bno\\s+predicted\\s+impact\\b|\\b(?:predicted|estimated|expected)\\s+arrival\\b[^.!?;]{0,80}\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\bdeadline\\b|\\bexceed(?:s|ed)?\\b[^.!?;]{0,50}\\b(?:recorded\\s+)?transshipment[- ]arrival\\s+deadline\\b");
 	private static final Pattern SCENARIO_EXCEEDS_OUTCOME = Pattern.compile("(?i)\\bbackend\\s+comparison\\s+shows\\s+(?:the\\s+)?predicted\\s+arrival\\s+exceeds\\b");
@@ -65,6 +68,7 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern BUSINESS_CONSTRAINT_MISSING_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:recorded|provided|specified|available|known)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
 	private static final Pattern BUSINESS_CONSTRAINT_UNKNOWN_STATUS = Pattern.compile("(?i)^\\s+(?:is\\s+)?(?:unknown|unavailable|unspecified|unrecorded|not\\s+(?:known|available|provided|recorded|specified)|absent|missing)(?:\\s+(?:in\\s+(?:the\\s+)?(?:supplied\\s+)?(?:shipment\\s+)?(?:context|records|system)|for\\s+(?:this|the\\s+current)\\s+shipment))?\\s*$");
 	private static final Pattern HUMAN_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\b(?:human|person|people|operator|operations\\s+(?:team|staff)|agent|coordinator|planner|dispatcher|staff|team)\\b");
+	private static final Pattern CARRIER_REVIEW_PARTICIPANT = Pattern.compile("(?i)\\bcarrier\\b(?!['’]s)");
 	private static final Map<String, Long> WRITTEN_NUMBERS = Map.ofEntries(
 			Map.entry("a", 1L), Map.entry("an", 1L), Map.entry("one", 1L), Map.entry("two", 2L), Map.entry("three", 3L),
 			Map.entry("four", 4L), Map.entry("five", 5L), Map.entry("six", 6L), Map.entry("seven", 7L), Map.entry("eight", 8L),
@@ -849,7 +853,7 @@ final class MaritimeAiResponseValidator {
 	}
 	private static boolean isHumanVerificationFollowUp(String text) {
 		String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
-		return HUMAN_REVIEW_PARTICIPANT.matcher(lower).find()
+		return (HUMAN_REVIEW_PARTICIPANT.matcher(lower).find() || CARRIER_REVIEW_PARTICIPANT.matcher(lower).find())
 				&& containsAny(lower, "review", "check", "verify", "compare", "confirm", "reconcile");
 	}
 	private static boolean hasMotherExpectedArrival(List<MaritimeEvidence> cited) {
@@ -1040,7 +1044,9 @@ final class MaritimeAiResponseValidator {
 		String applicability = applicabilityText == null ? "" : applicabilityText.toLowerCase(Locale.ROOT);
 		String qualifiedOnly = QUALIFIED_SHIPMENT_APPLICABILITY.matcher(statement).replaceAll(" ");
 		String withoutExplicitUnverifiedAssociation = EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION.matcher(qualifiedOnly).replaceAll(" ");
-		return SHIPMENT_OR_CARGO_WORD.matcher(withoutExplicitUnverifiedAssociation).find()
+		String withoutExplicitlyNegatedContextualAssertion = EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION
+				.matcher(withoutExplicitUnverifiedAssociation).replaceAll(" ");
+		return SHIPMENT_OR_CARGO_WORD.matcher(withoutExplicitlyNegatedContextualAssertion).find()
 				|| applicability.contains("shipment_specific");
 	}
 

@@ -563,6 +563,10 @@ class MaritimeAiResponseValidatorTest {
 				List.of("Verify the carrier's ETA with the operations team."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(operationsTeamFollowUp, input)).isNull();
 
+		var carrierFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
+				List.of("Have the carrier confirm the current vessel position."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(carrierFollowUp, input)).isNull();
+
 		var systemOnlyFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
 				List.of("Verify the carrier's ETA with the automated system."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(systemOnlyFollowUp, input)).isEqualTo("MISSING_HUMAN_RISK_FOLLOW_UP");
@@ -899,6 +903,148 @@ class MaritimeAiResponseValidatorTest {
 				.isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
 	}
 
+	@Test void replaysGenuineCallFourAndRejectsAnAffirmativeClaimAfterItsContextualDisclaimer() throws Exception {
+		try (var stream = getClass().getResourceAsStream(
+				"/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-runtime-call04.json")) {
+			assertThat(stream).as("sanitized genuine runtime response").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(stream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			assertThat(capture.path("provider").asString()).isEqualTo("openai-responses");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.1");
+			MaritimeAiInterpretation captured = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			MaritimeAiEvidencePackage base = completeSyntheticInput("demo-synthetic-mpa-schedule-001",
+					"demo-synthetic-notice-001", "demo-synthetic-nea-rainfall-001");
+			MaritimeAiConnectionRiskContext risk = new MaritimeAiConnectionRiskContext(true, null,
+					com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+					MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+					new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 32400L),
+					null, new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE,
+						 null, null, "NO_POSITION"), List.of("The planned connection window is used because the estimate is unavailable."));
+			MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(base.shipmentContext().transshipmentPort(),
+					base.shipmentContext().motherVessel(), base.shipmentContext().feederVessel(), risk);
+			MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(base.bundleVersion(), base.assessmentCutoffUtc(),
+					base.shipmentAssociationConfidence(), shipmentContext, base.evidence());
+			assertThat(captured.claims()).extracting(MaritimeAiClaim::relationshipType)
+					.containsExactly("SCHEDULE_REVIEW", "PORT_CONTEXT_REVIEW", "REGIONAL_WEATHER_CONTEXT");
+			assertThat(captured.claims().get(1).evidenceIds()).containsExactly("demo-synthetic-notice-001");
+			assertThat(captured.claims().get(2).evidenceIds()).containsExactly("demo-synthetic-nea-rainfall-001");
+			assertThat(MaritimeAiResponseValidator.validate(captured, input)).isNull();
+
+			MaritimeAiClaim weather = captured.claims().get(2);
+			MaritimeAiClaim mixedAssertion = new MaritimeAiClaim(
+					weather.statement() + " but the shipment was disrupted.", weather.evidenceIds(), weather.applicability(),
+					weather.vesselRole(), weather.observationType(), weather.associationScope(), weather.factReferences(),
+					weather.relationshipType(), weather.riskReview());
+			List<MaritimeAiClaim> mixedClaims = new java.util.ArrayList<>(captured.claims());
+			mixedClaims.set(2, mixedAssertion);
+			MaritimeAiInterpretation mixed = new MaritimeAiInterpretation(captured.summary(), mixedClaims, captured.uncertainties(),
+					captured.followUpConsiderations(), captured.evidenceSufficient(), captured.formalRecommendationCode());
+			assertThat(MaritimeAiResponseValidator.validate(mixed, input)).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+		}
+	}
+
+	@Test void replaysGenuineCallFiveAndRejectsASeparateShipmentAssertionAfterTheWeatherDisclaimer() throws Exception {
+		try (var stream = getClass().getResourceAsStream(
+				"/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-runtime-call05.json")) {
+			assertThat(stream).as("sanitized genuine runtime response").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(stream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			MaritimeAiInterpretation captured = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			MaritimeAiEvidencePackage base = completeSyntheticInput("demo-synthetic-mpa-schedule-001",
+					"demo-synthetic-notice-001", "demo-synthetic-nea-rainfall-001");
+			MaritimeAiConnectionRiskContext risk = new MaritimeAiConnectionRiskContext(true, null,
+					com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+					MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+					new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 32400L),
+					null, new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE,
+						 null, null, "NO_POSITION"), List.of("The planned connection window is used because the estimate is unavailable."));
+			MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(base.shipmentContext().transshipmentPort(),
+					base.shipmentContext().motherVessel(), base.shipmentContext().feederVessel(), risk);
+			MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(base.bundleVersion(), base.assessmentCutoffUtc(),
+					base.shipmentAssociationConfidence(), shipmentContext, base.evidence());
+			assertThat(captured.claims()).hasSize(4);
+			assertThat(MaritimeAiResponseValidator.validate(captured, input)).isNull();
+
+			MaritimeAiClaim weather = captured.claims().get(2);
+			MaritimeAiClaim mixedAssertion = new MaritimeAiClaim(weather.statement() + " The shipment was disrupted.",
+					weather.evidenceIds(), weather.applicability(), weather.vesselRole(), weather.observationType(),
+					weather.associationScope(), weather.factReferences(), weather.relationshipType(), weather.riskReview());
+			List<MaritimeAiClaim> mixedClaims = new java.util.ArrayList<>(captured.claims());
+			mixedClaims.set(2, mixedAssertion);
+			MaritimeAiInterpretation mixed = new MaritimeAiInterpretation(captured.summary(), mixedClaims, captured.uncertainties(),
+					captured.followUpConsiderations(), captured.evidenceSufficient(), captured.formalRecommendationCode());
+			assertThat(MaritimeAiResponseValidator.validate(mixed, input)).isNotNull();
+		}
+	}
+
+	@Test void replaysGenuineCallSevenAndKeepsShipmentNegationsBoundedToTheirExactClauses() throws Exception {
+		try (var stream = getClass().getResourceAsStream(
+				"/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-runtime-call07.json")) {
+			assertThat(stream).as("sanitized genuine runtime response").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(stream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.2");
+			MaritimeAiInterpretation captured = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			MaritimeAiEvidencePackage input = completeSyntheticInput("demo-synthetic-mpa-schedule-001",
+					"demo-synthetic-notice-001", "demo-synthetic-nea-rainfall-001");
+			assertThat(captured.claims()).hasSize(3);
+			assertThat(captured.claims().get(1).statement()).contains("without confirmed shipment impact or disruption");
+			assertThat(captured.claims().get(2).statement()).contains("without established effect on the shipment or vessel schedule");
+			assertThat(MaritimeAiResponseValidator.validate(captured, input)).isNull();
+
+			MaritimeAiClaim weather = captured.claims().get(2);
+			MaritimeAiClaim mixedAssertion = new MaritimeAiClaim(weather.statement() + " It therefore affects the shipment.",
+					weather.evidenceIds(), weather.applicability(), weather.vesselRole(), weather.observationType(),
+					weather.associationScope(), weather.factReferences(), weather.relationshipType(), weather.riskReview());
+			List<MaritimeAiClaim> mixedClaims = new java.util.ArrayList<>(captured.claims());
+			mixedClaims.set(2, mixedAssertion);
+			MaritimeAiInterpretation mixed = new MaritimeAiInterpretation(captured.summary(), mixedClaims, captured.uncertainties(),
+					captured.followUpConsiderations(), captured.evidenceSufficient(), captured.formalRecommendationCode());
+			assertThat(MaritimeAiResponseValidator.validate(mixed, input)).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+		}
+	}
+
+	@Test void replaysAcceptedGenuineCallEightWithAllThreeSyntheticSourcesAndBackendRiskFacts() throws Exception {
+		try (var stream = getClass().getResourceAsStream(
+				"/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-runtime-call08.json")) {
+			assertThat(stream).as("sanitized accepted genuine runtime response").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(stream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("VALID");
+			assertThat(capture.path("httpStatus").asInt()).isEqualTo(200);
+			assertThat(capture.path("provider").asString()).isEqualTo("openai-responses");
+			assertThat(capture.path("model").asString()).isEqualTo("gpt-4.1-mini");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.2");
+			MaritimeAiInterpretation captured = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			MaritimeAiEvidencePackage base = completeSyntheticInput("demo-synthetic-mpa-schedule-001",
+					"demo-synthetic-notice-001", "demo-synthetic-nea-rainfall-001");
+			MaritimeAiConnectionRiskContext risk = new MaritimeAiConnectionRiskContext(true, null,
+					com.drift.backend.shipment.ShipmentRisk.Level.HIGH,
+					MaritimeAiConnectionRiskContext.RiskBasis.PLANNED_SHIPMENT_SCHEDULE,
+					new MaritimeAiConnectionRiskContext.PlannedWindow(MaritimeAiConnectionRiskContext.WindowState.AVAILABLE, 32400L),
+					null, new MaritimeAiConnectionRiskContext.ArrivalEstimateFact(MaritimeAiConnectionRiskContext.EstimateState.UNAVAILABLE,
+						 null, null, "NO_POSITION"), List.of("The planned connection window is used because the estimate is unavailable."));
+			MaritimeAiShipmentContext shipmentContext = new MaritimeAiShipmentContext(base.shipmentContext().transshipmentPort(),
+					base.shipmentContext().motherVessel(), base.shipmentContext().feederVessel(), risk);
+			MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(base.bundleVersion(), base.assessmentCutoffUtc(),
+					base.shipmentAssociationConfidence(), shipmentContext, base.evidence());
+			assertThat(captured.claims()).extracting(MaritimeAiClaim::relationshipType)
+					.containsExactly("SCHEDULE_REVIEW", "PORT_CONTEXT_REVIEW", "REGIONAL_WEATHER_CONTEXT", "RISK_BUFFER_REVIEW");
+			assertThat(captured.claims().get(0).evidenceIds()).containsExactly("demo-synthetic-mpa-schedule-001");
+			assertThat(captured.claims().get(1).evidenceIds()).containsExactly("demo-synthetic-notice-001");
+			assertThat(captured.claims().get(2).evidenceIds()).containsExactly("demo-synthetic-nea-rainfall-001");
+			assertThat(captured.claims().get(3).factReferences()).contains("risk:CONNECTION_SEVERITY",
+					"risk:PLANNED_CONNECTION_WINDOW", "risk:ARRIVAL_ESTIMATE_FRESHNESS", "risk:ARRIVAL_ESTIMATE_NOT_USED");
+			assertThat(MaritimeAiResponseValidator.validate(captured, input)).isNull();
+		}
+	}
+
 	@Test void acceptsOnlyExplicitlyQualifiedShipmentPlanningApplicabilityForContextOnlyEvidence() {
 		MaritimeEvidence port = structuredEvidence("qualified-port", "MPA_OFFICIAL_NOTICE", null, null, "PORT_CONTEXT");
 		String qualified = "The synthetic official notice provides contextual port maintenance information relevant to the transshipment port but does not establish a vessel impact or causation and has uncertain applicability for shipment planning.";
@@ -919,6 +1065,41 @@ class MaritimeAiResponseValidatorTest {
 				List.of("evidence:qualified-weather"), "REGIONAL_WEATHER_CONTEXT");
 		assertThat(validateWithEvidence(weather, new MaritimeAiInterpretation("Review regional context cautiously.",
 				List.of(unsupportedCausation), List.of(), List.of(), true, null))).isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+	}
+
+	@Test void acceptsExplicitlyNegatedContextualShipmentStatementsButNotMixedAffirmativeClaims() {
+		MaritimeAiEvidencePackage input = savedSyntheticOpenAiFixture();
+		MaritimeAiClaim port = new MaritimeAiClaim(
+				"The cited port-area maintenance notice provides contextual port information and does not establish vessel impact or shipment disruption.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "CONTEXTUAL", null, null, "PORT_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "PORT_CONTEXT_REVIEW");
+		MaritimeAiClaim weather = new MaritimeAiClaim(
+				"The cited regional rainfall observation offers contextual weather information without establishing vessel-specific conditions or causation relevant to the shipment.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "CONTEXTUAL", null, null, "REGIONAL_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "REGIONAL_WEATHER_CONTEXT");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(port), List.of(), List.of(), true, null), input)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(weather), List.of(), List.of(), true, null), input)).isNull();
+
+		MaritimeAiClaim mixedImpact = new MaritimeAiClaim(port.statement() + " The shipment is affected by the notice.",
+				port.evidenceIds(), port.applicability(), null, null, port.associationScope(), port.factReferences(), port.relationshipType());
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(mixedImpact), List.of(), List.of(), true, null), input))
+				.isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+
+		MaritimeAiClaim mixedCausation = new MaritimeAiClaim(weather.statement() + " Rainfall caused a shipment delay.",
+				weather.evidenceIds(), weather.applicability(), null, null, weather.associationScope(), weather.factReferences(), weather.relationshipType());
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review contextual limitations.", List.of(mixedCausation), List.of(), List.of(), true, null), input))
+				.isEqualTo("UNSUPPORTED_CAUSAL_CLAIM");
+	}
+
+	@Test void rejectsTheCapturedV20PortContextShapeWhenItIncorrectlyCitesTheOverlapReference() {
+		MaritimeAiEvidencePackage input = savedSyntheticOpenAiFixture();
+		MaritimeAiClaim capturedPortClaim = new MaritimeAiClaim(
+				"The contextual port area maintenance notice warrants review for operational context alongside revised vessel scheduling; it does not establish vessel-specific impact or causation.",
+				List.of(SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "CONTEXTUAL", null, null, "PORT_CONTEXT",
+				List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID,
+						MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_CONTEXT_REVIEW");
+		assertThat(MaritimeAiResponseValidator.validate(new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+				List.of(capturedPortClaim), List.of(), List.of(), true, null), input)).isEqualTo("RELATIONSHIP_TYPE_MISMATCH");
 	}
 
 	@Test void rejectsIncorrectSourceModeLabelsButAcceptsCorrectModeDescriptions() {
@@ -971,6 +1152,43 @@ class MaritimeAiResponseValidatorTest {
 			assertThat(overlapClaim.factReferences()).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 			assertThat(MaritimeAiCanonicalFactReferences.allowed(input)).contains(MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE);
 			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, input)).isNull();
+		}
+	}
+
+	@Test void replaysTheEntireSavedV20OpenAiResponseAgainstTheOriginalThreeSourceFixture() throws Exception {
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-capture.json")) {
+			assertThat(captureStream).as("sanitized v20 synthetic replay fixture").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(captureStream);
+			assertThat(capture.path("provider").asString()).isEqualTo("openai-responses");
+			assertThat(capture.path("model").asString()).isEqualTo("gpt-4.1-mini");
+			assertThat(capture.path("promptVersion").asString())
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.1");
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("CONTEXTUAL_EVIDENCE_OVERSTATED");
+			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			assertThat(capturedOutput.claims()).hasSize(3);
+			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, savedSyntheticOpenAiFixture())).isNull();
+		}
+	}
+
+	@Test void replaysTheEntireSecondGenuineV20ResponseWithTheBoundedUrgencyUncertainty() throws Exception {
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-call2-capture.json")) {
+			assertThat(captureStream).as("sanitized second genuine v20 replay fixture").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(captureStream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			assertThat(capturedOutput.claims()).hasSize(4);
+			String replayValidation = MaritimeAiResponseValidator.validate(capturedOutput, savedSyntheticOpenAiFixture());
+			assertThat(replayValidation)
+					.as(MaritimeAiResponseValidator.safeValidationDiagnostic(replayValidation, capturedOutput, savedSyntheticOpenAiFixture()))
+					.isNull();
+
+			MaritimeAiInterpretation mixedUrgencyAssertion = new MaritimeAiInterpretation(capturedOutput.summary(), capturedOutput.claims(),
+					List.of("The evidence and estimate do not establish whether this shipment is urgent, but this shipment is urgent."),
+					capturedOutput.followUpConsiderations(), true, null);
+			assertThat(MaritimeAiResponseValidator.validate(mixedUrgencyAssertion, savedSyntheticOpenAiFixture()))
+					.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		}
 	}
 
