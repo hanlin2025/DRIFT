@@ -1,8 +1,6 @@
 package com.drift.backend.maritimechange;
 
 import java.util.Optional;
-import java.time.Instant;
-import java.util.List;
 
 interface MaritimeSnapshotObservationStore {
 
@@ -11,8 +9,4 @@ interface MaritimeSnapshotObservationStore {
 	Optional<MaritimeSnapshotObservation> find(String sourceType, String sourceIdentity, String contentFingerprint);
 
 	void add(MaritimeSnapshotObservation observation, boolean becomesHead);
-
-	default List<MaritimeSnapshotObservation> before(Instant detectedSince, Instant beforeRecordedAt, long beforeId, int limit) {
-		return List.of();
-	}
 }

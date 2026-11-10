@@ -143,8 +143,6 @@ class MaritimeSnapshotObservation {
 		return sourceType;
 	}
 
-	Long getId() { return id; }
-
 	String getSourceIdentity() {
 		return sourceIdentity;
 	}
@@ -156,24 +154,6 @@ class MaritimeSnapshotObservation {
 	Instant getRetrievedAtUtc() {
 		return retrievedAtUtc;
 	}
-
-	String getChangeKind() { return changeKind; }
-	String getOrdering() { return ordering; }
-	boolean isForwardLooking() { return forwardLooking; }
-	String getProvenance() { return provenance; }
-	String getSourceEventAt() { return sourceEventAt; }
-	String getObservedAt() { return observedAt; }
-	String getSourceMode() { return sourceMode; }
-	String getFreshness() { return freshness; }
-	String getVesselImo() { return vesselImo; }
-	String getLocation() { return location; }
-	Instant getEffectiveFrom() { return effectiveFrom; }
-	Instant getEffectiveUntil() { return effectiveUntil; }
-	String getPreviousValue() { return previousValue; }
-	String getActivityCompatibility() { return activityCompatibility; }
-	String getLocationCompatibility() { return locationCompatibility; }
-	String getTimeCompatibility() { return timeCompatibility; }
-	Instant getRecordedAt() { return recordedAt; }
 
 	boolean isHead() {
 		return head;

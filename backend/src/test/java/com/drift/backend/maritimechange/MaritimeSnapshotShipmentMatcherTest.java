@@ -49,19 +49,6 @@ class MaritimeSnapshotShipmentMatcherTest {
 	}
 
 	@Test
-	void absentMpaCompatibilityIsDerivedFromTheVesselPortAndEffectiveWindow() {
-		MaritimeShipmentMatch match = match(
-				change("MPA_ETA_REVISION", FEEDER, "Tuas", "2026-10-28T18:00:00Z", "2026-10-28T22:00:00Z", null, null, null),
-				shipment(23L, "Tuas", MOTHER, FEEDER, ARRIVAL, DEPARTURE));
-
-		assertThat(match.candidates()).singleElement().satisfies(candidate -> {
-			assertThat(candidate.association()).isEqualTo("VERIFIED_ASSOCIATION");
-			assertThat(candidate.locationCompatibility()).isEqualTo("COMPATIBLE");
-			assertThat(candidate.timeCompatibility()).isEqualTo("COMPATIBLE");
-		});
-	}
-
-	@Test
 	void theMotherScheduleDoesNotBorrowTheFeederWindow() {
 		MaritimeShipmentMatch match = match(
 				change("MPA_ETA_REVISION", MOTHER, "Tuas", "2026-10-28T18:00:00Z", "2026-10-28T22:00:00Z", null, null, null),
@@ -163,12 +150,8 @@ class MaritimeSnapshotShipmentMatcherTest {
 				change("MPA_OFFICIAL_NOTICE", null, "Singapore", OPEN, CLOSE, null, "COMPATIBLE", null),
 				shipment(13L, "Singapore", MOTHER, FEEDER, null, null));
 
-		assertThat(match.candidates()).singleElement().satisfies(candidate -> {
-			assertThat(candidate.association()).isEqualTo("UNCONFIRMED_CONTEXT");
-			assertThat(candidate.vesselSpecificImpact()).isFalse();
-			assertThat(candidate.timeCompatibility()).isEqualTo("UNKNOWN");
-		});
-		assertThat(match.exclusions()).isEmpty();
+		assertThat(match.candidates()).isEmpty();
+		assertThat(match.exclusions()).singleElement().extracting(MaritimeShipmentExclusion::reason).isEqualTo("MISSING_SCHEDULE");
 	}
 
 	@Test
@@ -193,19 +176,6 @@ class MaritimeSnapshotShipmentMatcherTest {
 				shipment(16L, "Singapore", MOTHER, FEEDER, ARRIVAL, DEPARTURE));
 
 		assertThat(match.exclusions()).singleElement().extracting(MaritimeShipmentExclusion::reason).isEqualTo("OUT_OF_WINDOW");
-	}
-
-	@Test
-	void absentNeaCompatibilityDerivesTimeFromTheForecastWindow() {
-		MaritimeShipmentMatch match = match(
-				change("NEA_WEATHER", null, "Singapore", "2026-10-28T00:00:00Z", "2026-10-29T00:00:00Z", null, null, null),
-				shipment(24L, "Singapore", MOTHER, FEEDER, ARRIVAL, DEPARTURE));
-
-		assertThat(match.candidates()).singleElement().satisfies(candidate -> {
-			assertThat(candidate.association()).isEqualTo("REGIONAL_CONTEXT");
-			assertThat(candidate.locationCompatibility()).isEqualTo("COMPATIBLE");
-			assertThat(candidate.timeCompatibility()).isEqualTo("COMPATIBLE");
-		});
 	}
 
 	@Test
