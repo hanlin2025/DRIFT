@@ -73,6 +73,16 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
   const clearFilters = () => setSearchParams(applyShipmentFilters(searchParams, EMPTY_SHIPMENT_FILTERS));
 
   useEffect(() => {
+    document.title = page === 'import'
+      ? 'Import shipments | DRIFT'
+      : page === 'register'
+        ? 'Register a shipment | DRIFT'
+        : shipmentId
+          ? 'Shipment | DRIFT'
+          : 'Shipments | DRIFT';
+  }, [page, shipmentId]);
+
+  useEffect(() => {
     if (removed) setNotice({ tone: 'success', message: removed });
   }, [removed]);
 

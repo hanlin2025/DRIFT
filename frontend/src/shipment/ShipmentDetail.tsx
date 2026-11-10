@@ -400,6 +400,11 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
 
   const shipmentLoaded = shipment !== null;
   useEffect(() => {
+    if (!shipment) return;
+    document.title = `${shipment.shipmentReference} | DRIFT`;
+  }, [shipment]);
+
+  useEffect(() => {
     if (problem || !shipmentLoaded || trackMode !== 'live') return;
     const timer = window.setInterval(() => { void reloadTracking('background'); }, TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
@@ -466,7 +471,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                     if (reason instanceof ApiError && reason.status === 401) onSessionEnded();
                   });
                 }}
-                canEdit={canEdit} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
+                canEdit={canEdit && viewerCompanyId != null && shipment.companyId === viewerCompanyId} onEdit={() => setEditing(true)} action={archive && canArchiveShipment(archive.viewer, shipment.companyId)
                   ? <ShipmentStatusAction shipment={shipment} archive={archive} />
                   : null}
                 track={(

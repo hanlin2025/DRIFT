@@ -488,6 +488,58 @@ describe('workspace shipment retrieval', () => {
     expect(screen.getByRole('link', { name: 'Back to shipments' })).toHaveAttribute('href', '/freight-forwarder');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(listShipments).not.toHaveBeenCalled();
+    expect(document.title).toBe('Register a shipment | DRIFT');
+  });
+
+  it('names the import screen', async () => {
+    openWorkspace('FREIGHT_FORWARDER', '/freight-forwarder/import');
+    expect(await screen.findByRole('heading', { name: 'Import shipments' })).toBeInTheDocument();
+    expect(document.title).toBe('Import shipments | DRIFT');
+  });
+
+  it.each([
+    ['FREIGHT_FORWARDER', 'Shipment portfolio'],
+    ['IMPORTER', 'Shipment overview'],
+    ['ADMIN', 'Company shipments'],
+    ['LOGISTICS_MANAGER', 'Company shipments'],
+  ] as const)('names the shipment list for a %s', async (role, heading) => {
+    openWorkspace(role);
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(document.title).toBe('Shipments | DRIFT');
+    if (role === 'FREIGHT_FORWARDER') {
+      expect(screen.getByRole('link', { name: 'Register a shipment' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Import shipments' })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('link', { name: 'Register a shipment' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Import shipments' })).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ['FREIGHT_FORWARDER', '/freight-forwarder/shipments/2'],
+    ['IMPORTER', '/importer/shipments/2'],
+    ['ADMIN', '/admin/shipments/2'],
+    ['LOGISTICS_MANAGER', '/logistics-manager/shipments/2'],
+  ] as const)('opens the same shipment page for a %s and keeps disallowed actions hidden', async (role, path) => {
+    openWorkspace(role, path);
+    expect(await screen.findByRole('region', { name: 'Connection, risk, and next action' })).toBeInTheDocument();
+    expect(document.title).toBe('HBL-NEWER | DRIFT');
+    if (role === 'FREIGHT_FORWARDER' || role === 'IMPORTER') {
+      expect(screen.getByRole('button', { name: 'Edit shipment' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove HBL-NEWER' })).not.toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Remove HBL-NEWER' })).toBeInTheDocument();
+    }
+    expect(screen.queryAllByRole('link', { name: 'Import shipments' })).toHaveLength(role === 'FREIGHT_FORWARDER' ? 1 : 0);
+  });
+
+  it('hides shipment editing from an importer who does not manage the shipment', async () => {
+    vi.mocked(getShipment).mockResolvedValue({ ...newer, companyId: 99 });
+    openWorkspace('IMPORTER', '/importer/shipments/2');
+    expect(await screen.findByRole('region', { name: 'Connection, risk, and next action' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove HBL-NEWER' })).not.toBeInTheDocument();
   });
 
   it('keeps the normal empty state when only unrelated URL parameters are present', async () => {
