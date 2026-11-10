@@ -21,8 +21,9 @@ public class MaritimeContextService {
 	@Autowired
 	public MaritimeContextService(@Value("${app.maritime-context.demo-enabled:false}") boolean demoEnabled,
 			List<MaritimeEvidenceSourceAdapter> adapters,
-			@Value("${app.maritime-context.assessment-cutoff:}") String assessmentCutoff) {
-		this(demoEnabled, adapters, Clock.systemUTC(), parseCutoff(assessmentCutoff));
+			@Value("${app.maritime-context.assessment-cutoff:}") String assessmentCutoff,
+			@Value("${app.maritime-context.controlled-replay-enabled:false}") boolean controlledReplayEnabled) {
+		this(demoEnabled, adapters, Clock.systemUTC(), replayCutoff(assessmentCutoff, controlledReplayEnabled));
 	}
 
 	public MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters) {
@@ -41,7 +42,22 @@ public class MaritimeContextService {
 	}
 
 	public MaritimeContextResponse forShipment(ShipmentDetailResponse shipment) {
-		return forShipment(shipment, configuredCutoff == null ? clock.instant() : configuredCutoff);
+		if (!demoEnabled) return forShipment(shipment, clock.instant());
+		Instant now = clock.instant();
+		boolean replayShipment = configuredCutoff != null && adapters.stream()
+				.anyMatch(adapter -> adapter.usesConfiguredAssessmentCutoff(shipment));
+		List<MaritimeEvidence> evidence = adapters.stream().flatMap(adapter -> adapter.forShipment(shipment,
+				replayShipment && adapter.usesConfiguredAssessmentCutoff(shipment) ? configuredCutoff : now).stream()).toList();
+		return responseForEvidence(evidence, replayShipment ? configuredCutoff : now);
+	}
+
+	/** A configured cutoff is a local replay control. Startup rejects it unless controlled replay is enabled. */
+	static Instant replayCutoff(String value, boolean controlledReplayEnabled) {
+		Instant cutoff = parseCutoff(value);
+		if (cutoff != null && !controlledReplayEnabled) {
+			throw new IllegalStateException("app.maritime-context.assessment-cutoff requires app.maritime-context.controlled-replay-enabled=true");
+		}
+		return cutoff;
 	}
 
 	private static Instant parseCutoff(String value) {

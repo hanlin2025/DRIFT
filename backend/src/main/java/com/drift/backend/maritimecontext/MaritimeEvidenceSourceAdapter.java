@@ -8,4 +8,7 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 /** A future persistent-snapshot adapter can implement this without changing the API contract. */
 interface MaritimeEvidenceSourceAdapter {
 	List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant assessmentCutoffUtc);
+
+	/** The configured assessment cutoff replaces the clock only for a matching controlled replay. */
+	default boolean usesConfiguredAssessmentCutoff(ShipmentDetailResponse shipment) { return false; }
 }

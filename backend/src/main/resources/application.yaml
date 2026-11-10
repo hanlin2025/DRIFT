@@ -103,7 +103,9 @@ app:
     # Local/staging-only fictional replay; stage changes require an application restart.
     controlled-replay-enabled: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED:false}
     controlled-replay-stage: ${MARITIME_CONTEXT_CONTROLLED_REPLAY_STAGE:BASELINE}
-    # Optional local/test cutoff for ordinary maritime context. Empty uses the system clock.
+    # Optional local/test cutoff for a matching DEMO-CONTROLLED replay shipment.
+    # Empty uses the system clock. Other adapters and shipments keep the clock.
+    # Setting this while controlled replay is disabled prevents startup.
     # It does not change authentication, freshness rules, or the production default.
     assessment-cutoff: ${MARITIME_CONTEXT_ASSESSMENT_CUTOFF:}
   controlled-scenario:

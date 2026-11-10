@@ -24,6 +24,10 @@ class ControlledScenarioReplayEvidenceAdapter implements MaritimeEvidenceSourceA
 		this.stage = Stage.parse(configuredStage);
 	}
 
+	@Override public boolean usesConfiguredAssessmentCutoff(ShipmentDetailResponse shipment) {
+		return enabled && matches(shipment);
+	}
+
 	@Override public List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant cutoff) {
 		if (!enabled || cutoff == null || !matches(shipment)) return List.of();
 		return available(stage).stream()

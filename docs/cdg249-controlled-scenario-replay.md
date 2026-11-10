@@ -12,23 +12,33 @@ fictional feeder has a stored planned departure of `2026-10-01 14:00 +08:00`, yi
 ordinary DRIFT planned connection window. The evidence record then documents a fictional expected
 arrival revision to `06:00 +08:00`; it does **not** overwrite the stored planned arrival.
 
-All three primary records are `SYNTHETIC_DEMONSTRATION`:
+The primary records are `SYNTHETIC_DEMONSTRATION`:
 
-- `demo-synthetic-mpa-schedule-001`: fictional mother expected-arrival revision;
+- `demo-synthetic-mpa-schedule-001`: first fictional snapshot of mother expected-arrival revision
+  `SYNTHETIC-MPA-REVISION-001`, retrieved `2026-09-30 21:00Z`, moving the expected arrival from
+  `05:00` to `06:00 +08:00`;
+- `demo-synthetic-mpa-schedule-002`: later snapshot of the same fictional source, retrieved
+  `2026-09-30 22:15Z`, moving that expected arrival from `06:00` to `08:00 +08:00`;
 - `demo-synthetic-notice-001`: fictional, geographically compatible maintenance notice effective
   06:00--12:00 Singapore time;
 - `demo-synthetic-nea-rainfall-001`: fictional regional weather context.
 
+Both schedule snapshots stay in the bundle once their own retrieval time has passed. The later
+snapshot does not remove the first. Canonical expected-arrival selection uses the latest retrieval
+time, so `demo-synthetic-mpa-schedule-002` is the cited schedule record from `22:15Z` onward. The
+offline stub accepts the original three records, and those three plus the later snapshot. It cites
+the later snapshot for the schedule claim when that snapshot is present.
+
 `demo-synthetic-notice-irrelevant-001` is intentionally incompatible and stays visible in the context
 response for transparency, but is excluded before assessment input.
 
-The MPA record's `05:00` and `06:00 +08:00` values are prior and revised **expected-arrival
-values**, not publication or observation timestamps. The fictional replay only records its
-retrieval at `2026-09-30 21:00Z`; source-event and observation time are deliberately displayed as
-not recorded. The dated notice window is `2026-10-01 06:00--12:00 SGT`, so the backend can derive
-the non-causal relationship `PORT_CONTEXT_OVERLAPS_REVISED_EXPECTED_ARRIVAL` using the revised
-expected arrival; the stub emits `PORT_TIME_OVERLAP_REVIEW` for that relationship. Synthetic
-association is fixture-defined only and does not verify cargo carriage or shipment impact.
+The MPA records' clock times are prior and revised **expected-arrival values**, not publication or
+observation timestamps. Source-event and observation time on the schedule snapshots are deliberately
+displayed as not recorded. The dated notice window is `2026-10-01 06:00--12:00 SGT`, so the backend
+can derive the non-causal relationship `PORT_CONTEXT_OVERLAPS_REVISED_EXPECTED_ARRIVAL` using the
+selected expected arrival; the stub emits `PORT_TIME_OVERLAP_REVIEW` for that relationship. Both
+`06:00` and `08:00 +08:00` fall inside that window. Synthetic association is fixture-defined only
+and does not verify cargo carriage or shipment impact.
 
 ## Deterministic stages and reset
 
@@ -38,8 +48,8 @@ The test fixture's clock is the only stage control. No database mutation injects
 | --- | --- | --- |
 | 0 — Baseline | 2026-09-30 20:45Z | none |
 | 1 — Arrival revision | 2026-09-30 21:15Z | fictional MPA revision |
-| 2 — Maritime context | 2026-09-30 22:45Z | MPA, compatible notice, NEA, plus the separately labelled incompatible notice |
-| 3 — Grounded assessment | Stage 2 | normal authorised POST/GET assessment flow with an offline stub |
+| 2 — Maritime context | 2026-09-30 22:45Z | both MPA snapshots, compatible notice, NEA, plus the separately labelled incompatible notice |
+| 3 — Grounded assessment | Stage 2 | normal authorised POST/GET assessment flow with an offline stub that cites the later snapshot |
 | 4 — Human review | Stage 3 output | existing Shipment Details panel labels evidence and AI advice separately |
 
 The Spring integration test is transactional, so rollback is the reset mechanism: every execution
@@ -71,6 +81,17 @@ export MARITIME_AI_ENABLED=true
 export MARITIME_AI_CONTROLLED_REPLAY_STUB_ENABLED=true
 cd backend && bash ./mvnw spring-boot:run
 ```
+
+`MARITIME_CONTEXT_ASSESSMENT_CUTOFF` is optional. Leave it unset to use the system clock. Set an
+ISO-8601 instant, such as `2026-09-30T22:00:00Z` or `2026-09-30T22:45:00Z`, to select which
+retrieved records are visible. The value applies only to a shipment reference beginning
+`DEMO-CONTROLLED-` that also matches the fictional vessel, IMO, port, and planned arrival below.
+Every other shipment, and every adapter other than this replay, keeps the clock. The backend
+refuses to start when the cutoff is set and `MARITIME_CONTEXT_CONTROLLED_REPLAY_ENABLED` is not
+`true`. `2026-09-30T22:00:00Z` still cites `demo-synthetic-mpa-schedule-001`. `2026-09-30T22:15:00Z`
+and later include and cite `demo-synthetic-mpa-schedule-002`. A cutoff of `2026-09-30T21:15:00Z`
+shows only the first snapshot and is too early for the stub, which still requires the notice and
+weather records.
 
 Retain the environment's existing required database and authentication configuration (including
 `JWT_SECRET`); do not place those values in this document, a shell history, or source control. The

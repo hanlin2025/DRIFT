@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -132,6 +133,30 @@ class SyntheticMultiSourceMaritimeFixtureTest {
 		assertThat(context.forShipment(controlledReplayShipment()).assessmentCutoffUtc()).isEqualTo("2026-09-30T21:15:00Z");
 		assertThat(context.forShipment(controlledReplayShipment()).evidence())
 				.extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+	}
+
+	@Test
+	void configuredAssessmentCutoffDoesNotRewriteOtherShipmentsOrAdapters() {
+		Instant now = Instant.parse("2026-11-10T00:00:00Z");
+		Instant cutoff = Instant.parse("2026-09-30T21:15:00Z");
+		Instant[] seen = new Instant[1];
+		MaritimeEvidenceSourceAdapter other = (shipment, instant) -> {
+			seen[0] = instant;
+			return List.of();
+		};
+		MaritimeContextService context = new MaritimeContextService(true, List.of(
+				new ControlledScenarioReplayEvidenceAdapter(true, "MARITIME_CONTEXT"), other),
+				Clock.fixed(now, ZoneOffset.UTC), cutoff);
+
+		MaritimeContextResponse replay = context.forShipment(controlledReplayShipment());
+		assertThat(seen[0]).isEqualTo(now);
+		assertThat(replay.assessmentCutoffUtc()).isEqualTo("2026-09-30T21:15:00Z");
+		assertThat(replay.evidence()).extracting(MaritimeEvidence::evidenceId).containsExactly("demo-synthetic-mpa-schedule-001");
+
+		MaritimeContextResponse unrelated = context.forShipment(unrelatedShipment());
+		assertThat(seen[0]).isEqualTo(now);
+		assertThat(unrelated.assessmentCutoffUtc()).isEqualTo("2026-11-10T00:00:00Z");
+		assertThat(unrelated.evidence()).isEmpty();
 	}
 
 	@Test
