@@ -38,7 +38,7 @@ export function ForgotPasswordPage() {
 
   return <>
     <p className="eyebrow form-eyebrow">ACCOUNT ACCESS</p>
-    <h2>Forgot your password?</h2>
+    <h1>Forgot your password?</h1>
     <p className="intro">Enter the work email on your account. If it is registered, DRIFT sends a reset link.</p>
     {error && <div className="error-notice" role="alert">{error}</div>}
     {sent ? <>

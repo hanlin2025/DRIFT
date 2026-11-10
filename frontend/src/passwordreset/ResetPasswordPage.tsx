@@ -53,7 +53,7 @@ export function ResetPasswordPage() {
 
   return <>
     <p className="eyebrow form-eyebrow">ACCOUNT ACCESS</p>
-    <h2>Choose a new password</h2>
+    <h1>Choose a new password</h1>
     <p className="intro">This link sets a new password for the account that requested it.</p>
     {error && <div className="error-notice" role="alert">{error}</div>}
     {token && !linkRejected ? <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>

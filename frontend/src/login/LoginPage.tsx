@@ -84,7 +84,7 @@ export function LoginPage() {
 
   return <>
     <p className="eyebrow form-eyebrow">SIGN IN</p>
-    <h2>Welcome to DRIFT.</h2>
+    <h1>Welcome to DRIFT.</h1>
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
     {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
     {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}

@@ -84,7 +84,7 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
   return (
     <>
       <p className="eyebrow form-eyebrow">WELCOME ABOARD</p>
-      <h2>Create your account</h2>
+      <h1>Create your account</h1>
       {error && <div className="error-notice" role="alert">{error}</div>}
       {loading ? <div className="notice" role="status">Checking your invitation...</div> : !invitation ? (
         <section className="invitation-entry">
