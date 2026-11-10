@@ -273,8 +273,8 @@ export async function generateScenarioInterpretation(token: string, sessionId: s
   try {
     const response = await fetch(`/api/scenarios/v1/sessions/${encodeURIComponent(sessionId)}/shipments/${shipmentId}/interpretation`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(request), signal: controller.signal, cache: 'no-store',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }), 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify(request), signal: controller.signal, cache: 'no-store',
     });
     let data: unknown;
     try { data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null; }
@@ -330,7 +330,8 @@ export async function retrieveScenarioInterpretation(token: string, sessionId: s
   signal?.addEventListener('abort', abort, { once: true });
   try {
     const response = await fetch(`/api/scenarios/v1/sessions/${encodeURIComponent(sessionId)}/shipments/${shipmentId}/assessments/${encodeURIComponent(assessmentId)}`, {
-      method: 'GET', headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store',
+      method: 'GET', headers: token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' },
+      credentials: 'include', signal: controller.signal, cache: 'no-store',
     });
     let data: unknown;
     try { data = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null; }
