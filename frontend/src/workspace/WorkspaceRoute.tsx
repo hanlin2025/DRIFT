@@ -102,7 +102,8 @@ export function WorkspacePage({ account, onSignOut, onSessionEnded, page = 'port
     <div className="workspace">
       <header className="workspace-bar">
         <Wordmark href={listPath} />
-        {account.role === 'FREIGHT_FORWARDER' ? <Link className="workspace-nav" to="/freight-forwarder/import">Import shipments</Link> : null}
+        <Link className="workspace-nav" to={listPath} aria-current={page === 'import' ? undefined : 'page'}>{account.role === 'ADMIN' ? 'Company shipments' : 'Shipments'}</Link>
+        {account.role === 'FREIGHT_FORWARDER' ? <Link className="workspace-nav" to="/freight-forwarder/import" aria-current={page === 'import' ? 'page' : undefined}>Import shipments</Link> : null}
         {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
         <Link className="workspace-nav" to="/profile">Profile</Link>
         <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>

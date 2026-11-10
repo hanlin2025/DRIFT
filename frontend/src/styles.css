@@ -190,7 +190,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .maritime-ai-evidence, .maritime-ai-schedule, .maritime-ai-uncertainty { border-top: 1px solid #d5e0cc; margin-top: 14px; padding-top: 4px; }
 .maritime-ai-observation { border-left: 2px solid #92ac8c; margin: 10px 0 12px; padding-left: 12px; }
 .maritime-ai-observation p { margin: 4px 0; overflow-wrap: anywhere; }
-.maritime-ai-review-note { margin: 12px 0; padding: 9px 12px; border-left: 3px solid var(--accent); background: #f8efd8; color: var(--ink); }
+.maritime-ai-review-note { margin: 12px 0; padding: 9px 12px; border-left: 3px solid #9a6d0b; background: #f8efd8; color: var(--ink); }
 .maritime-ai-citations { margin: 4px 0 8px; color: var(--muted); font-size: 11px !important; line-height: 1.5; overflow-wrap: anywhere; }
 .maritime-ai-risk { background: #f6f7f0; border: 1px solid #c8d9bf; border-radius: 4px; margin: 16px 0 10px; padding: 4px 14px 12px; }
 .maritime-ai-risk dl { margin: 8px 0 10px; }
@@ -279,7 +279,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .scenario-facts-context { padding: 10px 12px; border-left: 3px solid var(--green); background: #f3f5ef; line-height: 1.5; }
 .scenario-stage-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
 .scenario-stage-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 5px; background: #f8f6ed; }
-.scenario-stage-step.is-current { border-color: var(--green); background: #e8ede2; box-shadow: inset 0 0 0 1px var(--green); }
+.scenario-stage-step.is-current { border-color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--ink); }
 .scenario-stage-order { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #dfe5da; color: var(--ink); font-size: 10px; font-weight: 800; }
 .scenario-stage-step.is-current .scenario-stage-order,
 .scenario-stage-step.is-complete .scenario-stage-order { background: var(--green); color: #000; }
@@ -381,7 +381,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .globe-dot { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #f8f6ed; box-shadow: 0 0 0 2px #223e3630; transform: translate(-50%, -50%); }
 .globe-pin.departure .globe-dot { background: #5eb0d4; }
 .globe-pin.destination .globe-dot { background: #e07a5f; }
-.globe-pin.transshipment .globe-dot { width: 14px; height: 14px; background: var(--accent); box-shadow: 0 0 0 4px #ddb66d55; }
+.globe-pin.transshipment .globe-dot { width: 14px; height: 14px; background: var(--ink); box-shadow: 0 0 0 4px #ffffffcc; }
 .globe-pin.mother .globe-dot, .globe-pin.feeder .globe-dot { width: 9px; height: 9px; border-radius: 2px; }
 .globe-pin.mother .globe-dot { background: #c9b6f2; transform: translate(-50%, -50%) rotate(45deg); }
 .globe-pin.feeder .globe-dot { background: #7dcea0; transform: translate(-50%, -50%) rotate(45deg); }
