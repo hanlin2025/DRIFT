@@ -352,7 +352,7 @@ describe('CDG-357 maritime change events API', () => {
     eventType: 'REVISED', sourceMode: 'RECORDED_REPLAY', sourceEventTime: '2026-10-29T02:00:00+08:00',
     observedAt: '2026-10-28T17:55:00Z', retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z',
     previousValue: '2026-10-29T01:00:00+08:00', currentValue: '2026-10-29T02:00:00+08:00', provenance: 'recorded replay manifest',
-    freshness: 'RECORDED_REPLAY', associationConfidence: 'UNVERIFIED_IMO_ONLY',
+    freshness: 'HISTORICAL', associationConfidence: 'UNVERIFIED_IMO_ONLY',
     compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
   };
   it('reads validated change events through the authorized cookie/bearer request helper', async () => {
@@ -381,6 +381,11 @@ describe('CDG-357 maritime change events API', () => {
       { ...event, sourceEventTime: 'yesterday' },
       { ...event, eventType: 'UPDATED' },
       { ...event, compatibility: { activity: 'MATCHED', location: null, time: 'UNKNOWN' } },
+      { ...event, freshness: 'RECORDED_REPLAY' },
+      { ...event, freshness: 'STALE' },
+      { ...event, associationConfidence: 'VERIFIED' },
+      { ...event, associationConfidence: 'UNKNOWN' },
+      { ...event, compatibility: { activity: 'MATCHED', location: 'COMPATIBLE', time: 'UNKNOWN' } },
       { ...event, requiresHumanReview: 'true' },
       { ...event, sourceType: 'AIS_TRACK' },
     ];

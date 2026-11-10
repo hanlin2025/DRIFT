@@ -45,6 +45,9 @@ export type MaritimeEvidence = {
 export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
 export type MaritimeChangeSourceMode = 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'HISTORICAL_BACKFILL';
 export type MaritimeChangeAvailability = 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE';
+export type MaritimeChangeFreshness = 'APPLICABLE' | 'HISTORICAL' | 'UNKNOWN';
+export type MaritimeChangeAssociationConfidence = 'VERIFIED_ASSOCIATION' | 'UNVERIFIED_IMO_ONLY' | 'REGIONAL_CONTEXT' | 'UNCONFIRMED_CONTEXT';
+export type MaritimeChangeCompatibility = 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN';
 export type MaritimeChangeEvent = {
   id: string;
   sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
@@ -58,9 +61,9 @@ export type MaritimeChangeEvent = {
   previousValue: string | null;
   currentValue: string | null;
   provenance: string;
-  associationConfidence: string;
-  freshness: string;
-  compatibility: { activity: string; location: string; time: string };
+  associationConfidence: MaritimeChangeAssociationConfidence;
+  freshness: MaritimeChangeFreshness;
+  compatibility: { activity: MaritimeChangeCompatibility; location: MaritimeChangeCompatibility; time: MaritimeChangeCompatibility };
   requiresHumanReview: boolean;
 };
 export type MaritimeChangeEvents = {
@@ -1836,16 +1839,25 @@ function isCompatibility(value: unknown): value is 'COMPATIBLE' | 'INCOMPATIBLE'
 function isMaritimeChangeSourceMode(value: unknown): value is MaritimeChangeSourceMode {
   return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'SYNTHETIC_DEMONSTRATION' || value === 'HISTORICAL_BACKFILL';
 }
+function isMaritimeChangeFreshness(value: unknown): value is MaritimeChangeFreshness {
+  return value === 'APPLICABLE' || value === 'HISTORICAL' || value === 'UNKNOWN';
+}
+function isMaritimeChangeAssociationConfidence(value: unknown): value is MaritimeChangeAssociationConfidence {
+  return value === 'VERIFIED_ASSOCIATION' || value === 'UNVERIFIED_IMO_ONLY'
+    || value === 'REGIONAL_CONTEXT' || value === 'UNCONFIRMED_CONTEXT';
+}
 function isMaritimeChangeEvent(value: unknown): value is MaritimeChangeEvent {
   if (!isRecord(value) || !['MPA_ETA_REVISION', 'MPA_OFFICIAL_NOTICE', 'NEA_WEATHER'].includes(value.sourceType as string)
-    || !['id', 'sourceIdentity', 'provenance', 'associationConfidence', 'freshness'].every(key => isPresentText(value[key]))
+    || !['id', 'sourceIdentity', 'provenance'].every(key => isPresentText(value[key]))
+    || !isMaritimeChangeAssociationConfidence(value.associationConfidence) || !isMaritimeChangeFreshness(value.freshness)
     || (value.eventType !== 'NEW' && value.eventType !== 'REVISED')
     || !isMaritimeChangeSourceMode(value.sourceMode) || !isNullableApiInstant(value.sourceEventTime) || !isNullableApiInstant(value.observedAt)
     || !['retrievedAt', 'detectedAt'].every(key => typeof value[key] === 'string' && apiInstantNanoseconds(value[key]) !== undefined)
     || !isNullableText(value.previousValue) || !isNullableText(value.currentValue) || typeof value.requiresHumanReview !== 'boolean'
     || !isRecord(value.compatibility)) return false;
   const compatibility = value.compatibility as Record<string, unknown>;
-  return ['activity', 'location', 'time'].every(key => isPresentText(compatibility[key]));
+  return ['activity', 'location', 'time'].every(key =>
+    compatibility[key] === 'COMPATIBLE' || compatibility[key] === 'INCOMPATIBLE' || compatibility[key] === 'UNKNOWN');
 }
 export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents | undefined {
   if (!isRecord(value) || !['AVAILABLE', 'PARTIAL', 'UNAVAILABLE'].includes(value.availability as string)

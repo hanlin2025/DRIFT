@@ -170,7 +170,7 @@ describe('connection window on the shipment detail', () => {
       id: 'eta:rev-2', sourceType: 'MPA_ETA_REVISION', sourceIdentity: 'MPA arrival feed', eventType: 'REVISED',
       sourceMode: 'RECORDED_REPLAY', sourceEventTime: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-28T17:55:00Z',
       retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z', previousValue: '01:00 SGT', currentValue: '02:00 SGT',
-      provenance: 'Replay manifest', freshness: 'RECORDED_REPLAY', associationConfidence: 'UNVERIFIED_IMO_ONLY',
+      provenance: 'Replay manifest', freshness: 'HISTORICAL', associationConfidence: 'UNVERIFIED_IMO_ONLY',
       compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
     }] };
     const olderPage: MaritimeChangeEvents = { availability: 'AVAILABLE', events: [{
