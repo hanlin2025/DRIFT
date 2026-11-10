@@ -1,7 +1,71 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { passwordRules } from '../signup/validation';
 import { ApiError } from '../signup/api';
 import { getProfile, RISK_LEVELS, roleLabel, updateProfile, type Profile, type RiskLevel } from './api';
+
+function riskLevelLabel(level: RiskLevel) {
+  switch (level) {
+    case 'LOW':
+      return 'Low';
+    case 'MEDIUM':
+      return 'Medium';
+    case 'HIGH':
+      return 'High';
+    case 'CRITICAL':
+      return 'Critical';
+    default: {
+      const exhaustive: never = level;
+      return exhaustive;
+    }
+  }
+}
+
+function RiskLevelField({ value, disabled, onChange }: {
+  value: RiskLevel;
+  disabled: boolean;
+  onChange: (level: RiskLevel) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (event.target instanceof Node && root.current?.contains(event.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <div className="risk-select" ref={root}>
+      <button
+        id="profile-risk-level"
+        type="button"
+        className="risk-select-button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        disabled={disabled}
+        onClick={() => setOpen(current => !current)}
+      >
+        {riskLevelLabel(value)}
+      </button>
+      {open ? (
+        <ul id={listId} className="risk-select-menu" role="listbox" aria-label="Minimum risk level">
+          {RISK_LEVELS.map(level => (
+            <li key={level}>
+              <button type="button" role="option" aria-selected={level === value} onClick={() => { onChange(level); setOpen(false); }}>{riskLevelLabel(level)}</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSaved }: {
   token: string;
@@ -87,10 +151,14 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
   if (!profile) return <div className="notice" role="status">Loading your profile...</div>;
 
   return (
-    <form className="profile-page" onSubmit={save}>
-      <p className="eyebrow">YOUR ACCOUNT</p>
-      <h2>Profile</h2>
-      <p className="intro">Update your name and password. Saving this page does not send an email. A later rise sends the existing risk email when a shipment you can view reaches the saved level.</p>
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">YOUR ACCOUNT</p>
+          <h2>Profile</h2>
+        </div>
+      </div>
+      <form className="profile-page" onSubmit={save}>
       {saved ? <div className="success-notice" role="status">{saved}</div> : null}
       {problem ? <div className="error-notice" role="alert">{problem}</div> : null}
       <div className="field">
@@ -117,10 +185,7 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
         </label>
         <div className="field">
           <label htmlFor="profile-risk-level">Minimum risk level</label>
-          <select id="profile-risk-level" value={minimumLevel} onChange={event => setMinimumLevel(event.target.value as RiskLevel)} disabled={submitting}>
-            {RISK_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
-          </select>
-          <p className="field-hint">HIGH means HIGH and CRITICAL.</p>
+          <RiskLevelField value={minimumLevel} disabled={submitting} onChange={setMinimumLevel} />
         </div>
       </fieldset>
       <fieldset>
@@ -140,5 +205,6 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
       </fieldset>
       <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Saving...' : 'Save profile'} <span aria-hidden="true">&#8594;</span></button>
     </form>
+    </>
   );
 }

@@ -289,7 +289,15 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .profile-page { max-width: 640px; }
 .profile-page fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
 .profile-page legend { font-family: var(--font-sans); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 12px 0 16px; }
-.profile-page select { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; }
+.risk-select { position: relative; }
+.risk-select-button { width: 100%; min-height: 44px; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font: inherit; font-size: 15px; display: flex; align-items: center; justify-content: space-between; text-align: left; }
+.risk-select-button::after { content: ''; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); }
+.risk-select-button:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #aff33e40; }
+.risk-select-menu { position: absolute; z-index: 2; left: 0; right: 0; margin: 6px 0 0; padding: 6px; list-style: none; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.risk-select-menu button { width: 100%; min-height: 40px; margin: 0; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-align: left; padding: 8px 10px; }
+.risk-select-menu button[aria-selected="true"] { background: var(--accent); color: #000; }
+.risk-select-menu button:hover { background: #f8fafc; }
+.risk-select-menu button[aria-selected="true"]:hover { background: var(--accent); }
 .profile-check { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; margin: 6px 0 18px; font-size: 12px; line-height: 1.5; font-weight: 650; }
 .profile-check input { width: 18px; min-height: 18px; margin-top: 2px; }
 .profile-page .primary-button { width: auto; min-width: 180px; }

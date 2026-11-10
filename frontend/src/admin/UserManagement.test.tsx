@@ -97,6 +97,7 @@ describe('user management', () => {
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
 
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
+    expect(document.title).toBe('User management | DRIFT');
     expect(screen.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
     expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');

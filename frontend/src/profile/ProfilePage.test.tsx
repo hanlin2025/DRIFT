@@ -64,12 +64,12 @@ describe('profile page', () => {
     expect(screen.getByLabelText('Role')).toHaveValue('Freight forwarder');
     expect(screen.getByLabelText('Role')).toHaveAttribute('readonly');
     expect(screen.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' })).not.toBeChecked();
-    expect(screen.getByText(/Saving this page does not send an email\./)).toBeInTheDocument();
-    expect(screen.getByText(/A later rise sends the existing risk email when a shipment you can view reaches the saved level\./)).toBeInTheDocument();
-    expect(screen.getByText('HIGH means HIGH and CRITICAL.')).toBeInTheDocument();
+    expect(screen.queryByText(/Saving this page does not send an email\./)).not.toBeInTheDocument();
+    expect(screen.queryByText(/A later rise sends the existing risk email/)).not.toBeInTheDocument();
+    expect(screen.queryByText('HIGH means HIGH and CRITICAL.')).not.toBeInTheDocument();
     expect(screen.queryByText(/Nothing is emailed from this page/)).not.toBeInTheDocument();
     expect(screen.queryByText(/The choice is stored only/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Minimum risk level')).toHaveValue('HIGH');
+    expect(screen.getByRole('combobox', { name: 'Minimum risk level' })).toHaveTextContent('High');
     expect(screen.getByRole('list', { name: 'Password requirements' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/photo/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /send/i })).not.toBeInTheDocument();
@@ -85,7 +85,8 @@ describe('profile page', () => {
     await user.clear(name);
     await user.type(name, 'Alicia Tan');
     await user.click(screen.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' }));
-    await user.selectOptions(screen.getByLabelText('Minimum risk level'), 'CRITICAL');
+    await user.click(screen.getByRole('combobox', { name: 'Minimum risk level' }));
+    await user.click(screen.getByRole('option', { name: 'Critical' }));
     await user.click(screen.getByRole('button', { name: 'Save profile' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Profile saved.');
     expect(updateProfile).toHaveBeenCalledWith('session-token', {
@@ -145,6 +146,9 @@ describe('profile page', () => {
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
     await user.click(await screen.findByRole('link', { name: 'Profile' }));
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.title).toBe('Profile | DRIFT');
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('href', '/freight-forwarder');
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('aria-current', 'page');
     expect(getProfile).toHaveBeenCalledWith('session-token');
     clearSession();
     render(<MemoryRouter initialEntries={['/profile']}><AppRoutes /></MemoryRouter>);

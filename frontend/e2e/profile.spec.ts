@@ -111,9 +111,9 @@ test('the saved name and notification choice are still there after signing out',
     await expect(page.getByLabel('Role')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel(/photo/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /send/i })).toHaveCount(0);
-    await expect(page.getByText('Saving this page does not send an email.')).toBeVisible();
-    await expect(page.getByText('A later rise sends the existing risk email when a shipment you can view reaches the saved level.')).toBeVisible();
-    await expect(page.getByText('HIGH means HIGH and CRITICAL.')).toBeVisible();
+    await expect(page.getByText('Saving this page does not send an email.')).toHaveCount(0);
+    await expect(page.getByText('A later rise sends the existing risk email when a shipment you can view reaches the saved level.')).toHaveCount(0);
+    await expect(page.getByText('HIGH means HIGH and CRITICAL.')).toHaveCount(0);
     await expect(page.getByText('Nothing is emailed from this page.')).toHaveCount(0);
     await expect(page.getByText('The choice is stored only.')).toHaveCount(0);
     await expect(page.getByRole('list', { name: 'Password requirements' })).toBeVisible();
@@ -124,7 +124,8 @@ test('the saved name and notification choice are still there after signing out',
 
     await page.getByLabel('Full name').fill('  Alicia Tan  ');
     await page.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' }).check();
-    await page.getByLabel('Minimum risk level').selectOption('CRITICAL');
+    await page.getByRole('combobox', { name: 'Minimum risk level' }).click();
+    await page.getByRole('option', { name: 'Critical' }).click();
     await page.getByRole('button', { name: 'Save profile' }).click();
     await expect(page.getByRole('status')).toHaveText('Profile saved.');
     await expect(page.getByLabel('Full name')).toHaveValue('Alicia Tan');
@@ -146,10 +147,10 @@ test('the saved name and notification choice are still there after signing out',
     await expect(page.getByLabel('Company')).toHaveValue(account.company);
     await expect(page.getByLabel('Role')).toHaveValue('Freight forwarder');
     await expect(page.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' })).toBeChecked();
-    await expect(page.getByLabel('Minimum risk level')).toHaveValue('CRITICAL');
+    await expect(page.getByRole('combobox', { name: 'Minimum risk level' })).toHaveText('Critical');
     await page.reload();
     await expect(page.getByLabel('Full name')).toHaveValue('Alicia Tan');
-    await expect(page.getByLabel('Minimum risk level')).toHaveValue('CRITICAL');
+    await expect(page.getByRole('combobox', { name: 'Minimum risk level' })).toHaveText('Critical');
   } finally {
     cleanup([account.email]);
   }

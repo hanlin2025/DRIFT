@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
 import { endSession, homePath, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Role, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
+import { WorkspaceFrame } from '../workspace/WorkspaceFrame';
 import { assignUser, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listInvitationOrganisations, type AccountStatus, type AccountStatusAudit, type AdminOrganisation, type AdminRole, type AdminUser, type AssignmentAudit } from './api';
 import { CreateOrganisation } from './CreateOrganisation';
 import { InviteColleague } from './InviteColleague';
@@ -16,15 +17,6 @@ const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED
 
 function shows(filter: StatusFilter, user: AdminUser) {
   return filter === 'ALL' || user.status === filter;
-}
-
-function Wordmark() {
-  return (
-    <a className="wordmark" href="/admin" aria-label="DRIFT home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 25 14 7h14L18 25H4Zm6-5h8l5-9h-8l-5 9Z" fill="currentColor" /></svg>
-      DRIFT<span className="wordmark-dot">.</span>
-    </a>
-  );
 }
 
 export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
@@ -46,6 +38,8 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   const [saved, setSaved] = useState('');
   const [pending, setPending] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => { document.title = 'User management | DRIFT'; }, []);
+
   const selected = users?.find(user => user.id === selectedId) ?? null;
   const selectedRemoved = selected?.status === 'REMOVED';
   const visibleUsers = users?.filter(user => shows(statusFilter, user)) ?? [];
@@ -158,17 +152,13 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   }
 
   return (
-    <div className="workspace">
-      <header className="workspace-bar">
-        <Wordmark />
-        <Link className="workspace-nav" to="/admin/shipments">Company shipments</Link>
-        <Link className="workspace-nav" to="/admin" aria-current="page">User management</Link>
-        <Link className="workspace-nav" to="/profile">Profile</Link>
-        <button type="button" className="sign-out" onClick={onSignOut}>Sign out</button>
-      </header>
-      <main className="workspace-main">
-        <p className="eyebrow">ADMINISTRATOR</p>
-        <h2>User management</h2>
+    <WorkspaceFrame account={account} section="users" onSignOut={onSignOut}>
+        <div className="page-heading">
+          <div>
+            <p className="eyebrow">ADMINISTRATOR</p>
+            <h2>User management</h2>
+          </div>
+        </div>
         <p className="intro">Choose a role for each person in your organisation. Their organisation stays the same. Changing the role ends their current session. Removing a user keeps their account record and ends their current session. Reactivating a removed user lets them sign in again with their existing password.</p>
         {problem && users === null ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div> : null}
         {users === null && !problem ? <div className="notice" role="status">Loading users...</div> : null}
@@ -238,8 +228,7 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
         {users !== null ? <PendingInvitations token={account.token} roles={roles} onSessionEnded={onSessionEnded} /> : null}
         {users !== null ? <AssignmentHistory audits={audits} roles={roles} /> : null}
         {users !== null ? <RemovalHistory removals={removals} /> : null}
-      </main>
-    </div>
+    </WorkspaceFrame>
   );
 }
 
