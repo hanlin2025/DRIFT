@@ -13,6 +13,7 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
 import com.drift.backend.account.admin.exception.AccountAlreadyActiveException;
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
+import com.drift.backend.account.admin.exception.AccountPendingVerificationException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
@@ -58,6 +59,9 @@ public class AccountRemovalService {
 		if (target.getStatus() == AccountStatus.REMOVED) {
 			throw new AccountAlreadyRemovedException();
 		}
+		if (target.getStatus() == AccountStatus.PENDING_VERIFICATION) {
+			throw new AccountPendingVerificationException();
+		}
 		target.remove();
 		try {
 			users.saveAndFlush(target);
@@ -79,6 +83,9 @@ public class AccountRemovalService {
 		UserAccount target = users.findById(userId).orElseThrow(AssignedUserNotFoundException::new);
 		if (target.getCompany() == null || !operatorCompany.getId().equals(target.getCompany().getId())) {
 			throw new AssignedUserNotFoundException();
+		}
+		if (target.getStatus() == AccountStatus.PENDING_VERIFICATION) {
+			throw new AccountPendingVerificationException();
 		}
 		if (target.getStatus() != AccountStatus.REMOVED) {
 			throw new AccountAlreadyActiveException();

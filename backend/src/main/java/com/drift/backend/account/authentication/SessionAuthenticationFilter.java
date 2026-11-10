@@ -11,6 +11,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.exception.SessionEndedException;
 
 import jakarta.servlet.FilterChain;
@@ -41,8 +42,9 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 		}
 		try {
 			AuthenticatedUser user = tokens.parse(token);
-			long generation = users.findSessionGenerationById(user.id()).orElseThrow(SessionEndedException::new);
-			if (generation != user.sessionGeneration()) {
+			var state = users.findSessionStateById(user.id()).orElseThrow(SessionEndedException::new);
+			// Only an ACTIVE account may use a session; a removed or unverified account is treated as signed out.
+			if (state.sessionGeneration() != user.sessionGeneration() || state.status() != AccountStatus.ACTIVE) {
 				throw new SessionEndedException();
 			}
 			var authentication = new UsernamePasswordAuthenticationToken(user, null,
