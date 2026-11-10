@@ -38,7 +38,10 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern REVISION_DELAY_DIRECTION = Pattern.compile("(?i)\\bdelay(?:ed)?\\b");
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
 	private static final Pattern REVISION_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b");
+	private static final Pattern DIRECT_REVISION_BY = Pattern.compile("(?i)(?:\\brevised|\\bchanged)\\s+by\\s*$");
 	private static final Pattern COMPARISON_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:exceed(?:s|ed)?|deadline)\\b");
+	/** Number words parseQuantity cannot read. "several hours" stays ordinary wording. */
+	private static final Pattern UNRECOGNIZED_NUMBER_WORD_DURATION = Pattern.compile("(?i)\\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\\b(?:[-\\s]+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\\b)*\\s+(?:minute|minutes|hour|hours|day|days)\\b");
 	private static final Pattern DURATION_BEFORE_DEADLINE = Pattern.compile(
 			"(?i)^\\s*(?:before the\\b[^.!?;]{0,48}\\bdeadline\\b|ahead of\\b|earlier than\\b)");
 	private static final Pattern BEFORE_THE_DEADLINE = Pattern.compile(
@@ -942,6 +945,7 @@ final class MaritimeAiResponseValidator {
 			MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
 		if (text == null) return null;
 		String grounded = statementWithoutCitedLimitations(text, cited);
+		if (UNRECOGNIZED_NUMBER_WORD_DURATION.matcher(grounded).find()) return "UNSTRUCTURED_FACTUAL_DETAIL";
 		Matcher duration = SUPPORTED_DURATION.matcher(grounded);
 		StringBuilder withoutDurations = new StringBuilder();
 		int cursor = 0;
@@ -953,6 +957,7 @@ final class MaritimeAiResponseValidator {
 			Long quantity = parseQuantity(duration.group(1));
 			Long unit = unitMinutes(duration.group(2));
 			AttributedDuration fact = attributeDuration(sentence, duration.start() - sentenceStart, duration.end() - sentenceStart);
+			if (fact == AttributedDuration.REVISION && revisionDurationsInSentence(sentence) > 1) return "UNSTRUCTURED_FACTUAL_DETAIL";
 			boolean supported = quantity != null && unit != null && switch (fact) {
 				case REVISION -> revisionQuantityMatches(sentence, quantity, unit, claim, cited);
 				case COMPARISON -> comparisonQuantityMatches(sentence, quantity, unit, claim, input);
@@ -975,7 +980,7 @@ final class MaritimeAiResponseValidator {
 				|| containsIdentity(lower, input.shipmentContext().feederVessel()) ? "UNSTRUCTURED_FACTUAL_DETAIL" : null;
 	}
 
-	/** A duration belongs to the fact named by the nearest governing words in its sentence. */
+	/** A duration belongs to one fact in its sentence. A comparison sentence stays a comparison unless the duration is "revised by" or "changed by". */
 	private enum AttributedDuration { REVISION, COMPARISON, NONE }
 
 	private static AttributedDuration attributeDuration(String sentence, int start, int end) {
@@ -983,11 +988,19 @@ final class MaritimeAiResponseValidator {
 		String suffix = sentence.substring(Math.max(0, Math.min(end, sentence.length()))).toLowerCase(Locale.ROOT);
 		if (DURATION_BEFORE_DEADLINE.matcher(suffix).find()) return AttributedDuration.COMPARISON;
 		if (!prefix.matches("(?s).*\\bby\\s*")) return AttributedDuration.NONE;
-		int revisionAt = lastMatchStart(REVISION_DURATION_KEYWORD, prefix);
-		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
-		if (comparisonAt > revisionAt) return AttributedDuration.COMPARISON;
-		if (revisionAt >= 0) return AttributedDuration.REVISION;
+		if (DIRECT_REVISION_BY.matcher(prefix).find()) return AttributedDuration.REVISION;
+		if (COMPARISON_DURATION_KEYWORD.matcher(sentence).find()) return AttributedDuration.COMPARISON;
+		if (lastMatchStart(REVISION_DURATION_KEYWORD, prefix) >= 0) return AttributedDuration.REVISION;
 		return AttributedDuration.NONE;
+	}
+
+	private static int revisionDurationsInSentence(String sentence) {
+		Matcher duration = SUPPORTED_DURATION.matcher(sentence);
+		int revisions = 0;
+		while (duration.find()) {
+			if (attributeDuration(sentence, duration.start(), duration.end()) == AttributedDuration.REVISION) revisions++;
+		}
+		return revisions;
 	}
 
 	private static int lastMatchStart(Pattern pattern, String text) {
