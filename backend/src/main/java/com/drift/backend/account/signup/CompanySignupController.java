@@ -19,9 +19,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 /**
- * Off unless {@code app.signup.enabled=true}. Keep it off until the verification email and verify endpoint
- * (CDG-363) and the signup rate limits from the contract are in place: without them a new account cannot
- * finish signing up, and the public route creates accounts unthrottled.
+ * Enabled by default; operators can disable it with {@code app.signup.enabled=false}. Signup requires email
+ * verification and is protected by per-email and per-address rate limits.
  */
 @RestController
 @ConditionalOnProperty(prefix = "app.signup", name = "enabled", havingValue = "true")

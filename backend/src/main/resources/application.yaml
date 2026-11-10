@@ -64,8 +64,8 @@ app:
       ip: ${PASSWORD_RESET_IP_LIMIT:20}
       window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   signup:
-    # Keep disabled until an operator enables verified company signup in the deployment environment.
-    enabled: ${SIGNUP_ENABLED:false}
+    # Public signup is enabled by default; operators can explicitly disable it when needed.
+    enabled: ${SIGNUP_ENABLED:true}
     link-base-url: ${SIGNUP_LINK_BASE_URL:${app.frontend-base-url}/verify-email}
     verification-ttl: ${SIGNUP_VERIFICATION_TTL:PT24H}
     from: ${app.mail.from}

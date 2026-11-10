@@ -82,11 +82,10 @@ need to keep; that database requires a deliberate schema reconciliation instead.
 ## Company self-service signup (CDG-360)
 
 Besides joining through an invitation, anyone can create a new company and become its first
-administrator with `POST /api/register/company` (public). The route is **off by default**: it is
-only registered when `app.signup.enabled` (`SIGNUP_ENABLED`) is `true`, and otherwise answers `404`.
-Leave it off until the verification email and verify endpoint (CDG-363) and the rate limits in the
-contract are integrated; until then a new account could not finish signing up and the public route
-would create accounts unthrottled. The request and response shapes are
+administrator with `POST /api/register/company` (public). The route is **on by default**; set
+`app.signup.enabled=false` (`SIGNUP_ENABLED=false`) to disable it, in which case it answers `404`.
+Signup requires email verification and uses the per-email and per-address rate limits in the contract.
+The request and response shapes are
 defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file is the source of truth.
 
 - One transaction creates an **inactive** company, an `ADMIN` account with status
