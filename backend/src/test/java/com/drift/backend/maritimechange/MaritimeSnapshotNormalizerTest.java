@@ -34,4 +34,13 @@ class MaritimeSnapshotNormalizerTest {
 				.isEqualTo("2026-10-29T10:00+08:00");
 		assertThat(MaritimeSnapshotPollingService.normalizeMpaTime("not-a-source-time")).isNull();
 	}
+
+	@Test
+	void convertsMpaNoticePublicationDateToSingaporeStartOfDay() {
+		assertThat(MaritimeSnapshotPollingService.normalizeMpaNoticeTime("2026-10-28"))
+				.isEqualTo("2026-10-28T00:00+08:00");
+		assertThat(MaritimeSnapshotPollingService.normalizeMpaNoticeTime("2026-10-28T02:00:00Z"))
+				.isEqualTo("2026-10-28T10:00+08:00");
+		assertThat(MaritimeSnapshotPollingService.normalizeMpaNoticeTime("invalid-date")).isNull();
+	}
 }

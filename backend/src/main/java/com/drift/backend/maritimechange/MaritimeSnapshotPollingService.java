@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -132,10 +133,11 @@ class MaritimeSnapshotPollingService {
 						value.put("release_date", item.path("release_date").asText(""));
 						value.put("status", item.path("status").asText(""));
 						String publication = item.path("release_date").asText("");
+						String publicationTime = normalizeMpaNoticeTime(publication);
 						String encoded = mapper.writeValueAsString(value);
 						out.add(normalizer.normalize(new MaritimeSourceObservation(
 								MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE, "mpa-notice:" + id, provenance,
-								publication.isBlank() ? null : publication, retrieved, retrieved, MaritimeSnapshotChangeDetector.LIVE,
+								publicationTime, retrieved, retrieved, MaritimeSnapshotChangeDetector.LIVE,
 								MaritimeSnapshotChangeDetector.UNKNOWN, null, "Singapore", null, null, encoded,
 								MaritimeSnapshotChangeDetector.UNKNOWN, null,
 								MaritimeSnapshotChangeDetector.UNKNOWN)));
@@ -251,6 +253,11 @@ class MaritimeSnapshotPollingService {
 	static String normalizeMpaTime(String value) {
 		Instant parsed = instant(value);
 		return parsed == null ? null : OffsetDateTime.ofInstant(parsed, SINGAPORE).toString();
+	}
+	static String normalizeMpaNoticeTime(String value) {
+		if (value == null || value.isBlank()) return null;
+		try { return LocalDate.parse(value).atStartOfDay(SINGAPORE).toOffsetDateTime().toString(); }
+		catch (Exception ignored) { return normalizeMpaTime(value); }
 	}
 	private static List<Map<String, String>> readCsv(Path path) throws IOException {
 		List<Map<String, String>> rows = new ArrayList<>();
