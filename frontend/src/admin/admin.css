@@ -25,8 +25,9 @@
   align-items: center;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #fcfcf8;
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow);
 }
 .user-choice input { width: 18px; min-height: 18px; grid-row: span 2; }
 .user-choice strong { font-size: 12px; }
@@ -34,9 +35,9 @@
 .admin-form input,
 .admin-form select {
   width: 100%;
-  border: 1px solid #ccd5cb;
-  background: #fcfcf8;
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
   padding: 12px 13px;
   color: var(--ink);
   font: inherit;
@@ -52,7 +53,7 @@
 .audit-panel { margin-top: 28px; }
 .audit-panel h3 { font-family: var(--font-sans); font-weight: 650; font-size: 28px; letter-spacing: -0.03em; margin: 0 0 12px; }
 .audit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.audit-list li { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fcfcf8; }
+.audit-list li { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); }
 .audit-list span, .audit-list time { color: var(--muted); font-size: 11px; }
 @media (max-width: 720px) {
   .workspace-bar { flex-wrap: wrap; }

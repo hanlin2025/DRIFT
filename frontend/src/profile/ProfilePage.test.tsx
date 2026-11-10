@@ -65,7 +65,7 @@ describe('profile page', () => {
     expect(screen.getByLabelText('Role')).toHaveAttribute('readonly');
     expect(screen.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' })).not.toBeChecked();
     expect(screen.getByText(/Saving this page does not send an email\./)).toBeInTheDocument();
-    expect(screen.getByText(/A later rise sends the existing risk email when a shipment you can view reaches the saved level\./)).toBeInTheDocument();
+    expect(screen.queryByText(/A later rise sends the existing risk email/)).not.toBeInTheDocument();
     expect(screen.getByText('HIGH means HIGH and CRITICAL.')).toBeInTheDocument();
     expect(screen.queryByText(/Nothing is emailed from this page/)).not.toBeInTheDocument();
     expect(screen.queryByText(/The choice is stored only/)).not.toBeInTheDocument();
@@ -145,6 +145,9 @@ describe('profile page', () => {
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
     await user.click(await screen.findByRole('link', { name: 'Profile' }));
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.title).toBe('Profile | DRIFT');
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('href', '/freight-forwarder');
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('aria-current', 'page');
     expect(getProfile).toHaveBeenCalledWith('session-token');
     clearSession();
     render(<MemoryRouter initialEntries={['/profile']}><AppRoutes /></MemoryRouter>);

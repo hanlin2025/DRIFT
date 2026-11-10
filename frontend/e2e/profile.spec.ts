@@ -112,7 +112,7 @@ test('the saved name and notification choice are still there after signing out',
     await expect(page.getByLabel(/photo/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /send/i })).toHaveCount(0);
     await expect(page.getByText('Saving this page does not send an email.')).toBeVisible();
-    await expect(page.getByText('A later rise sends the existing risk email when a shipment you can view reaches the saved level.')).toBeVisible();
+    await expect(page.getByText('A later rise sends the existing risk email when a shipment you can view reaches the saved level.')).toHaveCount(0);
     await expect(page.getByText('HIGH means HIGH and CRITICAL.')).toBeVisible();
     await expect(page.getByText('Nothing is emailed from this page.')).toHaveCount(0);
     await expect(page.getByText('The choice is stored only.')).toHaveCount(0);

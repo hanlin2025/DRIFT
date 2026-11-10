@@ -87,10 +87,14 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
   if (!profile) return <div className="notice" role="status">Loading your profile...</div>;
 
   return (
-    <form className="profile-page" onSubmit={save}>
-      <p className="eyebrow">YOUR ACCOUNT</p>
-      <h2>Profile</h2>
-      <p className="intro">Update your name and password. Saving this page does not send an email. A later rise sends the existing risk email when a shipment you can view reaches the saved level.</p>
+    <>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">YOUR ACCOUNT</p>
+          <h2>Profile</h2>
+        </div>
+      </div>
+      <form className="profile-page" onSubmit={save}>
       {saved ? <div className="success-notice" role="status">{saved}</div> : null}
       {problem ? <div className="error-notice" role="alert">{problem}</div> : null}
       <div className="field">
@@ -115,6 +119,7 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
           <input id="profile-notifications" type="checkbox" checked={notifications} onChange={event => setNotifications(event.target.checked)} disabled={submitting} />
           Email me when a shipment risk reaches this level
         </label>
+        <p className="field-hint">Saving this page does not send an email.</p>
         <div className="field">
           <label htmlFor="profile-risk-level">Minimum risk level</label>
           <select id="profile-risk-level" value={minimumLevel} onChange={event => setMinimumLevel(event.target.value as RiskLevel)} disabled={submitting}>
@@ -140,5 +145,6 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
       </fieldset>
       <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Saving...' : 'Save profile'} <span aria-hidden="true">&#8594;</span></button>
     </form>
+    </>
   );
 }

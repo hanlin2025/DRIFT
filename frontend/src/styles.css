@@ -290,6 +290,7 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .profile-page fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
 .profile-page legend { font-family: var(--font-sans); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 12px 0 16px; }
 .profile-page select { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; }
+.profile-page select:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
 .profile-check { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; margin: 6px 0 18px; font-size: 12px; line-height: 1.5; font-weight: 650; }
 .profile-check input { width: 18px; min-height: 18px; margin-top: 2px; }
 .profile-page .primary-button { width: auto; min-width: 180px; }
