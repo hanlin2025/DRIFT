@@ -43,6 +43,30 @@ export type MaritimeEvidence = {
   vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
 export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeChangeSourceMode = 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'HISTORICAL_BACKFILL';
+export type MaritimeChangeAvailability = 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE';
+export type MaritimeChangeEvent = {
+  id: string;
+  sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
+  sourceIdentity: string;
+  eventType: 'NEW' | 'REVISED';
+  sourceMode: MaritimeChangeSourceMode;
+  sourceEventTime: string | null;
+  observedAt: string | null;
+  retrievedAt: string;
+  detectedAt: string;
+  previousValue: string | null;
+  currentValue: string | null;
+  provenance: string;
+  associationConfidence: string;
+  freshness: string;
+  compatibility: { activity: string; location: string; time: string };
+  requiresHumanReview: boolean;
+};
+export type MaritimeChangeEvents = {
+  availability: MaritimeChangeAvailability;
+  events: MaritimeChangeEvent[];
+};
 export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW' | 'DELAY_COMPARISON_REVIEW';
 export type MaritimeAiRiskSeverity = RiskLevel;
 export type MaritimeAiRiskBasis = 'PLANNED_SHIPMENT_SCHEDULE' | 'AIS_STRAIGHT_LINE_ARRIVAL_ESTIMATE';
@@ -550,6 +574,20 @@ export async function getMaritimeContext(token: string, shipmentId: string): Pro
   const context = decodeMaritimeContext(data);
   if (!context) throw new ApiError(UNEXPECTED, 502);
   return context;
+}
+
+export async function getMaritimeChangeEvents(token: string, shipmentId: string, options: {
+  since?: string;
+  limit?: number;
+} = {}): Promise<MaritimeChangeEvents> {
+  const query = new URLSearchParams();
+  if (options.since) query.set('since', options.since);
+  if (options.limit !== undefined) query.set('limit', String(options.limit));
+  const suffix = query.size > 0 ? `?${query.toString()}` : '';
+  const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-change-events${suffix}`, token);
+  const result = decodeMaritimeChangeEvents(data);
+  if (!result) throw new ApiError(UNEXPECTED, 502);
+  return result;
 }
 
 export async function listMaritimeAiAssessments(token: string, shipmentId: string): Promise<MaritimeAiAssessment[]> {
@@ -1791,6 +1829,25 @@ function isNullableApiInstant(value: unknown): value is string | null {
 }
 function isCompatibility(value: unknown): value is 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN' {
   return value === 'COMPATIBLE' || value === 'INCOMPATIBLE' || value === 'UNKNOWN';
+}
+function isMaritimeChangeSourceMode(value: unknown): value is MaritimeChangeSourceMode {
+  return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'SYNTHETIC_DEMONSTRATION' || value === 'HISTORICAL_BACKFILL';
+}
+function isMaritimeChangeEvent(value: unknown): value is MaritimeChangeEvent {
+  if (!isRecord(value) || !['MPA_ETA_REVISION', 'MPA_OFFICIAL_NOTICE', 'NEA_WEATHER'].includes(value.sourceType as string)
+    || !['id', 'sourceIdentity', 'provenance', 'associationConfidence', 'freshness'].every(key => isPresentText(value[key]))
+    || (value.eventType !== 'NEW' && value.eventType !== 'REVISED')
+    || !isMaritimeChangeSourceMode(value.sourceMode) || !isNullableApiInstant(value.sourceEventTime) || !isNullableApiInstant(value.observedAt)
+    || !['retrievedAt', 'detectedAt'].every(key => typeof value[key] === 'string' && apiInstantNanoseconds(value[key]) !== undefined)
+    || !isNullableText(value.previousValue) || !isNullableText(value.currentValue) || typeof value.requiresHumanReview !== 'boolean'
+    || !isRecord(value.compatibility)) return false;
+  const compatibility = value.compatibility as Record<string, unknown>;
+  return ['activity', 'location', 'time'].every(key => isPresentText(compatibility[key]));
+}
+export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents | undefined {
+  if (!isRecord(value) || !['AVAILABLE', 'PARTIAL', 'UNAVAILABLE'].includes(value.availability as string)
+    || !Array.isArray(value.events) || !value.events.every(isMaritimeChangeEvent)) return undefined;
+  return { events: value.events, availability: value.availability as MaritimeChangeAvailability };
 }
 function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {
   return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'

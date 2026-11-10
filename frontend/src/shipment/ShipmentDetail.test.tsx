@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Cdg201ArrivalEvidence, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeChangeEvents, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Cdg201ArrivalEvidence, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -20,6 +20,7 @@ vi.mock('../shipment/api', async importOriginal => ({
   getShipment: vi.fn(),
   getShipmentTracking: vi.fn(),
   getCdg201ArrivalEvidence: vi.fn(),
+  getMaritimeChangeEvents: vi.fn(),
   getMaritimeContext: vi.fn(),
   listMaritimeAiAssessments: vi.fn(),
   generateMaritimeAiAssessment: vi.fn(),
@@ -155,6 +156,7 @@ beforeEach(() => {
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
   vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
   vi.mocked(generateMaritimeAiAssessment).mockResolvedValue({ assessmentId: 'assessment-1', state: 'ABSTAINED', validationStatus: 'FEATURE_DISABLED', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'Disabled.' });
@@ -162,6 +164,25 @@ beforeEach(() => {
 });
 
 describe('connection window on the shipment detail', () => {
+
+  it('loads authorized change events and refreshes them explicitly without requesting AI', async () => {
+    vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [{
+      id: 'eta:rev-2', sourceType: 'MPA_ETA_REVISION', sourceIdentity: 'MPA arrival feed', eventType: 'REVISED',
+      sourceMode: 'RECORDED_REPLAY', sourceEventTime: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-28T17:55:00Z',
+      retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z', previousValue: '01:00 SGT', currentValue: '02:00 SGT',
+      provenance: 'Replay manifest', freshness: 'RECORDED_REPLAY', associationConfidence: 'UNVERIFIED_IMO_ONLY',
+      compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
+    }] });
+    const user = userEvent.setup();
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(within(timeline).getByText('MPA arrival estimate revision')).toBeInTheDocument();
+    expect(getMaritimeChangeEvents).toHaveBeenCalledWith('forwarder-token', '7', { limit: 100 });
+    await user.click(within(timeline).getByRole('button', { name: 'Refresh changes' }));
+    await waitFor(() => expect(getMaritimeChangeEvents).toHaveBeenCalledTimes(2));
+    expect(generateMaritimeAiAssessment).not.toHaveBeenCalled();
+    expect(within(timeline).getByRole('link', { name: 'Review AI assessment and request an explanation' })).toHaveAttribute('href', '#maritime-ai-assessment');
+  });
 
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
