@@ -1,6 +1,7 @@
 package com.drift.backend.shipment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 import java.time.Duration;
@@ -10,12 +11,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Pageable;
 
 class ShipmentRiskEvaluationSchedulerTest {
-	@Test void defaultsToDisabledFifteenMinutePollingAndAllowsOverrides() {
+	@Test void defaultsToDisabledFifteenMinutePollingAndAllowsBoundedOverrides() {
 		var properties = new ShipmentRiskAlertEvaluationProperties();
 		assertThat(properties.isEnabled()).isFalse();
 		assertThat(properties.getInterval()).isEqualTo(Duration.ofMinutes(15));
-		properties.setInterval(Duration.ofMinutes(2));
-		assertThat(properties.getInterval()).isEqualTo(Duration.ofMinutes(2));
+		properties.setInterval(Duration.ofMinutes(5));
+		assertThat(properties.getInterval()).isEqualTo(Duration.ofMinutes(5));
+		properties.setInterval(Duration.ofMinutes(10));
+		assertThat(properties.getInterval()).isEqualTo(Duration.ofMinutes(10));
+		properties.setInterval(Duration.ofMinutes(15));
+		assertThat(properties.getInterval()).isEqualTo(Duration.ofMinutes(15));
+		assertThatThrownBy(() -> properties.setInterval(Duration.ofMinutes(4)))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("between 5m and 15m");
+		assertThatThrownBy(() -> properties.setInterval(Duration.ofMinutes(16)))
+				.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("between 5m and 15m");
 	}
 
 	@Test void staysDisabledByDefault() {
