@@ -3,9 +3,9 @@
   --font-serif: var(--font-sans);
   --ink: #0f172a;
   --muted: #64748b;
-  --forest: #ffffff;
-  --green: #aff33e;
-  --green-deep: #96d42a;
+  --white: #ffffff;
+  --lime: #aff33e;
+  --lime-deep: #96d42a;
   --cream: #fbfcf8;
   --paper: #ffffff;
   --paper-strong: #ffffff;
@@ -15,8 +15,8 @@
   --error: #991b1b;
   --hover: #f8fafc;
   --focus-ring: #0f172a33;
-  --on-forest: #0f172a;
-  --on-green: #000000;
+  --on-white: #0f172a;
+  --on-lime: #000000;
   --shadow: 0 8px 20px rgb(0 0 0 / 0.05);
   --space-1: 4px;
   --space-2: 8px;
@@ -85,8 +85,8 @@ input[aria-invalid=true] { border-color: var(--error); }
 .password-input input { padding-right: 62px; }
 .visibility-button { position: absolute; inset: 0 7px 0 auto; border: 0; padding: 0 10px; min-width: 44px; color: #647560; background: transparent; font-size: 10px; font-weight: 700; }
 .forgot-password { display: inline-block; margin-top: 8px; color: var(--ink); font-size: 13px; font-weight: 650; text-underline-offset: 3px; }
-.primary-button { border: 1px solid var(--green); background: var(--green); color: var(--on-green); border-radius: var(--radius); box-shadow: var(--shadow); min-height: 40px; width: 100%; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; margin-top: 23px; transition: background .18s; }
-.primary-button:hover:not(:disabled) { background: var(--green-deep); }
+.primary-button { border: 1px solid var(--lime); background: var(--lime); color: var(--on-lime); border-radius: var(--radius); box-shadow: var(--shadow); min-height: 40px; width: 100%; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; margin-top: 23px; transition: background .18s; }
+.primary-button:hover:not(:disabled) { background: var(--lime-deep); }
 .primary-button span { font-size: 20px; line-height: 1; }
 .secondary-button { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: var(--radius); min-height: 40px; padding: 10px 14px; font-size: 14px; font-weight: 650; }
 .secondary-button:hover:not(:disabled) { background: var(--hover); }
@@ -326,7 +326,7 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .shipment-import .import-errors .shipment-list { margin-top: 16px; }
 .import-progress { display: grid; gap: 10px; margin: 24px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); }
 .import-progress strong { font-size: 14px; }
-.import-progress progress { width: 100%; height: 10px; accent-color: var(--green); }
+.import-progress progress { width: 100%; height: 10px; accent-color: var(--lime); }
 .import-errors { margin-top: 28px; }
 .import-errors-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .import-errors h3 { font-family: var(--font-sans); font-weight: 650; font-size: 24px; letter-spacing: -0.02em; margin: 0; }
@@ -351,26 +351,26 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .shipment-assessment-note { max-width: 62ch; margin: 0; padding: 0 28px 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .shipment-detail .route-facts.shipment-record { margin: 0; padding: 0 28px 18px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .scenario-entry-callout,
-.scenario-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 16px 0; padding: 16px; border: 1px solid #9aad9f; border-left: 4px solid var(--green); border-radius: 6px; background: #f5f7f1; }
+.scenario-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 16px 0; padding: 16px; border: 1px solid #9aad9f; border-left: 4px solid var(--lime); border-radius: 6px; background: #f5f7f1; }
 .scenario-entry-callout p { margin: 4px 0 0; }
 .scenario-entry-callout .eyebrow,
 .scenario-detail-heading .eyebrow { margin: 0; }
 .scenario-detail-heading h2 { margin: 4px 0; }
 .scenario-binding-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 18px; }
 .scenario-binding-switch button { min-height: 40px; padding: 8px 12px; border: 1px solid #9aad9f; border-radius: 4px; background: #fcfcf8; color: var(--ink); font-weight: 700; }
-.scenario-binding-switch button[aria-pressed="true"] { background: var(--green); color: #000; }
+.scenario-binding-switch button[aria-pressed="true"] { background: var(--lime); color: #000; }
 .scenario-binding-switch button:disabled:not([aria-pressed="true"]) { color: #9aa79f; cursor: not-allowed; }
 .scenario-binding-switch p { flex-basis: 100%; margin: 0; color: #53645a; font-size: 13px; }
 .scenario-view-notice { margin: 8px 0; padding: 10px 12px; border-left: 3px solid #9a6d0b; background: #fff9e8; }
 .scenario-facts > p:not(.eyebrow) { max-width: 82ch; }
 .scenario-facts .arrival-comparison { margin: 6px 0; }
-.scenario-facts-context { padding: 10px 12px; border-left: 3px solid var(--green); background: #f3f5ef; line-height: 1.5; }
+.scenario-facts-context { padding: 10px 12px; border-left: 3px solid var(--lime); background: #f3f5ef; line-height: 1.5; }
 .scenario-stage-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
 .scenario-stage-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 5px; background: #f8f6ed; }
 .scenario-stage-step.is-current { border-color: var(--ink); background: var(--paper); box-shadow: inset 0 0 0 1px var(--ink); }
 .scenario-stage-order { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #dfe5da; color: var(--ink); font-size: 10px; font-weight: 800; }
 .scenario-stage-step.is-current .scenario-stage-order,
-.scenario-stage-step.is-complete .scenario-stage-order { background: var(--green); color: #000; }
+.scenario-stage-step.is-complete .scenario-stage-order { background: var(--lime); color: #000; }
 .scenario-stage-name { min-width: 0; }
 .scenario-stage-name strong,
 .scenario-stage-name span { display: block; overflow-wrap: anywhere; }
@@ -414,7 +414,7 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .vessel-scenario { color: var(--ink); background: #e8ede2; }
 .vessel-stale-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: #8a5a12; color: #f8efd8; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
 .vessel-seeded { margin: 0 0 10px; padding: 8px 10px; color: var(--ink); background: #e7eee9; border: 1px solid var(--line); border-radius: 5px; font-size: 12px; font-weight: 700; }
-.vessel-seeded-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: var(--green); color: #000; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
+.vessel-seeded-badge { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 999px; background: var(--lime); color: #000; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; }
 .vessel-panel dl { margin: 0; }
 .vessel-panel dl div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #d5e0cc; padding: 10px 0; }
 .vessel-panel dt { color: var(--muted); font-size: 11px; }
@@ -446,7 +446,7 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .track-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
 .track-toggle button { border: 0; background: var(--paper); color: var(--ink); min-height: 40px; padding: 8px 14px; font-size: 13px; font-weight: 650; }
 .track-toggle button + button { border-left: 1px solid var(--line); }
-.track-toggle button[aria-pressed="true"] { background: var(--green); color: var(--on-green); }
+.track-toggle button[aria-pressed="true"] { background: var(--lime); color: var(--on-lime); }
 .track-toggle button:disabled { color: #9aa79f; cursor: not-allowed; }
 .track-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
 .track-swatch { display: inline-block; width: 18px; height: 3px; border-radius: 2px; background: #2a6f97; }
