@@ -25,9 +25,24 @@ public class ProductionMailConfigurationGuard {
 			@Value("${app.frontend-base-url:}") String frontendBaseUrl,
 			@Value("${app.invitation.link-base-url:}") String invitationLinkBaseUrl,
 			@Value("${app.password-reset.link-base-url:}") String passwordResetLinkBaseUrl,
-			@Value("${app.risk-alerts.mail.frontend-base-url:}") String riskAlertFrontendBaseUrl) {
+			@Value("${app.risk-alerts.mail.frontend-base-url:}") String riskAlertFrontendBaseUrl,
+			@Value("${app.signup.link-base-url:}") String signupLinkBaseUrl,
+			@Value("${app.signup.from:}") String signupFrom) {
 		validate(host, port, username, password, smtpAuth, startTls, startTlsRequired, from, frontendBaseUrl,
 				invitationLinkBaseUrl, passwordResetLinkBaseUrl, riskAlertFrontendBaseUrl);
+		validateSignup(frontendBaseUrl, signupLinkBaseUrl, signupFrom);
+	}
+
+	/** The email verification link and sender follow the same rules as the other account mail. */
+	static void validateSignup(String frontendBaseUrl, String signupLinkBaseUrl, String signupFrom) {
+		if (blank(signupFrom) || value(signupFrom).toLowerCase(Locale.ROOT).endsWith("@localhost")) {
+			throw new IllegalStateException("Production mail requires a non-local sender for email verification");
+		}
+		URI frontend = hostedHttpsUrl(frontendBaseUrl, "FRONTEND_BASE_URL");
+		URI url = hostedHttpsUrl(signupLinkBaseUrl, "SIGNUP_LINK_BASE_URL");
+		if (!frontend.getHost().equalsIgnoreCase(url.getHost())) {
+			throw new IllegalStateException("SIGNUP_LINK_BASE_URL must use the FRONTEND_BASE_URL host in production");
+		}
 	}
 
 	static void validate(String host, int port, String username, String password, boolean smtpAuth, boolean startTls,

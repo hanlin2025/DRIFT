@@ -64,7 +64,13 @@ app:
       ip: ${PASSWORD_RESET_IP_LIMIT:20}
       window: ${PASSWORD_RESET_RATE_WINDOW:15m}
   signup:
+    link-base-url: ${SIGNUP_LINK_BASE_URL:${app.frontend-base-url}/verify-email}
     verification-ttl: ${SIGNUP_VERIFICATION_TTL:PT24H}
+    from: ${app.mail.from}
+    rate-limit:
+      ip: ${SIGNUP_IP_LIMIT:5}
+      email: ${SIGNUP_EMAIL_LIMIT:3}
+      window: ${SIGNUP_RATE_WINDOW:PT1H}
   invitation:
     link-base-url: ${INVITATION_LINK_BASE_URL:${app.frontend-base-url}/signup}
     ttl: ${INVITATION_TTL:7d}

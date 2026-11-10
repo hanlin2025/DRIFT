@@ -26,9 +26,11 @@ public class CompanySignupStore {
 	private final CompanyRepository companies;
 	private final CompanySignupAuditRepository audits;
 	private final EmailVerificationTokens verificationTokens;
+	private final VerificationMailDispatcher mail;
 
 	public CompanySignupStore(UserAccountRepository users, AccountRoleRepository roles, CompanyRepository companies,
-			CompanySignupAuditRepository audits, EmailVerificationTokens verificationTokens) {
+			CompanySignupAuditRepository audits, EmailVerificationTokens verificationTokens, VerificationMailDispatcher mail) {
+		this.mail = mail;
 		this.users = users;
 		this.roles = roles;
 		this.companies = companies;
@@ -73,7 +75,18 @@ public class CompanySignupStore {
 		companies.saveAndFlush(company);
 		EmailVerificationTokens.IssuedVerification token = verificationTokens.issue(account);
 		audits.saveAndFlush(new CompanySignupAudit(account, company, SignupEvent.REGISTERED, Instant.now()));
+		mail.sendAfterCommit(account.getEmail(), token);
 		return Optional.of(new CreatedSignup(account.getId(), company.getId(), token));
+	}
+
+	/** Whether the email belongs to an account awaiting verification as the administrator of the company with this code. */
+	@Transactional(readOnly = true)
+	public boolean isPendingAdministratorOf(String email, String companyCode) {
+		return users.findByEmailIgnoreCase(email)
+				.filter(account -> account.getStatus() == com.drift.backend.account.AccountStatus.PENDING_VERIFICATION)
+				.map(UserAccount::getCompany)
+				.filter(company -> company != null && companyCode.equals(company.getCode()))
+				.isPresent();
 	}
 
 	private static boolean isEmailConflict(Throwable failure) {

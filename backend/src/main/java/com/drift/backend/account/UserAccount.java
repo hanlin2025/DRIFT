@@ -88,6 +88,13 @@ public class UserAccount {
 		return account;
 	}
 
+	public void verifyEmail() {
+		if (status != AccountStatus.PENDING_VERIFICATION) {
+			throw new IllegalStateException("Only an account awaiting verification can be verified");
+		}
+		this.status = AccountStatus.ACTIVE;
+	}
+
 	public boolean isActive() {
 		return status == AccountStatus.ACTIVE;
 	}

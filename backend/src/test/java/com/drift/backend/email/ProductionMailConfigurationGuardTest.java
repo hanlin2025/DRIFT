@@ -52,4 +52,27 @@ class ProductionMailConfigurationGuardTest {
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("INVITATION_LINK_BASE_URL must use the FRONTEND_BASE_URL host in production");
 	}
+
+	@Test
+	void acceptsAHostedSignupVerificationLink() {
+		assertThatCode(() -> ProductionMailConfigurationGuard.validateSignup("https://drift.vercel.app",
+				"https://drift.vercel.app/verify-email", "sender@gmail.com"))
+				.doesNotThrowAnyException();
+	}
+
+	@Test
+	void rejectsALocalOrForeignSignupVerificationLinkAndALocalSender() {
+		assertThatThrownBy(() -> ProductionMailConfigurationGuard.validateSignup("https://drift.vercel.app",
+				"http://localhost:5173/verify-email", "sender@gmail.com"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("SIGNUP_LINK_BASE_URL must be an absolute hosted HTTPS URL without query or fragment");
+		assertThatThrownBy(() -> ProductionMailConfigurationGuard.validateSignup("https://drift.vercel.app",
+				"https://other.example/verify-email", "sender@gmail.com"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("SIGNUP_LINK_BASE_URL must use the FRONTEND_BASE_URL host in production");
+		assertThatThrownBy(() -> ProductionMailConfigurationGuard.validateSignup("https://drift.vercel.app",
+				"https://drift.vercel.app/verify-email", "noreply@localhost"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("Production mail requires a non-local sender for email verification");
+	}
 }
