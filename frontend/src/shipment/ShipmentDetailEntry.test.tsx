@@ -16,7 +16,7 @@ vi.mock('./api', async importOriginal => {
   return {
     ...actual,
     getShipment: vi.fn(), getShipmentTracking: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn(),
-    getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), getMaritimeChangeEvents: vi.fn(), listMaritimeAiAssessments: vi.fn(),
+    getCdg201ArrivalEvidence: vi.fn(), getMaritimeContext: vi.fn(), listMaritimeAiAssessments: vi.fn(),
     generateMaritimeAiAssessment: vi.fn(), updateTransshipmentArrivalDeadline: vi.fn(), archiveShipment: vi.fn(),
     restoreShipment: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), listShipments: vi.fn(),
   };
@@ -129,7 +129,6 @@ beforeEach(() => {
   vi.mocked(api.getShipmentHistory).mockResolvedValue({ shipmentId: 142, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(api.getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(api.getMaritimeContext).mockResolvedValue(disabledContext);
-  vi.mocked(api.getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(api.listMaritimeAiAssessments).mockResolvedValue([]);
   vi.mocked(api.generateMaritimeAiAssessment).mockRejectedValue(new Error('AI generation must not be called.'));
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Unexpected raw fetch.'); }));

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiInstantNanoseconds, archiveShipment, decodeArrivalComparison, decodeDelayComparison, decodeMaritimeChangeEvents, decodeMaritimeContext, decodeRemainingConnectionWindow, decodeShipmentRisk, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeChangeEvents, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, linkShipmentImporter, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
+import { apiInstantNanoseconds, archiveShipment, decodeArrivalComparison, decodeDelayComparison, decodeMaritimeContext, decodeRemainingConnectionWindow, decodeShipmentRisk, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, linkShipmentImporter, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, searchImporterOrganisations, updateTransshipmentArrivalDeadline } from './api';
 import type { MaritimeAiAssessment } from './api';
 import { ApiError } from '../signup/api';
 
@@ -343,72 +343,6 @@ describe('CDG-246 maritime-context API', () => {
   it('rejects a context bundle that omits its assessment cutoff', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ enabled: true, sourceMode: 'RECORDED_REPLAY', evidence: [], notices: [], aiExplanation: null, suggestedActions: null })));
     await expect(getMaritimeContext('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
-  });
-});
-
-describe('CDG-357 maritime change events API', () => {
-  const event = {
-    id: 'source-1:abc123', sourceType: 'MPA_ETA_REVISION', sourceIdentity: 'MPA OCEANS-X / visit 42',
-    eventType: 'REVISED', sourceMode: 'RECORDED_REPLAY', sourceEventTime: '2026-10-29T02:00:00+08:00',
-    observedAt: '2026-10-28T17:55:00Z', retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z',
-    previousValue: '2026-10-29T01:00:00+08:00', currentValue: '2026-10-29T02:00:00+08:00', provenance: 'recorded replay manifest',
-    freshness: 'HISTORICAL', associationConfidence: 'UNVERIFIED_IMO_ONLY',
-    compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
-  };
-  it('reads validated change events through the authorized cookie/bearer request helper', async () => {
-    const wire = { availability: 'PARTIAL', events: [event], nextCursor: 'opaque page cursor + 2' };
-    const fetchMock = vi.fn().mockResolvedValue(json(wire));
-    vi.stubGlobal('fetch', fetchMock);
-    expect(decodeMaritimeChangeEvents(wire)).toEqual(wire);
-    expect(fetchMock).not.toHaveBeenCalled();
-    await expect(getMaritimeChangeEvents('token', '9', { since: '2026-10-28T00:00:00Z', limit: 100, cursor: 'opaque page cursor + 2' })).resolves.toEqual(wire);
-    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/maritime-change-events?since=2026-10-28T00%3A00%3A00Z&limit=100&cursor=opaque+page+cursor+%2B+2', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
-    }));
-  });
-  it('preserves top-level unavailable status without inventing an unavailable event', async () => {
-    const wire = { availability: 'UNAVAILABLE', events: [] };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(wire)));
-    await expect(getMaritimeChangeEvents('', '9')).resolves.toEqual(wire);
-    expect(fetch).toHaveBeenCalledWith('/api/shipments/9/maritime-change-events', expect.objectContaining({
-      credentials: 'include', headers: expect.objectContaining({ 'X-DRIFT-Request': '1' }),
-    }));
-  });
-  it('turns a malformed change-event envelope into a controlled API error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ availability: 'AVAILABLE', events: 'not an array' })));
-    await expect(getMaritimeChangeEvents('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
-  });
-  it('drops a malformed event without discarding valid events from the response', () => {
-    const invalid = [
-      { ...event, sourceMode: 'UNAVAILABLE' },
-      { ...event, detectedAt: 'later' },
-      { ...event, eventType: 'UPDATED' },
-      { ...event, compatibility: { activity: 'MATCHED', location: null, time: 'UNKNOWN' } },
-      { ...event, freshness: 'RECORDED_REPLAY' },
-      { ...event, freshness: 'STALE' },
-      { ...event, associationConfidence: 'VERIFIED' },
-      { ...event, associationConfidence: 'UNKNOWN' },
-      { ...event, compatibility: { activity: 'MATCHED', location: 'COMPATIBLE', time: 'UNKNOWN' } },
-      { ...event, requiresHumanReview: 'true' },
-      { ...event, sourceType: 'AIS_TRACK' },
-    ];
-    for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad, event] })).toEqual({ availability: 'AVAILABLE', events: [event], droppedEventCount: 1 });
-    expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [{ ...event, detectedAt: 'later' }], nextCursor: 'older-page' }))
-      .toEqual({ availability: 'AVAILABLE', events: [], nextCursor: 'older-page', droppedEventCount: 1 });
-    expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [event], nextCursor: ['not', 'opaque text'] })).toBeUndefined();
-    expect(decodeMaritimeChangeEvents({ availability: 'UNKNOWN', events: [] })).toBeUndefined();
-  });
-
-  it('accepts legacy source timestamps and nullable compatibility without inventing values', () => {
-    const decoded = decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [
-      { ...event, sourceEventTime: '2026-10-29T02:00+08:00', observedAt: 'legacy observation timestamp' },
-      { ...event, id: 'source-2:abc123', compatibility: { activity: null, location: null, time: 'UNKNOWN' } },
-      { ...event, id: 'source-3:abc123', compatibility: undefined },
-    ] });
-    expect(decoded?.events).toHaveLength(3);
-    expect(decoded?.events[0]).toMatchObject({ sourceEventTime: '2026-10-29T02:00+08:00', observedAt: null });
-    expect(decoded?.events[1].compatibility).toEqual({ activity: 'UNKNOWN', location: 'UNKNOWN', time: 'UNKNOWN' });
-    expect(decoded?.events[2].compatibility).toEqual({ activity: 'UNKNOWN', location: 'UNKNOWN', time: 'UNKNOWN' });
   });
 });
 

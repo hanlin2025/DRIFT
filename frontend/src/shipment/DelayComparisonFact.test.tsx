@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../signup/api';
-import { getCdg201ArrivalEvidence, getMaritimeChangeEvents, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, updateTransshipmentArrivalDeadline, type ArrivalComparison, type DelayComparison, type Shipment } from './api';
+import { getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, updateTransshipmentArrivalDeadline, type ArrivalComparison, type DelayComparison, type Shipment } from './api';
 import { DelayComparisonFact } from './DelayComparisonFact';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { formatWhen } from './ShipmentForm';
@@ -15,7 +15,6 @@ vi.mock('./api', () => ({
   getShipmentHistory: vi.fn(),
   getCdg201ArrivalEvidence: vi.fn(),
   getMaritimeContext: vi.fn(),
-  getMaritimeChangeEvents: vi.fn(),
   updateTransshipmentArrivalDeadline: vi.fn(),
 }));
 
@@ -137,7 +136,6 @@ beforeEach(() => {
   });
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
-  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getMaritimeContext).mockResolvedValue({
     contractVersion: 'cdg246.maritime-evidence-bundle.v1', enabled: false, sourceMode: 'DISABLED',
     assessmentCutoffUtc: '2026-10-05T03:00:00Z', shipmentAssociationConfidence: 'UNAVAILABLE',
