@@ -563,6 +563,10 @@ class MaritimeAiResponseValidatorTest {
 				List.of("Verify the carrier's ETA with the operations team."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(operationsTeamFollowUp, input)).isNull();
 
+		var carrierFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
+				List.of("Have the carrier confirm the current vessel position."), true, null);
+		assertThat(MaritimeAiResponseValidator.validate(carrierFollowUp, input)).isNull();
+
 		var systemOnlyFollowUp = new MaritimeAiInterpretation("A synthetic interpretation is available for cautious planning review.", List.of(claim), List.of(),
 				List.of("Verify the carrier's ETA with the automated system."), true, null);
 		assertThat(MaritimeAiResponseValidator.validate(systemOnlyFollowUp, input)).isEqualTo("MISSING_HUMAN_RISK_FOLLOW_UP");
@@ -1022,6 +1026,27 @@ class MaritimeAiResponseValidatorTest {
 			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
 			assertThat(capturedOutput.claims()).hasSize(3);
 			assertThat(MaritimeAiResponseValidator.validate(capturedOutput, savedSyntheticOpenAiFixture())).isNull();
+		}
+	}
+
+	@Test void replaysTheEntireSecondGenuineV20ResponseWithTheBoundedUrgencyUncertainty() throws Exception {
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-call2-capture.json")) {
+			assertThat(captureStream).as("sanitized second genuine v20 replay fixture").isNotNull();
+			ObjectMapper mapper = new ObjectMapper();
+			var capture = mapper.readTree(captureStream);
+			assertThat(capture.path("validationStatus").asString()).isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
+			MaritimeAiInterpretation capturedOutput = mapper.treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+			assertThat(capturedOutput.claims()).hasSize(4);
+			String replayValidation = MaritimeAiResponseValidator.validate(capturedOutput, savedSyntheticOpenAiFixture());
+			assertThat(replayValidation)
+					.as(MaritimeAiResponseValidator.safeValidationDiagnostic(replayValidation, capturedOutput, savedSyntheticOpenAiFixture()))
+					.isNull();
+
+			MaritimeAiInterpretation mixedUrgencyAssertion = new MaritimeAiInterpretation(capturedOutput.summary(), capturedOutput.claims(),
+					List.of("The evidence and estimate do not establish whether this shipment is urgent, but this shipment is urgent."),
+					capturedOutput.followUpConsiderations(), true, null);
+			assertThat(MaritimeAiResponseValidator.validate(mixedUrgencyAssertion, savedSyntheticOpenAiFixture()))
+					.isEqualTo("UNSUPPORTED_BUSINESS_CONSTRAINT");
 		}
 	}
 

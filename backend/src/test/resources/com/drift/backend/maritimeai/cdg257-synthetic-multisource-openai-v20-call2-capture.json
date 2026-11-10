@@ -1,0 +1,26 @@
+{
+  "captureFormatVersion": "cdg247.synthetic-multisource.capture.v3.bounded-grounding",
+  "provider": "openai-responses",
+  "model": "gpt-4.1-mini",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.1",
+  "validationStatus": "UNSUPPORTED_BUSINESS_CONSTRAINT",
+  "citationIds": ["synthetic-mpa-schedule-001", "synthetic-notice-001", "synthetic-nea-rainfall-001"],
+  "limitations": [
+    "Fictional verified association only: the fixture deliberately joins its fictional shipment and vessel. It establishes no real ETA, cargo, booking, or disruption.",
+    "Fictional official-notice-style content. It is contextual only and does not establish a vessel impact, causal link, berth, cargo, or missed connection.",
+    "Fictional regional weather context only. It does not establish vessel-specific conditions or causation."
+  ],
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {"statement":"The documented revision warrants schedule review.","evidenceIds":["synthetic-mpa-schedule-001"],"applicability":"VERIFIED","vesselRole":"MOTHER","observationType":"EXPECTED_ARRIVAL","associationScope":"VESSEL_OBSERVATION","factReferences":["evidence:synthetic-mpa-schedule-001","schedule:MOTHER:PLANNED_ARRIVAL","schedule:FEEDER:PLANNED_DEPARTURE"],"relationshipType":"SCHEDULE_REVIEW","riskReview":null},
+      {"statement":"The cited port notice provides contextual information relevant to port operations but does not establish vessel impact or shipment disruption.","evidenceIds":["synthetic-notice-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"PORT_CONTEXT","factReferences":["evidence:synthetic-notice-001"],"relationshipType":"PORT_CONTEXT_REVIEW","riskReview":null},
+      {"statement":"The cited regional weather observation offers contextual information on regional conditions without establishing vessel-specific conditions or causation.","evidenceIds":["synthetic-nea-rainfall-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"REGIONAL_CONTEXT","factReferences":["evidence:synthetic-nea-rainfall-001"],"relationshipType":"REGIONAL_WEATHER_CONTEXT","riskReview":null},
+      {"statement":"The cited observation warrants human review alongside backend HIGH risk based on the available planned connection window. The AIS estimate is UNAVAILABLE.","evidenceIds":["synthetic-mpa-schedule-001"],"applicability":"CONTEXTUAL","vesselRole":"MOTHER","observationType":"EXPECTED_ARRIVAL","associationScope":"VESSEL_OBSERVATION","factReferences":["evidence:synthetic-mpa-schedule-001","risk:CONNECTION_SEVERITY","risk:PLANNED_CONNECTION_WINDOW","risk:ARRIVAL_ESTIMATE_NOT_USED","risk:ARRIVAL_ESTIMATE_FRESHNESS"],"relationshipType":"RISK_BUFFER_REVIEW","riskReview":{"severity":"HIGH","selectedWindowBasis":"PLANNED_SHIPMENT_SCHEDULE","selectedWindowState":"AVAILABLE","estimateFreshness":"UNAVAILABLE"}}
+    ],
+    "uncertainties":["The evidence and estimate do not establish whether this shipment is urgent."],
+    "followUpConsiderations":["Verify whether a transshipment-arrival deadline is recorded for this shipment.","Have operations or the carrier confirm the current position of the mother vessel to assess connection risk validity.","Review the latest vessel position data and planned schedules for potential updates."],
+    "evidenceSufficient":true,
+    "formalRecommendationCode":null
+  }
+}
