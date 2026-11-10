@@ -604,7 +604,7 @@ describe('workspace shipment retrieval', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Status must be ACTIVE or ARCHIVED');
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder?status=banana&tab=overview');
-    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveValue('banana');
+    expect(screen.getByRole('combobox', { name: 'Filter by status' })).toHaveTextContent('Invalid status');
     expect(listShipments).toHaveBeenCalledWith('session-token', {
       reference: '', vessel: '', customer: '', arrivalDate: '', status: 'banana', sort: '', atRisk: '', exceedsDeadline: '',
     });

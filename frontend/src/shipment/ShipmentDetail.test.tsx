@@ -804,8 +804,8 @@ describe('connection window on the shipment detail', () => {
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: 'Edit shipment' }));
-    expect(screen.getByLabelText('Planned mother-vessel arrival')).toHaveAttribute('step', '1');
-    expect(screen.getByLabelText('Planned feeder-vessel departure')).toHaveAttribute('step', '1');
+    expect((screen.getByLabelText('Planned mother-vessel arrival') as HTMLInputElement).value).toMatch(/:30$/);
+    expect((screen.getByLabelText('Planned feeder-vessel departure') as HTMLInputElement).value).toMatch(/:45$/);
     await user.click(screen.getByRole('button', { name: 'Save shipment' }));
 
     const request = vi.mocked(updateShipment).mock.calls[0][2];

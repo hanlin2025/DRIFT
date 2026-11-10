@@ -184,7 +184,8 @@ async function restore(request: APIRequestContext, token: string, shipmentId: nu
 }
 
 async function applyStatus(page: Page, status: 'ACTIVE' | 'ARCHIVED') {
-  await page.getByLabel('Filter by status').selectOption(status);
+  await page.getByRole('combobox', { name: 'Filter by status' }).click();
+  await page.getByRole('option', { name: status === 'ACTIVE' ? 'Active' : 'Archived' }).click();
   await page.getByRole('button', { name: 'Apply filters' }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]status=${status}(?:&|$)`));
 }

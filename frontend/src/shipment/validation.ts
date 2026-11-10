@@ -85,7 +85,17 @@ export function toOffsetDateTime(value: string): string {
 }
 
 function parseLocal(value: string): Date | null {
-  if (!value.trim()) return null;
-  const date = new Date(value);
+  const text = value.trim();
+  if (!text) return null;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) {
+    const instant = new Date(text);
+    return Number.isNaN(instant.getTime()) ? null : instant;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
+  if (!match) {
+    const fallback = new Date(text);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4] ?? 0), Number(match[5] ?? 0), Number(match[6] ?? 0));
   return Number.isNaN(date.getTime()) ? null : date;
 }

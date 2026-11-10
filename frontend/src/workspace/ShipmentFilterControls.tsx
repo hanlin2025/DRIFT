@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { CalendarField } from '../components/CalendarField';
+import { ChoiceMenu } from '../components/ChoiceMenu';
 import {
   applyShipmentFilters,
   EMPTY_SHIPMENT_FILTERS,
@@ -52,23 +54,34 @@ export function ShipmentFilterControls() {
           </div>
           <div className="field">
             <label htmlFor="shipment-filter-arrival-date">Filter by arrival date</label>
-            <input id="shipment-filter-arrival-date" type="date" value={draft.arrivalDate} onChange={event => update('arrivalDate', event.target.value)} />
+            <CalendarField id="shipment-filter-arrival-date" pickerLabel="Choose arrival date" value={draft.arrivalDate} onChange={next => update('arrivalDate', next)} />
           </div>
           <div className="field">
             <label htmlFor="shipment-filter-status">Filter by status</label>
-            <select id="shipment-filter-status" value={draft.status || 'ACTIVE'} onChange={event => update('status', event.target.value)}>
-              {draft.status && !isShipmentStatus(draft.status) ? <option value={draft.status} disabled>Invalid status</option> : null}
-              <option value="ACTIVE">Active</option>
-              <option value="ARCHIVED">Archived</option>
-            </select>
+            <ChoiceMenu
+              id="shipment-filter-status"
+              value={draft.status || 'ACTIVE'}
+              onChange={next => update('status', next)}
+              options={[
+                ...(draft.status && !isShipmentStatus(draft.status) ? [{ value: draft.status, label: 'Invalid status', disabled: true }] : []),
+                { value: 'ACTIVE', label: 'Active' },
+                { value: 'ARCHIVED', label: 'Archived' },
+              ]}
+            />
           </div>
           <div className="field">
             <label htmlFor="shipment-sort">Sort by</label>
-            <select id="shipment-sort" value={draft.sort} onChange={event => update('sort', event.target.value)} aria-describedby="shipment-sort-hint">
-              {!isShipmentSortOption(draft.sort) ? <option value={draft.sort} disabled>Invalid sort</option> : null}
-              <option value="">Newest first</option>
-              <option value="risk">Risk level (Critical first)</option>
-            </select>
+            <ChoiceMenu
+              id="shipment-sort"
+              value={draft.sort}
+              describedBy="shipment-sort-hint"
+              onChange={next => update('sort', next)}
+              options={[
+                ...(!isShipmentSortOption(draft.sort) ? [{ value: draft.sort, label: 'Invalid sort', disabled: true }] : []),
+                { value: '', label: 'Newest first' },
+                { value: 'risk', label: 'Risk level (Critical first)' },
+              ]}
+            />
             <p className="field-hint sr-only" id="shipment-sort-hint">Risk level puts Critical first. Within a level, shipments that exceed the importer's deadline come first, then the soonest feeder departure. Unassessed shipments come last.</p>
           </div>
         </div>

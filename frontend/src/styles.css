@@ -145,7 +145,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
 .page-heading .intro { margin-bottom: 0; }
 a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: none; white-space: nowrap; }
-.shipment-step { max-width: 880px; }
+.shipment-step { width: 100%; }
 .empty-shipments { margin-top: 8px; }
 .sign-out { display: flex; align-items: center; gap: 10px; width: auto; margin: auto 0 0; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 14px; font-weight: 650; text-align: left; }
 .workspace.is-sidebar-collapsed .workspace-bar { align-items: center; padding: 16px 10px; }
@@ -233,7 +233,44 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .shipment-filters .field { margin-bottom: 0; }
 .shipment-filters label { font-size: 12px; margin-bottom: 4px; }
 .shipment-filters input, .shipment-filters select { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); color: var(--ink); font: inherit; font-size: 15px; }
-.shipment-filters select:focus, .shipment-filters input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #aff33e40; }
+.shipment-filters select:focus, .shipment-filters input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
+.choice-menu { position: relative; display: inline-block; max-width: 100%; }
+.choice-menu-button { width: max-content; max-width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; text-align: left; }
+.choice-menu-button svg { width: 16px; height: 16px; flex: none; }
+.choice-menu-list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; margin: 0; padding: 4px; list-style: none; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.choice-menu-list button { width: 100%; min-height: 36px; margin: 0; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; text-align: left; }
+.choice-menu-list button.is-active, .choice-menu-list button[aria-selected="true"] { background: var(--hover); }
+.choice-menu-list button:hover:not(:disabled) { background: var(--hover); }
+.choice-menu-list button:disabled { color: var(--muted); }
+.calendar-field { position: relative; }
+.calendar-field input { padding-right: 40px; }
+.calendar-field-button { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; display: grid; place-items: center; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.calendar-field-button:hover { background: var(--hover); color: var(--ink); }
+.calendar-field-button svg { width: 16px; height: 16px; }
+.calendar-panel { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: 100%; min-width: 280px; box-sizing: border-box; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.calendar-heading button { width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 18px; }
+.calendar-heading button:hover { background: var(--hover); }
+.calendar-heading .calendar-title { width: auto; height: auto; min-height: 28px; padding: 2px 8px; font-size: 14px; font-weight: 650; }
+.calendar-choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.calendar-choice-grid button { width: 100%; height: 36px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; }
+.calendar-choice-grid button:hover { background: var(--hover); }
+.calendar-choice-grid button[aria-pressed="true"] { background: var(--accent); color: #000; }
+.calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calendar-weekdays span { color: var(--muted); font-size: 11px; font-weight: 650; text-align: center; }
+.calendar-days button { width: 32px; height: 32px; margin: 0 auto; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; }
+.calendar-days button:hover { background: var(--hover); }
+.calendar-days button[aria-pressed="true"] { background: var(--accent); color: #000; }
+.calendar-time { display: grid; justify-items: stretch; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.calendar-time-row { display: flex; justify-content: center; gap: 16px; }
+.calendar-time-part { display: grid; justify-items: center; gap: 6px; }
+.calendar-time-part span { color: var(--muted); font-size: 11px; font-weight: 650; line-height: 1; }
+.calendar-time-controls { display: grid; grid-template-columns: 28px 44px 28px; align-items: center; justify-content: center; gap: 2px; }
+.calendar-time-controls button { width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); line-height: 1; }
+.calendar-time-controls button:hover { background: var(--hover); }
+.calendar-field .calendar-time input { width: 44px; min-width: 44px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: none; text-align: center; font-size: 14px; font-weight: 650; line-height: 36px; }
+.calendar-field .calendar-time input:focus { border-color: var(--ink); background: var(--paper); box-shadow: 0 0 0 3px var(--focus-ring); }
+.calendar-time .secondary-button { width: 100%; min-height: 36px; margin: 0; }
 .shipment-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px 20px; }
 .field-checkbox { display: flex; align-items: center; gap: 8px; align-self: center; }
 .field-checkbox input { width: 16px; min-height: 16px; margin: 0; padding: 0; }
