@@ -31,11 +31,24 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern MOTHER_DEPARTURE = Pattern.compile("\\bmother(?:\\s+vessel)?\\b(?:(?!\\bfeeder(?:\\s+vessel)?\\b)[^.!?;]){0,120}\\bdeparture\\b");
 	private static final Pattern FACTUAL_NUMBER = Pattern.compile("\\d");
 	private static final Pattern ISO_OFFSET_DATE_TIME = Pattern.compile("\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:Z|[+-]\\d{2}:\\d{2})\\b");
-	private static final Pattern FACTUAL_DURATION = Pattern.compile("(?i)\\b(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)\\s+(?:minute|minutes|hour|hours|day|days)\\b");
-	private static final Pattern REVISION_DURATION = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b[^.!?;]{0,48}?\\b(an?|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)\\s+(minute|minutes|hour|hours|day|days)\\b");
+	private static final Pattern SUPPORTED_DURATION = Pattern.compile("(?i)\\b(an?|one|two|three|four|five|six|seven|eight|nine|ten|\\d+)(?:\\s+|-)(minute|minutes|hour|hours|day|days)\\b");
 	private static final Pattern UNSUPPORTED_REVISION_QUALIFIER = Pattern.compile("(?i)\\b(?:additional|further|another|subsequent)\\b");
 	private static final Pattern REVISION_DELAY_DIRECTION = Pattern.compile("(?i)\\bdelay(?:ed)?\\b");
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
+	private static final Pattern REVISION_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b");
+	private static final Pattern DIRECT_REVISION_BY = Pattern.compile("(?i)(?:\\brevised|\\bchanged)\\s+by\\s*$");
+	private static final Pattern REVISION_ATTRIBUTION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?)\\b");
+	private static final Pattern COMPARISON_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:exceed(?:s|ed)?|deadline)\\b");
+	private static final Pattern COMPARISON_BY_DURATION = Pattern.compile("(?i)\\bby\\s+(?:an?\\s+)?$");
+	private static final String NUMBER_WORD = "eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|dozen";
+	/** Number words and units parseQuantity cannot read. "several hours" stays ordinary wording. */
+	private static final Pattern UNRECOGNIZED_NUMBER_WORD_DURATION = Pattern.compile("(?i)\\b(?:%s)\\b(?:[-\\s]+(?:one|two|three|four|five|six|seven|eight|nine|ten|%s)\\b)*\\s*[- ]\\s*(?:minutes?|hours?|days?|weeks?|seconds?)\\b".formatted(NUMBER_WORD, NUMBER_WORD));
+	private static final Pattern HALF_DURATION = Pattern.compile("(?i)\\band\\s+a\\s+half\\s+(?:minutes?|hours?|days?|weeks?|seconds?)\\b");
+	private static final Pattern UNSUPPORTED_CLOCK_UNIT = Pattern.compile("(?i)\\b(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|%s|\\d+)(?:\\s+and\\s+a\\s+half)?\\s*[- ]\\s*(?:weeks?|seconds?)\\b".formatted(NUMBER_WORD));
+	private static final String DEADLINE_DIRECTION = "(?:before\\s+(?:the|that)|ahead\\s+of(?:\\s+(?:the|that))?|earlier\\s+than(?:\\s+(?:the|that))?)\\b[^.!?;]{0,48}\\bdeadline\\b";
+	private static final Pattern DURATION_BEFORE_DEADLINE = Pattern.compile("(?i)^\\s*" + DEADLINE_DIRECTION);
+	private static final Pattern BEFORE_THE_DEADLINE = Pattern.compile("(?i)\\b" + DEADLINE_DIRECTION);
+	private static final Pattern REVISION_WORD_AFTER_DURATION = Pattern.compile("(?i)^\\s+revision\\b");
 	private static final Pattern RISK_OUTCOME_CLAIM = Pattern.compile("(?i)\\b(?:confirmed|actual|will|would|has|had|is|was|might|may)\\s+(?:be\\s+)?(?:delay(?:ed)?|late|miss(?:ed|es)?|lost)\\b|\\b(?:shipment|vessel|arrival)\\s+(?:is|was|will be|has been)\\s+(?:delay(?:ed)?|late)\\b|\\b(?:business|financial)\\s+loss\\b|\\blost\\s+revenue\\b|\\b(?:penalt(?:y|ies)|demurrage|compensation|delivery outcome|cargo outcome)\\b|\\b(?:probabilit(?:y|ies)|chance|odds)\\s+(?:of|that)\\b|\\b(?:predict|forecast|expect)\\b[^.!?]{0,60}\\b(?:delay|late|miss(?:ed|es)?)\\b");
 	private static final Pattern RISK_OUTCOME_CLAUSE_BREAK = Pattern.compile("(?i)[,;.!?]|\\b(?:but|however|yet|nevertheless|and|although|though|whereas|so)\\b");
 	private static final Pattern RISK_OUTCOME_NEGATION_BEFORE = Pattern.compile("(?i)\\b(?:no|not|never|cannot|can't|does not|doesn't|without|unconfirmed|unverified)\\b(?:\\s+[\\p{L}\\p{M}'’-]+){0,2}\\s*$");
@@ -49,7 +62,7 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern EXPLICIT_UNVERIFIED_SHIPMENT_ASSOCIATION = Pattern.compile("(?i)\\b(?:any\\s+)?shipment(?:-specific)?\\s+(?:association|relevance)\\s+(?:is|remains)\\s+(?:conditional(?:\\s+and\\s+unverified)?|unverified|not verified)\\b");
 	/* Remove only a complete, explicitly negated statement of what contextual evidence does
 	 * not establish. Any separate affirmative shipment assertion remains for the broad guard. */
-	private static final Pattern EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION = Pattern.compile("(?i)(?:\\bwithout\\s+(?:direct\\s+evidence\\s+of\\s+vessel\\s+impact,\\s+shipment\\s+applicability,\\s+or\\s+cause\\s+for\\s+delay|establishing\\s+(?:a\\s+)?direct\\s+effect\\s+on\\s+(?:the\\s+)?vessel\\s+or\\s+shipment|confirming\\s+vessel\\s+impact\\s+or\\s+shipment\\s+disruption|establishing\\s+vessel-specific\\s+conditions\\s+or\\s+causation\\s+relevant\\s+to\\s+(?:the\\s+)?shipment|confirmed\\s+shipment\\s+impact\\s+or\\s+disruption|established\\s+effect\\s+on\\s+(?:the\\s+)?shipment\\s+or\\s+vessel\\s+schedule)\\b|\\b(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+(?:vessel\\s+impact,\\s+shipment\\s+disruption,\\s+or\\s+delay|(?:a\\s+)?vessel\\s+impact\\s+or\\s+shipment\\s+disruption)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|demonstrate|prove)\\s+(?:that\\s+)?(?:the\\s+)?shipment(?:-specific)?\\s+(?:impact|disruption|delay|outcome)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+that\\s+(?:the\\s+)?shipment\\s+will\\s+be\\s+delayed\\b)");
+	private static final Pattern EXPLICITLY_NEGATED_CONTEXTUAL_SHIPMENT_ASSERTION = Pattern.compile("(?i)(?:\\bwithout\\s+(?:direct\\s+evidence\\s+of\\s+vessel\\s+impact,\\s+shipment\\s+applicability,\\s+or\\s+cause\\s+for\\s+delay|establishing\\s+(?:a\\s+)?direct\\s+effect\\s+on\\s+(?:the\\s+)?vessel\\s+or\\s+shipment|confirming\\s+vessel\\s+impact\\s+or\\s+shipment\\s+disruption|establishing\\s+vessel-specific\\s+conditions\\s+or\\s+causation\\s+relevant\\s+to\\s+(?:the\\s+)?shipment|confirmed\\s+shipment\\s+impact\\s+or\\s+disruption|established\\s+effect\\s+on\\s+(?:the\\s+)?shipment\\s+or\\s+vessel\\s+schedule)\\b|\\b(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+(?:vessel\\s+impact,\\s+shipment\\s+disruption,\\s+or\\s+(?:delay|a\\s+cause)|(?:a\\s+)?vessel\\s+impact\\s+or\\s+shipment\\s+disruption)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+(?:establish|support|show|indicate|confirm|demonstrate|prove)\\s+(?:that\\s+)?(?:the\\s+)?shipment(?:-specific)?\\s+(?:impact|disruption|delay|outcome)\\b|\\b(?:the\\s+)?evidence\\s+(?:does\\s+not|doesn't|cannot|can't)\\s+establish\\s+that\\s+(?:the\\s+)?shipment\\s+will\\s+be\\s+delayed\\b)");
 	private static final Pattern SHIPMENT_OR_CARGO_WORD = Pattern.compile("(?i)\\b(?:shipment|cargo)\\b");
 	private static final Pattern SYNTHETIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:synthetic|fictional)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
 	private static final Pattern AUTHENTIC_SOURCE_LABEL = Pattern.compile("(?i)\\b(?:authentic|real(?:-world)?|historical|retrospective)\\s+(?:(?:mpa|nea|regional|official)\\s+){0,2}(?:observation|evidence|record|revision|notice|rainfall|source)\\b");
@@ -192,7 +205,8 @@ final class MaritimeAiResponseValidator {
 				if (generatedDetail != null) return generatedDetail;
 			}
 			if (!"VERIFIED".equals(input.shipmentAssociationConfidence())
-					&& referencesShipmentAsFact(claim.statement(), claim.applicability())) return "UNVERIFIED_SHIPMENT_ASSOCIATION";
+					&& referencesShipmentAsFact(statementWithoutCitedLimitations(claim.statement(), cited), claim.applicability()))
+				return "UNVERIFIED_SHIPMENT_ASSOCIATION";
 
 			for (MaritimeEvidence source : cited) {
 				if ("INCOMPATIBLE".equals(source.compatibilityState()) || "UNAVAILABLE".equals(source.sourceMode())
@@ -305,7 +319,7 @@ final class MaritimeAiResponseValidator {
 		if (!neutralPortOverlap && scope == null && claim.associationScope() != null) return "UNSUPPORTED_ASSOCIATION_SCOPE";
 		if (hasContextOnlySource(cited) && ("SHIPMENT_SPECIFIC".equals(claim.applicability())
 				|| "VERIFIED".equalsIgnoreCase(claim.applicability())
-				|| referencesShipmentAsFact(claim.statement(), claim.applicability()))) {
+				|| referencesShipmentAsFact(statementWithoutCitedLimitations(claim.statement(), cited), claim.applicability()))) {
 			return "CONTEXTUAL_EVIDENCE_OVERSTATED";
 		}
 		if (hasSyntheticNotice(cited) && callsSyntheticNoticeOfficially(claim.statement().toLowerCase())) return "SYNTHETIC_NOTICE_MISREPRESENTED";
@@ -842,8 +856,8 @@ final class MaritimeAiResponseValidator {
 			if (claim == null || !claimsRiskOutcome(claim.statement())) continue;
 			List<MaritimeEvidence> cited = input.evidence().stream()
 					.filter(item -> claim.evidenceIds().contains(item.evidenceId())).toList();
-			if (!isExactSupportedRevisionDuration(claim.statement(), claim, cited)
-					|| claimsRiskOutcome(REVISION_DURATION.matcher(claim.statement()).replaceFirst(""))) return true;
+			String grounded = statementWithoutCitedLimitations(claim.statement(), cited);
+			if (claimsRiskOutcome(withoutSupportedRevisionWording(grounded, claim, cited))) return true;
 		}
 		return false;
 	}
@@ -932,21 +946,181 @@ final class MaritimeAiResponseValidator {
 	private static String generatedDetailViolation(String text, MaritimeAiEvidencePackage input,
 			MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
 		if (text == null) return null;
-		Matcher duration = FACTUAL_DURATION.matcher(text);
-		if (duration.find()) {
-			if (!isExactSupportedRevisionDuration(text, claim, cited)) {
-				return UNSUPPORTED_REVISION_QUALIFIER.matcher(text).find()
+		String grounded = statementWithoutCitedLimitations(text, cited);
+		if (UNRECOGNIZED_NUMBER_WORD_DURATION.matcher(grounded).find()
+				|| HALF_DURATION.matcher(grounded).find()
+				|| UNSUPPORTED_CLOCK_UNIT.matcher(grounded).find()) return "UNSTRUCTURED_FACTUAL_DETAIL";
+		Matcher duration = SUPPORTED_DURATION.matcher(grounded);
+		StringBuilder withoutDurations = new StringBuilder();
+		int cursor = 0;
+		boolean sawDuration = false;
+		while (duration.find()) {
+			sawDuration = true;
+			int sentenceStart = sentenceStart(grounded, duration.start());
+			String sentence = grounded.substring(sentenceStart, sentenceEnd(grounded, duration.end()));
+			Long quantity = parseQuantity(duration.group(1));
+			Long unit = unitMinutes(duration.group(2));
+			AttributedDuration fact = attributeDuration(sentence, duration.start() - sentenceStart, duration.end() - sentenceStart);
+			if (fact == AttributedDuration.REVISION && revisionDurationsInSentence(sentence) > 1) return "UNSTRUCTURED_FACTUAL_DETAIL";
+			boolean supported = quantity != null && unit != null && switch (fact) {
+				case REVISION -> revisionQuantityMatches(sentence, quantity, unit, claim, cited);
+				case COMPARISON -> comparisonQuantityMatches(sentence, quantity, unit, claim, input);
+				case NONE -> false;
+			};
+			if (!supported) {
+				return UNSUPPORTED_REVISION_QUALIFIER.matcher(sentence).find()
 						? "UNSUPPORTED_REVISION_QUALIFIER" : "UNSTRUCTURED_FACTUAL_DETAIL";
 			}
-			String withoutDuration = duration.replaceFirst("");
-			if (FACTUAL_NUMBER.matcher(withoutDuration).find() && !supportedBusinessDateTokens(withoutDuration, input, claim))
-				return "UNSTRUCTURED_FACTUAL_DETAIL";
-		} else if (FACTUAL_NUMBER.matcher(text).find() && !supportedBusinessDateTokens(text, input, claim))
+			withoutDurations.append(grounded, cursor, duration.start());
+			cursor = duration.end();
+		}
+		withoutDurations.append(grounded.substring(cursor));
+		String checked = sawDuration ? withoutDurations.toString() : grounded;
+		if (FACTUAL_NUMBER.matcher(checked).find() && !supportedBusinessDateTokens(checked, input, claim))
 			return "UNSTRUCTURED_FACTUAL_DETAIL";
-		String lower = text.toLowerCase();
+		String lower = grounded.toLowerCase(Locale.ROOT);
 		if (input.shipmentContext() == null) return null;
 		return containsIdentity(lower, input.shipmentContext().motherVessel())
 				|| containsIdentity(lower, input.shipmentContext().feederVessel()) ? "UNSTRUCTURED_FACTUAL_DETAIL" : null;
+	}
+
+	/** A duration keeps a revision attribution that governs it. A deadline word later in the sentence does not take that duration. "delayed by" inside a deadline sentence stays the comparison. */
+	private enum AttributedDuration { REVISION, COMPARISON, NONE }
+
+	private static AttributedDuration attributeDuration(String sentence, int start, int end) {
+		String prefix = sentence.substring(0, Math.max(0, Math.min(start, sentence.length()))).toLowerCase(Locale.ROOT);
+		String suffix = sentence.substring(Math.max(0, Math.min(end, sentence.length()))).toLowerCase(Locale.ROOT);
+		if (DURATION_BEFORE_DEADLINE.matcher(suffix).find()) return AttributedDuration.COMPARISON;
+		if (ownRevision(prefix, suffix)) return AttributedDuration.REVISION;
+		if (COMPARISON_DURATION_KEYWORD.matcher(sentence).find()) return AttributedDuration.COMPARISON;
+		if (revisionKeywordBefore(prefix) || prefix.matches("(?s).*\\bby\\s*")) return AttributedDuration.REVISION;
+		return AttributedDuration.NONE;
+	}
+
+	/** The revision word belongs to this duration when it is closer than a deadline or exceeds word, or the duration is immediately a "revision". */
+	private static boolean ownRevision(String prefix, String suffix) {
+		if (REVISION_WORD_AFTER_DURATION.matcher(suffix).find() && !comparisonMarginBy(prefix)) return true;
+		if (DIRECT_REVISION_BY.matcher(prefix).find()) return true;
+		int revisionAt = lastMatchStart(REVISION_ATTRIBUTION_KEYWORD, prefix);
+		if (revisionAt < 0 || prefix.length() - revisionAt > 48) return false;
+		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
+		return comparisonAt < revisionAt;
+	}
+
+	private static boolean comparisonMarginBy(String prefix) {
+		if (!COMPARISON_BY_DURATION.matcher(prefix).find()) return false;
+		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
+		return comparisonAt >= 0 && prefix.length() - comparisonAt <= 48;
+	}
+
+	private static boolean revisionKeywordBefore(String prefix) {
+		int at = lastMatchStart(REVISION_DURATION_KEYWORD, prefix);
+		return at >= 0 && prefix.length() - at <= 48;
+	}
+
+	/** Removes an exact revision phrase so a remaining risk claim is judged on its own. */
+	private static String withoutSupportedRevisionWording(String text, MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
+		Matcher duration = SUPPORTED_DURATION.matcher(text);
+		StringBuilder kept = new StringBuilder();
+		int cursor = 0;
+		while (duration.find()) {
+			int start = sentenceStart(text, duration.start());
+			String sentence = text.substring(start, sentenceEnd(text, duration.end()));
+			int localStart = duration.start() - start;
+			Long quantity = parseQuantity(duration.group(1));
+			Long unit = unitMinutes(duration.group(2));
+			if (quantity == null || unit == null
+					|| attributeDuration(sentence, localStart, duration.end() - start) != AttributedDuration.REVISION
+					|| !revisionQuantityMatches(sentence, quantity, unit, claim, cited)) continue;
+			int removeFrom = duration.start();
+			int keywordAt = lastMatchStart(REVISION_DURATION_KEYWORD, sentence.substring(0, localStart));
+			if (keywordAt >= 0 && localStart - keywordAt <= 48) removeFrom = start + keywordAt;
+			if (removeFrom < cursor) removeFrom = cursor;
+			kept.append(text, cursor, removeFrom);
+			cursor = duration.end();
+		}
+		kept.append(text.substring(cursor));
+		return kept.toString();
+	}
+
+	private static int revisionDurationsInSentence(String sentence) {
+		Matcher duration = SUPPORTED_DURATION.matcher(sentence);
+		int revisions = 0;
+		while (duration.find()) {
+			if (attributeDuration(sentence, duration.start(), duration.end()) == AttributedDuration.REVISION) revisions++;
+		}
+		return revisions;
+	}
+
+	private static int lastMatchStart(Pattern pattern, String text) {
+		Matcher matcher = pattern.matcher(text);
+		int at = -1;
+		while (matcher.find()) at = matcher.start();
+		return at;
+	}
+
+	private static int sentenceStart(String text, int index) {
+		for (int i = index - 1; i >= 0; i--) {
+			char boundary = text.charAt(i);
+			if (boundary == '.' || boundary == '!' || boundary == '?' || boundary == ';') return i + 1;
+		}
+		return 0;
+	}
+
+	private static int sentenceEnd(String text, int index) {
+		for (int i = index; i < text.length(); i++) {
+			char boundary = text.charAt(i);
+			if (boundary == '.' || boundary == '!' || boundary == '?' || boundary == ';') return i;
+		}
+		return text.length();
+	}
+
+	private static boolean revisionQuantityMatches(String sentence, long quantity, long unit, MaritimeAiClaim claim,
+			List<MaritimeEvidence> cited) {
+		if (claim == null || !"MOTHER".equals(claim.vesselRole()) || !"EXPECTED_ARRIVAL".equals(claim.observationType())
+				|| claim.factReferences() == null || cited.size() != 1) return false;
+		MaritimeEvidence evidence = cited.getFirst();
+		if (!"MPA_ETA_REVISION".equals(evidence.sourceType()) || !"MOTHER".equals(evidence.vesselRole())
+				|| !"EXPECTED_ARRIVAL".equals(evidence.observationType())
+				|| !claim.factReferences().contains("evidence:" + evidence.evidenceId())
+				|| UNSUPPORTED_REVISION_QUALIFIER.matcher(sentence).find()) return false;
+		try {
+			long signedMinutes = Duration.between(OffsetDateTime.parse(evidence.previousValue()),
+					OffsetDateTime.parse(evidence.currentValue())).toMinutes();
+			if (REVISION_DELAY_DIRECTION.matcher(sentence).find() && signedMinutes <= 0) return false;
+			if (REVISION_EARLIER_DIRECTION.matcher(sentence).find() && signedMinutes >= 0) return false;
+			return Math.multiplyExact(quantity, unit) == Math.abs(signedMinutes);
+		} catch (RuntimeException ignored) { return false; }
+	}
+
+	private static boolean comparisonQuantityMatches(String sentence, long quantity, long unit, MaritimeAiClaim claim,
+			MaritimeAiEvidencePackage input) {
+		if (claim == null || !"DELAY_COMPARISON_REVIEW".equals(claim.relationshipType()) || claim.factReferences() == null
+				|| input == null || input.shipmentContext() == null || input.shipmentContext().businessContext() == null)
+			return false;
+		MaritimeAiBusinessContext.Comparison comparison = input.shipmentContext().businessContext().comparison();
+		if (comparison == null || comparison.state() != MaritimeAiBusinessContext.ComparisonState.AVAILABLE
+				|| comparison.outcome() == null || comparison.estimatedArrivalAt() == null
+				|| comparison.comparedDeadline() == null) return false;
+		Set<String> refs = Set.copyOf(claim.factReferences());
+		Set<String> allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		if (!hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE)) return false;
+		long minutesLate = Duration.between(comparison.comparedDeadline().toInstant(),
+				comparison.estimatedArrivalAt().toInstant()).toMinutes();
+		long magnitude = Math.abs(minutesLate);
+		if (magnitude == 0) return false;
+		try {
+			if (Math.multiplyExact(quantity, unit) != magnitude) return false;
+		} catch (ArithmeticException overflow) { return false; }
+		String lower = sentence.toLowerCase(Locale.ROOT);
+		boolean exceeds = containsPositiveWord(lower, "exceeds") || containsPositiveWord(lower, "exceeded")
+				|| containsPositiveWord(lower, "exceed");
+		boolean beforeDeadline = BEFORE_THE_DEADLINE.matcher(lower).find();
+		if (comparison.outcome() == com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE)
+			return minutesLate > 0 && exceeds && !beforeDeadline;
+		return minutesLate <= 0 && beforeDeadline && !exceeds;
 	}
 	private static boolean supportedBusinessDateTokens(String text, MaritimeAiEvidencePackage input, MaritimeAiClaim claim) {
 		if (claim == null || claim.factReferences() == null || input.shipmentContext() == null
@@ -978,27 +1152,18 @@ final class MaritimeAiResponseValidator {
 		}
 		return matched > 0 && !FACTUAL_NUMBER.matcher(ISO_OFFSET_DATE_TIME.matcher(text).replaceAll("")).find();
 	}
-	private static boolean isExactSupportedRevisionDuration(String text, MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
-		if (claim == null || !"MOTHER".equals(claim.vesselRole()) || !"EXPECTED_ARRIVAL".equals(claim.observationType())
-				|| claim.factReferences() == null || cited.size() != 1) return false;
-		MaritimeEvidence evidence = cited.getFirst();
-		if (!"MPA_ETA_REVISION".equals(evidence.sourceType()) || !"MOTHER".equals(evidence.vesselRole())
-				|| !"EXPECTED_ARRIVAL".equals(evidence.observationType())
-				|| !claim.factReferences().contains("evidence:" + evidence.evidenceId())) return false;
-		Matcher matcher = REVISION_DURATION.matcher(text);
-		if (!matcher.find() || UNSUPPORTED_REVISION_QUALIFIER.matcher(text).find()) return false;
-		Long quantity = parseQuantity(matcher.group(1));
-		Long unitMinutes = unitMinutes(matcher.group(2));
-		if (matcher.find()) return false;
-		if (quantity == null || unitMinutes == null) return false;
-		try {
-			long signedMinutes = Duration.between(OffsetDateTime.parse(evidence.previousValue()),
-					OffsetDateTime.parse(evidence.currentValue())).toMinutes();
-			if (REVISION_DELAY_DIRECTION.matcher(text).find() && signedMinutes <= 0) return false;
-			if (REVISION_EARLIER_DIRECTION.matcher(text).find() && signedMinutes >= 0) return false;
-			return Math.multiplyExact(quantity, unitMinutes) == Math.abs(signedMinutes);
-		} catch (RuntimeException ignored) { return false; }
+
+	/** An exact quoted limitation is the source's own words, so it is not a new model-authored fact. */
+	private static String statementWithoutCitedLimitations(String statement, List<MaritimeEvidence> cited) {
+		if (statement == null || cited == null || cited.isEmpty()) return statement;
+		String remaining = statement;
+		for (MaritimeEvidence evidence : cited) {
+			String limitation = evidence == null || evidence.limitation() == null ? "" : evidence.limitation().strip();
+			if (limitation.length() >= 24) remaining = remaining.replace(limitation, " ");
+		}
+		return remaining;
 	}
+
 	private static Long parseQuantity(String value) {
 		try { return Long.parseLong(value); }
 		catch (NumberFormatException ignored) { return WRITTEN_NUMBERS.get(value.toLowerCase(Locale.ROOT)); }
