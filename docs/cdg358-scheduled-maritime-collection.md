@@ -43,7 +43,7 @@ GET /api/shipments/{shipmentId}/maritime-change-events?since=<ISO-8601>&limit=<1
 
 It uses the existing shipment-view authorization. The first page is newest-first by detected/recorded time and stable row id; `nextCursor` advances toward older records. `since` is inclusive and filters detection/recording time, not the older source event time. Results include prior/current values, provenance, source mode, freshness, compatibility, and association confidence. Associated notices and weather are human-review cues only; this feature does not change operational shipment risk. Failed polling is reflected by response availability and leaves previous observations available. Compatibility fields and legacy source/observation time strings can be null or malformed, so clients should parse them defensively.
 
-The V39 migration adds the composite `(recorded_at DESC, id DESC)` index used by newest-first event retrieval and cursor paging.
+This feature adds no migration; it reads the existing V31 `maritime_snapshot_observations` table.
 
 ## Offline deterministic replay
 

@@ -163,19 +163,6 @@ class MaritimeChangeEventControllerIntegrationTests {
 				.isGreaterThan(secondPage.getFirst().getId());
 	}
 
-	@Test
-	void migrationIndexesNewestFirstChangeEventPaging() {
-		Boolean exists = jdbc.queryForObject("""
-				SELECT EXISTS (
-					SELECT 1 FROM pg_indexes
-					WHERE schemaname = current_schema()
-					  AND tablename = 'maritime_snapshot_observations'
-					  AND indexname = 'maritime_snapshot_observations_recorded_at_id_idx'
-				)
-				""", Boolean.class);
-		org.assertj.core.api.Assertions.assertThat(exists).isTrue();
-	}
-
 	private static MaritimeSnapshotObservation observation(String identity, String fingerprint, Instant recordedAt) {
 		return MaritimeSnapshotObservation.record("MPA_OFFICIAL_NOTICE", identity, fingerprint, "NEW", "FORWARD", false,
 				"CDG-358 paging test", null, "2099-01-01T00:00:00Z", recordedAt, "RECORDED_REPLAY", "HISTORICAL",
