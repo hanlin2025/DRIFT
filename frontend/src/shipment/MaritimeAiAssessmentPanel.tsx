@@ -228,6 +228,39 @@ function RiskFacts({ assessment, snapshot, riskReview, scenarioMode = false }: {
   </section>;
 }
 
+function ConciseRiskContext({ assessment, snapshot, riskReview, scenarioMode = false }: {
+  assessment: MaritimeAiAssessment;
+  snapshot: MaritimeAiRiskSnapshot | null;
+  riskReview: NonNullable<MaritimeAiClaim['riskReview']> | null;
+  scenarioMode?: boolean;
+}) {
+  if (!snapshot && !riskReview) return null;
+
+  const severity = snapshot?.severity ?? riskReview?.severity;
+  const basis = snapshot?.selectedWindowBasis ?? riskReview?.selectedWindowBasis;
+  const windowState = snapshot?.selectedWindowState ?? riskReview?.selectedWindowState;
+  const freshness = snapshot?.estimateFreshness ?? riskReview?.estimateFreshness;
+  const duration = formatDuration(selectedDuration(snapshot));
+  const overrun = formatDuration(selectedOverrun(snapshot));
+
+  return <section className="maritime-ai-risk-summary" aria-label="Relevant backend risk context">
+    <h3>{scenarioMode ? 'Scenario risk context' : 'Backend risk context'}</h3>
+    <dl>
+      <div><dt>Severity</dt><dd>{snapshot?.assessed === false ? 'Not assessed' : severity ? humanizeCode(severity) : 'Not recorded'}</dd></div>
+      <div><dt>Risk basis</dt><dd>{basisLabel(basis)}</dd></div>
+      <div><dt>Window state</dt><dd>{windowStateLabel(windowState)}</dd></div>
+      {duration && <div><dt>Connection window</dt><dd>{duration}</dd></div>}
+      {overrun && <div><dt>Calculated overrun</dt><dd>{overrun}</dd></div>}
+      <div><dt>AIS estimate freshness</dt><dd>{freshnessLabel(freshness)}</dd></div>
+    </dl>
+    <p className="maritime-ai-assessment-time">{snapshot
+      ? `Saved backend snapshot${assessment.generatedAtUtc ? ` · ${assessment.generatedAtUtc}` : ''}; it does not describe the shipment’s current operational state.`
+      : `A saved interpretation contains this risk review${assessment.generatedAtUtc ? ` · ${assessment.generatedAtUtc}` : ''}; no numeric backend window snapshot was saved.`}</p>
+    {snapshot?.assessed === false && <p className="notice">The saved backend snapshot records that connection risk was not assessed.</p>}
+    {snapshot?.unavailableReason && <p className="maritime-ai-note">Risk assessment status: {snapshot.unavailableReason}</p>}
+  </section>;
+}
+
 function BusinessContextDetails({ snapshot, scenarioMode = false }: { snapshot: MaritimeAiBusinessSnapshot; scenarioMode?: boolean }) {
   const deadline = snapshot.context?.deadline;
   const comparison = snapshot.context?.comparison;
@@ -302,53 +335,45 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
     <p className="maritime-ai-review-note"><strong>Human review:</strong> Verify any cited source alongside the separate backend facts before changing a plan. This panel does not approve or apply a change.</p>
 
     {interpretation ? <>
-      {evidenceFacts.length > 0 || evidenceClaims.length > 0 ? <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
-        <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
-        {evidenceFacts.map((fact, index) => <article className="maritime-ai-observation" key={`observation-${fact.evidenceId ?? index}`}>
-          <p><strong>{sourceLabel(fact.sourceType)}</strong>{fact.eventType ? ` · ${humanizeCode(fact.eventType)}` : ''}</p>
-          <p>{sourceValue(fact)}</p>
-        </article>)}
-        {evidenceClaims.length > 0 && <div className="maritime-ai-claims" aria-label="Evidence interpretation">
-          <p><strong>Evidence interpretation</strong></p>
-          <ul>{evidenceClaims.map((claim, index) => <li key={`evidence-claim-${index}`}>
-            {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
-          </li>)}</ul>
-        </div>}
-      </section> : <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
-        <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
-        <p>No cited source observations were saved with this assessment.</p>
-      </section>}
+      <section className="maritime-ai-summary" aria-label="Validated interpretation summary">
+        <h3>Interpretation summary</h3>
+        {interpretation.summary?.trim()
+          ? <p>{interpretation.summary}</p>
+          : <p className="maritime-ai-note">The validated output did not include a summary.</p>}
+      </section>
 
-      {showRiskReview ? <>
-        <RiskFacts assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} scenarioMode={scenarioMode} />
-        <section className="maritime-ai-implications" aria-label="Tentative risk-review implications">
-          <p><strong>{scenarioMode ? 'Tentative scenario planning implication' : 'Tentative operational implication'}</strong></p>
-          <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>
-            {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
-          </li>)}</ul>
-          <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
-        </section>
-      </> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : businessClaims.length === 0 ? <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p> : null}
+      <ConciseRiskContext assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} scenarioMode={scenarioMode} />
 
-      {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Business implications">
-        <h3>Business implications</h3>
-        <p><strong>{scenarioMode ? 'Validated scenario deadline comparison' : 'Validated importer deadline comparison'}</strong></p>
-        <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>
-          {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
-        </li>)}</ul>
+      {showRiskReview ? <section className="maritime-ai-implications" aria-label="Tentative risk-review implications">
+        <h3>{scenarioMode ? 'Scenario risk interpretation' : 'Risk interpretation'}</h3>
+        <ul>{riskClaims.map((claim, index) => <li key={`risk-claim-${index}`}>{claim.statement}</li>)}</ul>
+        <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
+      </section> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : businessClaims.length === 0 ? <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p> : null}
+
+      {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Shipment-specific consequence">
+        <h3>{scenarioMode ? 'Scenario consequence' : 'Shipment-specific consequence'}</h3>
+        <ul>{businessClaims.map((claim, index) => <li key={`business-claim-${index}`}>{claim.statement}</li>)}</ul>
         <p className="maritime-ai-note">{scenarioMode
           ? 'This is a backend comparison against the deadline defined for the selected synthetic scenario snapshot. It is not a current shipment record or a final-delivery assessment.'
           : 'This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.'}</p>
       </section>}
 
-      <section className="maritime-ai-uncertainty" aria-label="Assessment uncertainty and human follow-up">
-        <div><h3>Uncertainty</h3>
-          {uncertainties.length ? <ul>{uncertainties.map((item, index) => <li key={`uncertainty-${index}`}>{item}</li>)}</ul> : <p>No additional uncertainty was recorded.</p>}
-        </div>
-        <div><h3>Human verification</h3>
-          {followUpConsiderations.length ? <ul>{followUpConsiderations.map((item, index) => <li key={`follow-up-${index}`}>{item}</li>)}</ul> : <p>No human verification steps were recorded.</p>}
-        </div>
-      </section>
+      {(uncertainties.length > 0 || followUpConsiderations.length > 0) && <section className="maritime-ai-uncertainty" aria-label="Assessment uncertainty and human follow-up">
+        {uncertainties.length > 0 && <div><h3>Uncertainty</h3>
+          <ul>{uncertainties.map((item, index) => <li key={`uncertainty-${index}`}>{item}</li>)}</ul>
+        </div>}
+        {followUpConsiderations.length > 0 && <div><h3>Human verification</h3>
+          <ul>{followUpConsiderations.map((item, index) => <li key={`follow-up-${index}`}>{item}</li>)}</ul>
+        </div>}
+      </section>}
+      {assessment.deterministicSummary?.limitations.length ? <section className="maritime-ai-limitations" aria-label="Important evidence limitations">
+        <h3>Important evidence limitations</h3>
+        <ul>{assessment.deterministicSummary.limitations.map((limitation, index) => <li key={`visible-limitation-${index}`}>{limitation}</li>)}</ul>
+      </section> : null}
+      {riskSnapshot?.calculationLimitations.length ? <section className="maritime-ai-limitations" aria-label="Important risk calculation limitations">
+        <h3>Risk calculation limitations</h3>
+        <ul>{riskSnapshot.calculationLimitations.map((limitation, index) => <li key={`visible-risk-limitation-${index}`}>{limitation}</li>)}</ul>
+      </section> : null}
     </> : <section className="maritime-ai-unavailable" aria-label="No validated interpretation">
       <h3>{assessment.state === 'ABSTAINED' ? 'No validated interpretation was produced' : 'Validated interpretation unavailable'}</h3>
       <p>{assessment.state === 'ABSTAINED' ? 'The assessment abstained; no AI interpretation is shown.'
@@ -357,16 +382,62 @@ export function MaritimeAiAssessmentPanel({ assessments, unavailable, generating
       <p>{assessment.limitation ?? 'This assessment did not produce an interpretation that is safe to display.'}</p>
     </section>}
 
-      {scheduleFacts.length > 0 && <section className="maritime-ai-schedule" aria-label={scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}>
-      <h3>{scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}</h3>
-      <ul>{scheduleFacts.map((fact, index) => <li key={`schedule-${fact.factReference}-${index}`}>{formatScheduleFact(fact)}</li>)}</ul>
-    </section>}
-
     <details className="maritime-ai-details">
       <summary>Assessment and evidence details</summary>
       <p><strong>Provider:</strong> {assessment.provider || 'not configured'} · <strong>model:</strong> {assessment.model || 'not recorded'} · <strong>prompt:</strong> {assessment.promptVersion || 'not recorded'}.</p>
       <p><strong>Assessment cutoff:</strong> {assessment.assessmentCutoffUtc || 'not recorded'} · <strong>bundle:</strong> {assessment.bundleVersion || 'not recorded'} · <strong>hash:</strong> {assessment.bundleHash || 'not recorded'}.</p>
       {interpretation && <p><strong>Interpretation overview:</strong> {interpretation.summary}</p>}
+      {interpretation && <>
+        {evidenceFacts.length > 0 || evidenceClaims.length > 0 ? <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
+          <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
+          {evidenceFacts.map((fact, index) => <article className="maritime-ai-observation" key={`observation-${fact.evidenceId ?? index}`}>
+            <p><strong>{sourceLabel(fact.sourceType)}</strong>{fact.eventType ? ` · ${humanizeCode(fact.eventType)}` : ''}</p>
+            <p>{sourceValue(fact)}</p>
+          </article>)}
+          {evidenceClaims.length > 0 && <div className="maritime-ai-claims" aria-label="Evidence interpretation">
+            <p><strong>Evidence interpretation</strong></p>
+            <ul>{evidenceClaims.map((claim, index) => <li key={`evidence-claim-${index}`}>
+              {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+            </li>)}</ul>
+          </div>}
+          {evidenceFacts.length === 0 && evidenceClaims.length === 0 && <p>No cited source observations were saved with this assessment.</p>}
+        </section> : <section className="maritime-ai-evidence" aria-label={scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}>
+          <h3>{scenarioMode ? 'Synthetic scenario evidence' : 'Observed maritime evidence'}</h3>
+          <p>No cited source observations were saved with this assessment.</p>
+        </section>}
+        {showRiskReview ? <>
+          <RiskFacts assessment={assessment} snapshot={riskSnapshot} riskReview={riskReview} scenarioMode={scenarioMode} />
+          <section className="maritime-ai-implications" aria-label="Tentative risk-review implications">
+            <p><strong>{scenarioMode ? 'Tentative scenario planning implication' : 'Tentative operational implication'}</strong></p>
+            <ul>{riskClaims.map((claim, index) => <li key={`risk-detail-${index}`}>
+              {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+            </li>)}</ul>
+            <p className="maritime-ai-note">The maritime observations and backend risk are separate facts. This review does not confirm a delay or missed connection.</p>
+          </section>
+        </> : riskClaims.length > 0 ? <p className="notice">The saved risk snapshot says risk was not assessed, so the risk-review claim is not displayed.</p> : businessClaims.length === 0 ? <p className="maritime-ai-note">This assessment contains evidence interpretation without a validated connection risk-review claim.</p> : null}
+        {businessClaims.length > 0 && <section className="maritime-ai-implications maritime-ai-business-implications" aria-label="Business implications">
+          <h3>Business implications</h3>
+          <p><strong>{scenarioMode ? 'Validated scenario deadline comparison' : 'Validated importer deadline comparison'}</strong></p>
+          <ul>{businessClaims.map((claim, index) => <li key={`business-detail-${index}`}>
+            {claim.statement}<p className="maritime-ai-citations">{claimSupport(claim, evidenceFacts)}</p>
+          </li>)}</ul>
+          <p className="maritime-ai-note">{scenarioMode
+            ? 'This is a backend comparison against the deadline defined for the selected synthetic scenario snapshot. It is not a current shipment record or a final-delivery assessment.'
+            : 'This is a backend comparison against the importer’s saved transshipment-arrival deadline at assessment time. It is not a final-delivery or cargo-outcome assessment.'}</p>
+        </section>}
+        <section className="maritime-ai-uncertainty" aria-label="Assessment uncertainty and human follow-up">
+          <div><h3>Uncertainty</h3>
+            {uncertainties.length ? <ul>{uncertainties.map((item, index) => <li key={`uncertainty-detail-${index}`}>{item}</li>)}</ul> : <p>No additional uncertainty was recorded.</p>}
+          </div>
+          <div><h3>Human verification</h3>
+            {followUpConsiderations.length ? <ul>{followUpConsiderations.map((item, index) => <li key={`follow-up-detail-${index}`}>{item}</li>)}</ul> : <p>No human verification steps were recorded.</p>}
+          </div>
+        </section>
+        {scheduleFacts.length > 0 && <section className="maritime-ai-schedule" aria-label={scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}>
+          <h3>{scenarioMode ? 'Scenario schedule at assessment time' : 'Stored shipment schedule at assessment time'}</h3>
+          <ul>{scheduleFacts.map((fact, index) => <li key={`schedule-${fact.factReference}-${index}`}>{formatScheduleFact(fact)}</li>)}</ul>
+        </section>}
+      </>}
       {evidenceFacts.length > 0 && <section aria-label="Cited source details">
         <h4>Cited source details</h4>
         {evidenceFacts.map((fact, index) => <section key={`evidence-${index}`} aria-label={`${sourceLabel(fact.sourceType)} ${fact.evidenceId ?? index}`}>
