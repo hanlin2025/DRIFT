@@ -123,7 +123,7 @@ test('an importer saves, reloads, updates, and clears a transshipment arrival de
     await signIn(page, importer);
     await page.goto(`/importer/shipments/${shipmentId}`);
     await expect(fact(page)).toContainText('Not recorded');
-    await expect(fact(page)).toContainText('not the final delivery time');
+    await expect(fact(page)).toContainText('Not the final delivery time.');
     await expect(fact(page).getByText('Confirming port: Singapore')).toBeVisible();
 
     await fact(page).getByLabel('Deadline').fill('2026-10-29T00:00');
