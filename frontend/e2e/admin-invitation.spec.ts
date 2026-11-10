@@ -40,7 +40,7 @@ test('an administrator invites a colleague and the invitation registers once', {
   expect(created.status()).toBe(201);
 
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(adminEmail);
+  await page.getByLabel('Email').fill(adminEmail);
   await page.getByLabel('Password', { exact: true }).fill('Example123');
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/admin');
@@ -98,7 +98,7 @@ test('an administrator invites a colleague and the invitation registers once', {
   expect(await page.evaluate(secret => document.body.innerText.includes(secret), code)).toBe(false);
 
   await page.goto(`/signup#invite=${code}`);
-  await expect(page.getByLabel(/Work email/)).toHaveValue(guest);
+  await expect(page.getByLabel(/Email/)).toHaveValue(guest);
   await expect(page.getByLabel(/Your role/)).toHaveValue('Logistics manager');
   await page.getByLabel('Full name').fill('Casey Guest');
   await page.getByLabel('Password', { exact: true }).fill('Example123');
@@ -113,7 +113,7 @@ test('an administrator invites a colleague and the invitation registers once', {
   expect(sql(`SELECT status FROM invitations WHERE email = '${guest}'`)).toBe('CONSUMED');
 
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(guest);
+  await page.getByLabel('Email').fill(guest);
   await page.getByLabel('Password', { exact: true }).fill('Example123');
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/logistics-manager');

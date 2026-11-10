@@ -262,7 +262,7 @@ describe('user management', () => {
     vi.mocked(loadSession).mockImplementation(async token => ({ ...admin, token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'amina@example.com');
+    await user.type(screen.getByLabelText('Email'), 'amina@example.com');
     await user.type(screen.getByLabelText('Password'), 'Example123');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();

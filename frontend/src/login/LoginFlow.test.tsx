@@ -45,7 +45,7 @@ describe('login and role routing', () => {
   it('opens the freight-forwarder portfolio after a valid login', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'Example123');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe('login and role routing', () => {
     vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'ADMIN', token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'Example123');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('login and role routing', () => {
     vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'LOGISTICS_MANAGER', token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'Example123');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
@@ -92,7 +92,7 @@ describe('login and role routing', () => {
     vi.mocked(loadSession).mockImplementation(async token => ({ ...session, role: 'IMPORTER', token }));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'Example123');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('heading', { name: 'Shipment overview' })).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe('login and role routing', () => {
     vi.mocked(login).mockRejectedValue(new ApiError('Invalid email or password.', 401));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.type(screen.getByLabelText('Work email'), 'alice@example.com');
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com');
     await user.type(screen.getByLabelText('Password'), 'wrong');
     await user.click(screen.getByRole('button', { name: /Log in/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
@@ -182,7 +182,7 @@ describe('login and role routing', () => {
 describe('login acceptance criteria', () => {
   async function submit(email: string, password: string) {
     const user = userEvent.setup();
-    if (email) await user.type(screen.getByLabelText('Work email'), email);
+    if (email) await user.type(screen.getByLabelText('Email'), email);
     if (password) await user.type(screen.getByLabelText('Password'), password);
     await user.click(screen.getByRole('button', { name: /Log in/ }));
   }
@@ -210,7 +210,7 @@ describe('login acceptance criteria', () => {
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
     await submit('   ', 'Example123');
     expect(screen.getByText('Email is required')).toBeInTheDocument();
-    expect(screen.getByLabelText('Work email')).toHaveFocus();
+    expect(screen.getByLabelText('Email')).toHaveFocus();
     expect(login).not.toHaveBeenCalled();
   });
 

@@ -69,7 +69,7 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     expect(sql("SELECT COUNT(*) FROM shipments WHERE company_id = (SELECT id FROM companies WHERE code = 'HARBOURLINE_DEMO');")).toBe('0');
     const initialList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.goto('/login');
-    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page).toHaveURL('/freight-forwarder');
@@ -188,7 +188,7 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
 
     const initialList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.goto('/login');
-    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page).toHaveURL('/freight-forwarder');
@@ -276,7 +276,7 @@ test("a freight forwarder sees which customers' deadlines a delay is likely to m
     }
 
     await page.goto('/login');
-    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page).toHaveURL('/freight-forwarder');

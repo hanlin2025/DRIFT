@@ -214,7 +214,7 @@ function cleanup(emails: string[], companies: string[] = []) {
 
 async function signIn(page: Page, email: string, url: string) {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(url);

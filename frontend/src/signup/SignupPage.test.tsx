@@ -26,7 +26,7 @@ describe('signup form', () => {
   it('loads assigned company, email and role as read-only values', async () => {
     render(<SignupPage />);
     expect(await screen.findByText(invitation.companyName)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Work email/)).toHaveAttribute('readonly');
+    expect(screen.getByLabelText(/Email/)).toHaveAttribute('readonly');
     expect(screen.getByLabelText(/Your role/)).toHaveValue('Freight forwarder');
     expect(resolveInvitation).toHaveBeenCalledWith('a'.repeat(43));
   });

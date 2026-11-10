@@ -95,7 +95,7 @@ export function SetupPage() {
   return (
     <>
       <p className="eyebrow form-eyebrow">FIRST ADMINISTRATOR</p>
-      <h2>Set up this installation.</h2>
+      <h1>Set up this installation.</h1>
       <p className="intro">An operator creates the one initial administrator. Colleagues still join by invitation.</p>
       {error && <div className="error-notice" role="alert">{error}</div>}
       {created ? (
