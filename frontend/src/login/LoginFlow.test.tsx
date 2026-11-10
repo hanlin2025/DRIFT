@@ -179,6 +179,30 @@ describe('login and role routing', () => {
   });
 });
 
+describe('sign-in status messages', () => {
+  it('shows the account-created message after invitation signup', () => {
+    render(<MemoryRouter initialEntries={[{ pathname: '/login', state: { registered: true, email: 'alice@example.com' } }]}><AppRoutes /></MemoryRouter>);
+    expect(screen.getByRole('status')).toHaveTextContent('Account created successfully.');
+    expect(screen.getByRole('status')).toHaveTextContent("You're registered with alice@example.com.");
+    expect(screen.getByLabelText('Email')).toHaveValue('alice@example.com');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the password-changed message without the ended-session alert', () => {
+    sessionStorage.setItem('drift.session.ended', '1');
+    render(<MemoryRouter initialEntries={[{ pathname: '/login', state: { passwordChanged: true } }]}><AppRoutes /></MemoryRouter>);
+    expect(screen.getByRole('status')).toHaveTextContent('Your password was changed. Log in with the new password.');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the ended-session message', () => {
+    sessionStorage.setItem('drift.session.ended', '1');
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    expect(screen.getByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
 describe('login acceptance criteria', () => {
   async function submit(email: string, password: string) {
     const user = userEvent.setup();
