@@ -46,7 +46,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.signup.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmailVerificationIntegrationTests.CapturingMail.class)

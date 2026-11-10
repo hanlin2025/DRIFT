@@ -27,10 +27,13 @@ public class AccountRemovalService {
 
 	private final UserAccountRepository users;
 	private final AccountStatusAuditRepository audits;
+	private final AdministratorContinuity continuity;
 
-	public AccountRemovalService(UserAccountRepository users, AccountStatusAuditRepository audits) {
+	public AccountRemovalService(UserAccountRepository users, AccountStatusAuditRepository audits,
+			AdministratorContinuity continuity) {
 		this.users = users;
 		this.audits = audits;
+		this.continuity = continuity;
 	}
 
 	@Transactional(readOnly = true)
@@ -62,6 +65,7 @@ public class AccountRemovalService {
 		if (target.getStatus() == AccountStatus.PENDING_VERIFICATION) {
 			throw new AccountPendingVerificationException();
 		}
+		continuity.beforeRemoval(target);
 		target.remove();
 		try {
 			users.saveAndFlush(target);

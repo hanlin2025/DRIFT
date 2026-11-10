@@ -1,6 +1,8 @@
 package com.drift.backend.account.profile;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,9 +11,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.drift.backend.account.authentication.AuthenticatedUser;
+import com.drift.backend.account.authentication.SessionCookie;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.config.OpenApiConfig;
 
+import jakarta.servlet.http.HttpServletRequest;
 import tools.jackson.databind.JsonNode;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,9 +33,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class ProfileController {
 
 	private final ProfileService profiles;
+	private final boolean secureCookie;
 
-	public ProfileController(ProfileService profiles) {
+	public ProfileController(ProfileService profiles,
+			@Value("${app.session.cookie.secure:false}") boolean secureCookie) {
 		this.profiles = profiles;
+		this.secureCookie = secureCookie;
 	}
 
 	@GetMapping("/api/profile")
@@ -58,7 +65,7 @@ public class ProfileController {
 	@Operation(summary = "Update the signed-in profile", description = "Updates only the caller's own full name, password, and shipment-risk notification choice. "
 			+ "Omitted fields stay as they are. "
 			+ "A password change requires the current password and a new password that meets the registration password policy, "
-			+ "replaces the existing password hash, and ends the current session. "
+			+ "replaces the existing password hash, ends the current session, and clears the session cookie. "
 			+ "A present but blank password field is rejected. "
 			+ "The notification fields store whether email is wanted and the minimum shipment-risk level. No email is sent. "
 			+ "minimumRiskNotificationLevel must be exactly LOW, MEDIUM, HIGH, or CRITICAL. "
@@ -84,10 +91,19 @@ public class ProfileController {
 			@Parameter(hidden = true) @AuthenticationPrincipal AuthenticatedUser user,
 			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true, content = @Content(
 					mediaType = "application/json", schema = @Schema(implementation = UpdateProfileRequest.class)))
-			@RequestBody JsonNode body) {
+			@RequestBody JsonNode body, HttpServletRequest http) {
 		if (user == null) {
 			throw new SessionEndedException();
 		}
-		return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(profiles.update(user, body));
+		ProfileView saved = profiles.update(user, body);
+		var response = ResponseEntity.ok().cacheControl(CacheControl.noStore());
+		if (changesPassword(body)) {
+			response.header(HttpHeaders.SET_COOKIE, SessionCookie.clear(secureCookie || http.isSecure()));
+		}
+		return response.body(saved);
+	}
+
+	private static boolean changesPassword(JsonNode body) {
+		return body != null && body.isObject() && (body.has("currentPassword") || body.has("newPassword"));
 	}
 }

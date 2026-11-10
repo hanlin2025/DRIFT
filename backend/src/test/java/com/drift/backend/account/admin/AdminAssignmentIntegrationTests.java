@@ -26,6 +26,8 @@ import com.drift.backend.account.admin.exception.AdminAssignmentConflictExceptio
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.InvalidAssignmentException;
+import com.drift.backend.account.admin.exception.LastAdministratorException;
+import com.drift.backend.account.admin.exception.SelfAssignmentException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.jayway.jsonpath.JsonPath;
 
@@ -41,7 +43,10 @@ class AdminAssignmentIntegrationTests {
 	@Autowired JdbcTemplate jdbc;
 	@Autowired PasswordEncoder passwords;
 	@Autowired EntityManager entityManager;
+	@Autowired AdministratorContinuity continuity;
+	@Autowired com.drift.backend.account.UserAccountRepository accounts;
 
+	private String adminEmail;
 	private String adminToken;
 	private Long harbourlineId;
 	private Long straitsId;
@@ -50,7 +55,8 @@ class AdminAssignmentIntegrationTests {
 	void administrator() throws Exception {
 		harbourlineId = companyId("HARBOURLINE_DEMO");
 		straitsId = companyId("STRAITS_FRESH_DEMO");
-		adminToken = tokenFor(createUser("Admin User", "ADMIN", harbourlineId));
+		adminEmail = createUser("Admin User", "ADMIN", harbourlineId);
+		adminToken = tokenFor(adminEmail);
 	}
 
 	@Test
@@ -211,6 +217,85 @@ class AdminAssignmentIntegrationTests {
 	}
 
 	@Test
+	void rejectsAnAdministratorChangingTheirOwnRole() throws Exception {
+		Long adminId = userId(adminEmail);
+		long auditsBefore = auditCount();
+
+		assign(adminToken, adminId, harbourlineId, "IMPORTER")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(SelfAssignmentException.MESSAGE));
+
+		assertOwnAssignmentUnchanged(adminId);
+		assertThat(auditCount()).isEqualTo(auditsBefore);
+		mvc.perform(get("/api/session").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.role").value("ADMIN"));
+	}
+
+	@Test
+	void rejectsAnAdministratorResubmittingTheirOwnUnchangedAssignment() throws Exception {
+		Long adminId = userId(adminEmail);
+		long auditsBefore = auditCount();
+
+		assign(adminToken, adminId, harbourlineId, "ADMIN")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(SelfAssignmentException.MESSAGE));
+
+		assertOwnAssignmentUnchanged(adminId);
+		assertThat(auditCount()).isEqualTo(auditsBefore);
+	}
+
+	@Test
+	void rejectsAnAdministratorMovingThemselvesToAnotherOrganisationBeforeValidatingIt() throws Exception {
+		Long adminId = userId(adminEmail);
+		long auditsBefore = auditCount();
+
+		// The self check runs right after the administrator check, so a foreign or unknown organisation
+		// is reported as a self-assignment (409), not as an invalid organisation (400).
+		assign(adminToken, adminId, straitsId, "ADMIN")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(SelfAssignmentException.MESSAGE));
+		assign(adminToken, adminId, 999999L, "PLANNER")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value(SelfAssignmentException.MESSAGE));
+
+		assertOwnAssignmentUnchanged(adminId);
+		assertThat(auditCount()).isEqualTo(auditsBefore);
+	}
+
+	@Test
+	void stillAssignsAnotherUserInTheSameOrganisationAndAuditsIt() throws Exception {
+		Long userId = userId(createUser("Colleague", "IMPORTER", harbourlineId));
+		long auditsBefore = auditCount();
+
+		assign(adminToken, userId, harbourlineId, "FREIGHT_FORWARDER")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.user.role").value("FREIGHT_FORWARDER"));
+
+		assertThat(auditCount()).isEqualTo(auditsBefore + 1);
+		assertThat(jdbc.queryForObject("""
+				SELECT COUNT(*) FROM user_assignment_audits
+				WHERE target_user_id = ? AND operator_user_id = ?
+				""", Long.class, userId, userId(adminEmail))).isEqualTo(1L);
+	}
+
+	@Test
+	void continuityGuardCountsOnlyOtherActiveAdministratorsOfTheSameCompany() {
+		Long adminId = userId(adminEmail);
+		Long colleagueId = userId(createUser("Colleague", "IMPORTER", harbourlineId));
+
+		assertThat(accounts.countOtherActiveAdministrators(harbourlineId, adminId)).isZero();
+		assertThat(accounts.countOtherActiveAdministrators(harbourlineId, colleagueId)).isEqualTo(1L);
+		jdbc.update("UPDATE users SET status = 'REMOVED' WHERE id = ?", adminId);
+		assertThat(accounts.countOtherActiveAdministrators(harbourlineId, colleagueId)).isZero();
+		jdbc.update("UPDATE users SET status = 'ACTIVE' WHERE id = ?", adminId);
+		entityManager.clear();
+
+		org.junit.jupiter.api.Assertions.assertThrows(LastAdministratorException.class,
+				() -> continuity.beforeRemoval(accounts.findById(adminId).orElseThrow()));
+	}
+
+	@Test
 	void documentsTheAssignmentApi() throws Exception {
 		mvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
@@ -229,8 +314,12 @@ class AdminAssignmentIntegrationTests {
 						.value(AssignmentForbiddenException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['404'].content['application/json'].example.message")
 						.value(AssignedUserNotFoundException.MESSAGE))
-				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['409'].content['application/json'].example.message")
+				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['409'].content['application/json'].examples['One admin'].value.message")
 						.value(AdminAssignmentConflictException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['409'].content['application/json'].examples['Own assignment'].value.message")
+						.value(SelfAssignmentException.MESSAGE))
+				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['409'].content['application/json'].examples['Last administrator'].value.message")
+						.value(LastAdministratorException.MESSAGE))
 				.andExpect(jsonPath("$.paths['/api/admin/users/{userId}/assign'].patch.responses['200'].content['application/json'].schema.$ref")
 						.value("#/components/schemas/Assignment"));
 	}
@@ -264,6 +353,17 @@ class AdminAssignmentIntegrationTests {
 				.andExpect(status().isOk())
 				.andReturn();
 		return JsonPath.read(login.getResponse().getContentAsString(), "$.token");
+	}
+
+	private void assertOwnAssignmentUnchanged(Long adminId) {
+		assertThat(jdbc.queryForObject("SELECT code FROM roles JOIN users ON users.role_id = roles.id WHERE users.id = ?",
+				String.class, adminId)).isEqualTo("ADMIN");
+		assertThat(jdbc.queryForObject("SELECT company_id FROM users WHERE id = ?", Long.class, adminId)).isEqualTo(harbourlineId);
+		assertThat(jdbc.queryForObject("SELECT session_generation FROM users WHERE id = ?", Long.class, adminId)).isZero();
+	}
+
+	private long auditCount() {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM user_assignment_audits", Long.class);
 	}
 
 	private Long userId(String email) {

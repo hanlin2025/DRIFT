@@ -34,7 +34,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import com.drift.backend.account.passwordreset.ResetTokens;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.signup.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmailVerificationRateLimitIntegrationTests.Limits.class)

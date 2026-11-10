@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import com.drift.backend.email.MailLinks;
+
 @Configuration
 public class InvitationMailConfig {
 
@@ -19,8 +21,7 @@ public class InvitationMailConfig {
 	}
 
 	public static String link(String linkBaseUrl, String code) {
-		String base = linkBaseUrl.endsWith("/") ? linkBaseUrl.substring(0, linkBaseUrl.length() - 1) : linkBaseUrl;
-		return base + "#invite=" + URLEncoder.encode(code, StandardCharsets.UTF_8);
+		return MailLinks.normalize(linkBaseUrl) + "#invite=" + URLEncoder.encode(code, StandardCharsets.UTF_8);
 	}
 
 	static final class SmtpInvitationMailer implements InvitationMailer {

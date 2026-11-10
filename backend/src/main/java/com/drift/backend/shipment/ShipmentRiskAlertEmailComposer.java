@@ -6,6 +6,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.stereotype.Component;
 
 import com.drift.backend.account.Role;
+import com.drift.backend.email.MailLinks;
 
 /** Builds a single-recipient text email from immutable transition data. */
 @Component
@@ -41,8 +42,7 @@ public class ShipmentRiskAlertEmailComposer {
 			case ADMIN -> "/admin/shipments/" + shipmentId;
 			case LOGISTICS_MANAGER -> "/logistics-manager/shipments/" + shipmentId;
 		};
-		String base = frontendBaseUrl.strip().replaceFirst("/+$", "");
-		URI link = URI.create(base + path);
+		URI link = URI.create(MailLinks.normalize(frontendBaseUrl) + path);
 		if (!link.isAbsolute() || link.getHost() == null) {
 			throw new IllegalArgumentException("Frontend base URL must produce an absolute shipment link");
 		}
