@@ -154,6 +154,49 @@ class AdminInvitationIntegrationTests {
 	}
 
 	@Test
+	void anAdministratorCanInviteIntoAnEmptyOrganisationTheyCreated() throws Exception {
+		Long adminId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, adminEmail);
+		String emptyCode = "CDG313EMPTY" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+		jdbc.update("INSERT INTO companies (code, name, active, created_by_user_id) VALUES (?, 'Empty Gate Imports', true, ?)",
+				emptyCode, adminId);
+		Long emptyId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, emptyCode);
+		String foreignCode = "CDG313OTHER" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+		jdbc.update("INSERT INTO companies (code, name, active) VALUES (?, 'Foreign Empty Imports', true)", foreignCode);
+		Long foreignId = jdbc.queryForObject("SELECT id FROM companies WHERE code = ?", Long.class, foreignCode);
+
+		mvc.perform(get("/api/admin/invitation-organisations").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.code == '" + emptyCode + "')].name").value("Empty Gate Imports"))
+				.andExpect(jsonPath("$[?(@.code == 'HARBOURLINE_DEMO')].name").value("Harbourline Logistics (Demo)"))
+				.andExpect(jsonPath("$[?(@.code == '" + foreignCode + "')]").isEmpty())
+				.andExpect(jsonPath("$[?(@.code == 'STRAITS_FRESH_DEMO')]").isEmpty());
+
+		mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail))
+				.contentType(MediaType.APPLICATION_JSON).content(invite(emptyId, "IMPORTER", guestEmail)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.email").value(guestEmail))
+				.andExpect(jsonPath("$.organisation.code").value(emptyCode))
+				.andExpect(jsonPath("$.role").value("IMPORTER"));
+
+		mvc.perform(get("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.email == '" + guestEmail + "')].organisation.code").value(emptyCode));
+
+		String occupied = "cdg310-cross-" + UUID.randomUUID() + "@example.com";
+		mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail))
+				.contentType(MediaType.APPLICATION_JSON).content(invite(straits, "FREIGHT_FORWARDER", occupied)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.organisationId").value("Choose your active organisation."));
+		mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail))
+				.contentType(MediaType.APPLICATION_JSON).content(invite(foreignId, "IMPORTER", occupied)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors.organisationId").value("Choose your active organisation."));
+
+		jdbc.update("DELETE FROM invitations WHERE email = ?", guestEmail);
+		jdbc.update("DELETE FROM companies WHERE id IN (?, ?)", emptyId, foreignId);
+	}
+
+	@Test
 	void unauthorizedCallersAndMailFailuresDoNotIssueAnInvitation() throws Exception {
 		String forwarder = "cdg310-forwarder-" + UUID.randomUUID() + "@example.com";
 		insertUser(forwarder, "FREIGHT_FORWARDER", harbourline);
