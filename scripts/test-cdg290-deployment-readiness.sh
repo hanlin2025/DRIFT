@@ -31,7 +31,7 @@ trap cleanup EXIT
 
 wait_for_readiness() {
   local attempt
-  for attempt in $(seq 1 90); do
+  for attempt in $(seq 1 180); do
     if curl --silent --fail "http://127.0.0.1:${API_PORT}/readyz" -o "$TEMP_DIR/ready.json"; then
       if ! grep -Eq '"components"|"db"' "$TEMP_DIR/ready.json"; then
         echo "PASS public readiness endpoint returns no component detail"
@@ -52,12 +52,26 @@ wait_for_readiness() {
 start_api() {
   docker run -d --name "$API_CONTAINER" --network "$NETWORK" \
     -p "127.0.0.1:${API_PORT}:10000" \
+    --add-host smtp.gmail.com:127.0.0.1 \
     -e PORT=10000 \
     -e SPRING_PROFILES_ACTIVE=production \
+    -e SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration \
     -e SPRING_DATASOURCE_URL='jdbc:postgresql://postgres:5432/drift?sslmode=disable' \
     -e SPRING_DATASOURCE_USERNAME=drift \
     -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
     -e JWT_SECRET="$JWT_SECRET" \
+    -e MAIL_HOST=smtp.gmail.com \
+    -e MAIL_PORT=587 \
+    -e MAIL_SMTP_AUTH=true \
+    -e MAIL_SMTP_STARTTLS_ENABLE=true \
+    -e MAIL_SMTP_STARTTLS_REQUIRED=true \
+    -e MAIL_USERNAME="deployment-readiness-${RUN_ID}@example.invalid" \
+    -e MAIL_PASSWORD="DEPLOY_READINESS_SMTP_PASSWORD_NOT_REAL_${RUN_ID}" \
+    -e MAIL_FROM_ADDRESS="deployment-readiness-${RUN_ID}@example.invalid" \
+    -e FRONTEND_BASE_URL=https://drift.example.invalid \
+    -e INVITATION_LINK_BASE_URL=https://drift.example.invalid/signup \
+    -e PASSWORD_RESET_LINK_BASE_URL=https://drift.example.invalid/reset-password \
+    -e RISK_ALERTS_FRONTEND_BASE_URL=https://drift.example.invalid \
     -e AIS_ENABLED=false \
     -e MARITIME_AI_ENABLED=false \
     -e MARITIME_AI_SCENARIO_ENABLED=false \
@@ -66,12 +80,12 @@ start_api() {
     "$@" "$IMAGE" >/dev/null
 }
 
-assert_migration_v34() {
+assert_migration_v40() {
   local latest
   latest="$(docker exec "$DB_CONTAINER" psql -U drift -d drift -At -c \
     "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1")"
-  [[ "$latest" == "34" ]] || { echo "Expected Flyway V34, found ${latest:-none}" >&2; return 1; }
-  echo "PASS Flyway successfully applied through V34"
+  [[ "$latest" == "40" ]] || { echo "Expected Flyway V40, found ${latest:-none}" >&2; return 1; }
+  echo "PASS Flyway successfully applied through V40"
 }
 
 operational_snapshot() {
@@ -113,7 +127,7 @@ echo "PASS public liveness endpoint returns HTTP 200"
 AUTH_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:${API_PORT}/api/profile")"
 [[ "$AUTH_STATUS" == 401 ]] || { echo "Expected unauthenticated API HTTP 401; got $AUTH_STATUS" >&2; exit 1; }
 echo "PASS authenticated API remains protected"
-assert_migration_v34
+assert_migration_v40
 
 read -r DEMO_INVITE DEMO_INVITE_HASH < <(python3 - <<'PY'
 import hashlib, secrets
@@ -174,7 +188,10 @@ for required in 'AIS_ENABLED=false' 'MARITIME_AI_ENABLED=false' 'MARITIME_AI_SCE
   grep -Fxq "$required" <<<"$RUNTIME_ENV" || { echo "Missing safe runtime default: $required" >&2; exit 1; }
 done
 ! grep -Eq '^(AISSTREAM_API_KEY|MARITIME_AI_API_KEY)=' <<<"$RUNTIME_ENV"
+SMTP_RESOLUTION="$(docker exec "$API_CONTAINER" python3 -c 'import socket; print(socket.gethostbyname("smtp.gmail.com"))')"
+[[ "$SMTP_RESOLUTION" == "127.0.0.1" ]] || { echo "SMTP hostname was not isolated from external delivery" >&2; exit 1; }
 echo "PASS hosted startup has no provider keys and external AIS/AI gates remain off"
+echo "PASS SMTP resolves only to container loopback during readiness checks"
 
 # Sessions live in the one backend process. Recreate it with the exact two synthetic DB bindings.
 docker stop --time 30 "$API_CONTAINER" >/dev/null
@@ -186,7 +203,7 @@ start_api \
   -e CONTROLLED_SCENARIO_SHIPMENT_A_ID="$SHIPMENT_A_ID" \
   -e CONTROLLED_SCENARIO_SHIPMENT_B_ID="$SHIPMENT_B_ID"
 wait_for_readiness
-assert_migration_v34
+assert_migration_v40
 
 BEFORE_SCENARIO="$(operational_snapshot)"
 SCENARIO_OUTPUT="$(DRIFT_API_ORIGIN="http://127.0.0.1:${API_PORT}" \
@@ -209,7 +226,7 @@ echo "PASS scenario lifecycle did not mutate AIS, shipment, risk, change, recomm
 docker stop --time 30 "$API_CONTAINER" >/dev/null
 docker start "$API_CONTAINER" >/dev/null
 wait_for_readiness
-assert_migration_v34
+assert_migration_v40
 echo "PASS clean backend shutdown, restart and migration revalidation"
 
 # Missing required deployment configuration must fail fast rather than bind a local default.
