@@ -12,7 +12,7 @@ interface MaritimeSnapshotObservationStore {
 
 	void add(MaritimeSnapshotObservation observation, boolean becomesHead);
 
-	default List<MaritimeSnapshotObservation> after(Instant detectedSince, Instant afterRecordedAt, long afterId, int limit) {
+	default List<MaritimeSnapshotObservation> before(Instant detectedSince, Instant beforeRecordedAt, long beforeId, int limit) {
 		return List.of();
 	}
 }

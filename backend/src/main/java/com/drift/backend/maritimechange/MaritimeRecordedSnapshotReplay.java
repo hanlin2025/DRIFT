@@ -15,24 +15,18 @@ class MaritimeRecordedSnapshotReplay {
 	private final ObjectMapper json;
 	private final MaritimeSnapshotNormalizer normalizer;
 	private final MaritimeSnapshotChangeDetector detector;
-	private final MaritimeCollectionHealth health;
 
 	MaritimeRecordedSnapshotReplay(ObjectMapper json, MaritimeSnapshotNormalizer normalizer,
-			MaritimeSnapshotChangeDetector detector, MaritimeCollectionHealth health) {
+			MaritimeSnapshotChangeDetector detector) {
 		this.json = json;
 		this.normalizer = normalizer;
 		this.detector = detector;
-		this.health = health;
 	}
 
 	@Transactional
 	MaritimeSnapshotChangeBatch replay() {
 		List<MaritimeSourceObservation> observations = readFixture();
-		MaritimeSnapshotChangeBatch batch = detector.accept(observations.stream().map(normalizer::normalize).toList());
-		health.record("MPA_ETA", true);
-		health.record("MPA_NOTICE", true);
-		health.record("NEA_WEATHER", true);
-		return batch;
+		return detector.accept(observations.stream().map(normalizer::normalize).toList());
 	}
 
 	private List<MaritimeSourceObservation> readFixture() {

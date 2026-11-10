@@ -10,8 +10,15 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class MaritimeSnapshotCollectionSchedulerTest {
 	@Test
@@ -25,13 +32,61 @@ class MaritimeSnapshotCollectionSchedulerTest {
 				List.of(snapshot("2026-11-10T00:00:00Z", "arrival=15:00")))));
 		MaritimeCollectionHealth health = new MaritimeCollectionHealth();
 		MaritimeSnapshotCollectionScheduler scheduler = new MaritimeSnapshotCollectionScheduler(polling, detector,
-				health, 1_800_000L, 30_000L);
+				health, Runnable::run, 1_800_000L, 30_000L);
 
 		scheduler.pollOnce();
 
 		assertThat(store.headValue()).isEqualTo("arrival=12:00");
 		assertThat(store.size()).isEqualTo(1);
 		assertThat(health.availability()).isEqualTo("UNAVAILABLE");
+	}
+
+	@Test
+	void nonemptyBatchRejectedInFullMarksSourceUnavailable() {
+		MemoryStore store = new MemoryStore();
+		MaritimeSnapshotChangeDetector detector = new MaritimeSnapshotChangeDetector(store,
+				Clock.fixed(Instant.parse("2026-11-10T00:00:00Z"), ZoneOffset.UTC));
+		MaritimeSnapshotPollingService polling = mock(MaritimeSnapshotPollingService.class);
+		when(polling.poll()).thenReturn(List.of(new MaritimeCollectionPoll("NEA_WEATHER", true,
+				List.of(new MaritimeSnapshot("INVALID_SOURCE", "nea:rainfall:S306", "NEA poll", "2026-11-10T00:00:00Z",
+						"2026-11-10T00:00:00Z", "2026-11-10T00:00:00Z", "LIVE", "APPLICABLE", null, "Singapore",
+						null, null, null, "rainfall=1", "UNKNOWN", "UNKNOWN", "UNKNOWN")))));
+		MaritimeCollectionHealth health = new MaritimeCollectionHealth();
+		new MaritimeSnapshotCollectionScheduler(polling, detector, health, Runnable::run, 1_800_000L, 30_000L).pollOnce();
+
+		assertThat(store.size()).isZero();
+		assertThat(health.availability()).isEqualTo("UNAVAILABLE");
+	}
+
+	@Test
+	void scheduledTickReturnsWhileSingleCollectorWorkerIsBlockedAndDoesNotOverlap() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch finished = new CountDownLatch(1);
+		AtomicReference<Thread> collectorThread = new AtomicReference<>();
+		MaritimeSnapshotPollingService polling = mock(MaritimeSnapshotPollingService.class);
+		when(polling.poll()).thenAnswer(invocation -> {
+			collectorThread.set(Thread.currentThread());
+			entered.countDown();
+			assertThat(release.await(3, TimeUnit.SECONDS)).isTrue();
+			finished.countDown();
+			return List.of(new MaritimeCollectionPoll("MPA_EXPECTED_ARRIVALS", true, List.of()));
+		});
+		ExecutorService worker = Executors.newSingleThreadExecutor(task -> new Thread(task, "test-maritime-worker"));
+		MaritimeSnapshotCollectionScheduler scheduler = new MaritimeSnapshotCollectionScheduler(polling,
+				mock(MaritimeSnapshotChangeDetector.class), new MaritimeCollectionHealth(), worker, 1_800_000L, 30_000L);
+		try {
+			scheduler.pollOnce();
+			assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+			assertThat(collectorThread.get()).isNotSameAs(Thread.currentThread());
+			scheduler.pollOnce();
+			release.countDown();
+			assertThat(finished.await(3, TimeUnit.SECONDS)).isTrue();
+			verify(polling, times(1)).poll();
+		} finally {
+			release.countDown();
+			worker.shutdownNow();
+		}
 	}
 
 	private static MaritimeSnapshot snapshot(String retrievedAt, String value) {

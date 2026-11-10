@@ -66,22 +66,22 @@ class JpaMaritimeSnapshotObservationStore implements MaritimeSnapshotObservation
 	}
 
 	@Override
-	public List<MaritimeSnapshotObservation> after(Instant detectedSince, Instant afterRecordedAt, long afterId, int limit) {
-		String jpql = afterRecordedAt == null ? """
+	public List<MaritimeSnapshotObservation> before(Instant detectedSince, Instant beforeRecordedAt, long beforeId, int limit) {
+		String jpql = beforeRecordedAt == null ? """
 				SELECT observation FROM MaritimeSnapshotObservation observation
 				WHERE observation.recordedAt >= :detectedSince
-				ORDER BY observation.recordedAt ASC, observation.id ASC
+				ORDER BY observation.recordedAt DESC, observation.id DESC
 				""" : """
 				SELECT observation FROM MaritimeSnapshotObservation observation
 				WHERE observation.recordedAt >= :detectedSince
-					AND (observation.recordedAt > :afterRecordedAt
-						OR (observation.recordedAt = :afterRecordedAt AND observation.id > :afterId))
-				ORDER BY observation.recordedAt ASC, observation.id ASC
+					AND (observation.recordedAt < :beforeRecordedAt
+						OR (observation.recordedAt = :beforeRecordedAt AND observation.id < :beforeId))
+				ORDER BY observation.recordedAt DESC, observation.id DESC
 				""";
 		var query = entityManager.createQuery(jpql, MaritimeSnapshotObservation.class)
 				.setParameter("detectedSince", detectedSince);
-		if (afterRecordedAt != null) {
-			query.setParameter("afterRecordedAt", afterRecordedAt).setParameter("afterId", afterId);
+		if (beforeRecordedAt != null) {
+			query.setParameter("beforeRecordedAt", beforeRecordedAt).setParameter("beforeId", beforeId);
 		}
 		return query.setMaxResults(limit).getResultList();
 	}

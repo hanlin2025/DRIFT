@@ -29,6 +29,7 @@ import tools.jackson.databind.ObjectMapper;
 class MaritimeSnapshotPollingService {
 	private static final ZoneId SINGAPORE = ZoneId.of("Asia/Singapore");
 	private static final DateTimeFormatter MPA_LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+	private static final DateTimeFormatter MPA_OFFSET_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX");
 
 	private final ObjectMapper mapper;
 	private final MaritimeSnapshotNormalizer normalizer;
@@ -60,7 +61,7 @@ class MaritimeSnapshotPollingService {
 	private MaritimeCollectionPoll runMpaExpected() {
 		return run("MPA_EXPECTED_ARRIVALS", "tools/cdg201/mpa/mpa_oceansx_collect.py", temp -> {
 			List<String> args = List.of("--rolling", "--feed-group", "expected", "--lookback-days",
-					Integer.toString(lookbackDays), "--lookahead-days", "0", "--output", temp.toString());
+					Integer.toString(lookbackDays), "--lookahead-days", "3", "--output", temp.toString());
 			invoke("tools/cdg201/mpa/mpa_oceansx_collect.py", args);
 			Instant retrieved = Instant.now();
 			List<MaritimeSnapshot> out = new ArrayList<>();
@@ -84,9 +85,9 @@ class MaritimeSnapshotPollingService {
 					String departure = firstText(record, "duetoDepartTime", "dueToDepartTime", "due_to_depart_time");
 					Instant eventInstant = instant(arrival);
 					if (eventInstant == null) continue;
-					String normalizedArrival = OffsetDateTime.ofInstant(eventInstant, SINGAPORE).toString();
+					String normalizedArrival = formatMpaTimestamp(eventInstant);
 					Instant departureInstant = instant(departure);
-					String normalizedDeparture = departureInstant == null ? null : OffsetDateTime.ofInstant(departureInstant, SINGAPORE).toString();
+					String normalizedDeparture = departureInstant == null ? null : formatMpaTimestamp(departureInstant);
 					boolean historical = eventInstant.isBefore(Instant.now());
 					String freshness = !historical
 							? MaritimeSnapshotChangeDetector.APPLICABLE : MaritimeSnapshotChangeDetector.HISTORICAL;
@@ -152,7 +153,7 @@ class MaritimeSnapshotPollingService {
 	private MaritimeCollectionPoll runNea() {
 		return run("NEA_WEATHER", "tools/cdg201/contextual/nea_weather_collect.py", temp -> {
 			invoke("tools/cdg201/contextual/nea_weather_collect.py", List.of("--output", temp.toString(),
-					"--datasets", "two_hr_forecast", "wind_speed", "wind_direction", "rainfall",
+					"--datasets", "two_hr_forecast",
 					"--pause-seconds", "1", "--max-retries", "3"));
 			Path normalized = temp.resolve("normalized");
 			Map<String, String> retrievalByRaw = new HashMap<>();
@@ -203,11 +204,19 @@ class MaritimeSnapshotPollingService {
 				return new MaritimeCollectionPoll(source, true, List.copyOf(snapshots));
 			} catch (InterruptedException interrupted) {
 				Thread.currentThread().interrupt();
+				logFailure(source, interrupted);
 				return new MaritimeCollectionPoll(source, false, List.of());
 			} catch (Exception ex) {
-				if (attempt == retries) return new MaritimeCollectionPoll(source, false, List.of());
+				if (attempt == retries) {
+					logFailure(source, ex);
+					return new MaritimeCollectionPoll(source, false, List.of());
+				}
 				try { Thread.sleep(Math.min(30_000L, 1_000L << Math.min(attempt, 5))); }
-				catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return new MaritimeCollectionPoll(source, false, List.of()); }
+				catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					logFailure(source, interrupted);
+					return new MaritimeCollectionPoll(source, false, List.of());
+				}
 			} finally {
 				if (temp != null) deleteTree(temp);
 			}
@@ -222,9 +231,28 @@ class MaritimeSnapshotPollingService {
 		if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
 			process.destroyForcibly();
 			process.waitFor(5, TimeUnit.SECONDS);
-			throw new IOException("Collector timed out: " + script);
+			throw new CollectorTimeoutException();
 		}
-		if (process.exitValue() != 0) throw new IOException("Collector failed with exit " + process.exitValue() + ": " + script);
+		if (process.exitValue() != 0) throw new CollectorExitException(process.exitValue());
+	}
+
+	private static void logFailure(String source, Exception ex) {
+		String exit = ex instanceof CollectorExitException collectorExit ? Integer.toString(collectorExit.exitCode())
+				: ex instanceof CollectorTimeoutException ? "timeout" : "n/a";
+		org.slf4j.LoggerFactory.getLogger(MaritimeSnapshotPollingService.class)
+				.warn("Maritime source poll failed source={} exception={} exit={}", source,
+						ex.getClass().getSimpleName(), exit);
+	}
+
+	private static final class CollectorExitException extends IOException {
+		private static final long serialVersionUID = 1L;
+		private final int exitCode;
+		private CollectorExitException(int exitCode) { this.exitCode = exitCode; }
+		private int exitCode() { return exitCode; }
+	}
+
+	private static final class CollectorTimeoutException extends IOException {
+		private static final long serialVersionUID = 1L;
 	}
 
 	private JsonNode read(Path path) throws IOException { return mapper.readTree(path.toFile()); }
@@ -252,11 +280,14 @@ class MaritimeSnapshotPollingService {
 	}
 	static String normalizeMpaTime(String value) {
 		Instant parsed = instant(value);
-		return parsed == null ? null : OffsetDateTime.ofInstant(parsed, SINGAPORE).toString();
+		return parsed == null ? null : formatMpaTimestamp(parsed);
+	}
+	private static String formatMpaTimestamp(Instant value) {
+		return MPA_OFFSET_TIME.format(value.atZone(SINGAPORE));
 	}
 	static String normalizeMpaNoticeTime(String value) {
 		if (value == null || value.isBlank()) return null;
-		try { return LocalDate.parse(value).atStartOfDay(SINGAPORE).toOffsetDateTime().toString(); }
+		try { return MPA_OFFSET_TIME.format(LocalDate.parse(value).atStartOfDay(SINGAPORE)); }
 		catch (Exception ignored) { return normalizeMpaTime(value); }
 	}
 	private static List<Map<String, String>> readCsv(Path path) throws IOException {

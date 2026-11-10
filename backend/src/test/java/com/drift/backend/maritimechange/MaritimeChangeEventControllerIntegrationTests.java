@@ -43,6 +43,8 @@ import jakarta.persistence.EntityManager;
 		"spring.flyway.user=${DRIFT_CDG358_DB_USERNAME}",
 		"spring.flyway.password=${DRIFT_CDG358_DB_PASSWORD}",
 		"app.ais.enabled=false",
+		"app.maritime-change.collection.enabled=true",
+		"app.maritime-change.collection.initial-delay-ms=86400000",
 		"drift.startup-guard.expected-url=${DRIFT_CDG358_JDBC_URL}",
 		"drift.startup-guard.ownership-token=${DRIFT_CDG358_OWNERSHIP_TOKEN}"
 })
@@ -118,20 +120,47 @@ class MaritimeChangeEventControllerIntegrationTests {
 	}
 
 	@Test
-	void persistedEventPagingUsesRecordedTimeThenStableRowId() {
+	void authenticatedEventPagingStartsNewestAndCursorLoadsOlderChanges() throws Exception {
+		String revisedArrival = "2026-11-15T02:00:00+08:00";
+		detector.accept(List.of(new MaritimeSnapshot("MPA_ETA_REVISION", "mpa:" + MOTHER_IMO + ":SEA:PEBGA",
+				"MPA OCEANS-X Vessels Due to Arrive", revisedArrival, Instant.now().toString(), Instant.now().toString(),
+				"LIVE", "APPLICABLE", MOTHER_IMO, "Singapore", revisedArrival, null, null,
+				"arrival=" + revisedArrival, "UNKNOWN", "UNKNOWN", "UNKNOWN")));
+
+		MvcResult firstPage = mvc.perform(get("/api/shipments/{id}/maritime-change-events", shipmentId)
+					.header("Authorization", "Bearer " + ownerToken).param("since", "2020-01-01T00:00:00Z")
+					.param("limit", "1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.events[0].eventType").value("REVISED"))
+				.andExpect(jsonPath("$.events[0].currentValue").value("arrival=" + revisedArrival))
+				.andExpect(jsonPath("$.nextCursor").isNotEmpty())
+				.andReturn();
+		String cursor = JsonPath.read(firstPage.getResponse().getContentAsString(), "$.nextCursor");
+		mvc.perform(get("/api/shipments/{id}/maritime-change-events", shipmentId)
+					.header("Authorization", "Bearer " + ownerToken).param("since", "2020-01-01T00:00:00Z")
+					.param("limit", "1").param("cursor", cursor))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.events[0].eventType").value("NEW"))
+				.andExpect(jsonPath("$.events[0].currentValue").value("2026-10-29T02:00:00+08:00"))
+				.andExpect(jsonPath("$.nextCursor").doesNotExist());
+	}
+
+	@Test
+	void persistedEventPagingReturnsNewestThenOlderUsingStableRowId() {
 		Instant sameDetectedAt = Instant.parse("2099-01-01T00:00:00Z");
 		observationStore.add(observation("cdg358-page-a", "a".repeat(64), sameDetectedAt), false);
 		observationStore.add(observation("cdg358-page-b", "b".repeat(64), sameDetectedAt), false);
 
-		List<MaritimeSnapshotObservation> firstPage = observationStore.after(sameDetectedAt, null, 0, 10);
-		List<MaritimeSnapshotObservation> secondPage = observationStore.after(sameDetectedAt,
-				firstPage.getFirst().getRecordedAt(), firstPage.getFirst().getId(), 10);
+		List<MaritimeSnapshotObservation> firstPage = observationStore.before(sameDetectedAt, null, 0, 1);
+		List<MaritimeSnapshotObservation> secondPage = observationStore.before(sameDetectedAt,
+				firstPage.getFirst().getRecordedAt(), firstPage.getFirst().getId(), 1);
 
-		org.assertj.core.api.Assertions.assertThat(firstPage).hasSize(2);
-		org.assertj.core.api.Assertions.assertThat(firstPage).extracting(MaritimeSnapshotObservation::getId)
-				.isSortedAccordingTo(Long::compareTo);
-		org.assertj.core.api.Assertions.assertThat(secondPage).singleElement()
+		org.assertj.core.api.Assertions.assertThat(firstPage).singleElement()
 				.extracting(MaritimeSnapshotObservation::getSourceIdentity).isEqualTo("cdg358-page-b");
+		org.assertj.core.api.Assertions.assertThat(secondPage).singleElement()
+				.extracting(MaritimeSnapshotObservation::getSourceIdentity).isEqualTo("cdg358-page-a");
+		org.assertj.core.api.Assertions.assertThat(firstPage.getFirst().getId())
+				.isGreaterThan(secondPage.getFirst().getId());
 	}
 
 	private static MaritimeSnapshotObservation observation(String identity, String fingerprint, Instant recordedAt) {

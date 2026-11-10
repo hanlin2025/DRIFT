@@ -17,15 +17,18 @@ class MaritimeRecordedSnapshotReplayTest {
 	void authenticReplayUsesTheSharedNormalizerAndDetectorAndIsIdempotent() {
 		MemoryStore store = new MemoryStore();
 		MaritimeSnapshotChangeDetector detector = new MaritimeSnapshotChangeDetector(store);
-		MaritimeCollectionHealth health = new MaritimeCollectionHealth();
 		MaritimeRecordedSnapshotReplay replay = new MaritimeRecordedSnapshotReplay(new ObjectMapper(),
-				new MaritimeSnapshotNormalizer(), detector, health);
+				new MaritimeSnapshotNormalizer(), detector);
 
 		MaritimeSnapshotChangeBatch first = replay.replay();
 		MaritimeSnapshotChangeBatch repeated = replay.replay();
 
 		assertThat(first.rejections()).isEmpty();
 		assertThat(first.changes()).hasSize(5);
+		assertThat(first.changes()).allSatisfy(change -> {
+			assertThat(change.sourceMode()).isEqualTo("RECORDED_REPLAY");
+			assertThat(change.forwardLooking()).isFalse();
+		});
 		assertThat(first.changes()).filteredOn(change -> change.sourceType().equals("MPA_ETA_REVISION"))
 				.extracting(MaritimeSnapshotChange::kind).containsExactly("NEW", "REVISED");
 		assertThat(first.changes()).filteredOn(change -> change.sourceType().equals("MPA_ETA_REVISION"))
@@ -47,7 +50,6 @@ class MaritimeRecordedSnapshotReplayTest {
 		assertThat(repeated.changes()).isEmpty();
 		assertThat(repeated.rejections()).isEmpty();
 		assertThat(store.size()).isEqualTo(5);
-		assertThat(health.availability()).isEqualTo("AVAILABLE");
 	}
 
 	private static final class MemoryStore implements MaritimeSnapshotObservationStore {

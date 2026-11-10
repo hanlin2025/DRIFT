@@ -45,7 +45,7 @@ class MaritimeChangeEventService {
 		boolean more = false;
 		while (scanned < MAX_SCAN && !more) {
 			int batchLimit = Math.min(READ_CHUNK, MAX_SCAN - scanned);
-			List<MaritimeSnapshotObservation> rows = store.after(since, scanRecordedAt, scanId, batchLimit);
+			List<MaritimeSnapshotObservation> rows = store.before(since, scanRecordedAt, scanId, batchLimit);
 			if (rows.isEmpty()) break;
 			for (MaritimeSnapshotObservation row : rows) {
 				scanRecordedAt = row.getRecordedAt();
