@@ -140,6 +140,7 @@ public final class RolePermissionMatrix {
 	private static boolean shipmentRead(String method, String path) {
 		return "GET".equals(method) && (path.equals("/api/shipments")
 				|| path.matches("/api/shipments/\\d+")
+				|| path.matches("/api/shipments/\\d+/maritime-change-events")
 				|| path.matches("/api/shipments/\\d+/maritime-context")
 				|| path.matches("/api/shipments/\\d+/maritime-ai-assessments")
 				|| path.matches("/api/shipments/\\d+/maritime-reassessments")

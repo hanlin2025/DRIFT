@@ -138,6 +138,7 @@ class RolePermissionMatrixTest {
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/tracking")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/track-history?hours=6")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/cdg201-arrival-evidence")).isTrue();
+		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-change-events")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-context")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-ai-assessments")).isTrue();
 		assertThat(RolePermissionMatrix.isShipmentRead("GET", "/api/shipments/4/maritime-reassessments")).isTrue();
