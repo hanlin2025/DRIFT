@@ -14,15 +14,18 @@ function SourceMode({ mode }: { mode: MaritimeChangeEvent['sourceMode'] }) {
   return <span className={`maritime-change-mode maritime-change-mode-${mode.toLowerCase().replaceAll('_', '-')}`}>{mode}</span>;
 }
 
-export function MaritimeChangeTimeline({ result, loading, error, onRefresh, risk }: {
+export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, onRefresh, onLoadOlder, risk }: {
   result: MaritimeChangeEvents | null;
   loading: boolean;
+  loadingOlder: boolean;
   error: string | null;
   onRefresh: () => void;
+  onLoadOlder: (cursor: string) => void;
   risk: ShipmentRisk | null;
 }) {
   const events = result?.events.slice().sort((left, right) =>
     Date.parse(right.detectedAt) - Date.parse(left.detectedAt));
+  const nextCursor = result?.nextCursor;
 
   return <section className="shipment-record maritime-change-timeline" aria-label="Maritime change timeline">
     <div className="maritime-change-heading">
@@ -30,7 +33,7 @@ export function MaritimeChangeTimeline({ result, loading, error, onRefresh, risk
         <p className="eyebrow">SOURCE CHANGE HISTORY</p>
         <h3>Maritime change timeline</h3>
       </div>
-      <button type="button" className="secondary-button" onClick={onRefresh} disabled={loading}>
+      <button type="button" className="secondary-button" onClick={onRefresh} disabled={loading || loadingOlder}>
         {loading ? 'Refreshing…' : 'Refresh changes'}
       </button>
     </div>
@@ -67,6 +70,9 @@ export function MaritimeChangeTimeline({ result, loading, error, onRefresh, risk
         </article>
       </li>)}
     </ol>}
+    {nextCursor && <button type="button" className="secondary-button maritime-change-load-older" onClick={() => onLoadOlder(nextCursor)} disabled={loading || loadingOlder}>
+      {loadingOlder ? 'Loading older changes…' : 'Load older changes'}
+    </button>}
     <div className="maritime-change-risk" aria-label="Current backend risk assessment">
       <strong>Current shipment risk:</strong> {risk ? <><RiskBadge risk={risk} /> {risk.explanation}</> : <RiskBadge risk={null} />}
       <p>This risk is calculated by DRIFT’s existing shipment assessment. A source event is not shown as its cause unless that relationship is explicitly supplied by the backend.</p>

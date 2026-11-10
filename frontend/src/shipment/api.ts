@@ -66,6 +66,7 @@ export type MaritimeChangeEvent = {
 export type MaritimeChangeEvents = {
   availability: MaritimeChangeAvailability;
   events: MaritimeChangeEvent[];
+  nextCursor?: string | null;
 };
 export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW' | 'DELAY_COMPARISON_REVIEW';
 export type MaritimeAiRiskSeverity = RiskLevel;
@@ -579,10 +580,12 @@ export async function getMaritimeContext(token: string, shipmentId: string): Pro
 export async function getMaritimeChangeEvents(token: string, shipmentId: string, options: {
   since?: string;
   limit?: number;
+  cursor?: string;
 } = {}): Promise<MaritimeChangeEvents> {
   const query = new URLSearchParams();
   if (options.since) query.set('since', options.since);
   if (options.limit !== undefined) query.set('limit', String(options.limit));
+  if (options.cursor) query.set('cursor', options.cursor);
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
   const data = await send(`/api/shipments/${encodeURIComponent(shipmentId)}/maritime-change-events${suffix}`, token);
   const result = decodeMaritimeChangeEvents(data);
@@ -1846,8 +1849,10 @@ function isMaritimeChangeEvent(value: unknown): value is MaritimeChangeEvent {
 }
 export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents | undefined {
   if (!isRecord(value) || !['AVAILABLE', 'PARTIAL', 'UNAVAILABLE'].includes(value.availability as string)
-    || !Array.isArray(value.events) || !value.events.every(isMaritimeChangeEvent)) return undefined;
-  return { events: value.events, availability: value.availability as MaritimeChangeAvailability };
+    || !Array.isArray(value.events) || !value.events.every(isMaritimeChangeEvent)
+    || (value.nextCursor !== undefined && value.nextCursor !== null && !isPresentText(value.nextCursor))) return undefined;
+  return { events: value.events, availability: value.availability as MaritimeChangeAvailability,
+    ...(value.nextCursor !== undefined ? { nextCursor: value.nextCursor as string | null } : {}) };
 }
 function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {
   return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'

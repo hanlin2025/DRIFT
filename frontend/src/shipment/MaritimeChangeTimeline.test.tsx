@@ -13,8 +13,8 @@ const eta: MaritimeChangeEvent = {
   compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
 };
 
-function result(events: MaritimeChangeEvent[], availability: MaritimeChangeEvents['availability'] = 'AVAILABLE'): MaritimeChangeEvents {
-  return { availability, events };
+function result(events: MaritimeChangeEvent[], availability: MaritimeChangeEvents['availability'] = 'AVAILABLE', nextCursor?: string | null): MaritimeChangeEvents {
+  return { availability, events, ...(nextCursor !== undefined ? { nextCursor } : {}) };
 }
 
 describe('MaritimeChangeTimeline', () => {
@@ -24,7 +24,7 @@ describe('MaritimeChangeTimeline', () => {
       eventType: 'REVISED', sourceMode: 'SYNTHETIC_DEMONSTRATION', detectedAt: '2026-10-27T17:00:00Z',
       previousValue: null, currentValue: 'Moderate monsoon rain', provenance: 'Synthetic replay fixture', requiresHumanReview: false,
     };
-    render(<MaritimeChangeTimeline result={result([older, eta], 'PARTIAL')} loading={false} error={null} onRefresh={() => {}}
+    render(<MaritimeChangeTimeline result={result([older, eta], 'PARTIAL')} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}}
       risk={{ level: 'HIGH', explanation: 'Less than 12 hours remain in the backend-calculated connection window.' }} />);
 
     expect(screen.getByText('PARTIAL')).toBeInTheDocument();
@@ -45,7 +45,7 @@ describe('MaritimeChangeTimeline', () => {
   });
 
   it('labels unavailable source data without representing it as an observation', () => {
-    render(<MaritimeChangeTimeline result={result([], 'UNAVAILABLE')} loading={false} error={null} onRefresh={() => {}} risk={null} />);
+    render(<MaritimeChangeTimeline result={result([], 'UNAVAILABLE')} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
     expect(screen.getByText('UNAVAILABLE')).toBeInTheDocument();
     expect(screen.getByText('Change information is unavailable. No source observation is implied.')).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
@@ -56,7 +56,7 @@ describe('MaritimeChangeTimeline', () => {
       ...eta, id: 'notice-2', sourceType: 'MPA_OFFICIAL_NOTICE', sourceIdentity: 'MPA Port Marine Notice 42',
       eventType: 'NEW', sourceMode: 'LIVE', previousValue: null,
       currentValue: 'Temporary works near the eastern channel', provenance: 'MPA notice page', requiresHumanReview: true,
-    }])} loading={false} error={null} onRefresh={() => {}} risk={null} />);
+    }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
     const event = within(screen.getByRole('list')).getByRole('listitem');
     expect(event).toHaveTextContent('MPA port notice');
     expect(event).toHaveTextContent('LIVE');
@@ -67,7 +67,7 @@ describe('MaritimeChangeTimeline', () => {
     render(<MaritimeChangeTimeline result={result([{
       ...eta, id: 'backfill-1', sourceMode: 'HISTORICAL_BACKFILL', eventType: 'REVISED',
       provenance: 'Historical retrieval', requiresHumanReview: false,
-    }])} loading={false} error={null} onRefresh={() => {}} risk={null} />);
+    }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
     const event = within(screen.getByRole('list')).getByRole('listitem');
     expect(event).toHaveTextContent('HISTORICAL_BACKFILL');
     expect(event).toHaveTextContent('Historical backfill; this record is not a newly observed live change.');
@@ -76,11 +76,23 @@ describe('MaritimeChangeTimeline', () => {
   it('supports explicit refresh and loading feedback', async () => {
     const onRefresh = vi.fn();
     const user = userEvent.setup();
-    const { rerender } = render(<MaritimeChangeTimeline result={null} loading={false} error={null} onRefresh={onRefresh} risk={null} />);
+    const { rerender } = render(<MaritimeChangeTimeline result={null} loading={false} loadingOlder={false} error={null} onRefresh={onRefresh} onLoadOlder={() => {}} risk={null} />);
     await user.click(screen.getByRole('button', { name: 'Refresh changes' }));
     expect(onRefresh).toHaveBeenCalledOnce();
-    rerender(<MaritimeChangeTimeline result={null} loading error={null} onRefresh={onRefresh} risk={null} />);
+    rerender(<MaritimeChangeTimeline result={null} loading loadingOlder={false} error={null} onRefresh={onRefresh} onLoadOlder={() => {}} risk={null} />);
     expect(screen.getByRole('button', { name: 'Refreshing…' })).toBeDisabled();
     expect(screen.getByText('Loading maritime changes…')).toBeInTheDocument();
+  });
+
+  it('requests older changes with the opaque next cursor and reports pagination loading', async () => {
+    const onLoadOlder = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(<MaritimeChangeTimeline result={result([eta], 'AVAILABLE', 'opaque cursor + 2')} loading={false} loadingOlder={false}
+      error={null} onRefresh={() => {}} onLoadOlder={onLoadOlder} risk={null} />);
+    await user.click(screen.getByRole('button', { name: 'Load older changes' }));
+    expect(onLoadOlder).toHaveBeenCalledWith('opaque cursor + 2');
+    rerender(<MaritimeChangeTimeline result={result([eta], 'AVAILABLE', 'opaque cursor + 2')} loading={false} loadingOlder error={null}
+      onRefresh={() => {}} onLoadOlder={onLoadOlder} risk={null} />);
+    expect(screen.getByRole('button', { name: 'Loading older changes…' })).toBeDisabled();
   });
 });

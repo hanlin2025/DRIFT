@@ -78,6 +78,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
   const [maritimeChanges, setMaritimeChanges] = useState<MaritimeChangeEvents | null>(null);
   const [maritimeChangesLoading, setMaritimeChangesLoading] = useState(false);
+  const [maritimeChangesLoadingOlder, setMaritimeChangesLoadingOlder] = useState(false);
   const [maritimeChangesError, setMaritimeChangesError] = useState<string | null>(null);
   const [maritimeAiAssessments, setMaritimeAiAssessments] = useState<MaritimeAiAssessment[]>([]);
   const [maritimeAiUnavailable, setMaritimeAiUnavailable] = useState(false);
@@ -308,25 +309,36 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     }
   }, [token, shipmentId, onSessionEnded]);
 
-  const reloadMaritimeChanges = useCallback(async () => {
+  const reloadMaritimeChanges = useCallback(async (cursor?: string) => {
+    const loadingOlder = cursor !== undefined;
     const requestId = ++maritimeChangeSeq.current;
-    setMaritimeChangesLoading(true);
+    setMaritimeChangesLoading(!loadingOlder);
+    setMaritimeChangesLoadingOlder(loadingOlder);
     setMaritimeChangesError(null);
     try {
-      const found = await getMaritimeChangeEvents(token, shipmentId, { limit: 100 });
-      if (requestId === maritimeChangeSeq.current) setMaritimeChanges(found);
+      const found = await getMaritimeChangeEvents(token, shipmentId, { limit: 100, ...(cursor ? { cursor } : {}) });
+      if (requestId !== maritimeChangeSeq.current) return;
+      if (!loadingOlder) setMaritimeChanges(found);
+      else setMaritimeChanges(current => {
+        if (!current) return found;
+        const unique = new Map([...current.events, ...found.events].map(event => [event.id, event]));
+        return { ...found, events: [...unique.values()] };
+      });
     } catch (reason: unknown) {
       if (requestId !== maritimeChangeSeq.current) return;
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
         return;
       }
-      setMaritimeChanges({ events: [], availability: 'UNAVAILABLE' });
+      if (!loadingOlder) setMaritimeChanges({ events: [], availability: 'UNAVAILABLE' });
       setMaritimeChangesError(reason instanceof ApiError && reason.status === 403
         ? 'Change information is not available for this shipment.'
-        : 'The maritime change timeline could not be refreshed.');
+        : loadingOlder ? 'Older maritime changes could not be loaded.' : 'The maritime change timeline could not be refreshed.');
     } finally {
-      if (requestId === maritimeChangeSeq.current) setMaritimeChangesLoading(false);
+      if (requestId === maritimeChangeSeq.current) {
+        setMaritimeChangesLoading(false);
+        setMaritimeChangesLoadingOlder(false);
+      }
     }
   }, [token, shipmentId, onSessionEnded]);
 
@@ -348,7 +360,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setPlaybackVesselName(null);
     setCdg201Evidence(null);
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
-    setMaritimeChanges(null); setMaritimeChangesLoading(true); setMaritimeChangesError(null);
+    setMaritimeChanges(null); setMaritimeChangesLoading(true); setMaritimeChangesLoadingOlder(false); setMaritimeChangesError(null);
     setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
@@ -495,7 +507,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
                   setEditing(false);
                   setAttempt(value => value + 1);
                 }} />
-            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeChanges={maritimeChanges} maritimeChangesLoading={maritimeChangesLoading} maritimeChangesError={maritimeChangesError} onRefreshMaritimeChanges={() => void reloadMaritimeChanges()} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} maritimeAiGenerating={maritimeAiGenerating} onGenerateMaritimeAi={generateMaritimeAi} refreshing={refreshing} refreshNote={refreshNote}
+            : <ShipmentRecord shipment={shipment} tracking={tracking} cdg201Evidence={cdg201Evidence} maritimeContext={maritimeContext} maritimeContextUnavailable={maritimeContextUnavailable} maritimeChanges={maritimeChanges} maritimeChangesLoading={maritimeChangesLoading} maritimeChangesLoadingOlder={maritimeChangesLoadingOlder} maritimeChangesError={maritimeChangesError} onRefreshMaritimeChanges={() => void reloadMaritimeChanges()} onLoadOlderMaritimeChanges={cursor => void reloadMaritimeChanges(cursor)} maritimeAiAssessments={maritimeAiAssessments} maritimeAiUnavailable={maritimeAiUnavailable} maritimeAiGenerating={maritimeAiGenerating} onGenerateMaritimeAi={generateMaritimeAi} refreshing={refreshing} refreshNote={refreshNote}
                 onRefresh={() => {
                   void reloadTracking('explicit');
                   void reloadHistory();
@@ -578,7 +590,7 @@ function ShipmentSkeleton() {
   );
 }
 
-function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeChanges, maritimeChangesLoading, maritimeChangesError, onRefreshMaritimeChanges, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, trackMode, trackVessel, recordedCutoff, playbackPoints, playbackState, playbackMessage, playbackContext, playbackVesselName, mapContextKey, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
+function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, maritimeContextUnavailable, maritimeChanges, maritimeChangesLoading, maritimeChangesLoadingOlder, maritimeChangesError, onRefreshMaritimeChanges, onLoadOlderMaritimeChanges, maritimeAiAssessments, maritimeAiUnavailable, maritimeAiGenerating, onGenerateMaritimeAi, refreshing, refreshNote, onRefresh, onDecision, canEdit, onEdit, action, track, history, selectedId, onSelectPoint, trackMode, trackVessel, recordedCutoff, playbackPoints, playbackState, playbackMessage, playbackContext, playbackVesselName, mapContextKey, viewerCompanyId, token, onSessionEnded, portCapture, onExplicitRefresh, onShipment, changeHistory }: {
   shipment: Shipment;
   tracking: ShipmentTracking | null;
   cdg201Evidence: Cdg201ArrivalEvidence | null;
@@ -586,8 +598,10 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   maritimeContextUnavailable: boolean;
   maritimeChanges: MaritimeChangeEvents | null;
   maritimeChangesLoading: boolean;
+  maritimeChangesLoadingOlder: boolean;
   maritimeChangesError: string | null;
   onRefreshMaritimeChanges: () => void;
+  onLoadOlderMaritimeChanges: (cursor: string) => void;
   maritimeAiAssessments: MaritimeAiAssessment[];
   maritimeAiUnavailable: boolean;
   maritimeAiGenerating: boolean;
@@ -743,7 +757,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       </section>
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
-      <MaritimeChangeTimeline result={maritimeChanges} loading={maritimeChangesLoading} error={maritimeChangesError} onRefresh={onRefreshMaritimeChanges} risk={shipment.risk} />
+      <MaritimeChangeTimeline result={maritimeChanges} loading={maritimeChangesLoading} loadingOlder={maritimeChangesLoadingOlder} error={maritimeChangesError} onRefresh={onRefreshMaritimeChanges} onLoadOlder={onLoadOlderMaritimeChanges} risk={shipment.risk} />
       <div id="maritime-ai-assessment">
         <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       </div>

@@ -356,13 +356,13 @@ describe('CDG-357 maritime change events API', () => {
     compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
   };
   it('reads validated change events through the authorized cookie/bearer request helper', async () => {
-    const wire = { availability: 'PARTIAL', events: [event] };
+    const wire = { availability: 'PARTIAL', events: [event], nextCursor: 'opaque page cursor + 2' };
     const fetchMock = vi.fn().mockResolvedValue(json(wire));
     vi.stubGlobal('fetch', fetchMock);
     expect(decodeMaritimeChangeEvents(wire)).toEqual(wire);
     expect(fetchMock).not.toHaveBeenCalled();
-    await expect(getMaritimeChangeEvents('token', '9', { since: '2026-10-28T00:00:00Z', limit: 100 })).resolves.toEqual(wire);
-    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/maritime-change-events?since=2026-10-28T00%3A00%3A00Z&limit=100', expect.objectContaining({
+    await expect(getMaritimeChangeEvents('token', '9', { since: '2026-10-28T00:00:00Z', limit: 100, cursor: 'opaque page cursor + 2' })).resolves.toEqual(wire);
+    expect(fetchMock).toHaveBeenCalledWith('/api/shipments/9/maritime-change-events?since=2026-10-28T00%3A00%3A00Z&limit=100&cursor=opaque+page+cursor+%2B+2', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
   });
@@ -385,6 +385,7 @@ describe('CDG-357 maritime change events API', () => {
       { ...event, sourceType: 'AIS_TRACK' },
     ];
     for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad] })).toBeUndefined();
+    expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [event], nextCursor: ['not', 'opaque text'] })).toBeUndefined();
     expect(decodeMaritimeChangeEvents({ availability: 'UNKNOWN', events: [] })).toBeUndefined();
   });
 });
