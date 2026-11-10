@@ -32,6 +32,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.mail.MailSendException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -130,6 +131,25 @@ class PasswordResetDeliveryTests {
 	}
 
 	@Test
+	void aFailedSendDiscardsTheTokenAndDoesNotLogTheSmtpMessage() throws Exception {
+		mailer.failNext = true;
+		Logger logger = (Logger) LoggerFactory.getLogger(PasswordResetService.class);
+		ListAppender<ILoggingEvent> logs = new ListAppender<>();
+		logs.start();
+		logger.addAppender(logs);
+		try {
+			request(email);
+		} finally {
+			logger.detachAppender(logs);
+		}
+
+		assertThat(unusedTokens()).isEmpty();
+		assertThat(logs.list).anyMatch(event -> event.getFormattedMessage()
+				.equals("Password reset email could not be sent (MailSendException)"));
+		assertThat(logs.list).noneMatch(event -> event.getFormattedMessage().contains("app-password-secret"));
+	}
+
+	@Test
 	void aCleanupFailureKeepsTheEmailedLink() throws Exception {
 		request(email);
 		String first = tokenFrom(mailer.links.get(0));
@@ -203,9 +223,14 @@ class PasswordResetDeliveryTests {
 
 		private final List<String> links = new ArrayList<>();
 		private Runnable duringSend = () -> { };
+		private boolean failNext;
 
 		@Override
 		public void sendResetLink(String email, String resetLink, Duration validFor) {
+			if (failNext) {
+				failNext = false;
+				throw new MailSendException("smtp failed for app-password-secret");
+			}
 			duringSend.run();
 			synchronized (links) {
 				links.add(resetLink);
@@ -215,6 +240,7 @@ class PasswordResetDeliveryTests {
 		void reset() {
 			links.clear();
 			duringSend = () -> { };
+			failNext = false;
 		}
 	}
 }
