@@ -571,6 +571,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   onShipment: (shipment: Shipment) => void;
   changeHistory: ReactNode;
 }) {
+  const [recordOpen, setRecordOpen] = useState(true);
   const remaining = remainingWindowFact(shipment);
   const selectedPlaybackPoint = selectedId == null
     ? null
@@ -624,7 +625,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
           } : undefined} />
       </div>
       <section className="shipment-record-card" aria-label="Backend-calculated shipment assessment">
-        <details className="shipment-record-disclosure" open>
+        <details className="shipment-record-disclosure" open={recordOpen} onToggle={event => setRecordOpen(event.currentTarget.open)}>
           <summary>Shipment and backend assessment</summary>
           <p className="shipment-assessment-note">The AI interpretation is shown separately and does not approve or apply a change.</p>
           <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
@@ -707,7 +708,7 @@ function SituationGlance({ shipment }: { shipment: Shipment }) {
     <section className="shipment-glance" aria-label="Connection, risk, and next action">
       <div>
         <p>Connection</p>
-        <strong>{connectionSummary(shipment)}</strong>
+        <strong>{remainingWindowFact(shipment).text}</strong>
       </div>
       <div>
         <p>Risk</p>
@@ -719,13 +720,6 @@ function SituationGlance({ shipment }: { shipment: Shipment }) {
       </div>
     </section>
   );
-}
-
-function connectionSummary(shipment: Shipment) {
-  const remaining = shipment.remainingConnectionWindow;
-  if (remaining?.status === 'AVAILABLE') return remaining.duration;
-  if (remaining?.status === 'MISSED') return `Expected to be missed by ${remaining.missedBy}`;
-  return shipment.connectionWindow?.duration ?? 'None planned';
 }
 
 const IMPACT_OUTCOMES: Record<'AFFECTS_CONSTRAINTS' | 'NO_PREDICTED_IMPACT', string> = {
