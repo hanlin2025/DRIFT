@@ -10,6 +10,7 @@ import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
 import { SetupPage } from './setup/SetupPage';
 import { SignupPage } from './signup/SignupPage';
+import { VerifyEmailPage } from './signup/VerifyEmailPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
 
 function SignupRoute() {
@@ -33,6 +34,7 @@ export function AppRoutes() {
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
     <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordPage /></AuthLayout>} />
     <Route path="/reset-password" element={<AuthLayout><ResetPasswordPage /></AuthLayout>} />
+    <Route path="/verify-email" element={<AuthLayout><VerifyEmailPage /></AuthLayout>} />
     <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin" element={<AdminRoute />} />

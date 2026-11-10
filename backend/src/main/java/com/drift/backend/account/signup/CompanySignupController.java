@@ -40,7 +40,9 @@ public class CompanySignupController {
 					+ "awaiting email verification, and a single-use verification link. The account cannot sign in and the "
 					+ "company is not offered for invitations or shipment linking until the email is verified. "
 					+ "If the email is already registered, nothing is created and the response is the same as for a new signup. "
-					+ "A company code that is already taken is rejected.")
+					+ "A company code that is already taken is rejected. The verification email is sent after the data is saved; "
+					+ "a delivery failure does not undo the signup, and the administrator can request a new link. "
+					+ "Attempts are limited per email and per client address.")
 	@ApiResponses({
 			@ApiResponse(responseCode = "202", description = "Accepted; the same body whether or not the email was already registered",
 					content = @Content(mediaType = "application/json", schema = @Schema(implementation = CompanySignupResponse.class),
@@ -58,6 +60,11 @@ public class CompanySignupController {
 			@ApiResponse(responseCode = "409", description = "Another organisation already has this code",
 					content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"An organisation with this code already exists.","errors":{"companyCode":"An organisation with this code already exists."}}
+							"""))),
+			@ApiResponse(responseCode = "429", description = "Too many signups for this email or from this address; "
+					+ "the same response whether or not the email is registered", content = @Content(
+					mediaType = "application/json", examples = @ExampleObject(value = """
+							{"message":"Too many requests. Try again later.","errors":{}}
 							"""))) })
 	public ResponseEntity<CompanySignupResponse> register(@Valid @RequestBody CompanySignupRequest request,
 			HttpServletRequest http) {

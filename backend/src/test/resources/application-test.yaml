@@ -16,6 +16,13 @@ app:
       email: 1000
       ip: 1000
       window: 15m
+  signup:
+    rate-limit:
+      # High enough that the shared in-memory limiter never throttles other tests;
+      # EmailVerificationRateLimitIntegrationTests sets low limits for its own context.
+      ip: 1000
+      email: 1000
+      window: PT1H
   ais:
     enabled: false
   shipment-import:

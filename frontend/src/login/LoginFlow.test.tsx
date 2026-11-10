@@ -4,12 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
-import { ApiError } from '../signup/api';
+import { ApiError, resendVerification } from '../signup/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { loadSession, login } from './api';
 import { listShipments } from '../shipment/api';
 
 vi.mock('./api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
+vi.mock('../signup/api', async importOriginal => ({ ...await importOriginal<typeof import('../signup/api')>(), resendVerification: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getCdg201ArrivalEvidence: vi.fn() }));
 
 const session: Session = {
@@ -258,5 +259,51 @@ describe('login acceptance criteria', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
     expect(screen.queryByText('Harbourline Logistics (Demo)')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('drift.session')).toBeNull();
+  });
+  it('tells an unverified company administrator to verify and offers a new link', async () => {
+    const message = 'Verify your email before signing in. You can request a new verification link.';
+    vi.mocked(login).mockRejectedValueOnce(new ApiError(message, 403, {}, 'EMAIL_NOT_VERIFIED'));
+    vi.mocked(resendVerification).mockResolvedValue({ message: 'If this email is awaiting verification, a new link has been sent.' });
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Email'), 'alex@pacificgate.example');
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'Str0ngPass');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    await user.click(screen.getByRole('button', { name: 'Resend the verification email' }));
+    expect(screen.getByLabelText('Signup email')).toHaveValue('alex@pacificgate.example');
+    await user.click(screen.getByRole('button', { name: 'Resend verification email' }));
+    expect(resendVerification).toHaveBeenCalledWith('alex@pacificgate.example');
+    expect(await screen.findByText('If this email is awaiting verification, a new link has been sent.')).toBeInTheDocument();
+
+    // Editing the login email must not wipe the confirmation.
+    await user.type(screen.getByLabelText('Email'), 'x');
+    expect(screen.getByText('If this email is awaiting verification, a new link has been sent.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Signup email')).toHaveValue('alex@pacificgate.example');
+  });
+
+  it('treats a 403 without the unverified marker as a generic error', async () => {
+    vi.mocked(login).mockRejectedValueOnce(new ApiError('This request was rejected.', 403));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Email'), 'alex@pacificgate.example');
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'Str0ngPass');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This request was rejected.');
+    expect(screen.queryByRole('button', { name: /verification email/ })).not.toBeInTheDocument();
+  });
+
+  it('does not offer a verification link for a wrong password', async () => {
+    vi.mocked(login).mockRejectedValueOnce(new ApiError('Invalid email or password.', 401));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Email'), 'alex@pacificgate.example');
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'Wr0ngPass');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
+    expect(screen.queryByRole('button', { name: /verification email/ })).not.toBeInTheDocument();
   });
 });

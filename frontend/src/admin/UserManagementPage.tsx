@@ -13,7 +13,9 @@ import { RemoveUser } from './RemoveUser';
 
 type StatusFilter = 'ALL' | AccountStatus;
 
-const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED: 'Removed' };
+const OWN_ASSIGNMENT = 'You cannot change your own organisation or role.';
+
+const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED: 'Removed', PENDING_VERIFICATION: 'Awaiting verification' };
 
 function shows(filter: StatusFilter, user: AdminUser) {
   return filter === 'ALL' || user.status === filter;
@@ -42,6 +44,10 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
 
   const selected = users?.find(user => user.id === selectedId) ?? null;
   const selectedRemoved = selected?.status === 'REMOVED';
+  const selectedIsSelf = selected?.id === account.id;
+  const assignmentLocked = selected == null || selectedRemoved || selectedIsSelf || pending;
+  const inactiveOrganisation = Boolean(selected?.organisation) && organisationId === '' && !selectedIsSelf;
+  const organisationHints = [selectedIsSelf ? 'own-assignment-hint' : null, inactiveOrganisation ? 'inactive-organisation-hint' : null].filter(Boolean).join(' ') || undefined;
   const visibleUsers = users?.filter(user => shows(statusFilter, user)) ?? [];
 
   useEffect(() => {
@@ -126,17 +132,12 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
   }
 
   async function save() {
-    if (!selected || selectedRemoved || !role || organisationId === '') return;
+    if (!selected || selectedRemoved || selectedIsSelf || !role || organisationId === '') return;
     setPending(true);
     setProblem('');
     setSaved('');
     try {
       const updated = await assignUser(account.token, selected.id, Number(organisationId), role);
-      const changed = updated.role !== selected.role || updated.organisation?.id !== selected.organisation?.id;
-      if (updated.id === account.id && changed) {
-        onSessionEnded();
-        return;
-      }
       setUsers(current => current?.map(user => user.id === updated.id ? updated : user) ?? null);
       setSaved('User assigned successfully');
       setAudits(await listAssignmentAudits(account.token));
@@ -145,6 +146,8 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
         onSessionEnded();
         return;
       }
+      // A rejected assignment (for example a 409 for an own or last administrator change) keeps the
+      // saved values in the list; only a successful response updates it.
       setProblem(reason instanceof Error ? reason.message : 'We could not reach DRIFT. Check your connection and try again.');
     } finally {
       setPending(false);
@@ -186,21 +189,22 @@ export function UserManagementPage({ account, onSignOut, onSessionEnded }: {
             </fieldset>
             <div className="field">
               <label htmlFor="assignment-organisation">Organisation</label>
-              <select id="assignment-organisation" value={organisationId} onChange={event => setOrganisationId(event.target.value)} disabled={selected == null || selectedRemoved || pending}>
+              <select id="assignment-organisation" value={organisationId} onChange={event => setOrganisationId(event.target.value)} disabled={assignmentLocked} aria-describedby={organisationHints}>
                 <option value="">Select an organisation</option>
                 {organisations.map(organisation => <option key={organisation.id} value={organisation.id}>{organisation.name}</option>)}
               </select>
-              {selected?.organisation && organisationId === '' ? <p className="field-hint">The current organisation is inactive. Choose an active organisation.</p> : null}
+              {inactiveOrganisation ? <p className="field-hint" id="inactive-organisation-hint">The current organisation is inactive. Choose an active organisation.</p> : null}
             </div>
             <div className="field">
               <label htmlFor="assignment-role">Role</label>
-              <select id="assignment-role" value={role} onChange={event => setRole(event.target.value as Role)} disabled={selected == null || selectedRemoved || pending}>
+              <select id="assignment-role" value={role} onChange={event => setRole(event.target.value as Role)} disabled={assignmentLocked} aria-describedby={selectedIsSelf ? 'own-assignment-hint' : undefined}>
                 <option value="">Select a role</option>
                 {roles.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
               </select>
+              {selectedIsSelf ? <p className="field-hint" id="own-assignment-hint">{OWN_ASSIGNMENT}</p> : null}
             </div>
             <div className="form-actions">
-              <button className="primary-button" type="submit" disabled={pending || selected == null || selectedRemoved || role === '' || organisationId === ''}>
+              <button className="primary-button" type="submit" disabled={assignmentLocked || role === '' || organisationId === ''} aria-describedby={selectedIsSelf ? 'own-assignment-hint' : undefined}>
                 {pending ? 'Saving assignment' : 'Save assignment'} <span aria-hidden="true">→</span>
               </button>
               {selected && selected.id !== account.id && selected.status === 'ACTIVE' ? (

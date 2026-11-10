@@ -22,3 +22,42 @@ export function validateSignup(fields: SignupFields): FieldErrors {
   else if (fields.confirmation !== fields.password) errors.confirmation = 'Your passwords do not match.';
   return errors;
 }
+
+export type CompanySignupFields = {
+  companyCode: string; companyName: string; fullName: string; email: string; password: string; confirmation: string;
+};
+export type CompanySignupErrors = Partial<Record<keyof CompanySignupFields, string>>;
+
+// Mirrors OrganisationIdentity on the server, which upper-cases the stored code.
+const COMPANY_CODE = /^[A-Za-z][A-Za-z0-9_]{0,49}$/;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+export function validateCompanySignup(fields: CompanySignupFields): CompanySignupErrors {
+  const errors: CompanySignupErrors = {};
+  const code = fields.companyCode.trim();
+  if (!COMPANY_CODE.test(code)) errors.companyCode = 'Enter an organisation code using letters, digits, and underscores.';
+  const name = fields.companyName.trim();
+  if (!name || CONTROL.test(name)) errors.companyName = 'Enter an organisation name.';
+  else if (name.length > 200) errors.companyName = 'Use at most 200 characters.';
+  const person = validateSignup({ fullName: fields.fullName, password: fields.password, confirmation: fields.confirmation });
+  if (person.fullName) errors.fullName = person.fullName;
+  const email = fields.email.trim();
+  if (!email) errors.email = 'Enter your work email.';
+  else if (email.length > 320) errors.email = 'Use at most 320 characters.';
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.';
+  if (person.password) errors.password = person.password;
+  if (person.confirmation) errors.confirmation = person.confirmation;
+  return errors;
+}
+
+/** Reads an invitation token from a pasted link (…#invite=TOKEN) or from the token itself. */
+export function invitationTokenFrom(value: string) {
+  const trimmed = value.trim();
+  const marker = trimmed.indexOf('#');
+  if (marker >= 0) return new URLSearchParams(trimmed.slice(marker + 1)).get('invite')?.trim() ?? '';
+  // A pasted link without an #invite= part has no code to use.
+  if (/[/:]/.test(trimmed)) return '';
+  return trimmed;
+}
+
+export const MISSING_INVITATION_CODE = 'This link has no invitation code. Paste the full link from your invitation email, or just the code.';
