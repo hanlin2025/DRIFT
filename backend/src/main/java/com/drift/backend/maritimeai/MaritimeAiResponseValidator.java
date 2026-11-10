@@ -37,6 +37,12 @@ final class MaritimeAiResponseValidator {
 	private static final Pattern UNSUPPORTED_REVISION_QUALIFIER = Pattern.compile("(?i)\\b(?:additional|further|another|subsequent)\\b");
 	private static final Pattern REVISION_DELAY_DIRECTION = Pattern.compile("(?i)\\bdelay(?:ed)?\\b");
 	private static final Pattern REVISION_EARLIER_DIRECTION = Pattern.compile("(?i)\\b(?:earlier|advance(?:d)?)\\b");
+	private static final Pattern REVISION_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:revis(?:ed|ion)|change(?:d)?|delay(?:ed)?)\\b");
+	private static final Pattern COMPARISON_DURATION_KEYWORD = Pattern.compile("(?i)\\b(?:exceed(?:s|ed)?|deadline)\\b");
+	private static final Pattern DURATION_BEFORE_DEADLINE = Pattern.compile(
+			"(?i)^\\s*(?:before the\\b[^.!?;]{0,48}\\bdeadline\\b|ahead of\\b|earlier than\\b)");
+	private static final Pattern BEFORE_THE_DEADLINE = Pattern.compile(
+			"(?i)\\bbefore the\\b[^.!?;]{0,48}\\bdeadline\\b|\\bahead of\\b|\\bearlier than\\b");
 	private static final Pattern RISK_OUTCOME_CLAIM = Pattern.compile("(?i)\\b(?:confirmed|actual|will|would|has|had|is|was|might|may)\\s+(?:be\\s+)?(?:delay(?:ed)?|late|miss(?:ed|es)?|lost)\\b|\\b(?:shipment|vessel|arrival)\\s+(?:is|was|will be|has been)\\s+(?:delay(?:ed)?|late)\\b|\\b(?:business|financial)\\s+loss\\b|\\blost\\s+revenue\\b|\\b(?:penalt(?:y|ies)|demurrage|compensation|delivery outcome|cargo outcome)\\b|\\b(?:probabilit(?:y|ies)|chance|odds)\\s+(?:of|that)\\b|\\b(?:predict|forecast|expect)\\b[^.!?]{0,60}\\b(?:delay|late|miss(?:ed|es)?)\\b");
 	private static final Pattern RISK_OUTCOME_CLAUSE_BREAK = Pattern.compile("(?i)[,;.!?]|\\b(?:but|however|yet|nevertheless|and|although|though|whereas|so)\\b");
 	private static final Pattern RISK_OUTCOME_NEGATION_BEFORE = Pattern.compile("(?i)\\b(?:no|not|never|cannot|can't|does not|doesn't|without|unconfirmed|unverified)\\b(?:\\s+[\\p{L}\\p{M}'’-]+){0,2}\\s*$");
@@ -844,8 +850,9 @@ final class MaritimeAiResponseValidator {
 			if (claim == null || !claimsRiskOutcome(claim.statement())) continue;
 			List<MaritimeEvidence> cited = input.evidence().stream()
 					.filter(item -> claim.evidenceIds().contains(item.evidenceId())).toList();
-			if (!isExactSupportedRevisionDuration(claim.statement(), claim, cited)
-					|| claimsRiskOutcome(REVISION_DURATION.matcher(claim.statement()).replaceFirst(""))) return true;
+			String grounded = statementWithoutCitedLimitations(claim.statement(), cited);
+			if (!isExactSupportedRevisionDuration(grounded, claim, cited)
+					|| claimsRiskOutcome(REVISION_DURATION.matcher(grounded).replaceFirst(""))) return true;
 		}
 		return false;
 	}
@@ -935,23 +942,122 @@ final class MaritimeAiResponseValidator {
 			MaritimeAiClaim claim, List<MaritimeEvidence> cited) {
 		if (text == null) return null;
 		String grounded = statementWithoutCitedLimitations(text, cited);
-		Matcher duration = FACTUAL_DURATION.matcher(grounded);
-		if (duration.find()) {
-			if (!isExactSupportedRevisionDuration(grounded, claim, cited)
-					&& !isExactSupportedComparisonMargin(grounded, claim, input)) {
-				return UNSUPPORTED_REVISION_QUALIFIER.matcher(grounded).find()
+		Matcher duration = SUPPORTED_DURATION.matcher(grounded);
+		StringBuilder withoutDurations = new StringBuilder();
+		int cursor = 0;
+		boolean sawDuration = false;
+		while (duration.find()) {
+			sawDuration = true;
+			int sentenceStart = sentenceStart(grounded, duration.start());
+			String sentence = grounded.substring(sentenceStart, sentenceEnd(grounded, duration.end()));
+			Long quantity = parseQuantity(duration.group(1));
+			Long unit = unitMinutes(duration.group(2));
+			AttributedDuration fact = attributeDuration(sentence, duration.start() - sentenceStart, duration.end() - sentenceStart);
+			boolean supported = quantity != null && unit != null && switch (fact) {
+				case REVISION -> revisionQuantityMatches(sentence, quantity, unit, claim, cited);
+				case COMPARISON -> comparisonQuantityMatches(sentence, quantity, unit, claim, input);
+				case NONE -> false;
+			};
+			if (!supported) {
+				return UNSUPPORTED_REVISION_QUALIFIER.matcher(sentence).find()
 						? "UNSUPPORTED_REVISION_QUALIFIER" : "UNSTRUCTURED_FACTUAL_DETAIL";
 			}
-			String withoutDuration = duration.replaceFirst("");
-			if (FACTUAL_NUMBER.matcher(withoutDuration).find() && !supportedBusinessDateTokens(withoutDuration, input, claim))
-				return "UNSTRUCTURED_FACTUAL_DETAIL";
-		} else if (FACTUAL_NUMBER.matcher(grounded).find() && !supportedBusinessDateTokens(grounded, input, claim))
+			withoutDurations.append(grounded, cursor, duration.start());
+			cursor = duration.end();
+		}
+		withoutDurations.append(grounded.substring(cursor));
+		String checked = sawDuration ? withoutDurations.toString() : grounded;
+		if (FACTUAL_NUMBER.matcher(checked).find() && !supportedBusinessDateTokens(checked, input, claim))
 			return "UNSTRUCTURED_FACTUAL_DETAIL";
-		text = grounded;
-		String lower = text.toLowerCase();
+		String lower = grounded.toLowerCase(Locale.ROOT);
 		if (input.shipmentContext() == null) return null;
 		return containsIdentity(lower, input.shipmentContext().motherVessel())
 				|| containsIdentity(lower, input.shipmentContext().feederVessel()) ? "UNSTRUCTURED_FACTUAL_DETAIL" : null;
+	}
+
+	/** A duration belongs to the fact named by the nearest governing words in its sentence. */
+	private enum AttributedDuration { REVISION, COMPARISON, NONE }
+
+	private static AttributedDuration attributeDuration(String sentence, int start, int end) {
+		String prefix = sentence.substring(0, Math.max(0, Math.min(start, sentence.length()))).toLowerCase(Locale.ROOT);
+		String suffix = sentence.substring(Math.max(0, Math.min(end, sentence.length()))).toLowerCase(Locale.ROOT);
+		if (DURATION_BEFORE_DEADLINE.matcher(suffix).find()) return AttributedDuration.COMPARISON;
+		if (!prefix.matches("(?s).*\\bby\\s*")) return AttributedDuration.NONE;
+		int revisionAt = lastMatchStart(REVISION_DURATION_KEYWORD, prefix);
+		int comparisonAt = lastMatchStart(COMPARISON_DURATION_KEYWORD, prefix);
+		if (comparisonAt > revisionAt) return AttributedDuration.COMPARISON;
+		if (revisionAt >= 0) return AttributedDuration.REVISION;
+		return AttributedDuration.NONE;
+	}
+
+	private static int lastMatchStart(Pattern pattern, String text) {
+		Matcher matcher = pattern.matcher(text);
+		int at = -1;
+		while (matcher.find()) at = matcher.start();
+		return at;
+	}
+
+	private static int sentenceStart(String text, int index) {
+		for (int i = index - 1; i >= 0; i--) {
+			char boundary = text.charAt(i);
+			if (boundary == '.' || boundary == '!' || boundary == '?' || boundary == ';') return i + 1;
+		}
+		return 0;
+	}
+
+	private static int sentenceEnd(String text, int index) {
+		for (int i = index; i < text.length(); i++) {
+			char boundary = text.charAt(i);
+			if (boundary == '.' || boundary == '!' || boundary == '?' || boundary == ';') return i;
+		}
+		return text.length();
+	}
+
+	private static boolean revisionQuantityMatches(String sentence, long quantity, long unit, MaritimeAiClaim claim,
+			List<MaritimeEvidence> cited) {
+		if (claim == null || !"MOTHER".equals(claim.vesselRole()) || !"EXPECTED_ARRIVAL".equals(claim.observationType())
+				|| claim.factReferences() == null || cited.size() != 1) return false;
+		MaritimeEvidence evidence = cited.getFirst();
+		if (!"MPA_ETA_REVISION".equals(evidence.sourceType()) || !"MOTHER".equals(evidence.vesselRole())
+				|| !"EXPECTED_ARRIVAL".equals(evidence.observationType())
+				|| !claim.factReferences().contains("evidence:" + evidence.evidenceId())
+				|| UNSUPPORTED_REVISION_QUALIFIER.matcher(sentence).find()) return false;
+		try {
+			long signedMinutes = Duration.between(OffsetDateTime.parse(evidence.previousValue()),
+					OffsetDateTime.parse(evidence.currentValue())).toMinutes();
+			if (REVISION_DELAY_DIRECTION.matcher(sentence).find() && signedMinutes <= 0) return false;
+			if (REVISION_EARLIER_DIRECTION.matcher(sentence).find() && signedMinutes >= 0) return false;
+			return Math.multiplyExact(quantity, unit) == Math.abs(signedMinutes);
+		} catch (RuntimeException ignored) { return false; }
+	}
+
+	private static boolean comparisonQuantityMatches(String sentence, long quantity, long unit, MaritimeAiClaim claim,
+			MaritimeAiEvidencePackage input) {
+		if (claim == null || !"DELAY_COMPARISON_REVIEW".equals(claim.relationshipType()) || claim.factReferences() == null
+				|| input == null || input.shipmentContext() == null || input.shipmentContext().businessContext() == null)
+			return false;
+		MaritimeAiBusinessContext.Comparison comparison = input.shipmentContext().businessContext().comparison();
+		if (comparison == null || comparison.state() != MaritimeAiBusinessContext.ComparisonState.AVAILABLE
+				|| comparison.outcome() == null || comparison.estimatedArrivalAt() == null
+				|| comparison.comparedDeadline() == null) return false;
+		Set<String> refs = Set.copyOf(claim.factReferences());
+		Set<String> allowed = MaritimeAiCanonicalFactReferences.allowed(input);
+		if (!hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
+				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
+				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE)) return false;
+		long minutesLate = Duration.between(comparison.comparedDeadline().toInstant(),
+				comparison.estimatedArrivalAt().toInstant()).toMinutes();
+		long magnitude = Math.abs(minutesLate);
+		if (magnitude == 0) return false;
+		try {
+			if (Math.multiplyExact(quantity, unit) != magnitude) return false;
+		} catch (ArithmeticException overflow) { return false; }
+		String lower = sentence.toLowerCase(Locale.ROOT);
+		boolean exceeds = containsPositiveWord(lower, "exceeds") || containsPositiveWord(lower, "exceed");
+		boolean beforeDeadline = BEFORE_THE_DEADLINE.matcher(lower).find();
+		if (comparison.outcome() == com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE)
+			return minutesLate > 0 && exceeds && !beforeDeadline;
+		return minutesLate <= 0 && beforeDeadline && !exceeds;
 	}
 	private static boolean supportedBusinessDateTokens(String text, MaritimeAiEvidencePackage input, MaritimeAiClaim claim) {
 		if (claim == null || claim.factReferences() == null || input.shipmentContext() == null
@@ -982,44 +1088,6 @@ final class MaritimeAiResponseValidator {
 			if (!matchesDeadline && !matchesEstimate && !matchesComparedDeadline) return false;
 		}
 		return matched > 0 && !FACTUAL_NUMBER.matcher(ISO_OFFSET_DATE_TIME.matcher(text).replaceAll("")).find();
-	}
-	/**
-	 * A delay-comparison claim may state the one duration the backend already computed between its
-	 * arrival estimate and the recorded deadline. The model does not supply a new calculation.
-	 */
-	private static boolean isExactSupportedComparisonMargin(String text, MaritimeAiClaim claim,
-			MaritimeAiEvidencePackage input) {
-		if (claim == null || !"DELAY_COMPARISON_REVIEW".equals(claim.relationshipType()) || claim.factReferences() == null
-				|| input == null || input.shipmentContext() == null || input.shipmentContext().businessContext() == null)
-			return false;
-		MaritimeAiBusinessContext.Comparison comparison = input.shipmentContext().businessContext().comparison();
-		if (comparison == null || comparison.state() != MaritimeAiBusinessContext.ComparisonState.AVAILABLE
-				|| comparison.outcome() == null || comparison.estimatedArrivalAt() == null
-				|| comparison.comparedDeadline() == null) return false;
-		Set<String> refs = Set.copyOf(claim.factReferences());
-		Set<String> allowed = MaritimeAiCanonicalFactReferences.allowed(input);
-		if (!hasAllowedReferences(refs, allowed, MaritimeAiCanonicalFactReferences.COMPARISON_OUTCOME,
-				MaritimeAiCanonicalFactReferences.COMPARISON_ESTIMATED_ARRIVAL,
-				MaritimeAiCanonicalFactReferences.COMPARISON_RECORDED_DEADLINE)) return false;
-		long minutesLate = Duration.between(comparison.comparedDeadline().toInstant(),
-				comparison.estimatedArrivalAt().toInstant()).toMinutes();
-		long magnitude = Math.abs(minutesLate);
-		if (magnitude == 0) return false;
-		Matcher matcher = SUPPORTED_DURATION.matcher(text);
-		if (!matcher.find()) return false;
-		Long quantity = parseQuantity(matcher.group(1));
-		Long unit = unitMinutes(matcher.group(2));
-		if (matcher.find() || quantity == null || unit == null) return false;
-		try {
-			if (Math.multiplyExact(quantity, unit) != magnitude) return false;
-		} catch (ArithmeticException overflow) { return false; }
-		String lower = text.toLowerCase(Locale.ROOT);
-		boolean exceeds = containsPositiveWord(lower, "exceeds") || containsPositiveWord(lower, "exceed");
-		boolean beforeDeadline = containsWholePhrase(lower, "before the") || containsWholePhrase(lower, "ahead of")
-				|| containsWholePhrase(lower, "earlier than");
-		if (comparison.outcome() == com.drift.backend.shipment.DelayComparison.Outcome.EXCEEDS_DEADLINE)
-			return minutesLate > 0 && exceeds && !beforeDeadline;
-		return minutesLate <= 0 && beforeDeadline && !exceeds;
 	}
 
 	/** An exact quoted limitation is the source's own words, so it is not a new model-authored fact. */
