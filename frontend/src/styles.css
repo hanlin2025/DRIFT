@@ -39,9 +39,9 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 a { color: inherit; }
-button, a, input { -webkit-tap-highlight-color: transparent; }
+button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .65; }
 :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
@@ -72,11 +72,11 @@ h2, .auth-card h1 { font-family: var(--font-sans); font-weight: 650; font-size: 
 .field { margin-bottom: 17px; }
 label { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 650; margin-bottom: 8px; }
 .locked-label { color: #7b8379; font-size: 7px; letter-spacing: .8px; font-weight: 500; }
-input { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font-size: 15px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
+input, select { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font-size: 15px; min-height: 44px; transition: border-color .18s, box-shadow .18s; }
 input::placeholder { color: #8b948a; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
 input[readonly] { background: #eceee7; color: #60705f; border-color: #e0e4da; cursor: default; }
-input[aria-invalid=true] { border-color: var(--error); }
+input[aria-invalid=true], select[aria-invalid=true] { border-color: var(--error); }
 .field-hint { margin: 7px 0 0; color: #7a8376; font-size: 9px; line-height: 1.6; }
 .field-error { color: var(--error); font-size: 10px; line-height: 1.5; margin: 7px 0 0; }
 .password-input { position: relative; }
@@ -115,7 +115,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 @media (max-width: 760px) {
   .wordmark { font-size: 22px; letter-spacing: 4px; }
   .wordmark svg { width: 25px; height: 25px; }
-  input { font-size: 16px; }
+  input, select { font-size: 16px; }
   .company-card { padding: 13px; }
   .company-card strong { font-size: 11px; }
   .form-footer { padding-top: 12px; }
@@ -289,8 +289,6 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .profile-page { max-width: 640px; }
 .profile-page fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
 .profile-page legend { font-family: var(--font-sans); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin: 12px 0 16px; }
-.profile-page select { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; }
-.profile-page select:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
 .profile-check { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; margin: 6px 0 18px; font-size: 12px; line-height: 1.5; font-weight: 650; }
 .profile-check input { width: 18px; min-height: 18px; margin-top: 2px; }
 .profile-page .primary-button { width: auto; min-width: 180px; }
