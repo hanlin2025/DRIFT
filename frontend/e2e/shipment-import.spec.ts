@@ -53,12 +53,36 @@ function seedRelationship(forwarderEmail: string, importerCode: string) {
     WHERE forwarder.email = :'email';`, { email: forwarderEmail, importer: importerCode });
 }
 
+function assignRole(email: string, role: 'ADMIN' | 'LOGISTICS_MANAGER') {
+  sql(`UPDATE users SET role_id = (SELECT id FROM roles WHERE code = :'role') WHERE email = :'email';`, { email, role });
+}
+
 async function signIn(page: Page, email: string, path = '/freight-forwarder') {
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(path);
+}
+
+async function signOut(page: Page) {
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page).toHaveURL('/login');
+}
+
+async function openShipmentFromList(page: Page, listPath: string, heading: string, reference: string) {
+  await expect(page).toHaveURL(listPath);
+  await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+  const shipmentLink = page.getByRole('link', { name: reference, exact: true });
+  await expect(shipmentLink).toBeVisible();
+  const detailPath = await shipmentLink.getAttribute('href');
+  expect(detailPath).toBeTruthy();
+  await shipmentLink.click();
+  await expect(page).toHaveURL(detailPath!);
+  await expect(page.getByRole('heading', { name: reference, exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Connection, risk, and next action' })).toBeVisible();
+  await page.getByRole('link', { name: 'Back', exact: true }).click();
+  await expect(page).toHaveURL(listPath);
 }
 
 function row(reference: string, importerCode = '', overrides: Partial<Record<'origin' | 'motherArrival' | 'feederDeparture', string>> = {}) {
@@ -77,6 +101,23 @@ async function importThroughPage(page: Page, contents: string, name: string) {
   const job = await response.json() as { id: number };
   await expect(page).toHaveURL(new RegExp(`/freight-forwarder/import/${job.id}$`));
   return job.id;
+}
+
+async function createShipment(request: APIRequestContext, token: string, shipmentReference: string) {
+  const response = await request.post('/api/shipments', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: {
+      shipmentReference,
+      origin: 'Rotterdam',
+      destination: 'Jakarta',
+      transshipmentPort: 'Singapore',
+      motherVessel: 'Ever Steady',
+      plannedMotherArrivalAt: '2026-10-15T08:00:00+08:00',
+      feederVessel: 'Straits Feeder',
+      plannedFeederDepartureAt: '2026-10-15T17:00:00+08:00',
+    },
+  });
+  expect(response.status(), await response.text()).toBe(201);
 }
 
 function cleanup(emails: string[]) {
@@ -155,4 +196,49 @@ test('a partial import displays API row errors and downloads the real error repo
     expect(sql('SELECT imported_count || \':\' || failed_count || \':\' || processed_rows || \':\' || total_rows FROM shipment_import_jobs WHERE id = :\'job\';', { job: String(jobId) })).toBe('1:1:2:2');
     expect(sql('SELECT COUNT(*) FROM shipments WHERE shipment_reference = :\'reference\';', { reference: validReference })).toBe('1');
   } finally { cleanup([forwarder.email]); }
+});
+
+test('CDG-327: the shipment journey works from forwarder import through each role shipment screen', { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The shipment journey is covered once on desktop.');
+  test.setTimeout(90_000);
+  const forwarder = await registerAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  const importer = await registerAccount(request, 'IMPORTER', 'STRAITS_FRESH_DEMO');
+  seedRelationship(forwarder.email, 'STRAITS_FRESH_DEMO');
+  const existingReference = `HBL-CDG327-EXISTING-${randomBytes(4).toString('hex')}`;
+  const importedReference = `HBL-CDG327-IMPORTED-${randomBytes(4).toString('hex')}`;
+  try {
+    await createShipment(request, forwarder.token, existingReference);
+    await signIn(page, forwarder.email);
+    await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
+    await openShipmentFromList(page, '/freight-forwarder', 'Shipment portfolio', existingReference);
+
+    await page.getByRole('link', { name: 'Import shipments' }).click();
+    await expect(page).toHaveURL('/freight-forwarder/import');
+    await expect(page.getByRole('heading', { name: 'Import shipments' })).toBeVisible();
+    const jobId = await importThroughPage(page, `${header}\n${row(importedReference, 'STRAITS_FRESH_DEMO')}`, 'cdg327-journey.csv');
+    await expect(page.getByRole('status')).toHaveText('1 shipment imported successfully.', { timeout: 45_000 });
+    expect(sql('SELECT status FROM shipment_import_jobs WHERE id = :\'job\';', { job: String(jobId) })).toBe('COMPLETED');
+    expect(sql('SELECT importer_company_id FROM shipments WHERE shipment_reference = :\'reference\';', { reference: importedReference })).toBe(sql("SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO';"));
+
+    await page.getByRole('link', { name: 'Back to Shipments', exact: true }).click();
+    await openShipmentFromList(page, '/freight-forwarder', 'Shipment portfolio', importedReference);
+
+    await signOut(page);
+    await signIn(page, importer.email, '/importer');
+    await openShipmentFromList(page, '/importer', 'Shipment overview', importedReference);
+
+    await signOut(page);
+    assignRole(forwarder.email, 'LOGISTICS_MANAGER');
+    await signIn(page, forwarder.email, '/logistics-manager');
+    await openShipmentFromList(page, '/logistics-manager', 'Company shipments', importedReference);
+
+    await signOut(page);
+    assignRole(forwarder.email, 'ADMIN');
+    await signIn(page, forwarder.email, '/admin');
+    await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible();
+    await page.getByRole('link', { name: 'Company shipments' }).click();
+    await openShipmentFromList(page, '/admin/shipments', 'Company shipments', importedReference);
+  } finally {
+    cleanup([forwarder.email, importer.email]);
+  }
 });
