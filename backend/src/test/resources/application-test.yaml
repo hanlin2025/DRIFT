@@ -17,6 +17,8 @@ app:
       ip: 1000
       window: 15m
   signup:
+    # Signup endpoints remain disabled in production by default; enable them for the integration suite.
+    enabled: true
     rate-limit:
       # High enough that the shared in-memory limiter never throttles other tests;
       # EmailVerificationRateLimitIntegrationTests sets low limits for its own context.
