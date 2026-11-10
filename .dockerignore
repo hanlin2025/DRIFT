@@ -10,4 +10,15 @@ docs
 fixtures
 frontend
 scripts
-tools
+tools/*
+!tools/cdg201
+tools/cdg201/*
+!tools/cdg201/mpa
+tools/cdg201/mpa/*
+!tools/cdg201/mpa/mpa_oceansx_collect.py
+!tools/cdg201/contextual
+tools/cdg201/contextual/*
+!tools/cdg201/contextual/nea_weather_collect.py
+!tools/maritime_notices
+tools/maritime_notices/*
+!tools/maritime_notices/mpa_official_notices_collect.py
