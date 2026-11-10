@@ -264,7 +264,7 @@ describe('workspace shipment retrieval', () => {
     const route = await screen.findByRole('figure', { name: 'Planned route' });
     expect(within(route).getByText('DEPARTURE Busan, KR')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'HBL-OLDER' })).toBeInTheDocument();
-    expect(screen.getByText('No planned connection window')).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Shipment HBL-OLDER' })).getByText('No planned connection window')).toBeInTheDocument();
     expect(getShipment).toHaveBeenCalledWith('session-token', '1');
     await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
@@ -272,7 +272,7 @@ describe('workspace shipment retrieval', () => {
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     await user.click(await screen.findByRole('link', { name: 'HBL-NEWER' }));
     expect(within(await screen.findByRole('figure', { name: 'Planned route' })).getByText('DEPARTURE Shanghai, CN')).toBeInTheDocument();
-    expect(screen.getByText('1 day')).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Shipment HBL-NEWER' })).getByText('1 day')).toBeInTheDocument();
   });
 
   it('loads an initial supported URL filter without forwarding unrelated parameters', async () => {
@@ -396,7 +396,7 @@ describe('workspace shipment retrieval', () => {
     expect(within(details).getByText('1 day')).toBeInTheDocument();
     expect(within(details).getByText('Registered')).toBeInTheDocument();
     expect(within(details).getAllByRole('term').map(term => term.textContent)).toEqual([
-      'Origin', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Transshipment port', 'Mother-vessel arrival deadline', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Destination', 'Connection window', 'Remaining connection window', 'Risk', 'Registered',
+      'Origin', 'Transshipment port', 'Destination', 'Registered', 'Mother vessel', 'Mother vessel IMO', 'Mother vessel MMSI', 'Mother vessel operator', 'Mother vessel position', 'Planned arrival', 'Mother-vessel arrival deadline', 'Feeder vessel', 'Feeder vessel IMO', 'Feeder vessel MMSI', 'Feeder vessel operator', 'Feeder vessel position', 'Planned departure', 'Connection window', 'Remaining connection window', 'Risk',
     ]);
 
     cleanup();

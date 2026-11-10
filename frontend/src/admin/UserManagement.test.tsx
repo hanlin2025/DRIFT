@@ -6,12 +6,17 @@ import { AppRoutes } from '../App';
 import { loadSession, login } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
+import { getProfile, updateProfile } from '../profile/api';
 import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments } from '../shipment/api';
 import { WorkspacePage } from '../workspace/WorkspaceRoute';
 import { assignUser, createOrganisation, listAccountStatusAudits, listAssignableOrganisations, listAssignableRoles, listAssignableUsers, listAssignmentAudits, listInvitationOrganisations, listPendingInvitations, reactivateUser, removeUser } from './api';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
 vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
+vi.mock('../profile/api', async () => {
+  const actual = await vi.importActual<typeof import('../profile/api')>('../profile/api');
+  return { ...actual, getProfile: vi.fn(), updateProfile: vi.fn() };
+});
 vi.mock('./api', () => ({
   listAssignableUsers: vi.fn(),
   listAssignableRoles: vi.fn(),
@@ -88,6 +93,24 @@ beforeEach(() => {
   vi.mocked(reactivateUser).mockResolvedValue({ ...users[2], status: 'ACTIVE' });
   vi.mocked(listAccountStatusAudits).mockResolvedValue([]);
   vi.mocked(listPendingInvitations).mockResolvedValue([]);
+  vi.mocked(getProfile).mockResolvedValue({
+    id: admin.id,
+    fullName: admin.fullName,
+    email: admin.email,
+    role: 'ADMIN',
+    company: admin.company,
+    riskEmailNotificationsEnabled: false,
+    minimumRiskNotificationLevel: 'HIGH',
+  });
+  vi.mocked(updateProfile).mockImplementation(async (_token, update) => ({
+    id: admin.id,
+    fullName: update.fullName.trim() || admin.fullName,
+    email: admin.email,
+    role: 'ADMIN',
+    company: admin.company,
+    riskEmailNotificationsEnabled: update.riskEmailNotificationsEnabled,
+    minimumRiskNotificationLevel: update.minimumRiskNotificationLevel,
+  }));
 });
 
 describe('user management', () => {
@@ -97,6 +120,7 @@ describe('user management', () => {
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
 
     expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
+    expect(document.title).toBe('User management | DRIFT');
     expect(screen.getByRole('link', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
     expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');
@@ -520,5 +544,42 @@ describe('account reactivation', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
+  });
+});
+
+describe('profile and user management verification', () => {
+  it('returns from Profile to user management and keeps assign, remove, and reactivate', async () => {
+    writeSession(admin);
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Profile' }));
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    const name = screen.getByLabelText('Full name');
+    await user.clear(name);
+    await user.type(name, 'Amina Admin');
+    await user.click(screen.getByRole('button', { name: 'Save profile' }));
+    expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
+    expect(updateProfile).toHaveBeenCalledWith('admin-token', expect.objectContaining({ fullName: 'Amina Admin' }));
+
+    await user.click(screen.getByRole('link', { name: 'User management' }));
+    expect(await screen.findByRole('heading', { name: 'User management' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
+
+    await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
+    await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
+    await user.click(screen.getByRole('button', { name: /Save assignment/ }));
+    expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 1, 'IMPORTER');
+    expect(await screen.findByText('User assigned successfully')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove Alice Tan' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Remove user' })).getByRole('button', { name: 'Remove' }));
+    expect(removeUser).toHaveBeenCalledWith('admin-token', 4);
+
+    await user.click(screen.getByRole('radio', { name: /Ben Ong/ }));
+    await user.click(screen.getByRole('button', { name: 'Reactivate Ben Ong' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Reactivate user' })).getByRole('button', { name: 'Reactivate' }));
+    expect(reactivateUser).toHaveBeenCalledWith('admin-token', 5);
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,7 +65,7 @@ describe('profile page', () => {
     expect(screen.getByLabelText('Role')).toHaveAttribute('readonly');
     expect(screen.getByRole('checkbox', { name: 'Email me when a shipment risk reaches this level' })).not.toBeChecked();
     expect(screen.getByText(/Saving this page does not send an email\./)).toBeInTheDocument();
-    expect(screen.getByText(/A later rise sends the existing risk email when a shipment you can view reaches the saved level\./)).toBeInTheDocument();
+    expect(screen.queryByText(/A later rise sends the existing risk email/)).not.toBeInTheDocument();
     expect(screen.getByText('HIGH means HIGH and CRITICAL.')).toBeInTheDocument();
     expect(screen.queryByText(/Nothing is emailed from this page/)).not.toBeInTheDocument();
     expect(screen.queryByText(/The choice is stored only/)).not.toBeInTheDocument();
@@ -145,6 +145,9 @@ describe('profile page', () => {
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
     await user.click(await screen.findByRole('link', { name: 'Profile' }));
     expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.title).toBe('Profile | DRIFT');
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('href', '/freight-forwarder');
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('aria-current', 'page');
     expect(getProfile).toHaveBeenCalledWith('session-token');
     clearSession();
     render(<MemoryRouter initialEntries={['/profile']}><AppRoutes /></MemoryRouter>);
@@ -170,5 +173,30 @@ describe('profile page', () => {
     render(<ProfilePage token="session-token" onSessionEnded={vi.fn()} onPasswordChanged={vi.fn()} onNameSaved={vi.fn()} />);
     expect(await screen.findByLabelText('Company')).toHaveValue('No company assigned');
     expect(screen.getByLabelText('Role')).toHaveValue('Administrator');
+  });
+});
+
+describe('profile for every role', () => {
+  it.each([
+    ['FREIGHT_FORWARDER', '/freight-forwarder', 'Shipments', '/freight-forwarder', 'Shipment portfolio'],
+    ['IMPORTER', '/importer', 'Shipments', '/importer', 'Shipment overview'],
+    ['LOGISTICS_MANAGER', '/logistics-manager', 'Shipments', '/logistics-manager', 'Company shipments'],
+    ['ADMIN', '/admin/shipments', 'Company shipments', '/admin/shipments', 'Company shipments'],
+  ] as const)('opens Profile for a %s and returns to shipments', async (role, home, shipmentsLabel, shipmentsHref, heading) => {
+    cleanup();
+    const user = userEvent.setup();
+    const current = { ...session, role };
+    writeSession(current);
+    vi.mocked(loadSession).mockImplementation(async token => ({ ...current, token }));
+    vi.mocked(getProfile).mockResolvedValue({ ...profile, role });
+    render(<MemoryRouter initialEntries={[home]}><AppRoutes /></MemoryRouter>);
+    await user.click(await screen.findByRole('link', { name: 'Profile' }));
+    expect(await screen.findByRole('heading', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.title).toBe('Profile | DRIFT');
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: shipmentsLabel })).toHaveAttribute('href', shipmentsHref);
+    await user.click(screen.getByRole('link', { name: shipmentsLabel }));
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: shipmentsLabel })).toHaveAttribute('aria-current', 'page');
   });
 });

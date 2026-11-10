@@ -205,6 +205,7 @@ describe('connection window on the shipment detail', () => {
     expect(link).toHaveAttribute('href', '/freight-forwarder/shipments/7');
     await user.click(link);
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
     expect(getShipmentTracking).toHaveBeenCalledWith('forwarder-token', '7');
@@ -948,6 +949,69 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/shipments');
     expect(screen.getByRole('heading', { name: 'Company shipments' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'HL-1001' })).toBeInTheDocument();
+  });
+});
+
+describe('open shipment lead', () => {
+  it('leads with connection, risk, and next action before the recommendation and map', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      remainingConnectionWindow: { status: 'AVAILABLE', duration: '18 hours', totalSeconds: 64800, missedBy: null, missedBySeconds: null },
+      risk: { level: 'HIGH', explanation: 'Less than 12 hours to transfer cargo between vessels.' },
+      recommendation: {
+        available: true,
+        unavailable: null,
+        response: { code: 'PREPARE_INTERVENTION', label: 'Prepare an intervention', wording: "Prepare an intervention. The connection risk is high, and the prediction affects the importer's constraints." },
+        riskLevel: 'HIGH',
+        riskExplanation: 'Less than 12 hours to transfer cargo between vessels.',
+        impact: { outcome: 'AFFECTS_CONSTRAINTS', detail: null },
+      },
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const glance = await screen.findByRole('region', { name: 'Connection, risk, and next action' });
+    expect(within(glance).getByText('18 hours')).toBeInTheDocument();
+    expect(within(glance).getByText(/Less than 12 hours to transfer cargo/)).toBeInTheDocument();
+    expect(within(glance).getByText('Prepare an intervention')).toBeInTheDocument();
+    const decision = screen.getByRole('article', { name: 'Recommendation' });
+    const map = screen.getByRole('figure', { name: 'Planned route' });
+    const record = screen.getByRole('article', { name: 'Shipment HL-1001' });
+    expect(glance.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(decision.compareDocumentPosition(map) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(map.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the remaining-window signal in the glance instead of the planned duration', async () => {
+    vi.mocked(getShipment).mockResolvedValue({
+      ...shipment,
+      remainingConnectionWindow: null,
+      arrivalComparison: availableComparison('ON_SCHEDULE', 'On schedule · estimated at the planned time', true),
+    });
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const glance = await screen.findByRole('region', { name: 'Connection, risk, and next action' });
+    expect(within(glance).getByText("The planned connection window is being used because the mother vessel's position is possibly outdated.")).toBeInTheDocument();
+    expect(within(glance).queryByText('1 day 10 hours')).not.toBeInTheDocument();
+  });
+
+  it('keeps the shipment record collapsed across a tracking poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      vi.mocked(getShipment)
+        .mockResolvedValueOnce(shipment)
+        .mockResolvedValueOnce({ ...shipment, aisFeed: { status: 'DELAYED', lastReceivedAt: '2026-10-22T08:00:00Z' } });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      open(forwarder, '/freight-forwarder/shipments/7');
+      expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+      const disclosure = screen.getByText('Shipment and backend assessment').closest('details');
+      expect(disclosure).not.toBeNull();
+      expect(disclosure).toHaveAttribute('open');
+      await user.click(screen.getByText('Shipment and backend assessment'));
+      expect(disclosure).not.toHaveAttribute('open');
+      await act(() => vi.advanceTimersByTimeAsync(TRACKING_POLL_MS));
+      expect(getShipment).toHaveBeenCalledTimes(2);
+      expect(disclosure).not.toHaveAttribute('open');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

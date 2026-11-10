@@ -1,18 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { loadSession } from '../login/api';
-import { endSession, homePath, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Session } from '../session/session';
+import { endSession, isExpired, readSession, sessionHasEnded, signOut, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
+import { WorkspaceFrame } from '../workspace/WorkspaceFrame';
 import { ProfilePage } from './ProfilePage';
-
-function Wordmark({ href }: { href: string }) {
-  return (
-    <a className="wordmark" href={href} aria-label="DRIFT home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 25 14 7h14L18 25H4Zm6-5h8l5-9h-8l-5 9Z" fill="currentColor" /></svg>
-      DRIFT<span className="wordmark-dot">.</span>
-    </a>
-  );
-}
 
 const MAX_TIMER_DELAY = 2_147_483_647;
 
@@ -75,25 +67,16 @@ export function ProfileRoute() {
     ? <div className="error-notice" role="alert">{problem}<br /><button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
     : <div className="notice" role="status">Checking your session...</div>}</main></div>;
 
-  const home = homePath(account.role);
   return (
-    <div className="workspace">
-      <header className="workspace-bar">
-        <Wordmark href={home} />
-        {account.role === 'ADMIN' ? <Link className="workspace-nav" to="/admin">User management</Link> : null}
-        <Link className="workspace-nav" to="/profile" aria-current="page">Profile</Link>
-        <button type="button" className="sign-out" onClick={() => { void signOut().then(() => navigate('/login', { replace: true })); }}>Sign out</button>
-      </header>
-      <main className="workspace-main">
-        <ProfilePage token={account.token} onSessionEnded={sessionEnded} onPasswordChanged={passwordChanged} onNameSaved={fullName => {
-          setAccount(current => {
-            if (!current) return current;
-            const next = { ...current, fullName };
-            writeSession(next);
-            return next;
-          });
-        }} />
-      </main>
-    </div>
+    <WorkspaceFrame account={account} section="profile" onSignOut={() => { void signOut().then(() => navigate('/login', { replace: true })); }}>
+      <ProfilePage token={account.token} onSessionEnded={sessionEnded} onPasswordChanged={passwordChanged} onNameSaved={fullName => {
+        setAccount(current => {
+          if (!current) return current;
+          const next = { ...current, fullName };
+          writeSession(next);
+          return next;
+        });
+      }} />
+    </WorkspaceFrame>
   );
 }

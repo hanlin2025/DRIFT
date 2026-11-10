@@ -571,6 +571,7 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
   onShipment: (shipment: Shipment) => void;
   changeHistory: ReactNode;
 }) {
+  const [recordOpen, setRecordOpen] = useState(true);
   const remaining = remainingWindowFact(shipment);
   const selectedPlaybackPoint = selectedId == null
     ? null
@@ -604,6 +605,11 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
       </div>
       <p className="intro">{recorded(shipment.origin)} to {recorded(shipment.destination)}</p>
       {refreshNote && <p className="refresh-note" role="status">{refreshNote}</p>}
+      <SituationGlance shipment={shipment} />
+      <RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
+        decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
+        archived={shipment.status === 'ARCHIVED'}
+        onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       <div className="tracking-layout">
         <div className="tracking-map">
           <RouteMap shipment={shipment} tracking={trackMode === 'recorded' ? null : tracking} history={history} selectedId={selectedId} onSelectPoint={onSelectPoint}
@@ -618,71 +624,101 @@ function ShipmentRecord({ shipment, tracking, cdg201Evidence, maritimeContext, m
             identityName: playbackVesselName,
           } : undefined} />
       </div>
-      <section className="shipment-assessment-summary" aria-label="Backend-calculated shipment assessment">
-        <h3>Shipment and backend assessment</h3>
-        <p>Shipment schedule, risk, recommendation and impact below are calculated by DRIFT. The AI interpretation is shown separately and does not approve or apply a change.</p>
+      <section className="shipment-record-card" aria-label="Backend-calculated shipment assessment">
+        <details className="shipment-record-disclosure" open={recordOpen} onToggle={event => setRecordOpen(event.currentTarget.open)}>
+          <summary>Shipment and backend assessment</summary>
+          <p className="shipment-assessment-note">The AI interpretation is shown separately and does not approve or apply a change.</p>
+          <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
+            <h4>Route</h4>
+            <dl>
+              <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
+              <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
+              <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
+              <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
+            </dl>
+            <h4>Mother vessel</h4>
+            <dl>
+              <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shownWarning(tracking, tracking?.motherVesselNameWarning, shipment.motherVesselNameWarning))}</dd></div>
+              <div><dt>Mother vessel IMO</dt><dd className={missing(shipment.motherVesselImo)}>{recorded(shipment.motherVesselImo, 'Not available')}</dd></div>
+              <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
+              <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
+              <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
+              {operationFact('Mother vessel operation', shipment.motherOperationalState)}
+              {portConditionFact(shipment.portConditionComparison)}
+              <div>
+                <dt>Planned arrival</dt>
+                <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
+                {shipment.arrivalComparison && <ArrivalComparisonFacts comparison={shipment.arrivalComparison} />}
+              </div>
+              <TransshipmentArrivalDeadlineFact shipment={shipment} viewerCompanyId={viewerCompanyId} token={token}
+                onSessionEnded={onSessionEnded} onShipment={onShipment} portCapture={portCapture} onExplicitRefresh={onExplicitRefresh} />
+              <DelayComparisonFact shipment={shipment} />
+            </dl>
+            <h4>Feeder vessel</h4>
+            <dl>
+              <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
+              <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
+              <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
+              <div><dt>Feeder vessel operator</dt><dd className={missing(shipment.feederVesselOperator)}>{recorded(shipment.feederVesselOperator, 'Not available')}</dd></div>
+              <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
+              {operationFact('Feeder vessel operation', shipment.feederOperationalState)}
+              <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
+                ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
+                : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
+            </dl>
+            <h4>Connection</h4>
+            <dl>
+              {feedFact(shipment.aisFeed)}
+              <div>
+                <dt>Connection window</dt>
+                <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
+              </div>
+              <div>
+                <dt>Remaining connection window</dt>
+                <dd className={remaining.missing ? 'is-missing' : undefined}>
+                  {remaining.text}
+                  {shipment.remainingConnectionWindow && shipment.arrivalComparison?.lastReceivedAt
+                    ? <dl className="arrival-comparison">{reportTime(shipment.arrivalComparison.lastReceivedAt)}</dl>
+                    : null}
+                </dd>
+              </div>
+              <div><dt>Risk</dt>{shipment.risk
+                ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
+                : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
+              <RecordedArrivalChangeFact shipment={shipment} evidence={cdg201Evidence} />
+              {lateArrivalChanceFact(shipment.lateArrivalChance)}
+              {recommendationFact(shipment.recommendation)}
+            </dl>
+          </article>
+        </details>
       </section>
-      <article className="shipment-record route-facts" aria-label={`Shipment ${shipment.shipmentReference}`}>
-        <dl>
-          {feedFact(shipment.aisFeed)}
-          <div><dt>Origin</dt><dd className={missing(shipment.origin)}>{recorded(shipment.origin)}</dd></div>
-          <div><dt>Mother vessel</dt><dd className={missing(shipment.motherVessel)}><span>{recorded(shipment.motherVessel)}</span>{nameWarning(shownWarning(tracking, tracking?.motherVesselNameWarning, shipment.motherVesselNameWarning))}</dd></div>
-          <div><dt>Mother vessel IMO</dt><dd className={missing(shipment.motherVesselImo)}>{recorded(shipment.motherVesselImo, 'Not available')}</dd></div>
-          <div><dt>Mother vessel MMSI</dt><dd className={missing(shipment.motherVesselMmsi)}>{recorded(shipment.motherVesselMmsi, 'Not available')}</dd></div>
-          <div><dt>Mother vessel operator</dt><dd className={missing(shipment.motherVesselOperator)}>{recorded(shipment.motherVesselOperator, 'Not available')}</dd></div>
-          <div><dt>Mother vessel position</dt><dd>{formatLive(tracking ? tracking.motherVessel : shipment.motherVesselPosition)}</dd></div>
-          {operationFact('Mother vessel operation', shipment.motherOperationalState)}
-          {portConditionFact(shipment.portConditionComparison)}
-          <div>
-            <dt>Planned arrival</dt>
-            <dd><time dateTime={shipment.plannedMotherArrivalAt}>{formatWhen(shipment.plannedMotherArrivalAt)}</time></dd>
-            {shipment.arrivalComparison && <ArrivalComparisonFacts comparison={shipment.arrivalComparison} />}
-          </div>
-          <div><dt>Transshipment port</dt><dd className={missing(shipment.transshipmentPort)}>{recorded(shipment.transshipmentPort)}</dd></div>
-          <TransshipmentArrivalDeadlineFact shipment={shipment} viewerCompanyId={viewerCompanyId} token={token}
-            onSessionEnded={onSessionEnded} onShipment={onShipment} portCapture={portCapture} onExplicitRefresh={onExplicitRefresh} />
-          <DelayComparisonFact shipment={shipment} />
-          <div><dt>Feeder vessel</dt><dd className={missing(shipment.feederVessel)}><span className={missing(shipment.feederVessel)}>{recorded(shipment.feederVessel, PENDING_ASSIGNMENT)}</span>{nameWarning(shownWarning(tracking, tracking?.feederVesselNameWarning, shipment.feederVesselNameWarning))}</dd></div>
-          <div><dt>Feeder vessel IMO</dt><dd className={missing(shipment.feederVesselImo)}>{recorded(shipment.feederVesselImo, 'Not available')}</dd></div>
-          <div><dt>Feeder vessel MMSI</dt><dd className={missing(shipment.feederVesselMmsi)}>{recorded(shipment.feederVesselMmsi, 'Not available')}</dd></div>
-          <div><dt>Feeder vessel operator</dt><dd className={missing(shipment.feederVesselOperator)}>{recorded(shipment.feederVesselOperator, 'Not available')}</dd></div>
-          <div><dt>Feeder vessel position</dt><dd>{formatLive(tracking ? tracking.feederVessel : shipment.feederVesselPosition)}</dd></div>
-          {operationFact('Feeder vessel operation', shipment.feederOperationalState)}
-          <div><dt>Planned departure</dt>{shipment.plannedFeederDepartureAt
-            ? <dd><time dateTime={shipment.plannedFeederDepartureAt}>{formatWhen(shipment.plannedFeederDepartureAt)}</time></dd>
-            : <dd className="is-missing">{PENDING_ASSIGNMENT}</dd>}</div>
-          <div><dt>Destination</dt><dd className={missing(shipment.destination)}>{recorded(shipment.destination)}</dd></div>
-          <div>
-            <dt>Connection window</dt>
-            <dd>{shipment.connectionWindow ? shipment.connectionWindow.duration : 'No planned connection window'}</dd>
-          </div>
-          <div>
-            <dt>Remaining connection window</dt>
-            <dd className={remaining.missing ? 'is-missing' : undefined}>
-              {remaining.text}
-              {shipment.remainingConnectionWindow && shipment.arrivalComparison?.lastReceivedAt
-                ? <dl className="arrival-comparison">{reportTime(shipment.arrivalComparison.lastReceivedAt)}</dl>
-                : null}
-            </dd>
-          </div>
-          <div><dt>Risk</dt>{shipment.risk
-            ? <dd><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</dd>
-            : <dd className="is-missing"><RiskBadge risk={null} /></dd>}</div>
-          <RecordedArrivalChangeFact shipment={shipment} evidence={cdg201Evidence} />
-          {lateArrivalChanceFact(shipment.lateArrivalChance)}
-          {recommendationFact(shipment.recommendation)}
-          <div><dt>Registered</dt><dd><time dateTime={shipment.createdAt}>{formatWhen(shipment.createdAt)}</time></dd></div>
-        </dl>
-      </article>
-<RecommendationDecisionPanel token={token} shipmentId={shipment.id} recommendation={shipment.recommendation}
-        decision={shipment.recommendationDecision} history={shipment.recommendationDecisionHistory}
-        archived={shipment.status === 'ARCHIVED'}
-        onSessionEnded={onSessionEnded} onRecorded={onDecision} />
       <Cdg201EvidencePanel evidence={cdg201Evidence} />
       <MaritimeContextPanel context={maritimeContext} unavailable={maritimeContextUnavailable} />
       <MaritimeAiAssessmentPanel assessments={maritimeAiAssessments} unavailable={maritimeAiUnavailable} generating={maritimeAiGenerating} onGenerate={onGenerateMaritimeAi} />
       {changeHistory}
     </>
+  );
+}
+
+function SituationGlance({ shipment }: { shipment: Shipment }) {
+  const next = shipment.recommendation?.available
+    ? shipment.recommendation.response.label
+    : shipment.recommendation?.unavailable ?? 'No recommendation';
+  return (
+    <section className="shipment-glance" aria-label="Connection, risk, and next action">
+      <div>
+        <p>Connection</p>
+        <strong>{remainingWindowFact(shipment).text}</strong>
+      </div>
+      <div>
+        <p>Risk</p>
+        <strong>{shipment.risk ? <><RiskBadge risk={shipment.risk} /> {shipment.risk.explanation}</> : <RiskBadge risk={null} />}</strong>
+      </div>
+      <div>
+        <p>Next action</p>
+        <strong>{next}</strong>
+      </div>
+    </section>
   );
 }
 
