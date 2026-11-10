@@ -4,7 +4,7 @@ An administrator invites a colleague from User management. The invitation is sto
 
 The message is sent through the local Mailpit mailbox (`localhost:1025`, web view http://localhost:8025). It contains a signup link and the same invitation code. The code is not returned by the API and is not written to the application log. A failed send rolls the new invitation back, so the page does not say the invitation was sent and a pending invitation for that email is left as it was. Sending again after a failure can create one new pending invitation.
 
-An invitation lasts seven days unless `INVITATION_TTL` is set. `INVITATION_LINK_BASE_URL` defaults to `http://localhost:5173/signup`, and `INVITATION_FROM` defaults to `noreply@localhost`.
+An invitation lasts seven days unless `INVITATION_TTL` is set. Its link defaults to `${FRONTEND_BASE_URL}/signup`; locally, `FRONTEND_BASE_URL` defaults to `http://localhost:5173`. `MAIL_FROM_ADDRESS` is shared with password-reset and risk-alert messages and defaults locally to `noreply@localhost`. `INVITATION_LINK_BASE_URL` can still override the invitation link when needed.
 
 Someone who is not an administrator, or an administrator choosing an organisation they may not invite into, cannot send the invitation. An organisation with users that is not the administrator's own company is refused. An expired, revoked, or already used code cannot register an account.
 

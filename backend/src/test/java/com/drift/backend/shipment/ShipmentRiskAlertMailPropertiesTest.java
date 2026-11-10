@@ -20,9 +20,13 @@ class ShipmentRiskAlertMailPropertiesTest {
 		assertThat(yaml)
 				.contains("enabled: ${RISK_ALERTS_MAIL_ENABLED:false}")
 				.contains("dispatch-enabled: ${RISK_ALERTS_DISPATCH_ENABLED:false}")
-				.contains("frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:http://localhost:5173}")
-				.contains("from: ${RISK_ALERTS_FROM:noreply@localhost}")
-				.contains("from: ${PASSWORD_RESET_FROM:noreply@localhost}");
+				.contains("frontend-base-url: ${RISK_ALERTS_FRONTEND_BASE_URL:${app.frontend-base-url}}")
+				.contains("from: ${app.mail.from}")
+				.contains("from: ${MAIL_FROM_ADDRESS:noreply@localhost}")
+				.contains("mail.smtp.auth: ${MAIL_SMTP_AUTH:false}")
+				.contains("mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS_ENABLE:false}")
+				.contains("mail.smtp.starttls.required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}")
+				.contains("frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}");
 	}
 
 	@Test

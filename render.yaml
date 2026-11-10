@@ -24,6 +24,24 @@ services:
         sync: false
       - key: SPRING_DATASOURCE_PASSWORD
         sync: false
+      - key: MAIL_HOST
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_SMTP_AUTH
+        value: "true"
+      - key: MAIL_SMTP_STARTTLS_ENABLE
+        value: "true"
+      - key: MAIL_SMTP_STARTTLS_REQUIRED
+        value: "true"
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
       - key: AIS_ENABLED
         value: "false"
       - key: MARITIME_CONTEXT_DEMO_ENABLED
