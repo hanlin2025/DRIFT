@@ -23,7 +23,11 @@ APP_MARITIMECHANGE_COLLECTION_INITIALDELAYMS=30000
 APP_MARITIMECHANGE_COLLECTION_SOURCETIMEOUTSECONDS=300
 APP_MARITIMECHANGE_COLLECTION_RETRIES=1
 APP_MARITIMECHANGE_COLLECTION_MPALOOKBACKDAYS=3
+APP_MARITIMECHANGE_COLLECTION_NOTICELOOKBACKDAYS=14
+APP_MARITIMECHANGE_COLLECTION_NEAAREAS=Tuas,Pioneer,Queenstown,Bukit Merah,Southern Islands
 ```
+
+NEA two-hour forecasts are kept only for the configured forecast areas, which default to the areas containing Singapore's container and multipurpose terminals (a blank value uses the default). Each area is one source identity whose value is the forecast text, so the half-hourly reissue of an unchanged forecast is suppressed as a duplicate and only a change in an area's forecast becomes a `REVISED` event. The stored effective period is the valid period of the forecast that introduced the change. MPA notices released before the notice lookback (1–60 days, default 14) are skipped by the live poll: an older listing entry is not a newly observed change, and recording a whole year of notices on the first poll would attach them all to every Singapore shipment. A notice without a parseable release date is kept.
 
 `project-directory` must contain the three scripts at the paths above and the worker's authorized `.env` when one is required. The backend Docker image installs Python 3 and copies only these three standard-library-only scripts to `/opt/drift-collectors`; it sets that as the collector project directory. MPA expected arrivals require the subscribed `MPA_OCEANSX_API_KEY`, `MPA_OCEANSX_API_BASE`, and configured feed paths consumed by the existing collector. NEA may use `DATA_GOV_SG_API_KEY` when the source requires it; the collector handles retries and backoff. Public MPA notice retrieval uses the existing unauthenticated collector. Put secrets in the hosting environment or an untracked secret file, never in source control or command-line arguments.
 

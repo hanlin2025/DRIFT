@@ -15,8 +15,11 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,9 @@ class MaritimeSnapshotPollingService {
 	private static final ZoneId SINGAPORE = ZoneId.of("Asia/Singapore");
 	private static final DateTimeFormatter MPA_LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final DateTimeFormatter MPA_OFFSET_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX");
+	static final String NEA_TWO_HOUR_FORECAST = "two_hr_forecast";
+	/** NEA forecast areas that contain Singapore's container and multipurpose terminals. */
+	static final String DEFAULT_NEA_AREAS = "Tuas,Pioneer,Queenstown,Bukit Merah,Southern Islands";
 
 	private final ObjectMapper mapper;
 	private final MaritimeSnapshotNormalizer normalizer;
@@ -38,13 +44,17 @@ class MaritimeSnapshotPollingService {
 	private final long timeoutSeconds;
 	private final int retries;
 	private final int lookbackDays;
+	private final int noticeLookbackDays;
+	private final Set<String> neaAreas;
 
 	MaritimeSnapshotPollingService(ObjectMapper mapper, MaritimeSnapshotNormalizer normalizer,
 			@Value("${app.maritime-change.collection.project-directory:.}") String projectDirectory,
 			@Value("${app.maritime-change.collection.python:python3}") String python,
 			@Value("${app.maritime-change.collection.source-timeout-seconds:300}") long timeoutSeconds,
 			@Value("${app.maritime-change.collection.retries:1}") int retries,
-			@Value("${app.maritime-change.collection.mpa-lookback-days:3}") int lookbackDays) {
+			@Value("${app.maritime-change.collection.mpa-lookback-days:3}") int lookbackDays,
+			@Value("${app.maritime-change.collection.notice-lookback-days:14}") int noticeLookbackDays,
+			@Value("${app.maritime-change.collection.nea-areas:" + DEFAULT_NEA_AREAS + "}") String neaAreas) {
 		this.mapper = mapper;
 		this.normalizer = normalizer;
 		this.projectDirectory = Path.of(projectDirectory).toAbsolutePath().normalize();
@@ -52,6 +62,8 @@ class MaritimeSnapshotPollingService {
 		this.timeoutSeconds = Math.max(30, Math.min(300, timeoutSeconds));
 		this.retries = Math.max(0, Math.min(2, retries));
 		this.lookbackDays = Math.max(0, Math.min(14, lookbackDays));
+		this.noticeLookbackDays = Math.max(1, Math.min(60, noticeLookbackDays));
+		this.neaAreas = areaSet(neaAreas);
 	}
 
 	List<MaritimeCollectionPoll> poll() {
@@ -135,6 +147,7 @@ class MaritimeSnapshotPollingService {
 						value.put("status", item.path("status").asText(""));
 						String publication = item.path("release_date").asText("");
 						String publicationTime = normalizeMpaNoticeTime(publication);
+						if (!noticeWithinLookback(publicationTime, Instant.now(), noticeLookbackDays)) continue;
 						String encoded = mapper.writeValueAsString(value);
 						out.add(normalizer.normalize(new MaritimeSourceObservation(
 								MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE, "mpa-notice:" + id, provenance,
@@ -161,33 +174,14 @@ class MaritimeSnapshotPollingService {
 				if (m.path("error").asText("").isBlank()) retrievalByRaw.put(m.path("raw_file").asText(""), m.path("retrieval_completed_utc").asText(m.path("retrieval_started_utc").asText("")));
 			}
 			if (retrievalByRaw.isEmpty()) throw new IOException("NEA weather collector returned no successful source pages");
-			List<MaritimeSnapshot> out = new ArrayList<>();
+			List<MaritimeSourceObservation> observations = new ArrayList<>();
 			if (Files.isDirectory(normalized)) for (Path csv : jsonlessCsvFiles(normalized)) {
-				for (Map<String, String> row : readCsv(csv)) {
-					String dataset = row.get("dataset"), forecast = row.get("forecast"), raw = row.get("source_raw_file");
-					String sourceTime = "two_hr_forecast".equals(dataset) ? first(row.get("forecast_issuance_timestamp"), row.get("source_timestamp")) : row.get("source_timestamp");
-					String retrieved = retrievalByRaw.getOrDefault(raw, "");
-					if (sourceTime.isBlank() || retrieved.isBlank()) continue;
-					String location = "two_hr_forecast".equals(dataset) ? row.get("area") : "Singapore";
-					String identity = "two_hr_forecast".equals(dataset)
-							? dataset + ":" + location + ":" + row.get("valid_start")
-							: dataset + ":" + row.get("station_id");
-					String rawValue = "two_hr_forecast".equals(dataset) ? forecast : row.get("value") + " " + row.get("unit");
-					String effectiveFrom = first(row.get("valid_start"), sourceTime);
-					String effectiveUntil = row.get("valid_end");
-					Instant eventInstant = instant(sourceTime);
-					if (eventInstant == null) continue;
-					boolean historical = eventInstant.isBefore(Instant.now().minusSeconds(6 * 3600L));
-					String freshness = !historical
-							? MaritimeSnapshotChangeDetector.APPLICABLE : MaritimeSnapshotChangeDetector.HISTORICAL;
-					out.add(normalizer.normalize(new MaritimeSourceObservation(
-							MaritimeSnapshotChangeDetector.NEA_WEATHER, "nea:" + identity,
-							"tools/cdg201/contextual/nea_weather_collect.py:" + csv.getFileName() + ":" + raw,
-							sourceTime, sourceTime, retrieved, MaritimeSnapshotChangeDetector.LIVE, freshness, null,
-							location.isBlank() ? "Singapore" : location, effectiveFrom, effectiveUntil, rawValue,
-							null, null, null)));
-				}
+				observations.addAll(neaForecastObservations(readCsv(csv), retrievalByRaw,
+						"tools/cdg201/contextual/nea_weather_collect.py:" + csv.getFileName(), neaAreas, Instant.now()));
 			}
+			// Oldest issuance first, so a later forecast for the same area becomes the head.
+			observations.sort(Comparator.comparing(observation -> instant(observation.sourceEventAt())));
+			List<MaritimeSnapshot> out = observations.stream().map(normalizer::normalize).toList();
 			return out;
 		});
 	}
@@ -265,6 +259,55 @@ class MaritimeSnapshotPollingService {
 		catch (IOException ignored) { }
 	}
 	private static String firstText(JsonNode node, String... names) { for (String name : names) { String value = node.path(name).asText(""); if (!value.isBlank()) return value; } return ""; }
+	/**
+	 * Maps NEA two-hour forecast rows for the configured port areas. Each area is one source identity
+	 * whose value is the forecast text, so a reissued but unchanged forecast is not a new event and
+	 * only an actual change in the area's forecast is recorded.
+	 */
+	static List<MaritimeSourceObservation> neaForecastObservations(List<Map<String, String>> rows,
+			Map<String, String> retrievalByRaw, String provenancePrefix, Set<String> areas, Instant now) {
+		List<MaritimeSourceObservation> out = new ArrayList<>();
+		for (Map<String, String> row : rows) {
+			if (!NEA_TWO_HOUR_FORECAST.equals(row.get("dataset"))) continue;
+			String area = first(row.get("area"), "").trim();
+			String forecast = first(row.get("forecast"), "").trim();
+			if (area.isEmpty() || forecast.isEmpty() || !areas.contains(areaKey(area))) continue;
+			String sourceTime = first(row.get("forecast_issuance_timestamp"), row.get("source_timestamp"));
+			String raw = first(row.get("source_raw_file"), "");
+			String retrieved = retrievalByRaw.getOrDefault(raw, "");
+			Instant eventInstant = instant(sourceTime);
+			if (eventInstant == null || retrieved.isBlank()) continue;
+			Instant validStart = instant(row.get("valid_start"));
+			Instant validEnd = instant(row.get("valid_end"));
+			String effectiveFrom = validStart == null ? null : validStart.toString();
+			String effectiveUntil = validEnd == null || (validStart != null && validEnd.isBefore(validStart))
+					? null : validEnd.toString();
+			boolean historical = eventInstant.isBefore(now.minusSeconds(6 * 3600L));
+			String freshness = historical ? MaritimeSnapshotChangeDetector.HISTORICAL : MaritimeSnapshotChangeDetector.APPLICABLE;
+			out.add(new MaritimeSourceObservation(MaritimeSnapshotChangeDetector.NEA_WEATHER,
+					"nea:" + NEA_TWO_HOUR_FORECAST + ":" + area, provenancePrefix + ":" + raw, sourceTime, sourceTime,
+					retrieved, MaritimeSnapshotChangeDetector.LIVE, freshness, null, area, effectiveFrom, effectiveUntil,
+					forecast, null, null, null));
+		}
+		return out;
+	}
+
+	/** Only notices released within the lookback are new to a live poll; older listings are not changes. */
+	static boolean noticeWithinLookback(String publicationTime, Instant now, int lookbackDays) {
+		Instant published = instant(publicationTime);
+		return published == null || !published.isBefore(now.minus(java.time.Duration.ofDays(lookbackDays)));
+	}
+
+	static Set<String> areaSet(String configured) {
+		String areas = configured == null || configured.isBlank() ? DEFAULT_NEA_AREAS : configured;
+		return java.util.Arrays.stream(areas.split(",")).map(MaritimeSnapshotPollingService::areaKey)
+				.filter(area -> !area.isEmpty()).collect(Collectors.toUnmodifiableSet());
+	}
+
+	private static String areaKey(String area) {
+		return area.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+	}
+
 	static String arrivalIdentity(JsonNode record, Instant arrival) {
 		String callSign = firstText(record.path("vesselParticulars"), "callSign", "call_sign");
 		String vesselName = firstText(record.path("vesselParticulars"), "vesselName", "name");
