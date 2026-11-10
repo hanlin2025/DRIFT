@@ -6,7 +6,7 @@ import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
 import { ApiError } from '../signup/api';
-import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Cdg201ArrivalEvidence, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
+import { archiveShipment, createShipment, generateMaritimeAiAssessment, getCdg201ArrivalEvidence, getMaritimeChangeEvents, getMaritimeContext, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, IMPACT_NOT_RETURNED, listMaritimeAiAssessments, listShipments, recordRecommendationDecision, RECOMMENDATION_RESPONSES, restoreShipment, updateShipment, type ArrivalClassification, type ArrivalComparison, type Cdg201ArrivalEvidence, type LateArrivalChance, type MaritimeAiAssessment, type MaritimeChangeEvents, type MaritimeContext, type PortConditionComparison, type PortConditionReason, type RecommendationDecision, type RecommendationDecisionHistoryEntry, type Shipment, type ShipmentRecommendation, type ShipmentTracking, type VesselTrack } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { SELECT_POINT, TRACK_LOAD_FAILED } from './TrackHistory';
 import { formatWhen } from './ShipmentForm';
@@ -20,6 +20,7 @@ vi.mock('../shipment/api', async importOriginal => ({
   getShipment: vi.fn(),
   getShipmentTracking: vi.fn(),
   getCdg201ArrivalEvidence: vi.fn(),
+  getMaritimeChangeEvents: vi.fn(),
   getMaritimeContext: vi.fn(),
   listMaritimeAiAssessments: vi.fn(),
   generateMaritimeAiAssessment: vi.fn(),
@@ -155,6 +156,7 @@ beforeEach(() => {
   vi.mocked(getShipment).mockResolvedValue(shipment);
   vi.mocked(getShipmentTracking).mockResolvedValue(tracking);
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getMaritimeContext).mockResolvedValue(disabledMaritimeContext);
   vi.mocked(listMaritimeAiAssessments).mockResolvedValue([]);
   vi.mocked(generateMaritimeAiAssessment).mockResolvedValue({ assessmentId: 'assessment-1', state: 'ABSTAINED', validationStatus: 'FEATURE_DISABLED', bundleVersion: 'v1', bundleHash: 'hash', assessmentCutoffUtc: '2026-10-05T03:00:00Z', provider: 'UNCONFIGURED', model: '', promptVersion: 'cdg247.evidence.v1', generatedAtUtc: null, interpretation: null, limitation: 'Disabled.' });
@@ -162,6 +164,112 @@ beforeEach(() => {
 });
 
 describe('connection window on the shipment detail', () => {
+
+  it('loads authorized change events and refreshes them explicitly without requesting AI', async () => {
+    const firstPage: MaritimeChangeEvents = { availability: 'AVAILABLE', nextCursor: 'opaque-cursor/older-2', events: [{
+      id: 'eta:rev-2', sourceType: 'MPA_ETA_REVISION', sourceIdentity: 'MPA arrival feed', eventType: 'REVISED',
+      sourceMode: 'RECORDED_REPLAY', sourceEventTime: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-28T17:55:00Z',
+      retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z', previousValue: '01:00 SGT', currentValue: '02:00 SGT',
+      provenance: 'Replay manifest', freshness: 'HISTORICAL', associationConfidence: 'UNVERIFIED_IMO_ONLY',
+      compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
+    }] };
+    const olderPage: MaritimeChangeEvents = { availability: 'AVAILABLE', nextCursor: 'opaque-cursor/older-3', events: [
+      { ...firstPage.events[0] },
+      {
+        ...firstPage.events[0], id: 'weather:rev-1', sourceType: 'NEA_WEATHER' as const, sourceIdentity: 'NEA regional weather',
+        eventType: 'NEW' as const, sourceMode: 'HISTORICAL_BACKFILL' as const, detectedAt: '2026-10-27T18:00:01Z',
+        previousValue: null, currentValue: 'Moderate rainfall', requiresHumanReview: false,
+      },
+    ] };
+    vi.mocked(getMaritimeChangeEvents).mockResolvedValueOnce(firstPage).mockResolvedValueOnce(olderPage)
+      .mockRejectedValueOnce(new ApiError('temporary backend failure', 500)).mockResolvedValueOnce({ availability: 'AVAILABLE', events: [] });
+    const user = userEvent.setup();
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(within(timeline).getByText('MPA arrival estimate revision')).toBeInTheDocument();
+    expect(getMaritimeChangeEvents).toHaveBeenCalledWith('forwarder-token', '7', { limit: 100 });
+    await user.click(within(timeline).getByRole('button', { name: 'Load older changes' }));
+    expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, cursor: 'opaque-cursor/older-2' });
+    expect(await within(timeline).findByText('NEA weather update')).toBeInTheDocument();
+    expect(within(timeline).getAllByText('MPA arrival estimate revision')).toHaveLength(1);
+    expect(within(timeline).getByRole('button', { name: 'Load older changes' })).toBeInTheDocument();
+    await user.click(within(timeline).getByRole('button', { name: 'Refresh changes' }));
+    await waitFor(() => expect(getMaritimeChangeEvents).toHaveBeenCalledTimes(3));
+    expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, since: '2026-10-28T18:00:01Z' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be refreshed.')).toBeInTheDocument();
+    expect(within(timeline).getByText('NEA weather update')).toBeInTheDocument();
+    expect(within(timeline).getAllByText('MPA arrival estimate revision')).toHaveLength(1);
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('AVAILABLE');
+    await user.click(within(timeline).getByRole('button', { name: 'Load older changes' }));
+    expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, cursor: 'opaque-cursor/older-3' });
+    expect(generateMaritimeAiAssessment).not.toHaveBeenCalled();
+    expect(within(timeline).getByRole('link', { name: 'Review AI assessment and request an explanation' })).toHaveAttribute('href', '#maritime-ai-assessment');
+  });
+
+  it('resets to a fresh first page when incremental refresh has more than 100 changes', async () => {
+    const baseEvent: MaritimeChangeEvents['events'][number] = {
+      id: 'current-head', sourceType: 'MPA_ETA_REVISION', sourceIdentity: 'Previously loaded MPA source', eventType: 'REVISED',
+      sourceMode: 'LIVE', sourceEventTime: '2026-10-29T02:00:00+08:00', observedAt: '2026-10-28T17:55:00Z',
+      retrievedAt: '2026-10-28T18:00:00Z', detectedAt: '2026-10-28T18:00:01Z', previousValue: '01:00 SGT', currentValue: '02:00 SGT',
+      provenance: 'MPA API', freshness: 'APPLICABLE', associationConfidence: 'VERIFIED_ASSOCIATION',
+      compatibility: { activity: 'COMPATIBLE', location: 'COMPATIBLE', time: 'COMPATIBLE' }, requiresHumanReview: false,
+    };
+    const initial: MaritimeChangeEvents = { availability: 'AVAILABLE', events: [baseEvent], nextCursor: 'old-history-cursor' };
+    const delta: MaritimeChangeEvents = {
+      availability: 'AVAILABLE',
+      events: Array.from({ length: 100 }, (_, index) => ({ ...baseEvent, id: `delta-${index}`, sourceIdentity: `Delta source ${index}` })),
+      nextCursor: 'delta-has-more-than-limit',
+    };
+    const latestPage: MaritimeChangeEvents = {
+      availability: 'AVAILABLE',
+      events: Array.from({ length: 100 }, (_, index) => ({
+        ...baseEvent, id: `fresh-${index}`, sourceIdentity: `Fresh source ${index}`,
+        detectedAt: new Date(Date.parse('2026-10-29T00:00:00Z') + index * 1000).toISOString(),
+      })),
+      nextCursor: 'fresh-older-cursor',
+    };
+    vi.mocked(getMaritimeChangeEvents).mockResolvedValueOnce(initial).mockResolvedValueOnce(delta).mockResolvedValueOnce(latestPage);
+    const user = userEvent.setup();
+    open(forwarder, '/freight-forwarder/shipments/7');
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    await user.click(within(timeline).getByRole('button', { name: 'Refresh changes' }));
+    await waitFor(() => expect(getMaritimeChangeEvents).toHaveBeenCalledTimes(3));
+    expect(getMaritimeChangeEvents).toHaveBeenNthCalledWith(2, 'forwarder-token', '7', { limit: 100, since: '2026-10-28T18:00:01Z' });
+    expect(getMaritimeChangeEvents).toHaveBeenNthCalledWith(3, 'forwarder-token', '7', { limit: 100 });
+    expect(within(timeline).getByText('Fresh source 99')).toBeInTheDocument();
+    expect(within(timeline).queryByText('Previously loaded MPA source')).not.toBeInTheDocument();
+    expect(within(timeline).getByRole('button', { name: 'Load older changes' })).toBeInTheDocument();
+  });
+
+  it('does not end the shipment session when the optional change-events endpoint responds 401', async () => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Your session has ended.', 401));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be loaded.')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+    expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
+  });
+
+  it('shows a shipment-specific unavailable message for a 403 without hiding the shipment', async () => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Not available for this shipment.', 403));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('Change information is not available for this shipment.')).toBeInTheDocument();
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+  });
+
+  it.each([404, 500])('keeps shipment detail available when the change-events endpoint returns %i', async status => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Optional endpoint unavailable.', status));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be loaded.')).toBeInTheDocument();
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+  });
 
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
