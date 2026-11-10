@@ -88,7 +88,6 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
   const maritimeChangeSeq = useRef(0);
-  const maritimeChangeCursorSince = useRef<string | undefined>(undefined);
   const decisionSeq = useRef(0);
   const refreshNonce = useRef(0);
   const contextKey = `${shipmentId}:${viewerCompanyId ?? ''}:${token}`;
@@ -318,28 +317,39 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     const latestDetectedAt = isRefresh && existing?.events.length
       ? existing.events.reduce((latest, event) => Date.parse(event.detectedAt) > Date.parse(latest) ? event.detectedAt : latest, existing.events[0].detectedAt)
       : undefined;
-    const requestSince = loadingOlder ? maritimeChangeCursorSince.current : latestDetectedAt;
+    const requestSince = !loadingOlder && isRefresh ? latestDetectedAt : undefined;
     const requestId = ++maritimeChangeSeq.current;
     setMaritimeChangesLoading(!loadingOlder);
     setMaritimeChangesLoadingOlder(loadingOlder);
     setMaritimeChangesError(null);
     try {
-      const found = await getMaritimeChangeEvents(token, shipmentId, {
+      let found = await getMaritimeChangeEvents(token, shipmentId, {
         limit: 100, ...(cursor ? { cursor } : {}), ...(requestSince ? { since: requestSince } : {}),
       });
       if (requestId !== maritimeChangeSeq.current) return;
-      if (!loadingOlder && (!isRefresh || !existing)) {
-        maritimeChangeCursorSince.current = requestSince;
+      if (!loadingOlder && isRefresh && latestDetectedAt && found.nextCursor) {
+        // More than one delta page exists. Reset to a fresh newest-first page so the
+        // newly recorded rows remain reachable through its cursor chain.
+        found = await getMaritimeChangeEvents(token, shipmentId, { limit: 100 });
+        if (requestId !== maritimeChangeSeq.current) return;
+        setMaritimeChanges(found);
+        return;
+      }
+      if (!loadingOlder && (!isRefresh || !existing || existing.events.length === 0)) {
         setMaritimeChanges(found);
       } else {
-        if (loadingOlder) maritimeChangeCursorSince.current = requestSince;
         setMaritimeChanges(current => {
           if (!current) return found;
           const unique = new Map([...current.events, ...found.events].map(event => [event.id, event]));
-          // An incremental refresh uses a different since boundary. Keep the cursor and
-          // cutoff from the existing page chain so “Load older changes” remains continuous.
-          if (!loadingOlder) return { ...found, nextCursor: current.nextCursor, events: [...unique.values()] };
-          return { ...found, events: [...unique.values()] };
+          const merged: MaritimeChangeEvents = {
+            ...found,
+            ...(!loadingOlder ? { nextCursor: current.nextCursor } : {}),
+            events: [...unique.values()],
+          };
+          const droppedEventCount = (current.droppedEventCount ?? 0) + (found.droppedEventCount ?? 0);
+          if (droppedEventCount > 0) merged.droppedEventCount = droppedEventCount;
+          else delete merged.droppedEventCount;
+          return merged;
         });
       }
     } catch (reason: unknown) {
@@ -379,7 +389,6 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
     setMaritimeChanges(null); setMaritimeChangesLoading(false); setMaritimeChangesLoadingOlder(false); setMaritimeChangesError(null);
     maritimeChangesRef.current = null;
-    maritimeChangeCursorSince.current = undefined;
     setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {

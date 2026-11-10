@@ -41,7 +41,9 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
     {error && <p className="refresh-note" role="status">{error}</p>}
     {!result && loading && <p role="status">Loading maritime changes…</p>}
     {result?.availability === 'UNAVAILABLE' && !error && <p className="refresh-note">Change information is unavailable. No source observation is implied.</p>}
-    {result && result.events.length === 0 && result.availability !== 'UNAVAILABLE' && <p>No detected maritime source changes are available for this shipment.</p>}
+    {!!result?.droppedEventCount && <p className="maritime-change-caveat" role="status">Some source changes on this page had invalid fields and were omitted.</p>}
+    {result && result.events.length === 0 && result.availability !== 'UNAVAILABLE' && !result.droppedEventCount && !nextCursor && <p>No detected maritime source changes are available for this shipment.</p>}
+    {result && result.events.length === 0 && result.availability !== 'UNAVAILABLE' && !result.droppedEventCount && nextCursor && <p>No changes on this page. Older history is available below.</p>}
     {events && events.length > 0 && <ol className="maritime-change-list">
       {events.map(event => <li key={event.id}>
         <article className="maritime-change-event">

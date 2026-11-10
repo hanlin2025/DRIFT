@@ -208,10 +208,11 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .maritime-change-event { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fcfcf8; }
 .maritime-change-event h4 { margin: 0; font-size: 15px; }
 .maritime-change-event p { margin: 8px 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.maritime-change-event dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; margin: 8px 0; }
-.maritime-change-event dl div { display: grid; grid-template-columns: 1fr; align-content: start; gap: 3px; padding: 8px 0; border-top: 1px solid #e1e7dc; }
+.maritime-change-timeline .maritime-change-event strong { display: inline; font-size: inherit; margin: 0; }
+.maritime-change-timeline .maritime-change-event dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; margin: 8px 0; }
+.maritime-change-timeline .maritime-change-event dl div { display: grid; grid-template-columns: 1fr; align-content: start; gap: 3px; padding: 8px 0; border-top: 1px solid #e1e7dc; }
 .maritime-change-event dt { color: var(--muted); font-size: 11px; }
-.maritime-change-event dd { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.maritime-change-timeline .maritime-change-event dd { margin: 0; font-size: 12px; font-weight: 400; text-align: left; overflow-wrap: anywhere; }
 .maritime-change-mode { display: inline-flex; align-items: center; border: 1px solid #9cab91; border-radius: 999px; padding: 3px 8px; color: #31412d; background: #edf3e8; font-size: 10px; font-weight: 750; letter-spacing: .035em; white-space: nowrap; }
 .maritime-change-mode-recorded-replay { border-color: #7d96a6; color: #304958; background: #edf3f7; }
 .maritime-change-mode-synthetic-demonstration { border-color: #bd9b55; color: #594211; background: #fbf3dd; }

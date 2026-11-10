@@ -392,7 +392,9 @@ describe('CDG-357 maritime change events API', () => {
       { ...event, requiresHumanReview: 'true' },
       { ...event, sourceType: 'AIS_TRACK' },
     ];
-    for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad, event] })).toEqual({ availability: 'AVAILABLE', events: [event] });
+    for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad, event] })).toEqual({ availability: 'AVAILABLE', events: [event], droppedEventCount: 1 });
+    expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [{ ...event, detectedAt: 'later' }], nextCursor: 'older-page' }))
+      .toEqual({ availability: 'AVAILABLE', events: [], nextCursor: 'older-page', droppedEventCount: 1 });
     expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [event], nextCursor: ['not', 'opaque text'] })).toBeUndefined();
     expect(decodeMaritimeChangeEvents({ availability: 'UNKNOWN', events: [] })).toBeUndefined();
   });

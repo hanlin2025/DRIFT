@@ -51,6 +51,20 @@ describe('MaritimeChangeTimeline', () => {
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
 
+  it('keeps an empty paginated page distinct from a shipment with no changes', () => {
+    render(<MaritimeChangeTimeline result={result([], 'AVAILABLE', 'more-history')} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
+    expect(screen.getByText('No changes on this page. Older history is available below.')).toBeInTheDocument();
+    expect(screen.queryByText('No detected maritime source changes are available for this shipment.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load older changes' })).toBeInTheDocument();
+  });
+
+  it('explains when malformed source events were omitted from a page', () => {
+    render(<MaritimeChangeTimeline result={{ ...result([], 'AVAILABLE', 'more-history'), droppedEventCount: 2 }} loading={false} loadingOlder={false}
+      error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Some source changes on this page had invalid fields and were omitted.');
+    expect(screen.queryByText('No detected maritime source changes are available for this shipment.')).not.toBeInTheDocument();
+  });
+
   it('renders MPA notices as review context without asserting a vessel event', () => {
     render(<MaritimeChangeTimeline result={result([{
       ...eta, id: 'notice-2', sourceType: 'MPA_OFFICIAL_NOTICE', sourceIdentity: 'MPA Port Marine Notice 42',

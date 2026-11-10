@@ -70,6 +70,7 @@ export type MaritimeChangeEvents = {
   availability: MaritimeChangeAvailability;
   events: MaritimeChangeEvent[];
   nextCursor?: string | null;
+  droppedEventCount?: number;
 };
 export type MaritimeAiRelationshipType = 'SCHEDULE_REVIEW' | 'PORT_CONTEXT_REVIEW' | 'PORT_TIME_OVERLAP_REVIEW' | 'REGIONAL_WEATHER_CONTEXT' | 'RISK_BUFFER_REVIEW' | 'DELAY_COMPARISON_REVIEW';
 export type MaritimeAiRiskSeverity = RiskLevel;
@@ -1868,7 +1869,9 @@ export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents
   if (!isRecord(value) || !['AVAILABLE', 'PARTIAL', 'UNAVAILABLE'].includes(value.availability as string)
     || !Array.isArray(value.events)
     || (value.nextCursor !== undefined && value.nextCursor !== null && !isPresentText(value.nextCursor))) return undefined;
-  const events = value.events.filter(isMaritimeChangeEvent).map(event => ({
+  const validEvents = value.events.filter(isMaritimeChangeEvent);
+  const droppedEventCount = value.events.length - validEvents.length;
+  const events = validEvents.map(event => ({
     ...event,
     sourceEventTime: safeMaritimeChangeTimestamp(event.sourceEventTime),
     observedAt: safeMaritimeChangeTimestamp(event.observedAt),
@@ -1879,6 +1882,7 @@ export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents
     },
   }));
   return { events, availability: value.availability as MaritimeChangeAvailability,
+    ...(droppedEventCount > 0 ? { droppedEventCount } : {}),
     ...(value.nextCursor !== undefined ? { nextCursor: value.nextCursor as string | null } : {}) };
 }
 function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {
