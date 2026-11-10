@@ -88,6 +88,15 @@ public class UserAccount {
 		return account;
 	}
 
+	/** A newer signup for the same pending email replaces the name and password of the earlier submission. */
+	public void replacePendingSignup(String fullName, String passwordHash) {
+		if (status != AccountStatus.PENDING_VERIFICATION) {
+			throw new IllegalStateException("Only an account awaiting verification can be replaced");
+		}
+		this.fullName = fullName;
+		this.passwordHash = passwordHash;
+	}
+
 	public void verifyEmail() {
 		if (status != AccountStatus.PENDING_VERIFICATION) {
 			throw new IllegalStateException("Only an account awaiting verification can be verified");

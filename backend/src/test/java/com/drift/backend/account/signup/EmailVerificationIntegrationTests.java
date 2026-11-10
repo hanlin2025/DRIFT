@@ -64,6 +64,7 @@ class EmailVerificationIntegrationTests {
 	@Autowired PasswordEncoder passwords;
 	@Autowired CapturingEmailVerificationMailer mailer;
 	@Autowired EmailVerificationService verifications;
+	@Autowired CompanySignupService signups;
 
 	private final List<String> emails = new ArrayList<>();
 	private final List<String> codes = new ArrayList<>();
@@ -89,7 +90,7 @@ class EmailVerificationIntegrationTests {
 	void signupEmailsOneLinkWhoseTokenIsStoredOnlyAsAHash() throws Exception {
 		signup(code, email).andExpect(status().isAccepted());
 
-		List<CapturingEmailVerificationMailer.Sent> sent = mailer.sentTo(email);
+		List<EmailVerificationMailer.VerificationEmail> sent = mailer.sentTo(email);
 		assertThat(sent).hasSize(1);
 		assertThat(sent.get(0).link()).startsWith("http://localhost:5173/verify-email#token=");
 		assertThat(sent.get(0).validFor()).isEqualTo(Duration.ofHours(24));
@@ -158,7 +159,7 @@ class EmailVerificationIntegrationTests {
 		String first = onlyToken();
 
 		resend(email).andExpect(status().isOk()).andExpect(content().json(RESENT, JsonCompareMode.STRICT));
-		List<CapturingEmailVerificationMailer.Sent> sent = mailer.sentTo(email);
+		List<EmailVerificationMailer.VerificationEmail> sent = mailer.sentTo(email);
 		assertThat(sent).hasSize(2);
 		String second = CapturingEmailVerificationMailer.tokenFrom(sent.get(1).link());
 
@@ -200,8 +201,170 @@ class EmailVerificationIntegrationTests {
 
 		assertThat(mailer.sentTo(email)).hasSize(2);
 		verify(first).andExpect(status().isBadRequest());
-		signup(SignupFixtures.uniqueCode("CDG363X_"), email).andExpect(status().isAccepted());
-		assertThat(mailer.sentTo(email)).hasSize(2);
+		verify(onlyToken()).andExpect(status().isOk());
+	}
+
+	@Test
+	void aRepeatSignupReplacesThePendingSubmission() throws Exception {
+		String second = SignupFixtures.uniqueCode("CDG363Y_");
+		signup(code, email, "Alex Tan", "First Imports", "Str0ngPass").andExpect(status().isAccepted());
+		String firstToken = onlyToken();
+
+		signup(second, email, "Alex Tan-Lee", "Second Imports", "An0therPass")
+				.andExpect(status().isAccepted())
+				.andExpect(content().json("{\"message\":\"Check your email to verify your account before signing in.\"}",
+						JsonCompareMode.STRICT));
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, code)).isZero();
+		assertThat(jdbc.queryForMap("""
+				SELECT companies.code, companies.name, companies.active, users.full_name
+				FROM users JOIN companies ON companies.id = users.company_id WHERE users.email = ?
+				""", email)).containsEntry("code", second).containsEntry("name", "Second Imports")
+				.containsEntry("active", false).containsEntry("full_name", "Alex Tan-Lee");
+		assertThat(jdbc.queryForList("SELECT event FROM company_signup_audits WHERE user_id = ? ORDER BY id", String.class, userId()))
+				.containsExactly("REGISTERED", "RESUBMITTED");
+		EmailVerificationMailer.VerificationEmail latest = mailer.sentTo(email).get(1);
+		assertThat(latest.companyCode()).isEqualTo(second);
+		assertThat(latest.companyName()).isEqualTo("Second Imports");
+		assertThat(latest.fullName()).isEqualTo("Alex Tan-Lee");
+
+		verify(firstToken).andExpect(status().isBadRequest());
+		verify(CapturingEmailVerificationMailer.tokenFrom(latest.link())).andExpect(status().isOk());
+		login(email, "Str0ngPass").andExpect(status().isUnauthorized());
+		login(email, "An0therPass").andExpect(status().isOk()).andExpect(jsonPath("$.company.code").value(second));
+		// The first code is free again.
+		String reuse = SignupFixtures.uniqueEmail("cdg363-reuse");
+		emails.add(reuse);
+		signup(code, reuse).andExpect(status().isAccepted());
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, code)).isEqualTo(1L);
+	}
+
+	@Test
+	void preRegistrationIsOverriddenByTheMailboxOwner() throws Exception {
+		String ownerCode = SignupFixtures.uniqueCode("CDG363OWN_");
+		// Someone who cannot read the mailbox signs the address up first.
+		signup(code, email, "Mallory", "Squatted Imports", "Att4ckerPass").andExpect(status().isAccepted());
+		String attackerLink = onlyToken();
+		// The mailbox owner signs up with their own details.
+		signup(ownerCode, email, "Olivia Owner", "Owner Imports", "Own3rPass").andExpect(status().isAccepted());
+		EmailVerificationMailer.VerificationEmail ownersMail = mailer.sentTo(email).get(mailer.sentTo(email).size() - 1);
+		assertThat(ownersMail.fullName()).isEqualTo("Olivia Owner");
+
+		verify(attackerLink).andExpect(status().isBadRequest());
+		verify(CapturingEmailVerificationMailer.tokenFrom(ownersMail.link())).andExpect(status().isOk());
+		login(email, "Att4ckerPass").andExpect(status().isUnauthorized());
+		login(email, "Own3rPass").andExpect(status().isOk()).andExpect(jsonPath("$.company.code").value(ownerCode));
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, code)).isZero();
+	}
+
+	@Test
+	void aRepeatSignupCannotTakeAnotherCompanysCode() throws Exception {
+		signup(code, email, "Alex Tan", "First Imports", "Str0ngPass").andExpect(status().isAccepted());
+		String otherPending = SignupFixtures.uniqueEmail("cdg363-other");
+		emails.add(otherPending);
+		String otherCode = SignupFixtures.uniqueCode("CDG363P_");
+		signup(otherCode, otherPending).andExpect(status().isAccepted());
+		mailer.reset();
+
+		for (String taken : List.of("HARBOURLINE_DEMO", otherCode)) {
+			signup(taken, email, "Changed Name", "Changed Imports", "Chang3dPass")
+					.andExpect(status().isConflict())
+					.andExpect(jsonPath("$.errors.companyCode").value(com.drift.backend.organisation.exception.DuplicateOrganisationException.MESSAGE));
+		}
+
+		assertThat(jdbc.queryForMap("""
+				SELECT companies.code, companies.name, users.full_name
+				FROM users JOIN companies ON companies.id = users.company_id WHERE users.email = ?
+				""", email)).containsEntry("code", code).containsEntry("name", "First Imports").containsEntry("full_name", "Alex Tan");
+		assertThat(mailer.sentTo(email)).isEmpty();
+		assertThat(jdbc.queryForList("SELECT event FROM company_signup_audits WHERE user_id = ?", String.class, userId()))
+				.containsExactly("REGISTERED");
+		login(email, "Chang3dPass").andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void aRepeatSignupForAnActiveOrRemovedEmailChangesNothing() throws Exception {
+		signup(code, email).andExpect(status().isAccepted());
+		verify(onlyToken()).andExpect(status().isOk());
+		for (String state : List.of("ACTIVE", "REMOVED")) {
+			jdbc.update("UPDATE users SET status = ? WHERE email = ?", state, email);
+			mailer.reset();
+			String other = SignupFixtures.uniqueCode("CDG363A_");
+			codes.add(other);
+
+			signup(other, email, "Someone Else", "Other Imports", "Oth3rPass")
+					.andExpect(status().isAccepted())
+					.andExpect(content().json("{\"message\":\"Check your email to verify your account before signing in.\"}",
+							JsonCompareMode.STRICT));
+
+			assertThat(mailer.sentTo(email)).isEmpty();
+			assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, other)).isZero();
+			assertThat(jdbc.queryForObject("""
+					SELECT companies.code FROM users JOIN companies ON companies.id = users.company_id WHERE users.email = ?
+					""", String.class, email)).isEqualTo(code);
+			assertThat(jdbc.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, email)).isEqualTo("Alex Tan");
+		}
+	}
+
+	@Test
+	void concurrentReplacementsForOnePendingEmailLeaveOneConsistentSubmission() throws Exception {
+		signup(code, email).andExpect(status().isAccepted());
+		String left = SignupFixtures.uniqueCode("CDG363L_");
+		String right = SignupFixtures.uniqueCode("CDG363R_");
+		codes.add(left);
+		codes.add(right);
+		mailer.reset();
+		ExecutorService workers = Executors.newFixedThreadPool(2);
+		CountDownLatch start = new CountDownLatch(1);
+		try {
+			List<Future<?>> runs = new ArrayList<>();
+			for (String target : List.of(left, right)) {
+				runs.add(workers.submit(() -> {
+					start.await();
+					signups.register(new CompanySignupRequest(target, "Race " + target, "Racer", email, PASSWORD), "198.51.100.30");
+					return null;
+				}));
+			}
+			start.countDown();
+			for (Future<?> run : runs) {
+				run.get(30, TimeUnit.SECONDS);
+			}
+		} finally {
+			workers.shutdownNow();
+		}
+
+		String finalCode = jdbc.queryForObject("""
+				SELECT companies.code FROM users JOIN companies ON companies.id = users.company_id WHERE users.email = ?
+				""", String.class, email);
+		assertThat(finalCode).isIn(left, right);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code IN (?, ?, ?)", Long.class, code, left, right))
+				.isEqualTo(1L);
+		assertThat(jdbc.queryForObject("SELECT name FROM companies WHERE code = ?", String.class, finalCode)).isEqualTo("Race " + finalCode);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL",
+				Long.class, userId())).isEqualTo(1L);
+		List<EmailVerificationMailer.VerificationEmail> sent = mailer.sentTo(email);
+		EmailVerificationMailer.VerificationEmail current = sent.stream()
+				.filter(item -> item.companyCode().equals(finalCode)).reduce((first, second) -> second).orElseThrow();
+		for (EmailVerificationMailer.VerificationEmail item : sent) {
+			if (item != current) verify(CapturingEmailVerificationMailer.tokenFrom(item.link())).andExpect(status().isBadRequest());
+		}
+		verify(CapturingEmailVerificationMailer.tokenFrom(current.link())).andExpect(status().isOk());
+	}
+
+	@Test
+	void theVerificationEmailNamesTheSubmissionAndSaysHowToIgnoreIt() throws Exception {
+		signup(code, email, "Alex Tan", "Pacific Gate Imports", "Str0ngPass").andExpect(status().isAccepted());
+		EmailVerificationMailer.VerificationEmail sent = mailer.sentTo(email).get(0);
+		assertThat(sent.companyName()).isEqualTo("Pacific Gate Imports");
+		assertThat(sent.companyCode()).isEqualTo(code);
+		assertThat(sent.fullName()).isEqualTo("Alex Tan");
+
+		String body = EmailVerificationMailConfig.text(sent);
+		assertThat(body).contains("Company: Pacific Gate Imports (" + code + ")")
+				.contains("Administrator: Alex Tan")
+				.contains("If you did not request this, ignore this email; the account will not be activated.")
+				.contains(sent.link())
+				.contains("24 hours");
 	}
 
 	@Test
@@ -292,7 +455,7 @@ class EmailVerificationIntegrationTests {
 	}
 
 	private String onlyToken() {
-		List<CapturingEmailVerificationMailer.Sent> sent = mailer.sentTo(email);
+		List<EmailVerificationMailer.VerificationEmail> sent = mailer.sentTo(email);
 		assertThat(sent).isNotEmpty();
 		return CapturingEmailVerificationMailer.tokenFrom(sent.get(sent.size() - 1).link());
 	}
@@ -317,9 +480,19 @@ class EmailVerificationIntegrationTests {
 	}
 
 	private ResultActions signup(String companyCode, String address) throws Exception {
+		return signup(companyCode, address, "Alex Tan", "Verified Imports", PASSWORD);
+	}
+
+	private ResultActions signup(String companyCode, String address, String fullName, String companyName, String password)
+			throws Exception {
 		codes.add(companyCode);
 		return mvc.perform(post("/api/register/company").contentType(MediaType.APPLICATION_JSON)
-				.content(SignupFixtures.body(companyCode, "Verified Imports", "Alex Tan", address, PASSWORD)));
+				.content(SignupFixtures.body(companyCode, companyName, fullName, address, password)));
+	}
+
+	private ResultActions login(String address, String password) throws Exception {
+		return mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"email\":\"" + address + "\",\"password\":\"" + password + "\"}"));
 	}
 
 	private ResultActions verify(String token) throws Exception {

@@ -1,28 +1,24 @@
 package com.drift.backend.account.signup;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Records verification emails instead of sending them; can be told to fail like a broken mail transport. */
 final class CapturingEmailVerificationMailer implements EmailVerificationMailer {
 
-	record Sent(String email, String link, Duration validFor) {
-	}
-
-	private final List<Sent> sent = new ArrayList<>();
+	private final List<VerificationEmail> sent = new ArrayList<>();
 	private volatile boolean fail;
 
 	@Override
-	public synchronized void sendVerificationLink(String email, String verificationLink, Duration validFor) {
+	public synchronized void sendVerificationLink(VerificationEmail email) {
 		if (fail) {
 			throw new IllegalStateException("mail transport failed");
 		}
-		sent.add(new Sent(email, verificationLink, validFor));
+		sent.add(email);
 	}
 
-	synchronized List<Sent> sentTo(String email) {
-		return sent.stream().filter(item -> item.email().equals(email)).toList();
+	synchronized List<VerificationEmail> sentTo(String email) {
+		return sent.stream().filter(item -> item.to().equals(email)).toList();
 	}
 
 	void failDelivery(boolean fail) {

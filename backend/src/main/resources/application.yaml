@@ -68,9 +68,10 @@ app:
     verification-ttl: ${SIGNUP_VERIFICATION_TTL:PT24H}
     from: ${app.mail.from}
     rate-limit:
-      ip: ${SIGNUP_IP_LIMIT:5}
+      # Behind the production proxy every request shares one address, so this is a coarse global ceiling.
+      ip: ${SIGNUP_IP_LIMIT:30}
       email: ${SIGNUP_EMAIL_LIMIT:3}
-      window: ${SIGNUP_RATE_WINDOW:PT1H}
+      window: ${SIGNUP_RATE_WINDOW:PT15M}
   invitation:
     link-base-url: ${INVITATION_LINK_BASE_URL:${app.frontend-base-url}/signup}
     ttl: ${INVITATION_TTL:7d}

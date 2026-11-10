@@ -14,14 +14,11 @@ import com.drift.backend.organisation.OrganisationIdentity;
 public class CompanySignupService {
 
 	private final CompanySignupStore store;
-	private final EmailVerificationStore verifications;
 	private final SignupRateLimiter rateLimiter;
 	private final PasswordEncoder passwordEncoder;
 
-	public CompanySignupService(CompanySignupStore store, EmailVerificationStore verifications,
-			SignupRateLimiter rateLimiter, PasswordEncoder passwordEncoder) {
+	public CompanySignupService(CompanySignupStore store, SignupRateLimiter rateLimiter, PasswordEncoder passwordEncoder) {
 		this.store = store;
-		this.verifications = verifications;
 		this.rateLimiter = rateLimiter;
 		this.passwordEncoder = passwordEncoder;
 	}
@@ -33,8 +30,8 @@ public class CompanySignupService {
 		// Hash before looking up the email so a registered email does not answer measurably faster.
 		String passwordHash = passwordEncoder.encode(request.password());
 		try {
-			if (store.create(identity, request.fullName(), request.email(), passwordHash).isEmpty()) {
-				resendIfStillPending(request.email(), identity.code(), clientAddress);
+			if (store.create(identity, request.fullName(), request.email(), passwordHash) == CompanySignupStore.Outcome.PENDING) {
+				replacePendingSignup(identity, request.fullName(), request.email(), passwordHash, clientAddress);
 			}
 		} catch (SignupEmailTakenException ex) {
 			// A concurrent signup took the email; everything from this request was rolled back.
@@ -42,17 +39,18 @@ public class CompanySignupService {
 		return CompanySignupResponse.accepted();
 	}
 
-	/** Repeating a signup that is still awaiting verification sends a fresh link, within the resend limit. */
-	private void resendIfStillPending(String email, String companyCode, String clientAddress) {
-		if (!store.isPendingAdministratorOf(email, companyCode)) {
-			return;
-		}
+	/**
+	 * The newest submission for a pending email wins: it replaces the earlier one and only its emailed link can
+	 * activate the account. Limited like a resend; over the limit nothing changes and the answer is still 202,
+	 * because a 429 here would reveal that the email is registered.
+	 */
+	private void replacePendingSignup(OrganisationIdentity identity, String fullName, String email, String passwordHash,
+			String clientAddress) {
 		try {
 			rateLimiter.allowResend(email, clientAddress);
 		} catch (SignupRateLimitException ex) {
-			// Answering 429 here would reveal that the email is registered.
 			return;
 		}
-		verifications.reissue(email);
+		store.replacePending(identity, fullName, email, passwordHash);
 	}
 }
