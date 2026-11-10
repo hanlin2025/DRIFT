@@ -51,6 +51,8 @@ describe('login and role routing', () => {
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     expect(screen.getByText('Harbourline Logistics (Demo)')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Import shipments' })).not.toHaveAttribute('aria-current');
     expect(sessionStorage.getItem('drift.session')).not.toContain('Example123');
     expect(sessionStorage.getItem('drift.session')).not.toContain('session-token');
     expect(localStorage.getItem('drift.profile')).toContain('FREIGHT_FORWARDER');

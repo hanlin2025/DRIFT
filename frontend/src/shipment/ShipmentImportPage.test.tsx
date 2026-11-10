@@ -55,7 +55,8 @@ beforeEach(() => {
 describe('shipment import page', () => {
   it('shows the import entry only to freight forwarders and guards direct import routes by exact role', async () => {
     const initial = open();
-    expect(await screen.findByRole('link', { name: 'Import shipments' })).toHaveAttribute('href', '/freight-forwarder/import');
+    expect(await screen.findByRole('link', { name: 'Import shipments' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Shipments' })).not.toHaveAttribute('aria-current');
     initial.unmount();
 
     for (const role of ['IMPORTER', 'LOGISTICS_MANAGER', 'ADMIN'] as const) {
