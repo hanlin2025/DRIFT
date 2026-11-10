@@ -1,71 +1,7 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { passwordRules } from '../signup/validation';
 import { ApiError } from '../signup/api';
 import { getProfile, RISK_LEVELS, roleLabel, updateProfile, type Profile, type RiskLevel } from './api';
-
-function riskLevelLabel(level: RiskLevel) {
-  switch (level) {
-    case 'LOW':
-      return 'Low';
-    case 'MEDIUM':
-      return 'Medium';
-    case 'HIGH':
-      return 'High';
-    case 'CRITICAL':
-      return 'Critical';
-    default: {
-      const exhaustive: never = level;
-      return exhaustive;
-    }
-  }
-}
-
-function RiskLevelField({ value, disabled, onChange }: {
-  value: RiskLevel;
-  disabled: boolean;
-  onChange: (level: RiskLevel) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const listId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    function close(event: MouseEvent) {
-      if (event.target instanceof Node && root.current?.contains(event.target)) return;
-      setOpen(false);
-    }
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-
-  return (
-    <div className="risk-select" ref={root}>
-      <button
-        id="profile-risk-level"
-        type="button"
-        className="risk-select-button"
-        role="combobox"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        disabled={disabled}
-        onClick={() => setOpen(current => !current)}
-      >
-        {riskLevelLabel(value)}
-      </button>
-      {open ? (
-        <ul id={listId} className="risk-select-menu" role="listbox" aria-label="Minimum risk level">
-          {RISK_LEVELS.map(level => (
-            <li key={level}>
-              <button type="button" role="option" aria-selected={level === value} onClick={() => { onChange(level); setOpen(false); }}>{riskLevelLabel(level)}</button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
 
 export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSaved }: {
   token: string;
@@ -183,9 +119,13 @@ export function ProfilePage({ token, onSessionEnded, onPasswordChanged, onNameSa
           <input id="profile-notifications" type="checkbox" checked={notifications} onChange={event => setNotifications(event.target.checked)} disabled={submitting} />
           Email me when a shipment risk reaches this level
         </label>
+        <p className="field-hint">Saving this page does not send an email.</p>
         <div className="field">
           <label htmlFor="profile-risk-level">Minimum risk level</label>
-          <RiskLevelField value={minimumLevel} disabled={submitting} onChange={setMinimumLevel} />
+          <select id="profile-risk-level" value={minimumLevel} onChange={event => setMinimumLevel(event.target.value as RiskLevel)} disabled={submitting}>
+            {RISK_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+          </select>
+          <p className="field-hint">HIGH means HIGH and CRITICAL.</p>
         </div>
       </fieldset>
       <fieldset>
