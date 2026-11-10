@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/require-vercel-deployment-approval.mjs && tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -26,31 +26,36 @@
     "test:e2e:arrival-comparison": "node ../scripts/run-arrival-comparison.mjs",
     "test:e2e:remaining-connection-window": "node ../scripts/run-remaining-connection-window.mjs",
     "test:e2e:account-removal": "node ../scripts/run-account-removal.mjs",
+    "test:e2e:organisation-creation": "node ../scripts/run-organisation-creation.mjs",
     "test:e2e:account-reactivation": "node ../scripts/run-account-reactivation.mjs",
     "test:e2e:deadline": "node ../scripts/run-transshipment-arrival-deadline.mjs",
     "test:e2e:delay-comparison": "node ../scripts/run-delay-comparison.mjs",
-    "test:e2e:history": "node ../scripts/run-shipment-history.mjs"
+    "test:e2e:history": "node ../scripts/run-shipment-history.mjs",
+    "test:e2e:late-arrival-chance": "node ../scripts/run-late-arrival-chance.mjs",
+    "test:e2e:first-admin": "node ../scripts/run-first-admin-setup.mjs",
+    "test:e2e:admin-invitation": "node ../scripts/run-admin-invitation.mjs",
+    "test:e2e:join-path": "node ../scripts/run-join-path.mjs",
+    "test:e2e:invitation-withdrawal": "node ../scripts/run-invitation-withdrawal.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/fraunces": "5.3.0",
-    "@fontsource-variable/manrope": "5.3.0",
-    "maplibre-gl": "5.24.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-router-dom": "7.18.4"
+    "@fontsource-variable/inter": "5.3.0",
+    "maplibre-gl": "6.17.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.5"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.65.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
-    "@testing-library/user-event": "14.6.7",
-    "@types/node": "26.6.2",
+    "@testing-library/user-event": "14.6.8",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.1",
-    "jsdom": "30.1.1",
+    "@vitejs/plugin-react": "6.3.0",
+    "jsdom": "31.0.0",
     "typescript": "7.0.2",
-    "vite": "8.3.1",
-    "vitest": "5.0.1"
+    "vite": "8.3.7",
+    "vitest": "5.1.0"
   }
 }

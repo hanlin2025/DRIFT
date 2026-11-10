@@ -30,7 +30,7 @@ describe('registration routing', () => {
     await submit();
     expect(await screen.findByText('Account created successfully.')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
-    expect(screen.getByLabelText('Work email')).toHaveValue(invitation.email);
+    expect(screen.getByLabelText('Email')).toHaveValue(invitation.email);
     expect(screen.getByLabelText('Password')).toHaveValue('');
     expect(screen.getByRole('button', { name: /Log in/ })).toBeEnabled();
   });
@@ -44,7 +44,7 @@ describe('registration routing', () => {
   it('supports opening login directly without a success notice', async () => {
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
     expect(screen.queryByText('Account created successfully.')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Work email')).toHaveValue('');
+    expect(screen.getByLabelText('Email')).toHaveValue('');
     await waitFor(() => expect(document.title).toBe('Log in | DRIFT'));
   });
 });

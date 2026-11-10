@@ -20,15 +20,21 @@ function passwordChangedState(value: unknown) {
   return typeof value === 'object' && value !== null && 'passwordChanged' in value && value.passwordChanged === true;
 }
 
+function passwordResetMessage(value: unknown) {
+  return typeof value === 'object' && value !== null && 'passwordReset' in value && typeof value.passwordReset === 'string'
+    ? value.passwordReset : '';
+}
+
 export function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { registered, email: invitedEmail } = registrationState(location.state);
   const passwordChanged = passwordChangedState(location.state);
+  const passwordReset = passwordResetMessage(location.state);
   const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [error, setError] = useState(!passwordChanged && (expiredState(location.state) || sessionHasEnded()) ? 'Your session has ended. Log in again.' : '');
+  const [error, setError] = useState(!passwordChanged && !passwordReset && (expiredState(location.state) || sessionHasEnded()) ? 'Your session has ended. Log in again.' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const busy = useRef(false);
@@ -59,7 +65,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const session = await login(email.trim(), password);
-      writeSession(session);
+      writeSession({ ...session, token: '' });
       setPassword('');
       navigate(homePath(session.role), { replace: true });
     } catch (reason) {
@@ -77,15 +83,15 @@ export function LoginPage() {
   }
 
   return <>
-    <p className="eyebrow form-eyebrow">YOUR NEXT CONNECTION</p>
-    <h2>Welcome to DRIFT.</h2>
-    <p className="intro">Your workspace starts with a shared view.</p>
+    <p className="eyebrow form-eyebrow">SIGN IN</p>
+    <h1>Welcome to DRIFT.</h1>
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
     {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
+    {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}
     {error && <div className="error-notice" role="alert">{error}</div>}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
-        <label htmlFor="login-email">Work email</label>
+        <label htmlFor="login-email">Email</label>
         <input id="login-email" name="email" type="email" autoComplete="email" value={email} placeholder="you@company.com" onChange={event => setEmail(event.target.value)} disabled={submitting} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'login-email-error' : undefined} />
         {errors.email && <p className="field-error" id="login-email-error">{errors.email}</p>}
       </div>
@@ -96,6 +102,7 @@ export function LoginPage() {
           <button type="button" className="visibility-button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button>
         </div>
         {errors.password && <p className="field-error" id="login-password-error">{errors.password}</p>}
+        <Link className="forgot-password" to="/forgot-password">Forgot password?</Link>
       </div>
       <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Signing in...' : 'Log in'} <span aria-hidden="true">&#8594;</span></button>
     </form>

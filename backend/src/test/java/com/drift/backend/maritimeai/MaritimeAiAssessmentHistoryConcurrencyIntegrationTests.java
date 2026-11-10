@@ -37,6 +37,7 @@ import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.company.Company;
+import com.drift.backend.company.TestAuthorisations;
 import com.drift.backend.company.CompanyRepository;
 import com.drift.backend.shipment.Shipment;
 import com.drift.backend.shipment.ShipmentLinkService;
@@ -77,6 +78,10 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 		Fixture fixture = activeFixture;
 		if (fixture == null) return;
 		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+			jdbc.update("""
+					DELETE FROM forwarder_importer_relationships
+					WHERE forwarder_company_id = ? AND importer_company_id IN (?, ?)
+					""", fixture.managerCompanyId(), fixture.importerACompanyId(), fixture.importerBCompanyId());
 			jdbc.update("DELETE FROM shipments WHERE id = ?", fixture.shipmentId());
 			jdbc.update("DELETE FROM users WHERE id IN (?, ?, ?)", fixture.manager().id(), fixture.importerA().id(), fixture.importerB().id());
 			jdbc.update("DELETE FROM companies WHERE id = ?", fixture.importerBCompanyId());
@@ -219,6 +224,8 @@ class MaritimeAiAssessmentHistoryConcurrencyIntegrationTests {
 			AuthenticatedUser manager = authenticated(managerAccount, Role.FREIGHT_FORWARDER);
 			AuthenticatedUser importerA = authenticated(importerAAccount, Role.IMPORTER);
 			AuthenticatedUser importerB = authenticated(importerBAccount, Role.IMPORTER);
+			TestAuthorisations.allowShipment(jdbc, shipmentId, importerACompany.getId());
+			TestAuthorisations.allowShipment(jdbc, shipmentId, importerBCompany.getId());
 			shipmentLinks.link(manager, shipmentId, importerACompany.getId());
 			return new Fixture(shipmentId, managerCompany.getId(), importerACompany.getId(), importerBCompany.getId(),
 					manager, importerA, importerB);

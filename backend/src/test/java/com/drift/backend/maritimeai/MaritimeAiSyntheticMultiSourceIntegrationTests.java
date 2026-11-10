@@ -129,11 +129,53 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 	}
 
 	@Test
+	void replaysTheCapturedV20ResponseThroughAuthorizedPostGetAndTransactionalPersistence() throws Exception {
+		assertThat(client).isInstanceOf(CapturingSyntheticClient.class);
+		MaritimeAiInterpretation captured;
+		try (var captureStream = getClass().getResourceAsStream("/com/drift/backend/maritimeai/cdg257-synthetic-multisource-openai-v20-capture.json")) {
+			assertThat(captureStream).isNotNull();
+			var capture = new tools.jackson.databind.ObjectMapper().readTree(captureStream);
+			captured = new tools.jackson.databind.ObjectMapper().treeToValue(capture.path("interpretation"), MaritimeAiInterpretation.class);
+		}
+		CapturingSyntheticClient stub = (CapturingSyntheticClient) client;
+		stub.setNextResult(new MaritimeAiClient.MaritimeAiClientResult("openai-responses", "gpt-4.1-mini",
+				ConfiguredMaritimeAiClient.PROMPT_VERSION, captured, null));
+		try {
+			mvc.perform(post("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.state").value("GENERATED"))
+					.andExpect(jsonPath("$.validationStatus").value("VALID"));
+			mvc.perform(get("/api/shipments/" + shipmentId + "/maritime-ai-assessments").header("Authorization", "Bearer " + token))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$[0].state").value("GENERATED"))
+					.andExpect(jsonPath("$[0].interpretation.claims").isArray());
+			assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM maritime_ai_assessments WHERE shipment_id = ?", Long.class, shipmentId)).isEqualTo(1L);
+		} finally {
+			stub.clearNextResult();
+		}
+	}
+
+	@Test
 	void realClientModeCannotStartWithoutTheExternalRequestApprovalGate() {
 		assertThatThrownBy(() -> new MultiSourceConfiguration().multiSourceClient(true, "openai-responses", "gpt-4.1-mini",
 				"not-a-key", "https://example.invalid/v1/responses", false, 20, 800, new tools.jackson.databind.ObjectMapper(), false, ""))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessageContaining("MARITIME_AI_EXTERNAL_REQUESTS_APPROVED=true");
+	}
+
+	@Test
+	void marksThePriorMpaOnlyResponseIncompleteForTheEligibleThreeSourceAcceptanceFixture() {
+		MaritimeAiInterpretation mpaOnly = new MaritimeAiInterpretation("Review the grounded interpretation and limitations.",
+				List.of(
+						new MaritimeAiClaim("The documented revision warrants schedule review.",
+								List.of(SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID), "VERIFIED", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION",
+								List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID,
+										"schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW")),
+				List.of(), List.of(), true, null);
+
+		assertThat(threeSourceCoverage(mpaOnly)).isEqualTo("INCOMPLETE_SYNTHETIC_SOURCE_COVERAGE");
+		assertThat(threeSourceCoverage(new CapturingSyntheticClient().interpret(syntheticEvidencePackage()).interpretation()))
+				.isEqualTo("COMPLETE");
 	}
 
 	@Test
@@ -245,7 +287,7 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				.hasMessageContaining("protected historical capture");
 	}
 
-	private static MaritimeAiEvidencePackage syntheticEvidencePackage() {
+	static MaritimeAiEvidencePackage syntheticEvidencePackage() {
 		MaritimeAiShipmentContext context = new MaritimeAiShipmentContext("Synthetic Multi-source Port",
 				new MaritimeAiShipmentContext.Vessel("MOTHER", "Synthetic Multi-source Vessel", "9000002", "PLANNED_ARRIVAL", java.time.OffsetDateTime.parse("2026-10-01T05:00:00+08:00")),
 				new MaritimeAiShipmentContext.Vessel("FEEDER", "Synthetic Multi-source Feeder", "9000003", "PLANNED_DEPARTURE", java.time.OffsetDateTime.parse("2026-10-01T14:00:00+08:00")));
@@ -269,6 +311,21 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				"Synthetic-only fixture evidence.", "Synthetic Multi-source Vessel", role, observationType, associationScope);
 	}
 
+	/** Acceptance-only quality check: all three records are eligible and relevant in this fixture.
+	 * It deliberately does not become a production validator rule for arbitrary source bundles. */
+	private static String threeSourceCoverage(MaritimeAiInterpretation interpretation) {
+		if (interpretation == null || interpretation.claims() == null) return "INCOMPLETE_SYNTHETIC_SOURCE_COVERAGE";
+		boolean schedule = hasClaim(interpretation, SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID, "SCHEDULE_REVIEW");
+		boolean port = hasClaim(interpretation, SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID, "PORT_CONTEXT_REVIEW");
+		boolean weather = hasClaim(interpretation, SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID, "REGIONAL_WEATHER_CONTEXT");
+		return schedule && port && weather ? "COMPLETE" : "INCOMPLETE_SYNTHETIC_SOURCE_COVERAGE";
+	}
+
+	private static boolean hasClaim(MaritimeAiInterpretation interpretation, String evidenceId, String relationshipType) {
+		return interpretation.claims().stream().anyMatch(claim -> claim != null && relationshipType.equals(claim.relationshipType())
+				&& claim.evidenceIds() != null && claim.evidenceIds().contains(evidenceId));
+	}
+
 	private static String shipmentJson() {
 		return """
 				{"shipmentReference":"SYNTHETIC-MULTI-%s","origin":"Synthetic origin","destination":"Synthetic destination",
@@ -289,7 +346,7 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 				@Value("${app.maritime-ai.endpoint:}") String endpoint,
 				@Value("${app.maritime-ai.external-requests-approved:false}") boolean externalRequestsApproved,
 				@Value("${app.maritime-ai.timeout-seconds:20}") int timeoutSeconds,
-				@Value("${app.maritime-ai.max-output-tokens:800}") int maxOutputTokens,
+				@Value("${app.maritime-ai.max-output-tokens:2000}") int maxOutputTokens,
 				tools.jackson.databind.ObjectMapper json,
 				@Value("${cdg247.synthetic-multisource.capture-interpretation:false}") boolean captureInterpretation,
 				@Value("${cdg247.synthetic-multisource.capture-path:}") String capturePath) {
@@ -426,8 +483,7 @@ public class MaritimeAiSyntheticMultiSourceIntegrationTests {
 											"MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION", List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.MPA_EVIDENCE_ID, "schedule:MOTHER:PLANNED_ARRIVAL", "schedule:FEEDER:PLANNED_DEPARTURE"), "SCHEDULE_REVIEW"),
 									new MaritimeAiClaim("The fictional port-area maintenance notice is contextual evidence only.",
 											List.of(SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "CONTEXTUAL",
-											null, null, "PORT_CONTEXT", List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID,
-														MaritimeAiCanonicalFactReferences.PORT_OVERLAP_REFERENCE), "PORT_TIME_OVERLAP_REVIEW"),
+											null, null, "PORT_CONTEXT", List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NOTICE_EVIDENCE_ID), "PORT_CONTEXT_REVIEW"),
 									new MaritimeAiClaim("The fictional rainfall observation is regional context only.",
 											List.of(SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "CONTEXTUAL",
 											null, null, "REGIONAL_CONTEXT", List.of("evidence:" + SyntheticMultiSourceMaritimeFixture.NEA_EVIDENCE_ID), "REGIONAL_WEATHER_CONTEXT")),

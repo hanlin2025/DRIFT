@@ -26,7 +26,7 @@ describe('signup form', () => {
   it('loads assigned company, email and role as read-only values', async () => {
     render(<SignupPage />);
     expect(await screen.findByText(invitation.companyName)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Work email/)).toHaveAttribute('readonly');
+    expect(screen.getByLabelText(/Email/)).toHaveAttribute('readonly');
     expect(screen.getByLabelText(/Your role/)).toHaveValue('Freight forwarder');
     expect(resolveInvitation).toHaveBeenCalledWith('a'.repeat(43));
   });
@@ -84,6 +84,14 @@ describe('signup form', () => {
     expect(screen.getByRole('button', { name: /Creating your account/ })).toBeDisabled();
     finish({ id: 1, email: invitation.email, fullName: 'Alice', role: invitation.role });
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('created'));
+  });
+  it('says a withdrawn invitation is no longer valid without mentioning an account', async () => {
+    vi.mocked(resolveInvitation).mockRejectedValue(new ApiError('This invitation is no longer valid.', 400));
+    render(<SignupPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('This invitation is no longer valid.');
+    expect(screen.getByRole('alert').textContent).not.toMatch(/account exists|already exists/i);
+    expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
+    expect(registerAccount).not.toHaveBeenCalled();
   });
   it('asks for an invitation when no link was supplied', () => {
     window.history.replaceState(null, '', '/signup');

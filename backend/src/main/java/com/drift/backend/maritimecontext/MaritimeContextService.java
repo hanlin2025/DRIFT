@@ -39,6 +39,21 @@ public class MaritimeContextService {
 		}
 		List<MaritimeEvidence> evidence = adapters.stream()
 				.flatMap(adapter -> adapter.forShipment(shipment, assessmentCutoffUtc).stream()).toList();
+		return responseForEvidence(evidence, assessmentCutoffUtc);
+	}
+
+	/** Read-only scenario evidence projection using the same evidence bundle and provenance rules. */
+	public MaritimeContextResponse forSyntheticScenario(SyntheticDisruptionScenarioFixture.Scenario scenario,
+			SyntheticDisruptionScenarioFixture.ShipmentInput shipment, Instant assessmentCutoffUtc) {
+		if (scenario == null || shipment == null || assessmentCutoffUtc == null) {
+			throw new IllegalArgumentException("A validated scenario shipment and assessment cutoff are required.");
+		}
+		scenario.validate();
+		List<MaritimeEvidence> evidence = scenario.eligibleEvidenceFor(shipment, assessmentCutoffUtc);
+		return responseForEvidence(evidence, assessmentCutoffUtc);
+	}
+
+	private MaritimeContextResponse responseForEvidence(List<MaritimeEvidence> evidence, Instant assessmentCutoffUtc) {
 		List<MaritimeNoticeEvidence> notices = evidence.stream().filter(item -> "MPA_OFFICIAL_NOTICE".equals(item.sourceType()))
 				.map(item -> new MaritimeNoticeEvidence(
 						item.evidenceId(), item.title(), item.sourceUrl(), item.citation(), item.sourceEventAt(), item.observedAt(),
@@ -62,7 +77,7 @@ public class MaritimeContextService {
 		if (evidence.stream().anyMatch(item -> "UNVERIFIED_IMO_ONLY".equals(item.shipmentAssociationConfidence()))) {
 			return "UNVERIFIED_IMO_ONLY";
 		}
-		// VERIFIED is deliberately available only to a test-only, all-synthetic fixture.
+		// VERIFIED is deliberately available only to a controlled, all-synthetic fixture.
 		// A recorded or live source is never promoted merely because an adapter supplied that string.
 		if (!evidence.isEmpty()
 				&& evidence.stream().allMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode())

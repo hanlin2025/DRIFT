@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account } from './api';
+import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account, type Role } from './api';
 import { passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
 
-const roleNames = { IMPORTER: 'Importer', FREIGHT_FORWARDER: 'Freight forwarder' };
+const roleNames: Record<Role, string> = {
+  IMPORTER: 'Importer',
+  FREIGHT_FORWARDER: 'Freight forwarder',
+  LOGISTICS_MANAGER: 'Logistics manager',
+};
 const emptyFields: SignupFields = { fullName: '', password: '', confirmation: '' };
 
 export function SignupPage({ onRegistered }: { onRegistered?: (account: Account) => void }) {
@@ -80,12 +84,10 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
   return (
     <>
       <p className="eyebrow form-eyebrow">WELCOME ABOARD</p>
-      <h2>Create your account</h2>
-      <p className="intro">Your team is already here. Let's get you connected.</p>
+      <h1>Create your account</h1>
       {error && <div className="error-notice" role="alert">{error}</div>}
       {loading ? <div className="notice" role="status">Checking your invitation...</div> : !invitation ? (
         <section className="invitation-entry">
-          <span className="invitation-icon" aria-hidden="true">&#8599;</span>
           <h3>It starts with an invitation.</h3>
           <p>Open the link shared by your administrator, or enter your invitation code below.</p>
           <form onSubmit={event => { event.preventDefault(); setToken(code.trim()); setAttempt(value => value + 1); }}>
@@ -105,7 +107,7 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
             {errors.fullName && <p className="field-error" id="full-name-error">{errors.fullName}</p>}
           </div>
           <div className="field">
-            <label htmlFor="email">Work email <span className="locked-label">FROM YOUR INVITATION</span></label>
+            <label htmlFor="email">Email <span className="locked-label">FROM YOUR INVITATION</span></label>
             <input id="email" name="email" type="email" value={invitation.email} autoComplete="email" readOnly aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : 'email-hint'} />
             {errors.email ? <p className="field-error" id="email-error">{errors.email}</p> : <p className="field-hint" id="email-hint">Your email connects you to your company's workspace.</p>}
           </div>
@@ -129,7 +131,7 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
           {!created && <button type="button" className="retry-button" disabled={submitting} onClick={useAnotherInvitation}>Use a different invitation</button>}
         </form>
       )}
-      <p className="login-prompt">Already part of the team? <a href="/login">Log in <span aria-hidden="true">&#8599;</span></a></p>
+      <p className="login-prompt">Already part of the team? <a href="/login">Log in</a></p>
     </>
   );
 }

@@ -32,10 +32,14 @@ test.afterAll(() => {
   }
 });
 
+function assignRole(email: string, role: 'ADMIN' | 'LOGISTICS_MANAGER') {
+  sql(`UPDATE users SET role_id = (SELECT id FROM roles WHERE code = :'role') WHERE email = :'email';`, { email, role });
+}
+
 test('an importer signs in to the shipment overview and signs out again', async ({ page, request }) => {
   const email = await registeredAccount(request, 'IMPORTER', 'STRAITS_FRESH_DEMO');
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/importer');
@@ -47,10 +51,36 @@ test('an importer signs in to the shipment overview and signs out again', async 
   await expect(page).toHaveURL('/login');
 });
 
+test('a logistics manager signs in to the company shipments', async ({ page, request }) => {
+  const email = await registeredAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  assignRole(email, 'LOGISTICS_MANAGER');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: /Log in/ }).click();
+  await expect(page).toHaveURL('/logistics-manager');
+  await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
+  await expect(page.getByText('Harbourline Logistics (Demo)', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Import shipments' })).toHaveCount(0);
+});
+
+test('an administrator signs in to user management', async ({ page, request }) => {
+  const email = await registeredAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
+  assignRole(email, 'ADMIN');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: /Log in/ }).click();
+  await expect(page).toHaveURL('/admin');
+  await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
+  await expect(page.getByRole('link', { name: 'Import shipments' })).toHaveCount(0);
+});
+
 test('a freight forwarder signs in to the managed shipment portfolio', async ({ page, request }) => {
   const email = await registeredAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email.toUpperCase());
+  await page.getByLabel('Email').fill(email.toUpperCase());
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/freight-forwarder');
@@ -62,7 +92,7 @@ test('wrong passwords and unknown accounts are refused without a session', async
   const email = await registeredAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
   await page.goto('/login');
   for (const [tryEmail, tryPassword] of [[email, 'WrongPass1'], [`missing-${email}`, password]]) {
-    await page.getByLabel('Work email').fill(tryEmail);
+    await page.getByLabel('Email').fill(tryEmail);
     await page.getByLabel('Password', { exact: true }).fill(tryPassword);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page.getByRole('alert')).toHaveText('Invalid email or password.');
@@ -91,7 +121,7 @@ test('signed-out visitors are sent to login from protected pages', async ({ page
 test('an expired session must sign in again', async ({ page, request }) => {
   const email = await registeredAccount(request, 'FREIGHT_FORWARDER', 'HARBOURLINE_DEMO');
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL('/freight-forwarder');

@@ -67,7 +67,7 @@ beforeEach(() => {
 
 async function openPortfolio() {
   writeSession(forwarder);
-  render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/new']}><AppRoutes /></MemoryRouter>);
   expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
 }
 
@@ -120,9 +120,16 @@ describe('shipment registration', () => {
     writeSession(forwarder);
     vi.mocked(loadSession).mockImplementation(async token => ({ ...forwarder, token }));
     render(<MemoryRouter initialEntries={['/freight-forwarder']}><AppRoutes /></MemoryRouter>);
-    expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Register a shipment' })).toHaveAttribute('href', '/freight-forwarder/shipments/new');
+    expect(screen.queryByRole('heading', { name: 'Register a shipment' })).not.toBeInTheDocument();
+    cleanup();
+
+    render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/new']}><AppRoutes /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
     expect(screen.getByText('This shipment is registered for Harbourline Logistics (Demo).')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
   it('checks the itinerary before calling the API', async () => {
@@ -166,18 +173,23 @@ describe('shipment registration', () => {
     expect(body.feederVesselMmsi).toBe('');
     expect(body.feederVesselOperator).toBe('');
     expect(screen.getByLabelText('Shipment reference')).toHaveValue('');
+    expect(listShipments).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('link', { name: 'Back to shipments' }));
+    expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
     expect(listShipments).toHaveBeenCalledWith('session-token');
   });
 
   it('reloads the company list after the shipment is registered', async () => {
-    vi.mocked(listShipments).mockResolvedValueOnce([]).mockResolvedValue([listed]);
+    vi.mocked(listShipments).mockResolvedValue([listed]);
     await openPortfolio();
     const user = await fillItinerary();
     await user.click(screen.getByRole('button', { name: /Register shipment/ }));
+    expect(await screen.findByRole('status')).toHaveTextContent('HL-1001');
+    await user.click(screen.getByRole('link', { name: 'Back to shipments' }));
     expect(await screen.findByRole('cell', { name: 'HBL-NEWER' })).toBeInTheDocument();
     expect(createShipment).toHaveBeenCalledTimes(1);
-    expect(listShipments).toHaveBeenCalledTimes(2);
-    expect(listShipments).toHaveBeenNthCalledWith(2, 'session-token');
+    expect(listShipments).toHaveBeenCalledTimes(1);
+    expect(listShipments).toHaveBeenCalledWith('session-token');
   });
 
   it('replaces the saved shipment when the next registration fails', async () => {
@@ -254,7 +266,7 @@ describe('importer linking', () => {
     await waitFor(() => expect(searchImporterOrganisations).toHaveBeenCalledWith('session-token', 'Straits'));
   });
 
-  it('chooses the highlighted organisation with Enter and does not register the shipment', async () => {
+  it('chooses the highlighted organisation with Enter and does not register or link the shipment', async () => {
     vi.mocked(searchImporterOrganisations).mockResolvedValue({ items: [straits], page: 0, size: 20, total: 1 });
     await openPortfolio();
     const user = userEvent.setup();
@@ -263,6 +275,7 @@ describe('importer linking', () => {
     await user.keyboard('{Enter}');
     expect(screen.getByLabelText('Link importer')).toHaveValue('Straits Fresh Imports (Demo)');
     expect(createShipment).not.toHaveBeenCalled();
+    expect(linkShipmentImporter).not.toHaveBeenCalled();
   });
 
   it('asks for a listed organisation before registering free text', async () => {

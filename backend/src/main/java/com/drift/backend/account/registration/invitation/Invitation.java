@@ -43,6 +43,25 @@ public class Invitation {
 
 	protected Invitation() { }
 
+	public static Invitation issue(String email, Company company, Role role, String tokenHash, Instant expiresAt, Instant createdAt) {
+		Invitation invitation = new Invitation();
+		invitation.email = email;
+		invitation.company = company;
+		invitation.role = role;
+		invitation.tokenHash = tokenHash;
+		invitation.expiresAt = expiresAt;
+		invitation.status = InvitationStatus.PENDING;
+		invitation.createdAt = createdAt;
+		return invitation;
+	}
+
+	public void revoke() {
+		if (status != InvitationStatus.PENDING) {
+			throw new IllegalStateException("Only a pending invitation can be revoked");
+		}
+		status = InvitationStatus.REVOKED;
+	}
+
 	public boolean isEligible(Instant now) {
 		return status == InvitationStatus.PENDING && expiresAt.isAfter(now) && company.isActive();
 	}
@@ -52,8 +71,10 @@ public class Invitation {
 		consumedAt = now;
 	}
 
+	public Long getId() { return id; }
 	public String getEmail() { return email; }
 	public Company getCompany() { return company; }
 	public Role getRole() { return role; }
 	public Instant getExpiresAt() { return expiresAt; }
+	public InvitationStatus getStatus() { return status; }
 }

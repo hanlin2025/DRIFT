@@ -20,8 +20,8 @@ test('invited user registers, reaches login and cannot reuse the invitation', as
   try {
     await page.goto(`/signup#invite=${token}`);
     await expect(page.getByText('Harbourline Logistics (Demo)')).toBeVisible();
-    await expect(page.getByLabel(/Work email/)).toHaveValue(email);
-    await expect(page.getByLabel(/Work email/)).not.toBeEditable();
+    await expect(page.getByLabel(/Email/)).toHaveValue(email);
+    await expect(page.getByLabel(/Email/)).not.toBeEditable();
     await expect(page.getByLabel(/Your role/)).toHaveValue('Freight forwarder');
     await page.getByRole('button', { name: /Create account/ }).click();
     await expect(page.getByText('Enter your full name.')).toBeVisible();

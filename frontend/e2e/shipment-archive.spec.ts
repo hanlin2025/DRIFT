@@ -127,7 +127,7 @@ async function signInApi(request: APIRequestContext, email: string): Promise<Acc
 
 async function signIn(page: Page, email: string, url: string) {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page).toHaveURL(url);
@@ -184,7 +184,8 @@ async function restore(request: APIRequestContext, token: string, shipmentId: nu
 }
 
 async function applyStatus(page: Page, status: 'ACTIVE' | 'ARCHIVED') {
-  await page.getByLabel('Filter by status').selectOption(status);
+  await page.getByRole('combobox', { name: 'Filter by status' }).click();
+  await page.getByRole('option', { name: status === 'ACTIVE' ? 'Active' : 'Archived' }).click();
   await page.getByRole('button', { name: 'Apply filters' }).click();
   await expect(page).toHaveURL(new RegExp(`[?&]status=${status}(?:&|$)`));
 }

@@ -52,7 +52,7 @@ async function register(request: APIRequestContext, companyCode: string, role: A
 
 async function signIn(page: Page, account: Account) {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(account.email);
+  await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(account.role === 'IMPORTER' ? '/importer' : '/freight-forwarder');

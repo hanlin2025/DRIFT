@@ -73,7 +73,7 @@ class RecommendationDecisionApiIntegrationTests {
 
 	@BeforeEach
 	void account() throws Exception {
-		impacts.use(ShipmentRecommendationImpact.notReturned());
+		impacts.use(ShipmentRecommendationImpact.unavailable("Test impact comparison is unavailable."));
 		Company company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 		AccountRole role = roles.findByCode(Role.FREIGHT_FORWARDER).orElseThrow();
 		UserAccount user = users.saveAndFlush(new UserAccount("Decision User", "decision-api@example.test",
@@ -697,7 +697,7 @@ class RecommendationDecisionApiIntegrationTests {
 	}
 
 	static final class ChosenImpact extends ShipmentRecommendationImpactSource {
-		private ShipmentRecommendationImpact impact = ShipmentRecommendationImpact.notReturned();
+		private ShipmentRecommendationImpact impact = ShipmentRecommendationImpact.unavailable("Test impact comparison is unavailable.");
 
 		ChosenImpact() {
 			super();

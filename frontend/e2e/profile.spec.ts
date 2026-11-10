@@ -79,7 +79,7 @@ function cleanup(emails: string[]) {
 
 async function signIn(page: Page, email: string, secret = password, home = '/freight-forwarder') {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(secret);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(home);
@@ -89,15 +89,6 @@ async function openProfile(page: Page) {
   await page.getByRole('link', { name: 'Profile' }).click();
   await expect(page).toHaveURL('/profile');
   await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
-}
-
-async function sessionToken(page: Page) {
-  return page.evaluate(() => {
-    const saved = sessionStorage.getItem('drift.session');
-    if (!saved) return '';
-    const parsed = JSON.parse(saved) as { token?: string };
-    return parsed.token ?? '';
-  });
 }
 
 test.beforeAll(() => {
@@ -120,6 +111,11 @@ test('the saved name and notification choice are still there after signing out',
     await expect(page.getByLabel('Role')).toHaveAttribute('readonly', '');
     await expect(page.getByLabel(/photo/i)).toHaveCount(0);
     await expect(page.getByRole('button', { name: /send/i })).toHaveCount(0);
+    await expect(page.getByText('Saving this page does not send an email.')).toBeVisible();
+    await expect(page.getByText('A later rise sends the existing risk email when a shipment you can view reaches the saved level.')).toBeVisible();
+    await expect(page.getByText('HIGH means HIGH and CRITICAL.')).toBeVisible();
+    await expect(page.getByText('Nothing is emailed from this page.')).toHaveCount(0);
+    await expect(page.getByText('The choice is stored only.')).toHaveCount(0);
     await expect(page.getByRole('list', { name: 'Password requirements' })).toBeVisible();
     await expect(page.getByText('At least 8 characters')).toBeVisible();
     await expect(page.getByText('Uppercase and lowercase')).toBeVisible();
@@ -189,7 +185,7 @@ test('a compliant password replaces the old one and a rejected password leaves i
     await expect(page.getByRole('status')).toHaveText('Your password was changed. Log in with the new password.');
     await expect(page.getByRole('alert')).toHaveCount(0);
 
-    await page.getByLabel('Work email').fill(account.email);
+    await page.getByLabel('Email').fill(account.email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page.getByRole('alert')).toHaveText('Invalid email or password.');
@@ -259,7 +255,7 @@ test('one signed-in user cannot open or change another user profile', { tag: '@d
     await expect(page.locator('input[name="userId"], input[name="email"]:not([readonly])')).toHaveCount(0);
 
     const forbidden = await page.request.patch('/api/profile', {
-      headers: { Authorization: `Bearer ${await sessionToken(page)}` },
+      headers: { 'X-DRIFT-Request': '1' },
       data: { userId: owner.id, fullName: 'Hijacked Name' },
     });
     expect(forbidden.status()).toBe(403);

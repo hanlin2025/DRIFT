@@ -4,8 +4,11 @@ import './admin/admin.css';
 import './shipment/importer-link.css';
 import { AuthLayout } from './components/AuthLayout';
 import { LoginPage } from './login/LoginPage';
+import { ForgotPasswordPage } from './passwordreset/ForgotPasswordPage';
+import { ResetPasswordPage } from './passwordreset/ResetPasswordPage';
 import { ProfileRoute } from './profile/ProfileRoute';
 import { clearSession, homePath, isExpired, readSession } from './session/session';
+import { SetupPage } from './setup/SetupPage';
 import { SignupPage } from './signup/SignupPage';
 import { WorkspaceRoute } from './workspace/WorkspaceRoute';
 
@@ -26,7 +29,10 @@ function HomeRedirect() {
 export function AppRoutes() {
   return <Routes>
     <Route path="/signup" element={<AuthLayout><SignupRoute /></AuthLayout>} />
+    <Route path="/setup" element={<AuthLayout><SetupPage /></AuthLayout>} />
     <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+    <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordPage /></AuthLayout>} />
+    <Route path="/reset-password" element={<AuthLayout><ResetPasswordPage /></AuthLayout>} />
     <Route path="/admin/shipments/:shipmentId" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin/shipments" element={<WorkspaceRoute role="ADMIN" />} />
     <Route path="/admin" element={<AdminRoute />} />
@@ -35,6 +41,7 @@ export function AppRoutes() {
     <Route path="/profile" element={<ProfileRoute />} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
+    <Route path="/freight-forwarder/shipments/new" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="register" />} />
     <Route path="/freight-forwarder/import/:jobId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
     <Route path="/freight-forwarder/import" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
     <Route path="/freight-forwarder/shipments/:shipmentId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />

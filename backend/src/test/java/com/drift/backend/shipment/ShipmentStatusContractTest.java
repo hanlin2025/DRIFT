@@ -95,7 +95,8 @@ class ShipmentStatusContractTest {
 		assertThat(new String(migration, StandardCharsets.UTF_8)).contains("VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'")
 				.contains("CHECK (status IN ('ACTIVE', 'ARCHIVED'))");
 		assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class))
-				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17", "19", "20", "21", "22", "23");
+				.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "13", "14", "15", "16", "17",
+						"19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38");
 		assertThat(jdbc.queryForMap("""
 				SELECT data_type, character_maximum_length, is_nullable, column_default
 				FROM information_schema.columns
@@ -154,7 +155,7 @@ class ShipmentStatusContractTest {
 		assertThat(JsonPath.read(detailJson, "$.risk.explanation").toString())
 				.isEqualTo("At least 24 hours to transfer cargo between vessels. The planned connection window is being used.");
 		assertThat((Object) JsonPath.read(detailJson, "$.remainingConnectionWindow")).isNull();
-		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.risk")).isInstanceOf(PathNotFoundException.class);
+		assertThat(JsonPath.read(createdJson, "$.risk.level").toString()).isEqualTo("LOW");
 		assertThatThrownBy(() -> JsonPath.read(createdJson, "$.remainingConnectionWindow")).isInstanceOf(PathNotFoundException.class);
 
 		String listJson = mvc.perform(get("/api/shipments").header("Authorization", "Bearer " + token))

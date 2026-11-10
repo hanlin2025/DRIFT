@@ -69,7 +69,7 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     expect(sql("SELECT COUNT(*) FROM shipments WHERE company_id = (SELECT id FROM companies WHERE code = 'HARBOURLINE_DEMO');")).toBe('0');
     const initialList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.goto('/login');
-    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page).toHaveURL('/freight-forwarder');
@@ -103,11 +103,12 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     const row = page.locator('tbody tr');
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('cell').nth(0)).toHaveText(shipment.shipmentReference);
-    await expect(row.getByRole('cell').nth(3)).toHaveText(shipment.origin);
-    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.destination);
-    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.transshipmentPort);
-    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.motherVessel);
-    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.feederVessel);
+    await expect(row.getByRole('cell').nth(3)).toHaveText('Not compared');
+    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.origin);
+    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.destination);
+    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.transshipmentPort);
+    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.motherVessel);
+    await expect(row.getByRole('cell').nth(8)).toHaveText(shipment.feederVessel);
 
     const reloadedList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.reload();
@@ -119,18 +120,25 @@ test('a freight forwarder sees one created shipment after refresh and reload', {
     expect(creates).toEqual([201]);
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('cell').nth(0)).toHaveText(shipment.shipmentReference);
-    await expect(row.getByRole('cell').nth(3)).toHaveText(shipment.origin);
-    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.destination);
-    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.transshipmentPort);
-    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.motherVessel);
-    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.feederVessel);
+    await expect(row.getByRole('cell').nth(3)).toHaveText('Not compared');
+    await expect(row.getByRole('cell').nth(4)).toHaveText(shipment.origin);
+    await expect(row.getByRole('cell').nth(5)).toHaveText(shipment.destination);
+    await expect(row.getByRole('cell').nth(6)).toHaveText(shipment.transshipmentPort);
+    await expect(row.getByRole('cell').nth(7)).toHaveText(shipment.motherVessel);
+    await expect(row.getByRole('cell').nth(8)).toHaveText(shipment.feederVessel);
   } finally {
     sql(`${deleteShipmentsCreatedByEmail}
       DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';`, { email });
   }
 });
 
-type ListedShipment = { id: number; shipmentReference: string; risk: { level: string; explanation: string } | null; importer: { name: string } | null };
+type ListedShipment = {
+  id: number;
+  shipmentReference: string;
+  risk: { level: string; explanation: string } | null;
+  importer: { name: string } | null;
+  delayComparison?: { outcome: string | null; reason: string | null; message: string } | null;
+};
 
 function shipmentList(response: Response, parameters: Record<string, string>) {
   const url = new URL(response.url());
@@ -180,7 +188,7 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
 
     const initialList = page.waitForResponse(response => shipmentCollection(response, 'GET'));
     await page.goto('/login');
-    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: /Log in/ }).click();
     await expect(page).toHaveURL('/freight-forwarder');
@@ -199,7 +207,8 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     await expect(tableRows.filter({ hasText: 'Straits Fresh' })).toHaveCount(2);
 
     const byRisk = page.waitForResponse(response => shipmentList(response, { sort: 'risk' }));
-    await page.getByRole('combobox', { name: 'Sort by' }).selectOption('risk');
+    await page.getByRole('combobox', { name: 'Sort by' }).click();
+    await page.getByRole('option', { name: 'Risk level (Critical first)' }).click();
     await page.getByRole('button', { name: 'Apply filters' }).click();
     expect((await byRisk).status()).toBe(200);
     await expect(page).toHaveURL(/sort=risk/);
@@ -216,7 +225,7 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     const critical = atRiskRows.find(item => item.shipmentReference === reference('CRITICAL'))!;
     await page.getByRole('link', { name: reference('CRITICAL') }).click();
     const record = page.getByRole('article', { name: `Shipment ${reference('CRITICAL')}` });
-    const riskDetail = record.locator('dd').filter({ has: page.locator('.risk-badge') });
+    const riskDetail = record.getByText('Risk', { exact: true }).locator('..');
     await expect(riskDetail.locator('.risk-badge')).toHaveText('Critical');
     await expect(riskDetail).toContainText(critical.risk!.explanation);
   } finally {
@@ -224,5 +233,85 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
       DELETE FROM vessel_observations WHERE mmsi = :'mmsi';
       DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';
       DELETE FROM companies WHERE code = :'code';`, { email, mmsi: lateMmsi, code: secondImporter.code });
+  }
+});
+
+test("a freight forwarder sees which customers' deadlines a delay is likely to miss", { tag: '@disposable-database' }, async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'The customer impact flow is covered once on desktop.');
+  assertOwnedDatabase();
+  const suffix = randomBytes(4).toString('hex');
+  const email = `cdg47-e2e-${suffix}@example.com`;
+  const reference = (label: string) => `CDG47-${label}-${suffix}`;
+  const mmsis: string[] = [];
+  try {
+    await registerFreightForwarder(request, email);
+    // Each mother vessel reports a fresh position at Tanjung Pelepas, so its estimated arrival is now and both feeders
+    // leave in under 12 hours (HIGH). LATE departs later, so it only leads the risk sort because its importer's
+    // deadline has already passed; ONTIME's deadline is still ahead and NODEADLINE has none recorded.
+    const rows: Array<[string, number, number | null]> = [
+      [reference('ONTIME'), 8, 2],
+      [reference('LATE'), 10, -2],
+      [reference('NODEADLINE'), 9, null],
+    ];
+    for (const [shipmentReference, departureInHours, deadlineInHours] of rows) {
+      const mother = `CDG47 Mother ${shipmentReference}`;
+      const mmsi = `6${randomBytes(4).readUInt32BE(0).toString().padStart(8, '0').slice(0, 8)}`;
+      mmsis.push(mmsi);
+      sql(`INSERT INTO shipments (
+          company_id, importer_company_id, created_by_user_id, updated_by_user_id, shipment_reference, origin,
+          destination, transshipment_port, mother_vessel, planned_mother_arrival_at, feeder_vessel,
+          planned_feeder_departure_at, created_at, updated_at, version)
+        SELECT owner.id, importer.id, creator.id, creator.id, :'reference', 'Jakarta', 'Rotterdam', 'Tanjung Pelepas',
+          :'mother', NOW(), 'CDG47 Feeder', :'departure'::timestamptz, NOW(), NOW(), 0
+        FROM companies owner, companies importer, users creator
+        WHERE owner.code = 'HARBOURLINE_DEMO' AND importer.code = 'STRAITS_FRESH_DEMO' AND creator.email = :'email';`, {
+        reference: shipmentReference, mother, email, departure: hoursFromNow(departureInHours),
+      });
+      sql(`INSERT INTO vessel_observations (mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, ingested_at, source)
+        VALUES (:'mmsi', :'vessel', 1.36, 103.55, 10, NOW(), 'SEEDED');`, { mmsi, vessel: mother });
+      if (deadlineInHours !== null) {
+        sql(`INSERT INTO shipment_importer_constraints (shipment_id, importer_company_id, transshipment_port, transshipment_arrival_deadline)
+          SELECT s.id, s.importer_company_id, 'Tanjung Pelepas', :'deadline'::timestamptz
+          FROM shipments s WHERE s.shipment_reference = :'reference';`, { reference: shipmentReference, deadline: hoursFromNow(deadlineInHours) });
+      }
+    }
+
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByRole('button', { name: /Log in/ }).click();
+    await expect(page).toHaveURL('/freight-forwarder');
+
+    const tableRows = page.locator('tbody tr');
+    const byRisk = page.waitForResponse(response => shipmentList(response, { sort: 'risk' }));
+    await page.getByRole('combobox', { name: 'Sort by' }).click();
+    await page.getByRole('option', { name: 'Risk level (Critical first)' }).click();
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    const ranked = await (await byRisk).json() as ListedShipment[];
+    expect(ranked.map(item => item.risk?.level)).toEqual(['HIGH', 'HIGH', 'HIGH']);
+    expect(ranked.map(item => item.delayComparison?.outcome ?? item.delayComparison?.reason))
+      .toEqual(['EXCEEDS_DEADLINE', 'NO_PREDICTED_IMPACT', 'MISSING_CONSTRAINT']);
+    await expect(tableRows.locator('td:first-child')).toHaveText([reference('LATE'), reference('ONTIME'), reference('NODEADLINE')]);
+    await expect(tableRows.nth(0).getByRole('cell').nth(3)).toHaveText('Exceeds deadline');
+    await expect(tableRows.nth(1).getByRole('cell').nth(3)).toHaveText('Meets deadline');
+    await expect(tableRows.nth(2).getByRole('cell').nth(3)).toHaveText('Not compared');
+
+    const exceeds = page.waitForResponse(response => shipmentList(response, { sort: 'risk', exceedsDeadline: 'true' }));
+    await page.getByRole('checkbox', { name: 'Exceeds importer deadline only' }).check();
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    expect((await (await exceeds).json() as ListedShipment[]).map(item => item.shipmentReference)).toEqual([reference('LATE')]);
+    await expect(tableRows.locator('td:first-child')).toHaveText([reference('LATE')]);
+
+    await page.getByRole('link', { name: reference('LATE') }).click();
+    const record = page.getByRole('article', { name: `Shipment ${reference('LATE')}` });
+    const recommendation = record.locator('div').filter({ has: page.getByText('Recommendation', { exact: true }) }).locator('> dd').first();
+    await expect(recommendation).toContainText('Prepare an intervention');
+    await expect(recommendation).toContainText("Affects the importer's constraints");
+  } finally {
+    sql(`DELETE FROM shipment_importer_constraints WHERE shipment_id IN
+        (SELECT id FROM shipments WHERE created_by_user_id = (SELECT id FROM users WHERE email = :'email'));
+      ${deleteShipmentsCreatedByEmail}
+      DELETE FROM vessel_observations WHERE mmsi = ANY (string_to_array(:'mmsis', ','));
+      DELETE FROM invitations WHERE email = :'email'; DELETE FROM users WHERE email = :'email';`, { email, mmsis: mmsis.join(',') });
   }
 });

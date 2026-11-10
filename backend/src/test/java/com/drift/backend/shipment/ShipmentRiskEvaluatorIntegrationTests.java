@@ -6,8 +6,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,20 +53,35 @@ class ShipmentRiskEvaluatorIntegrationTests {
 
 	private Company company;
 	private UserAccount user;
+	private String userEmail;
+	private final List<Long> shipmentIds = new ArrayList<>();
+	private final List<String> observedMmsis = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
+		shipmentIds.clear();
+		observedMmsis.clear();
 		jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'");
 		company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 		AccountRole role = entityManager.createQuery("SELECT role FROM AccountRole role WHERE role.code = :code", AccountRole.class)
 				.setParameter("code", Role.FREIGHT_FORWARDER).getSingleResult();
-		user = new UserAccount("Risk Evaluator", "risk-evaluator-" + UUID.randomUUID() + "@example.com", "hash", role, company);
+		userEmail = "risk-evaluator-" + UUID.randomUUID() + "@example.com";
+		user = new UserAccount("Risk Evaluator", userEmail, "hash", role, company);
 		entityManager.persist(user);
 		entityManager.flush();
 		TestTransaction.flagForCommit();
 		TestTransaction.end();
 		activation.activate();
 		TestTransaction.start();
+	}
+
+	@AfterEach
+	void cleanUp() {
+		if (TestTransaction.isActive()) {
+			TestTransaction.flagForRollback();
+			TestTransaction.end();
+		}
+		cleanupTestData();
 	}
 
 	@Test
@@ -99,7 +118,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 				INSERT INTO vessel_observations (
 					mmsi, vessel_name, latitude, longitude, speed_over_ground_knots, ingested_at, source)
 				VALUES (?, ?, ?, ?, ?, ?::timestamptz, 'SEEDED')
-				""", mmsi(), mother, new BigDecimal("1.26"), new BigDecimal("103.82"), new BigDecimal("12.375"),
+				""", recordMmsi(), mother, new BigDecimal("1.26"), new BigDecimal("103.82"), new BigDecimal("12.375"),
 				ingested.toString()));
 
 		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
@@ -179,6 +198,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 				"Singapore", mother, arrival, "Feeder", feeder);
 		entityManager.persist(shipment);
 		entityManager.flush();
+		shipmentIds.add(shipment.getId());
 		states.saveAndFlush(new ShipmentRiskState(shipment, baselineMode, Instant.now()));
 		return shipment;
 	}
@@ -188,9 +208,11 @@ class ShipmentRiskEvaluatorIntegrationTests {
 				Instant.parse("2030-01-01T00:00:00Z")), shipment.getId());
 	}
 
-	private static String mmsi() {
+	private String recordMmsi() {
 		long suffix = Math.floorMod(UUID.randomUUID().getMostSignificantBits(), 800_000_000L);
-		return Long.toString(100_000_000L + suffix);
+		String mmsi = Long.toString(100_000_000L + suffix);
+		observedMmsis.add(mmsi);
+		return mmsi;
 	}
 
 	private Shipment shipment(int durationHours, ShipmentRiskBaselineMode baselineMode) {
@@ -204,6 +226,7 @@ class ShipmentRiskEvaluatorIntegrationTests {
 				"Mother", ARRIVAL, "Feeder", feederDeparture);
 		entityManager.persist(shipment);
 		entityManager.flush();
+		shipmentIds.add(shipment.getId());
 		return shipment;
 	}
 
@@ -215,6 +238,30 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	private ShipmentRiskTransition onlyTransition(Shipment shipment) {
 		entityManager.clear();
 		return transitions.findByShipmentIdOrderBySequenceAsc(shipment.getId()).getFirst();
+	}
+
+	private void cleanupTestData() {
+		if (!shipmentIds.isEmpty()) {
+			String placeholders = String.join(", ", Collections.nCopies(shipmentIds.size(), "?"));
+			Object[] ids = shipmentIds.toArray();
+			jdbc.update("""
+				DELETE FROM shipment_risk_alert_deliveries
+				WHERE transition_id IN (
+					SELECT transition.id FROM shipment_risk_transitions transition
+				WHERE transition.shipment_id IN (%s)
+				)
+			""".formatted(placeholders), ids);
+			jdbc.update("DELETE FROM shipment_risk_transitions WHERE shipment_id IN (" + placeholders + ")", ids);
+			jdbc.update("DELETE FROM shipment_risk_states WHERE shipment_id IN (" + placeholders + ")", ids);
+			jdbc.update("DELETE FROM shipments WHERE id IN (" + placeholders + ")", ids);
+		}
+		if (!observedMmsis.isEmpty()) {
+			String placeholders = String.join(", ", Collections.nCopies(observedMmsis.size(), "?"));
+			jdbc.update("DELETE FROM vessel_observations WHERE mmsi IN (" + placeholders + ")", observedMmsis.toArray());
+		}
+		if (userEmail != null) {
+			jdbc.update("DELETE FROM users WHERE email = ?", userEmail);
+		}
 	}
 
 	private void setWindow(Shipment shipment, int durationHours) {

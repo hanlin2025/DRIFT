@@ -214,7 +214,7 @@ function cleanup(emails: string[], companies: string[] = []) {
 
 async function signIn(page: Page, email: string, url: string) {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(url);
@@ -252,7 +252,7 @@ test('an administrator assigns a role in their own organisation and it takes eff
   try {
     await signIn(page, member.email, '/freight-forwarder');
     await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Register a shipment' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Register a shipment' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: shipment.shipmentReference })).toBeVisible();
 

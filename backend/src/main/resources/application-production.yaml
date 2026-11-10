@@ -1,0 +1,46 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:8}
+      minimum-idle: ${DB_POOL_MIN_IDLE:1}
+      connection-timeout: 10000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    url: ${FLYWAY_URL:${SPRING_DATASOURCE_URL}}
+    user: ${FLYWAY_USER:${SPRING_DATASOURCE_USERNAME}}
+    password: ${FLYWAY_PASSWORD:${SPRING_DATASOURCE_PASSWORD}}
+    validate-on-migrate: true
+    clean-disabled: true
+    baseline-on-migrate: false
+    out-of-order: false
+    locations: classpath:db/migration
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+        add-additional-paths: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db

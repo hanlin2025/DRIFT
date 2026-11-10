@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { IMPACT_NOT_RETURNED, RECOMMENDATION_RESPONSES } from '../src/shipment/recommendationCatalog';
+import { RECOMMENDATION_RESPONSES } from '../src/shipment/recommendationCatalog';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const database = process.env.DRIFT_E2E_DATABASE ?? '';
@@ -10,7 +10,7 @@ const ownerToken = process.env.DRIFT_E2E_OWNER_TOKEN ?? '';
 const blocked = new Set(['drift', 'drift_test', 'postgres', 'template0', 'template1']);
 const password = 'Example123';
 const NO_ACCESS = 'You do not have access to this shipment';
-const IMPACT_NOT_RETURNED_DETAIL = 'The impact assessment has not been returned.';
+const IMPACT_NOT_RETURNED_DETAIL = 'The delay comparison is unavailable for this test case.';
 const NO_PREDICTED_IMPACT = "Does not affect the importer's constraints";
 const LOW_RISK = 'At least 24 hours to transfer cargo between vessels. The planned connection window is being used.';
 const NO_ACTION = RECOMMENDATION_RESPONSES.NO_ACTION;
@@ -119,7 +119,7 @@ function cleanup(emails: string[]) {
 
 async function signIn(page: Page, email: string, home: '/freight-forwarder' | '/importer') {
   await page.goto('/login');
-  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /Log in/ }).click();
   await expect(page).toHaveURL(home);
@@ -307,7 +307,12 @@ test('a linked importer sees the same current decision', {
     const shipment = await createShipment(request, owner.token);
     await signIn(page, owner.email, '/freight-forwarder');
     await openShipment(page, 'freight-forwarder', shipment);
+    const recorded = page.waitForResponse(response =>
+      response.request().method() === 'PATCH' && response.url().includes('/recommendation-decision'));
     await page.getByRole('button', { name: 'Approve' }).click();
+    const response = await recorded;
+    expect(response.status(), await response.text()).toBe(200);
+    expect(response.request().postDataJSON()).toEqual({ outcome: 'APPROVED' });
     const decision = page.getByRole('region', { name: 'Current decision' });
     await expect(decision.getByText('Approved', { exact: true })).toBeVisible();
     const when = await decision.locator('time').getAttribute('datetime');
@@ -388,17 +393,19 @@ test('an unavailable recommendation shows the reason and no approve, modify, or 
     const body = await recommendation(request, owner.token, shipment.id);
     expect(body.recommendation).toMatchObject({
       available: false,
-      unavailable: IMPACT_NOT_RETURNED,
       response: null,
       impact: { outcome: 'UNAVAILABLE', detail: IMPACT_NOT_RETURNED_DETAIL },
     });
+    const unavailableMessage = body.recommendation.unavailable;
+    if (typeof unavailableMessage !== 'string') throw new Error('The backend did not include the reason the recommendation is unavailable.');
+    expect(unavailableMessage).toContain(IMPACT_NOT_RETURNED_DETAIL);
     expect(body.recommendationDecision).toBeNull();
 
     await signIn(page, owner.email, '/freight-forwarder');
     await openShipment(page, 'freight-forwarder', shipment);
     const panel = page.getByRole('article', { name: 'Recommendation' });
     await expect(panel.getByRole('heading', { name: 'Unavailable' })).toBeVisible();
-    await expect(panel.getByText(IMPACT_NOT_RETURNED)).toBeVisible();
+    await expect(panel.getByText(unavailableMessage, { exact: true })).toBeVisible();
     await expect(panel.locator('.recommendation-impact').getByText(IMPACT_NOT_RETURNED_DETAIL, { exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Approve' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);

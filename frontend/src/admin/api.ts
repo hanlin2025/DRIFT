@@ -84,9 +84,10 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   try {
     response = await fetch(path, {
       ...init,
+      credentials: token ? init.credentials : 'include',
       headers: {
         ...init.headers,
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }),
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       },
       signal: AbortSignal.timeout(15000),
@@ -102,7 +103,11 @@ async function send(path: string, token: string, init: RequestInit = {}): Promis
   if (!response.headers.get('content-type')?.includes('application/json')) throw new ApiError(UNEXPECTED, response.status);
   const data: unknown = await response.json();
   if (!response.ok) {
-    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status);
+    const fields: Record<string, string> = {};
+    if (isRecord(data) && isRecord(data.errors)) {
+      for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
+    }
+    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
   }
   return data;
 }
@@ -122,8 +127,28 @@ export async function listAssignableRoles(token: string): Promise<AdminRole[]> {
   });
 }
 
+export async function createOrganisation(token: string, code: string, name: string): Promise<AdminOrganisation> {
+  const data = await send('/api/admin/organisations', token, {
+    method: 'POST',
+    body: JSON.stringify({ code, name }),
+  });
+  const organisation = organisationOf(data);
+  if (!organisation) throw new ApiError(UNEXPECTED, 502);
+  return organisation;
+}
+
 export async function listAssignableOrganisations(token: string): Promise<AdminOrganisation[]> {
   const data = await send('/api/admin/organisations', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(item => {
+    const organisation = organisationOf(item);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return organisation;
+  });
+}
+
+export async function listInvitationOrganisations(token: string): Promise<AdminOrganisation[]> {
+  const data = await send('/api/admin/invitation-organisations', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
   return data.map(item => {
     const organisation = organisationOf(item);
@@ -192,4 +217,60 @@ export async function listAccountStatusAudits(token: string): Promise<AccountSta
       newStatus: entry.newStatus,
     };
   });
+}
+
+export type ManagedInvitation = {
+  id: number;
+  email: string;
+  role: Role;
+  organisation: AdminOrganisation;
+  expiresAt: string;
+  expired: boolean;
+};
+export type IssuedInvitation = { email: string; role: Role; organisation: AdminOrganisation; expiresAt: string };
+
+const INVITATION_SECRET_KEYS = ['token', 'code', 'tokenHash', 'password', 'invitationToken'];
+
+export async function listPendingInvitations(token: string): Promise<ManagedInvitation[]> {
+  const data = await send('/api/admin/invitations', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(item => {
+    if (!isRecord(item) || typeof item.id !== 'number' || typeof item.email !== 'string' || !isRole(item.role)
+      || typeof item.expiresAt !== 'string' || typeof item.expired !== 'boolean'
+      || INVITATION_SECRET_KEYS.some(key => key in item)) {
+      throw new ApiError(UNEXPECTED, 502);
+    }
+    const organisation = organisationOf(item.organisation);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return {
+      id: item.id,
+      email: item.email,
+      role: item.role,
+      organisation,
+      expiresAt: item.expiresAt,
+      expired: item.expired,
+    };
+  });
+}
+
+export async function withdrawInvitation(token: string, invitationId: number): Promise<void> {
+  const data = await send(`/api/admin/invitations/${invitationId}/withdraw`, token, { method: 'POST' });
+  if (!isRecord(data) || data.status !== 'REVOKED' || typeof data.id !== 'number' || data.id !== invitationId
+    || INVITATION_SECRET_KEYS.some(key => key in data)) {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+}
+
+export async function inviteColleague(token: string, organisationId: number, role: Role, email: string): Promise<IssuedInvitation> {
+  const data = await send('/api/admin/invitations', token, {
+    method: 'POST',
+    body: JSON.stringify({ organisationId, role, email }),
+  });
+  if (!isRecord(data) || typeof data.email !== 'string' || !isRole(data.role) || typeof data.expiresAt !== 'string'
+    || 'token' in data || 'code' in data || 'password' in data) {
+    throw new ApiError(UNEXPECTED, 502);
+  }
+  const organisation = organisationOf(data.organisation);
+  if (!organisation) throw new ApiError(UNEXPECTED, 502);
+  return { email: data.email, role: data.role, organisation, expiresAt: data.expiresAt };
 }
