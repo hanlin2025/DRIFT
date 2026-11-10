@@ -77,6 +77,8 @@ input::placeholder { color: #8b948a; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
 input[readonly] { background: #eceee7; color: #60705f; border-color: #e0e4da; cursor: default; }
 input[aria-invalid=true] { border-color: var(--error); }
+.signup-form select { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); padding: 12px 13px; color: var(--ink); font: inherit; font-size: 15px; min-height: 44px; }
+.signup-form select[aria-invalid=true] { border-color: var(--error); }
 .field-hint { margin: 7px 0 0; color: #7a8376; font-size: 9px; line-height: 1.6; }
 .field-error { color: var(--error); font-size: 10px; line-height: 1.5; margin: 7px 0 0; }
 .password-input { position: relative; }
@@ -116,6 +118,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .wordmark { font-size: 22px; letter-spacing: 4px; }
   .wordmark svg { width: 25px; height: 25px; }
   input { font-size: 16px; }
+  .signup-form select { font-size: 16px; }
   .company-card { padding: 13px; }
   .company-card strong { font-size: 11px; }
   .form-footer { padding-top: 12px; }

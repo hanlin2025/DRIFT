@@ -45,6 +45,12 @@ test('an importer signs in to the shipment overview and signs out again', async 
   await expect(page).toHaveURL('/importer');
   await expect(page.getByRole('heading', { name: 'Shipment overview' })).toBeVisible();
   await expect(page.getByText('Straits Fresh Imports (Demo)')).toBeVisible();
+  await page.getByRole('link', { name: 'Profile' }).click();
+  await expect(page).toHaveURL('/profile');
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+  await page.getByRole('link', { name: 'Shipments' }).click();
+  await expect(page).toHaveURL('/importer');
+  await expect(page.getByRole('heading', { name: 'Shipment overview' })).toBeVisible();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL('/login');
   await page.goto('/importer');
@@ -62,6 +68,12 @@ test('a logistics manager signs in to the company shipments', async ({ page, req
   await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
   await expect(page.getByText('Harbourline Logistics (Demo)', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Import shipments' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Profile' }).click();
+  await expect(page).toHaveURL('/profile');
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+  await page.getByRole('link', { name: 'Shipments' }).click();
+  await expect(page).toHaveURL('/logistics-manager');
+  await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
 });
 
 test('an administrator signs in to user management', async ({ page, request }) => {
@@ -75,6 +87,15 @@ test('an administrator signs in to user management', async ({ page, request }) =
   await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Company shipments' })).toHaveAttribute('href', '/admin/shipments');
   await expect(page.getByRole('link', { name: 'Import shipments' })).toHaveCount(0);
+  await page.getByRole('link', { name: 'Profile' }).click();
+  await expect(page).toHaveURL('/profile');
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+  await page.getByRole('link', { name: 'User management' }).click();
+  await expect(page).toHaveURL('/admin');
+  await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible();
+  await page.getByRole('link', { name: 'Company shipments' }).click();
+  await expect(page).toHaveURL('/admin/shipments');
+  await expect(page.getByRole('heading', { name: 'Company shipments' })).toBeVisible();
 });
 
 test('a freight forwarder signs in to the managed shipment portfolio', async ({ page, request }) => {
@@ -86,6 +107,12 @@ test('a freight forwarder signs in to the managed shipment portfolio', async ({ 
   await expect(page).toHaveURL('/freight-forwarder');
   await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
   await expect(page.getByText('Harbourline Logistics (Demo)', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Profile' }).click();
+  await expect(page).toHaveURL('/profile');
+  await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+  await page.getByRole('link', { name: 'Shipments' }).click();
+  await expect(page).toHaveURL('/freight-forwarder');
+  await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
 });
 
 test('wrong passwords and unknown accounts are refused without a session', async ({ page, request }) => {
