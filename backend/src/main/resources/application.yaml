@@ -117,6 +117,10 @@ app:
     session-ttl: ${CONTROLLED_SCENARIO_SESSION_TTL:4h}
     max-sessions: ${CONTROLLED_SCENARIO_MAX_SESSIONS:100}
     max-commands-per-session: ${CONTROLLED_SCENARIO_MAX_COMMANDS_PER_SESSION:64}
+    email:
+      # Synthetic demo mail is separate from ordinary shipment risk-alert delivery.
+      enabled: ${CONTROLLED_SCENARIO_EMAIL_ENABLED:false}
+      recipients: ${CONTROLLED_SCENARIO_EMAIL_RECIPIENTS:}
   maritime-ai:
     enabled: ${MARITIME_AI_ENABLED:false}
     # Separate explicit UI-requested controlled-scenario inference gate; the provider approval gate still applies.

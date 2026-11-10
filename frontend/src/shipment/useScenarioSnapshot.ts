@@ -159,6 +159,14 @@ async function execute(rt: Runtime, ticket: Ticket, pending: Pending, replay = f
     } else {
       if (comparison === 'newer') rt.session = result;
       rt.needsRead = false;
+      if (result.snapshot?.stage === 'WORSENED'
+        && ['SUBMISSION_PENDING', 'SUBMITTING'].includes(result.emailNotificationStatus ?? '')) {
+        // The command response predates the AFTER_COMMIT mail outcome; reconcile once
+        // after the transition so the demo UI can show SUBMITTED or FAILED accurately.
+        publish(rt, 'reconciling');
+        await read(rt, ticket, false);
+        return;
+      }
       publish(rt, 'ready');
     }
   } catch (error) {

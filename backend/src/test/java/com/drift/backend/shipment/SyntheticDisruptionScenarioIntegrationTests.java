@@ -7,6 +7,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -23,6 +30,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -42,6 +52,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 
 import com.drift.backend.ais.position.AisPosition;
 import com.drift.backend.ais.position.AisPositionSource;
@@ -99,6 +111,7 @@ import tools.jackson.databind.ObjectMapper;
 @ContextConfiguration(initializers = SyntheticDisruptionDatabaseGuard.class)
 @Import({ SyntheticDisruptionScenarioIntegrationTests.ScenarioConfiguration.class, SyntheticPortCatalogTestConfiguration.class })
 @Transactional
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SyntheticDisruptionScenarioIntegrationTests {
 	private static final Scenario SCENARIO = SyntheticDisruptionScenarioFixture.create("Integration1");
 	private static final MutableScenarioClock TEST_CLOCK = new MutableScenarioClock(Instant.parse("2026-10-01T00:00:00Z"));
@@ -117,10 +130,15 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	@Autowired ObjectMapper json;
 	@Autowired LatestAisPositions positions;
 	@Autowired ControlledScenarioProperties controlledScenarioProperties;
+	@Autowired ControlledScenarioEmailProperties controlledScenarioEmailProperties;
+	@Autowired JavaMailSender controlledScenarioMailSender;
 	@Autowired PlatformTransactionManager transactionManager;
 
 	@AfterEach
 	void disableControlledScenarioAfterTest() {
+		controlledScenarioEmailProperties.setEnabled(false);
+		controlledScenarioEmailProperties.setRecipients("");
+		reset(controlledScenarioMailSender);
 		controlledScenarioProperties.setEnabled(false);
 		controlledScenarioProperties.setDemoCompanyId(null);
 		controlledScenarioProperties.setAllowedUserIds(Set.of());
@@ -129,6 +147,98 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	}
 
 	@Test
+	@Order(100)
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void sendsOneAllowlistedSyntheticEmailOnlyOnCommittedWorsenedTransition() throws Exception {
+		reset(controlledScenarioMailSender);
+		OFFLINE_CLIENT.clear();
+		SCENARIO_AI_CLIENT.clearScenarioInputs();
+		Identity owner = createIdentity();
+		Identity otherTenant = createIdentity();
+		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(owner);
+		configureControlledScenario(owner, shipmentIds);
+		controlledScenarioEmailProperties.setEnabled(true);
+		controlledScenarioEmailProperties.setRecipients(" demo@example.test,DEMO@example.test,invalid-address ");
+		UUID sessionId = UUID.randomUUID();
+		JsonNode created = scenarioCreate(sessionId, owner.managerToken(), shipmentIds.get(0));
+		JsonNode baseline = scenarioCommand(sessionId, owner.managerToken(), "start", created, "mail-start", 200);
+		assertThat(baseline.path("emailNotificationStatus").asText()).isEqualTo("NOT_TRIGGERED");
+		verifyNoInteractions(controlledScenarioMailSender);
+		JsonNode change = scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "mail-change", 200);
+		assertThat(change.at("/snapshot/stage").asText()).isEqualTo("CHANGE");
+		assertThat(change.path("emailNotificationStatus").asText()).isEqualTo("NOT_TRIGGERED");
+		verifyNoInteractions(controlledScenarioMailSender);
+		assertThat(scenarioAi(sessionId, shipmentIds.get(0), owner.managerToken(), Map.of("scenarioShipmentKey", "A"))
+				.getResponse().getStatus()).isEqualTo(400);
+		mvc.perform(post(scenarioSessionPath(sessionId) + "/next")
+				.header("Authorization", "Bearer " + otherTenant.managerToken())
+				.header("Idempotency-Key", "unauthorized-mail-next").contentType(MediaType.APPLICATION_JSON)
+				.content(json.writeValueAsString(Map.of("expectedEpochId", change.path("epochId").asText(),
+						"expectedRevision", change.path("revision").asLong()))))
+			.andExpect(status().isForbidden());
+		verifyNoInteractions(controlledScenarioMailSender);
+
+		JsonNode worsened = scenarioCommand(sessionId, owner.managerToken(), "next", change, "mail-worsened", 200);
+		assertThat(worsened.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+		assertThat(worsened.path("emailNotificationStatus").asText()).isIn("SUBMISSION_PENDING", "SUBMITTED");
+		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", change, "mail-worsened", 200)).isEqualTo(worsened);
+		assertThat(scenarioGet(sessionId, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("SUBMITTED");
+		org.mockito.ArgumentCaptor<SimpleMailMessage> sent = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+		verify(controlledScenarioMailSender, times(1)).send(sent.capture());
+		assertThat(sent.getValue().getTo()).containsExactly("demo@example.test");
+		assertThat(sent.getValue().getSubject()).contains("SYNTHETIC DEMO").contains("NOT REAL");
+		assertThat(sent.getValue().getText()).contains("Scenario A (CS203-DEMO-A)", "Backend-calculated connection risk: HIGH",
+				"Remaining connection window: AVAILABLE — 4 hours (14400 seconds)", "EXCEEDS_DEADLINE", "20 hours",
+				"Scenario B (CS203-DEMO-B)", "Backend-calculated connection risk: HIGH",
+				"Remaining connection window: AVAILABLE — 4 hours (14400 seconds)", "NO_PREDICTED_IMPACT", "2 hours",
+				"/freight-forwarder/shipments/" + shipmentIds.get(0), "/freight-forwarder/shipments/" + shipmentIds.get(1),
+				"No real maritime disruption", "user-triggered AI assessment");
+		assertThat(OFFLINE_CLIENT.inputs()).isEmpty();
+	}
+
+	@Test
+	@Order(101)
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void disabledOrUnallowlistedSyntheticEmailDoesNotSendAndSmtpFailureKeepsWorsened() throws Exception {
+		reset(controlledScenarioMailSender);
+		Identity owner = createIdentity();
+		List<Long> shipmentIds = createAndAuthorizeScenarioShipments(owner);
+		configureControlledScenario(owner, shipmentIds);
+		controlledScenarioEmailProperties.setEnabled(false);
+		controlledScenarioEmailProperties.setRecipients("demo@example.test");
+		UUID disabledSession = UUID.randomUUID();
+		JsonNode disabledStart = scenarioCommand(disabledSession, owner.managerToken(), "start",
+			scenarioCreate(disabledSession, owner.managerToken(), shipmentIds.get(0)), "disabled-start", 200);
+		JsonNode disabledChange = scenarioCommand(disabledSession, owner.managerToken(), "next", disabledStart, "disabled-change", 200);
+		JsonNode disabled = scenarioCommand(disabledSession, owner.managerToken(), "next", disabledChange, "disabled-worsened", 200);
+		assertThat(disabled.path("emailNotificationStatus").asText()).isEqualTo("DISABLED");
+		verifyNoInteractions(controlledScenarioMailSender);
+
+		controlledScenarioEmailProperties.setEnabled(true);
+		controlledScenarioEmailProperties.setRecipients("bad-address");
+		UUID noRecipientsSession = UUID.randomUUID();
+		JsonNode noRecipientsStart = scenarioCommand(noRecipientsSession, owner.managerToken(), "start",
+			scenarioCreate(noRecipientsSession, owner.managerToken(), shipmentIds.get(0)), "no-recipient-start", 200);
+		JsonNode noRecipientsChange = scenarioCommand(noRecipientsSession, owner.managerToken(), "next", noRecipientsStart, "no-recipient-change", 200);
+		JsonNode noRecipients = scenarioCommand(noRecipientsSession, owner.managerToken(), "next", noRecipientsChange, "no-recipient-worsened", 200);
+		assertThat(noRecipients.path("emailNotificationStatus").asText()).isEqualTo("NO_APPROVED_RECIPIENTS");
+		verifyNoInteractions(controlledScenarioMailSender);
+
+		controlledScenarioEmailProperties.setRecipients("demo@example.test");
+		doThrow(new IllegalStateException("sensitive transport details must not be logged"))
+				.when(controlledScenarioMailSender).send(any(SimpleMailMessage.class));
+		UUID failureSession = UUID.randomUUID();
+		JsonNode failureStart = scenarioCommand(failureSession, owner.managerToken(), "start",
+			scenarioCreate(failureSession, owner.managerToken(), shipmentIds.get(0)), "failure-start", 200);
+		JsonNode failureChange = scenarioCommand(failureSession, owner.managerToken(), "next", failureStart, "failure-change", 200);
+		JsonNode failure = scenarioCommand(failureSession, owner.managerToken(), "next", failureChange, "failure-worsened", 200);
+		assertThat(failure.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+		assertThat(scenarioGet(failureSession, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("FAILED");
+		assertThat(scenarioGet(failureSession, owner.managerToken()).at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+	}
+
+	@Test
+	@Order(-100)
 	void authenticatedThreeStageReplayCalculatesRiskImpactAndGroundedAssessmentsWithoutOperationalMutation() throws Exception {
 		OFFLINE_CLIENT.clear();
 		SCENARIO_AI_CLIENT.clearScenarioInputs();
@@ -1109,6 +1219,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 	@TestConfiguration
 	static class ScenarioConfiguration {
 		@Bean @Primary Clock syntheticDisruptionClock() { return TEST_CLOCK; }
+		@Bean @Primary JavaMailSender controlledScenarioTestMailSender() { return mock(JavaMailSender.class); }
 		@Bean @Primary com.drift.backend.maritimecontext.MaritimeContextService syntheticDisruptionContext() {
 			return SCENARIO.contextForClock(TEST_CLOCK);
 		}
