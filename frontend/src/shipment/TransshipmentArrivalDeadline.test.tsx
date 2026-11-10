@@ -86,9 +86,9 @@ describe('transshipment arrival deadline on the shipment page', () => {
       .mockResolvedValueOnce(shipment());
     renderDetail(shipment());
     expect(await screen.findByText('Not recorded')).toBeInTheDocument();
-    expect(screen.getByText(/Not the final delivery time/)).toBeInTheDocument();
-    expect(screen.getByText('Confirming port: Singapore')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit shipment' })).toBeInTheDocument();
+    expect(deadline().getByText('Not the final delivery time.')).toBeInTheDocument();
+    expect(deadline().getByText('Confirming port: Singapore')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit shipment' })).not.toBeInTheDocument();
 
     const input = screen.getByLabelText('Deadline');
     await user.type(input, '2026-10-29T00:00:00');
