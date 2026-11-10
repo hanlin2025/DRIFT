@@ -16,6 +16,7 @@ import com.drift.backend.account.admin.exception.AdminAssignmentConflictExceptio
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.InvalidAssignmentException;
+import com.drift.backend.account.admin.exception.SelfAssignmentException;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.company.Company;
@@ -30,13 +31,15 @@ public class AdminAssignmentService {
 	private final AccountRoleRepository roles;
 	private final CompanyRepository companies;
 	private final UserAssignmentAuditRepository audits;
+	private final AdministratorContinuity continuity;
 
 	public AdminAssignmentService(UserAccountRepository users, AccountRoleRepository roles, CompanyRepository companies,
-			UserAssignmentAuditRepository audits) {
+			UserAssignmentAuditRepository audits, AdministratorContinuity continuity) {
 		this.users = users;
 		this.roles = roles;
 		this.companies = companies;
 		this.audits = audits;
+		this.continuity = continuity;
 	}
 
 	@Transactional(readOnly = true)
@@ -78,6 +81,9 @@ public class AdminAssignmentService {
 	@Transactional
 	public AssignmentResponse assign(AuthenticatedUser principal, Long userId, AssignUserRequest request) {
 		UserAccount operator = requireAdmin(principal);
+		if (operator.getId().equals(userId)) {
+			throw new SelfAssignmentException();
+		}
 		if (request == null) {
 			throw new InvalidAssignmentException();
 		}
@@ -95,7 +101,9 @@ public class AdminAssignmentService {
 		if (!operatorCompany.getId().equals(nextOrganisation.getId())) {
 			throw new InvalidAssignmentException();
 		}
-		boolean changed = target.assign(role(request.role()), nextOrganisation);
+		AccountRole nextRole = role(request.role());
+		continuity.beforeAssignment(target, nextRole.getCode(), nextOrganisation);
+		boolean changed = target.assign(nextRole, nextOrganisation);
 		try {
 			users.saveAndFlush(target);
 		} catch (RuntimeException ex) {
