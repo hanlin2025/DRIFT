@@ -185,30 +185,50 @@ describe('user management', () => {
     expect(screen.queryByText('No assignment changes yet.')).not.toBeInTheDocument();
   });
 
-  it('keeps the administrator signed in when their own assignment is unchanged', async () => {
+  it('locks the administrator\'s own organisation, role and save button with an explanation', async () => {
     writeSession(admin);
-    vi.mocked(assignUser).mockResolvedValueOnce(users[1]);
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
     await user.click(await screen.findByRole('radio', { name: /Amina Rahman/ }));
+
+    const hint = screen.getByText('You cannot change your own organisation or role.');
+    for (const control of [screen.getByLabelText('Organisation'), screen.getByLabelText('Role'), screen.getByRole('button', { name: /Save assignment/ })]) {
+      expect(control).toBeDisabled();
+      expect(control.getAttribute('aria-describedby')?.split(' ')).toContain(hint.id);
+    }
+    expect(screen.getByRole('button', { name: /Save assignment/ })).toHaveAccessibleDescription('You cannot change your own organisation or role.');
     await user.click(screen.getByRole('button', { name: /Save assignment/ }));
-    expect(assignUser).toHaveBeenCalledWith('admin-token', 9, 1, 'ADMIN');
+    expect(assignUser).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('radio', { name: /Alice Tan/ }));
+    expect(screen.queryByText('You cannot change your own organisation or role.')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Organisation')).toBeEnabled();
+    expect(screen.getByLabelText('Role')).toBeEnabled();
+    expect(screen.getByLabelText('Role')).not.toHaveAttribute('aria-describedby');
+    await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
+    await user.click(screen.getByRole('button', { name: /Save assignment/ }));
+    expect(assignUser).toHaveBeenCalledWith('admin-token', 4, 1, 'IMPORTER');
     expect(await screen.findByText('User assigned successfully')).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
   });
 
-  it('ends the administrator session when their own organisation changes', async () => {
+  it.each([
+    'You cannot change your own organisation or role.',
+    'A company must keep at least one active administrator.',
+  ])('shows the server conflict "%s" and keeps the previous values', async message => {
     writeSession(admin);
-    vi.mocked(listAssignableOrganisations).mockResolvedValue(organisations);
-    vi.mocked(assignUser).mockResolvedValueOnce({ ...users[1], organisation: organisations[1] });
+    vi.mocked(assignUser).mockRejectedValueOnce(new ApiError(message, 409));
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/admin']}><AppRoutes /><Location /></MemoryRouter>);
-    await user.click(await screen.findByRole('radio', { name: /Amina Rahman/ }));
-    await user.selectOptions(screen.getByLabelText('Organisation'), 'Straits Fresh Imports (Demo)');
+    await user.click(await screen.findByRole('radio', { name: /Alice Tan/ }));
+    await user.selectOptions(screen.getByLabelText('Role'), 'Importer');
     await user.click(screen.getByRole('button', { name: /Save assignment/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended. Log in again.');
-    expect(screen.getByTestId('location')).toHaveTextContent('/login');
-    expect(screen.queryByRole('heading', { name: 'User management' })).not.toBeInTheDocument();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText('User assigned successfully')).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Alice Tan/ }).closest('label')).toHaveTextContent('Freight forwarder');
+    expect(screen.getByRole('radio', { name: /Alice Tan/ }).closest('label')).not.toHaveTextContent('Importer');
+    expect(listAssignmentAudits).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin');
   });
 
   it('asks for an active organisation when the current one is inactive', async () => {

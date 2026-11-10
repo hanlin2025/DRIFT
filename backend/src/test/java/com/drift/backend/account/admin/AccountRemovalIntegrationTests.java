@@ -37,6 +37,7 @@ import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
+import com.drift.backend.account.admin.exception.LastAdministratorException;
 import com.drift.backend.account.exception.SessionEndedException;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
@@ -218,6 +219,8 @@ class AccountRemovalIntegrationTests {
 						.value(AssignedUserNotFoundException.MESSAGE))
 				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].examples['Already removed'].value.message")
 						.value(AccountAlreadyRemovedException.MESSAGE))
+				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].examples['Last administrator'].value.message")
+						.value(LastAdministratorException.MESSAGE))
 				.andExpect(jsonPath(path + ".responses['409'].content['application/json'].examples['Changed concurrently'].value.message")
 						.value(StaleAccountVersionException.MESSAGE));
 	}

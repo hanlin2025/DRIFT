@@ -23,6 +23,15 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 			""")
 	Optional<SessionState> findSessionStateById(@Param("id") Long id);
 
+	@Query("""
+			SELECT COUNT(account) FROM UserAccount account
+			WHERE account.company.id = :companyId
+				AND account.id <> :excludedUserId
+				AND account.role.code = com.drift.backend.account.Role.ADMIN
+				AND account.status = com.drift.backend.account.AccountStatus.ACTIVE
+			""")
+	long countOtherActiveAdministrators(@Param("companyId") Long companyId, @Param("excludedUserId") Long excludedUserId);
+
 	@EntityGraph(attributePaths = { "company", "role" })
 	@Query("SELECT account FROM UserAccount account WHERE account.id = :id")
 	Optional<UserAccount> findForPermissionCheck(@Param("id") Long id);
