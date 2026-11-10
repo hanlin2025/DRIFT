@@ -87,11 +87,12 @@ defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file i
 
 - One transaction creates an **inactive** company, an `ADMIN` account with status
   `PENDING_VERIFICATION`, an email verification token (SHA-256 hash only, table
-  `email_verification_tokens`) and a `REGISTERED` row in `company_signup_audits` (migration V39).
+  `email_verification_tokens`) and a `REGISTERED` row in `company_signup_audits` (migration V40).
 - The response is always `202` with the same body, including when the email is already registered
-  (nothing is created in that case). A taken company code returns `409` with `errors.companyCode`.
+  (nothing is created in that case). A taken company code returns `409` with `errors.companyCode`; the code is checked before
+  the email, so the `409` does not depend on whether the email is registered.
 - A pending account cannot sign in: the correct password returns `403` with a "verify your email"
-  message and no session; a wrong password stays `401`. Any session whose account is not `ACTIVE` is
+  message, `"code":"EMAIL_NOT_VERIFIED"` and no session; a wrong password stays `401`. Any session whose account is not `ACTIVE` is
   rejected with `401`. Admins cannot remove or reactivate a pending account (`409`).
 - While inactive, the company is not offered for invitations or shipment linking.
 - `app.signup.verification-ttl` (`SIGNUP_VERIFICATION_TTL`, default `PT24H`) sets how long a
