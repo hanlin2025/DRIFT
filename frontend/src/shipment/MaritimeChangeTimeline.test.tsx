@@ -27,18 +27,19 @@ describe('MaritimeChangeTimeline', () => {
     render(<MaritimeChangeTimeline result={result([older, eta], 'PARTIAL')} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}}
       risk={{ level: 'HIGH', explanation: 'Less than 12 hours remain in the backend-calculated connection window.' }} />);
 
-    expect(screen.getByText('PARTIAL')).toBeInTheDocument();
+    expect(screen.getByText('Some sources unavailable')).toHaveAttribute('title', 'PARTIAL');
     const list = screen.getByRole('list');
     const entries = within(list).getAllByRole('listitem');
     expect(entries).toHaveLength(2);
     expect(entries[0]).toHaveTextContent('MPA arrival estimate revision');
-    expect(entries[0]).toHaveTextContent('RECORDED_REPLAY');
+    expect(within(entries[0]).getByText('Recorded replay')).toHaveAttribute('title', 'RECORDED_REPLAY');
     expect(entries[0]).toHaveTextContent('2026-10-29 01:00 SGT');
     expect(entries[0]).toHaveTextContent('2026-10-29 02:00 SGT');
-    expect(entries[0]).toHaveTextContent('UNVERIFIED_IMO_ONLY');
+    expect(entries[0]).toHaveTextContent('IMO match only, not verified');
+    expect(entries[0]).toHaveTextContent('Historical source time; this record is not a current forward-looking change.');
     expect(entries[0]).toHaveTextContent('Human review needed.');
     expect(entries[1]).toHaveTextContent('NEA weather update');
-    expect(entries[1]).toHaveTextContent('SYNTHETIC_DEMONSTRATION');
+    expect(within(entries[1]).getByText('Synthetic demonstration')).toHaveAttribute('title', 'SYNTHETIC_DEMONSTRATION');
     expect(entries[1]).toHaveTextContent('Regional weather context does not establish a shipment-specific cause.');
     expect(screen.getByLabelText('Current backend risk assessment')).toHaveTextContent('High');
     expect(screen.getByRole('link', { name: 'Review AI assessment and request an explanation' })).toHaveAttribute('href', '#maritime-ai-assessment');
@@ -46,7 +47,7 @@ describe('MaritimeChangeTimeline', () => {
 
   it('labels unavailable source data without representing it as an observation', () => {
     render(<MaritimeChangeTimeline result={result([], 'UNAVAILABLE')} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
-    expect(screen.getByText('UNAVAILABLE')).toBeInTheDocument();
+    expect(screen.getByText('Sources unavailable')).toHaveAttribute('title', 'UNAVAILABLE');
     expect(screen.getByText('Change information is unavailable. No source observation is implied.')).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
@@ -73,7 +74,7 @@ describe('MaritimeChangeTimeline', () => {
     }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
     const event = within(screen.getByRole('list')).getByRole('listitem');
     expect(event).toHaveTextContent('MPA port notice');
-    expect(event).toHaveTextContent('LIVE');
+    expect(within(event).getByText('Live source')).toHaveAttribute('title', 'LIVE');
     expect(event).toHaveTextContent('A port notice does not by itself establish a vessel visit or berth event.');
   });
 
@@ -81,7 +82,7 @@ describe('MaritimeChangeTimeline', () => {
     render(<MaritimeChangeTimeline result={result([{
       ...eta, id: 'legacy-compatibility', compatibility: { activity: null, location: null, time: 'UNKNOWN' },
     }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
-    expect(within(screen.getByRole('list')).getByRole('listitem')).toHaveTextContent('Compatibility: activity UNKNOWN; location UNKNOWN; time UNKNOWN.');
+    expect(within(screen.getByRole('list')).getByRole('listitem')).toHaveTextContent('Compatibility: activity unknown; location unknown; time unknown.');
   });
 
   it('marks historical backfills separately from a live observation', () => {
@@ -90,8 +91,24 @@ describe('MaritimeChangeTimeline', () => {
       provenance: 'Historical retrieval', requiresHumanReview: false,
     }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
     const event = within(screen.getByRole('list')).getByRole('listitem');
-    expect(event).toHaveTextContent('HISTORICAL_BACKFILL');
+    expect(within(event).getByText('Historical backfill')).toHaveAttribute('title', 'HISTORICAL_BACKFILL');
+    expect(event).not.toHaveTextContent('Historical source time');
     expect(event).toHaveTextContent('Historical backfill; this record is not a newly observed live change.');
+  });
+
+  it('flags a live record with a historical source time and keeps the first-load error as the only status', () => {
+    const { rerender } = render(<MaritimeChangeTimeline result={result([{
+      ...eta, id: 'late-live', sourceMode: 'LIVE', freshness: 'HISTORICAL', requiresHumanReview: true,
+    }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
+    const event = within(screen.getByRole('list')).getByRole('listitem');
+    expect(within(event).getByText('Live source')).toBeInTheDocument();
+    expect(event).toHaveTextContent('Historical source time; this record is not a current forward-looking change.');
+
+    rerender(<MaritimeChangeTimeline result={result([], 'UNAVAILABLE')} loading={false} loadingOlder={false}
+      error="The maritime change timeline could not be loaded." onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
+    expect(screen.getByRole('status')).toHaveTextContent('The maritime change timeline could not be loaded.');
+    expect(screen.queryByText('Source availability')).not.toBeInTheDocument();
+    expect(screen.queryByText('Change information is unavailable. No source observation is implied.')).not.toBeInTheDocument();
   });
 
   it('supports explicit refresh and loading feedback', async () => {

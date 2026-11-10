@@ -1,4 +1,4 @@
-import { type MaritimeChangeEvent, type MaritimeChangeEvents, type ShipmentRisk } from './api';
+import { type MaritimeChangeAvailability, type MaritimeChangeAssociationConfidence, type MaritimeChangeCompatibility, type MaritimeChangeEvent, type MaritimeChangeEvents, type MaritimeChangeFreshness, type MaritimeChangeSourceMode, type ShipmentRisk } from './api';
 import { RiskBadge } from './RiskBadge';
 import { formatWhen } from './ShipmentForm';
 
@@ -10,8 +10,46 @@ function eventLabel(type: MaritimeChangeEvent['sourceType']) {
   }
 }
 
-function SourceMode({ mode }: { mode: MaritimeChangeEvent['sourceMode'] }) {
-  return <span className={`maritime-change-mode maritime-change-mode-${mode.toLowerCase().replaceAll('_', '-')}`}>{mode}</span>;
+const SOURCE_MODE_LABELS: Record<MaritimeChangeSourceMode, string> = {
+  LIVE: 'Live source',
+  RECORDED_REPLAY: 'Recorded replay',
+  SYNTHETIC_DEMONSTRATION: 'Synthetic demonstration',
+  HISTORICAL_BACKFILL: 'Historical backfill',
+};
+
+const AVAILABILITY_LABELS: Record<MaritimeChangeAvailability, string> = {
+  AVAILABLE: 'Sources available',
+  PARTIAL: 'Some sources unavailable',
+  UNAVAILABLE: 'Sources unavailable',
+};
+
+const FRESHNESS_LABELS: Record<MaritimeChangeFreshness, string> = {
+  APPLICABLE: 'Applicable',
+  HISTORICAL: 'Historical',
+  UNKNOWN: 'Unknown',
+};
+
+const ASSOCIATION_LABELS: Record<MaritimeChangeAssociationConfidence, string> = {
+  VERIFIED_ASSOCIATION: 'Verified vessel association',
+  UNVERIFIED_IMO_ONLY: 'IMO match only, not verified',
+  REGIONAL_CONTEXT: 'Regional context only',
+  UNCONFIRMED_CONTEXT: 'Unconfirmed port context',
+};
+
+function compatibilityLabel(value: MaritimeChangeCompatibility | null) {
+  switch (value) {
+    case 'COMPATIBLE': return 'compatible';
+    case 'INCOMPATIBLE': return 'incompatible';
+    default: return 'unknown';
+  }
+}
+
+function SourceMode({ mode }: { mode: MaritimeChangeSourceMode }) {
+  return <span className={`maritime-change-mode maritime-change-mode-${mode.toLowerCase().replaceAll('_', '-')}`} title={mode}>{SOURCE_MODE_LABELS[mode]}</span>;
+}
+
+function Availability({ availability }: { availability: MaritimeChangeAvailability }) {
+  return <p className="maritime-change-source-status">Source availability <span className={`maritime-change-availability maritime-change-availability-${availability.toLowerCase()}`} title={availability}>{AVAILABILITY_LABELS[availability]}</span></p>;
 }
 
 export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, onRefresh, onLoadOlder, risk }: {
@@ -26,6 +64,8 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
   const events = result?.events.slice().sort((left, right) =>
     Date.parse(right.detectedAt) - Date.parse(left.detectedAt));
   const nextCursor = result?.nextCursor;
+  // A failed first load has no backend availability to report; the error already says so.
+  const loadFailed = !!error && !!result && result.events.length === 0;
 
   return <section className="shipment-record maritime-change-timeline" aria-label="Maritime change timeline">
     <div className="maritime-change-heading">
@@ -37,7 +77,7 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
         {loading ? 'Refreshing…' : 'Refresh changes'}
       </button>
     </div>
-    {result && <p className="maritime-change-source-status">Source availability <strong>{result.availability}</strong></p>}
+    {result && !loadFailed && <Availability availability={result.availability} />}
     {error && <p className="refresh-note" role="status">{error}</p>}
     {!result && loading && <p role="status">Loading maritime changes…</p>}
     {result?.availability === 'UNAVAILABLE' && !error && <p className="refresh-note">Change information is unavailable. No source observation is implied.</p>}
@@ -60,12 +100,13 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
             <div><dt>Observed at source</dt><dd>{event.observedAt ? formatWhen(event.observedAt) : 'Not recorded'}</dd></div>
             <div><dt>Retrieved by DRIFT</dt><dd>{formatWhen(event.retrievedAt)}</dd></div>
             <div><dt>Detected by DRIFT</dt><dd>{formatWhen(event.detectedAt)}</dd></div>
-            <div><dt>Freshness</dt><dd>{event.freshness}</dd></div>
-            <div><dt>Association confidence</dt><dd>{event.associationConfidence}</dd></div>
+            <div><dt>Freshness</dt><dd title={event.freshness}>{FRESHNESS_LABELS[event.freshness]}</dd></div>
+            <div><dt>Association confidence</dt><dd title={event.associationConfidence}>{ASSOCIATION_LABELS[event.associationConfidence]}</dd></div>
           </dl>
-          <p><strong>Compatibility:</strong> activity {event.compatibility.activity ?? 'UNKNOWN'}; location {event.compatibility.location ?? 'UNKNOWN'}; time {event.compatibility.time ?? 'UNKNOWN'}.</p>
+          <p><strong>Compatibility:</strong> activity {compatibilityLabel(event.compatibility.activity)}; location {compatibilityLabel(event.compatibility.location)}; time {compatibilityLabel(event.compatibility.time)}.</p>
           <p><strong>Provenance:</strong> {event.provenance}</p>
           {event.sourceMode === 'HISTORICAL_BACKFILL' && <p className="maritime-change-caveat">Historical backfill; this record is not a newly observed live change.</p>}
+          {event.sourceMode !== 'HISTORICAL_BACKFILL' && event.freshness === 'HISTORICAL' && <p className="maritime-change-caveat">Historical source time; this record is not a current forward-looking change.</p>}
           {event.requiresHumanReview && <p className="maritime-change-review" role="note"><strong>Human review needed.</strong> Confirm this source and shipment association before changing an operational plan.</p>}
           {event.sourceType === 'NEA_WEATHER' && <p className="maritime-change-caveat">Regional weather context does not establish a shipment-specific cause.</p>}
           {event.sourceType === 'MPA_OFFICIAL_NOTICE' && <p className="maritime-change-caveat">A port notice does not by itself establish a vessel visit or berth event.</p>}

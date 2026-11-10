@@ -199,7 +199,7 @@ describe('connection window on the shipment detail', () => {
     expect(await within(timeline).findByText('The maritime change timeline could not be refreshed.')).toBeInTheDocument();
     expect(within(timeline).getByText('NEA weather update')).toBeInTheDocument();
     expect(within(timeline).getAllByText('MPA arrival estimate revision')).toHaveLength(1);
-    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('AVAILABLE');
+    expect(within(timeline).getByText('Sources available')).toBeInTheDocument();
     await user.click(within(timeline).getByRole('button', { name: 'Load older changes' }));
     expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, cursor: 'opaque-cursor/older-3' });
     expect(generateMaritimeAiAssessment).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
     const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
     expect(await within(timeline).findByText('Change information is not available for this shipment.')).toBeInTheDocument();
-    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(within(timeline).queryByText('Source availability')).not.toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
   });
 
@@ -267,7 +267,7 @@ describe('connection window on the shipment detail', () => {
     expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
     const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
     expect(await within(timeline).findByText('The maritime change timeline could not be loaded.')).toBeInTheDocument();
-    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(within(timeline).queryByText('Source availability')).not.toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
   });
 
