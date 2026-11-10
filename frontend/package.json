@@ -35,6 +35,7 @@
     "test:e2e:first-admin": "node ../scripts/run-first-admin-setup.mjs",
     "test:e2e:admin-invitation": "node ../scripts/run-admin-invitation.mjs",
     "test:e2e:join-path": "node ../scripts/run-join-path.mjs",
+    "test:e2e:company-signup": "node ../scripts/run-company-signup.mjs",
     "test:e2e:invitation-withdrawal": "node ../scripts/run-invitation-withdrawal.mjs"
   },
   "dependencies": {

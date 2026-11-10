@@ -132,3 +132,32 @@ With the default settings the backend sends mail to Mailpit from `docker-compose
 
 Tests: `CompanySignupIntegrationTests`, `CompanySignupConcurrencyIntegrationTests`,
 `EmailVerificationIntegrationTests` and `EmailVerificationRateLimitIntegrationTests`.
+
+### End-to-end check (CDG-366)
+
+`npm --prefix frontend run test:e2e:company-signup` (runner `scripts/run-company-signup.mjs`,
+spec `frontend/e2e/company-signup.spec.ts`) creates a disposable database, starts the backend
+with real mail sent to Mailpit and AIS, AI and risk-alert mail turned off, and runs Playwright on
+desktop. It needs Docker Postgres and Mailpit (`docker compose up -d postgres mailpit`) and free
+ports 8080 and 5173. It covers:
+
+- creating a company, being refused sign-in before verification, opening the link from the real
+  Mailpit email, and signing in as the new administrator, who sees only the new company's users,
+  organisation and shipments;
+- replaying the same link (invalid-link message);
+- a duplicate company code (field error; no company, user or email created);
+- the new administrator inviting a colleague, who joins with the email, company and role locked;
+- self-assignment: the administrator's own row is disabled, and a direct
+  `PATCH /api/admin/users/{ownId}/assign` from the page returns `409` with the role unchanged after
+  a reload;
+- isolation between the new company and a seeded company in both directions.
+
+Results on the CDG-366 branch (Parts 1 to 5 combined), 2026-11-11:
+
+| Command | Result |
+|---|---|
+| `npm run test:e2e:company-signup` | 5 passed |
+| `npm run test:e2e:join-path` | 1 passed |
+| `npm run test:e2e:assignment` | 6 passed, 1 failed: a user whose session ended cannot log in again in the same browser, because the stale session cookie makes `POST /api/login` return 401 (an existing issue in `SessionAuthenticationFilter`, not caused by CDG-360) |
+| `npm run test:e2e:organisation-creation` | 1 failed, also on `origin/main`: the spec's API request context keeps the session cookie and does not send `X-DRIFT-Request`, so `CookieCsrfFilter` returns 403 |
+| `npm run test:e2e:first-admin` | 1 failed, also on `origin/main`: the spec looks for a "Work email" field on `/login`, which is labelled "Email" |
