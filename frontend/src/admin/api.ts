@@ -147,6 +147,16 @@ export async function listAssignableOrganisations(token: string): Promise<AdminO
   });
 }
 
+export async function listInvitationOrganisations(token: string): Promise<AdminOrganisation[]> {
+  const data = await send('/api/admin/invitation-organisations', token);
+  if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);
+  return data.map(item => {
+    const organisation = organisationOf(item);
+    if (!organisation) throw new ApiError(UNEXPECTED, 502);
+    return organisation;
+  });
+}
+
 export async function listAssignmentAudits(token: string): Promise<AssignmentAudit[]> {
   const data = await send('/api/admin/assignment-audits', token);
   if (!Array.isArray(data)) throw new ApiError(UNEXPECTED, 502);

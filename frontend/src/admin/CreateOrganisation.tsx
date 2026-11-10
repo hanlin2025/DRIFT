@@ -4,9 +4,10 @@ import { createOrganisation, type AdminOrganisation } from './api';
 
 const UNREACHABLE = 'We could not reach DRIFT. Check your connection and try again.';
 
-export function CreateOrganisation({ token, onSessionEnded }: {
+export function CreateOrganisation({ token, onSessionEnded, onCreated }: {
   token: string;
   onSessionEnded: () => void;
+  onCreated?: (organisation: AdminOrganisation) => void;
 }) {
   const pending = useRef(false);
   const [code, setCode] = useState('');
@@ -30,6 +31,7 @@ export function CreateOrganisation({ token, onSessionEnded }: {
       setCreated(organisation);
       setCode('');
       setName('');
+      onCreated?.(organisation);
     } catch (reason: unknown) {
       if (reason instanceof ApiError && reason.status === 401) {
         onSessionEnded();
@@ -48,7 +50,7 @@ export function CreateOrganisation({ token, onSessionEnded }: {
   return (
     <section className="audit-panel" aria-labelledby="add-organisation">
       <h3 id="add-organisation">Add an organisation</h3>
-      <p className="intro">Add a company that an invitation can name and that another company can select when linking a shipment. This does not invite anyone, does not add a shipment, and does not change who can see an existing shipment. You still assign people only inside your own organisation.</p>
+      <p className="intro">Add a company that stays empty until someone is invited into it. While it has no users, it appears in your invitation organisation list so you can invite an importer, freight forwarder, or logistics manager. Another company can select it when linking a shipment once authorised. Creating it does not invite anyone, does not assign you to it, does not add a shipment, and does not change the assignment list for your own organisation.</p>
       <form className="admin-form" onSubmit={event => { event.preventDefault(); void submit(); }}>
         {created ? <div className="success-notice" role="status">{created.name} ({created.code}) was added.</div> : null}
         {problem ? <div className="error-notice" role="alert">{problem}{retryable ? <><br /><button type="button" className="retry-button" onClick={() => { void submit(); }}>Try again</button></> : null}</div> : null}

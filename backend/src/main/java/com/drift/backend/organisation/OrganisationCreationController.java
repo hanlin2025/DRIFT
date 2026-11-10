@@ -36,11 +36,14 @@ public class OrganisationCreationController {
 			+ "The code is the identity. It is stored in uppercase, using letters, digits, and underscores, and it must be unique. "
 			+ "The name is the display name. "
 			+ "The new organisation is active and has no users, no shipments, and no importer relationship. "
-			+ "It can be named by an invitation, and another company can select it in the existing importer search. "
-			+ "It is not added to the administrator's own assignment list. "
+			+ "The creating administrator is not assigned to it. "
+			+ "While it still has no users, that same administrator may select it in the invitation form "
+			+ "and invite an importer, freight forwarder, or logistics manager into it. "
+			+ "It is not added to GET /api/admin/organisations, which remains the administrator's own assignment list. "
+			+ "Another company can select it in the importer search once authorised where that search requires it. "
 			+ "Creating it does not invite anyone and does not change who can see an existing shipment. "
 			+ "A freight forwarder, importer, or logistics manager cannot add an organisation. "
-			+ "An administrator invites and assigns people only inside their own organisation.",
+			+ "Assignment of existing people stays inside the administrator's own organisation.",
 			security = @SecurityRequirement(name = OpenApiConfig.BEARER_AUTH_SCHEME))
 	@ApiResponses({
 			@ApiResponse(responseCode = "201", description = "Organisation added", content = @Content(

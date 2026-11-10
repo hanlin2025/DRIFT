@@ -49,7 +49,7 @@ export function InviteColleague({ token, organisations, roles, onSessionEnded }:
   return (
     <section className="audit-panel" aria-labelledby="invite-colleague">
       <h3 id="invite-colleague">Invite a colleague</h3>
-      <p className="intro">Send an email invitation for a role in your organisation. The invitation chooses the email, role and organisation. It is not shown here again.</p>
+      <p className="intro">Send an email invitation for a role in your organisation, or in an empty organisation you created. The invitation chooses the email, role and organisation. It is not shown here again.</p>
       {organisations.length === 0 ? <p className="notice" role="status">No eligible organisation is available.</p> : (
         <form className="admin-form" onSubmit={event => { void submit(event); }} noValidate aria-busy={pending}>
           {saved ? <div className="success-notice" role="status">{saved}</div> : null}

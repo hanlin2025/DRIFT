@@ -95,6 +95,22 @@ class OrganisationCreationIntegrationTests {
 				.andExpect(jsonPath("$[?(@.code == '" + code + "')]").isEmpty())
 				.andExpect(jsonPath("$[?(@.code == 'HARBOURLINE_DEMO')].name").value("Harbourline Logistics (Demo)"));
 
+		mvc.perform(get("/api/admin/invitation-organisations").header("Authorization", "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$[?(@.code == '" + code + "')].name").value("Pacific Gate Imports"))
+				.andExpect(jsonPath("$[?(@.code == 'HARBOURLINE_DEMO')].name").value("Harbourline Logistics (Demo)"))
+				.andExpect(jsonPath("$[?(@.code == 'STRAITS_FRESH_DEMO')]").isEmpty());
+
+		Long forwarderCompanyId = straitsId;
+		Long forwarderUserId = jdbc.queryForObject("""
+				SELECT id FROM users WHERE email LIKE 'cdg313-ff-%' ORDER BY id DESC LIMIT 1
+				""", Long.class);
+		jdbc.update("""
+				INSERT INTO forwarder_importer_relationships (
+					forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+				VALUES (?, ?, TRUE, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, ?)
+				""", forwarderCompanyId, createdId, forwarderUserId, forwarderUserId);
+
 		mvc.perform(get("/api/organisations").param("type", "importer").param("name", "Pacific Gate")
 				.header("Authorization", "Bearer " + forwarderToken))
 				.andExpect(status().isOk())
@@ -102,18 +118,15 @@ class OrganisationCreationIntegrationTests {
 				.andExpect(jsonPath("$.items[0].code").value(code))
 				.andExpect(jsonPath("$.items[0].name").value("Pacific Gate Imports"));
 
-		// Same path as scripts/create-invitation.py: look up the new active company by code, then insert.
+		// Resolve path for an invitation that names the new active company.
 		String inviteEmail = "cdg313-" + UUID.randomUUID() + "@example.com";
-		Long invitedCompanyId = jdbc.queryForObject(
-				"SELECT id FROM companies WHERE UPPER(code) = ? AND active = TRUE", Long.class, code);
-		assertThat(invitedCompanyId).isEqualTo(createdId);
 		jdbc.update("""
 				UPDATE invitations SET status = 'REVOKED' WHERE email = ? AND status = 'PENDING'
 				""", inviteEmail);
 		jdbc.update("""
 				INSERT INTO invitations (email, company_id, role, token_hash, expires_at)
 				VALUES (?, ?, 'IMPORTER', ?, NOW() + INTERVAL '1 hour')
-				""", inviteEmail, invitedCompanyId, InvitationToken.hash(TOKEN));
+				""", inviteEmail, createdId, InvitationToken.hash(TOKEN));
 		mvc.perform(post("/api/invitations/resolve").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"token\":\"" + TOKEN + "\"}"))
 				.andExpect(status().isOk())

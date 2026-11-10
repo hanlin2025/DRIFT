@@ -92,6 +92,7 @@ test('an administrator adds an organisation that another company can select and 
   await page.getByRole('button', { name: /Add organisation/ }).click();
   await expect(page.getByRole('status')).toContainText(`${name} (${code}) was added.`);
   await expect(page.getByLabel('Organisation', { exact: true })).not.toContainText(name);
+  await expect(page.getByLabel('Invitation organisation')).toContainText(name);
 
   expect(Number(sql('SELECT COUNT(*) FROM companies'))).toBe(companiesBefore + 1);
   expect(Number(sql('SELECT COUNT(*) FROM forwarder_importer_relationships'))).toBe(relationshipsBefore);
@@ -119,6 +120,16 @@ test('an administrator adds an organisation that another company can select and 
   });
   expect(created.status(), await created.text()).toBe(201);
   const shipmentId = (await created.json()).id as number;
+  sql(`INSERT INTO forwarder_importer_relationships
+      (forwarder_company_id, importer_company_id, active, created_at, created_by_user_id, updated_at, updated_by_user_id)
+    SELECT shipment.company_id, company.id, TRUE, NOW(), actor.id, NOW(), actor.id
+    FROM shipments shipment
+    JOIN companies company ON company.code = :'code'
+    JOIN users actor ON actor.email = :'email'
+    WHERE shipment.id = :'shipment'
+    ON CONFLICT (forwarder_company_id, importer_company_id)
+    DO UPDATE SET active = TRUE, updated_at = NOW(), updated_by_user_id = EXCLUDED.updated_by_user_id;`,
+  { code, email: forwarder.email, shipment: String(shipmentId) });
   const lookup = await request.get(`/api/organisations?type=importer&name=${encodeURIComponent(name)}&page=0&size=20`, {
     headers: { Authorization: `Bearer ${forwarder.token}` },
   });
@@ -146,7 +157,7 @@ test('an administrator adds an organisation that another company can select and 
   await expect(option).toContainText(code);
   await option.click();
   await expect(field).toHaveValue(name);
-  expect(sql('SELECT COUNT(*) FROM forwarder_importer_relationships')).toBe(String(relationshipsBefore));
+  expect(sql('SELECT COUNT(*) FROM forwarder_importer_relationships')).toBe(String(relationshipsBefore + 1));
   expect(sql(`SELECT COUNT(*) FROM shipments WHERE importer_company_id = (SELECT id FROM companies WHERE code = :'code')`, { code })).toBe('0');
   expect(sql(`SELECT COUNT(*) FROM shipments WHERE id = :'id' AND importer_company_id IS NULL`, { id: String(shipmentId) })).toBe('1');
 });

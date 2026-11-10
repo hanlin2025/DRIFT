@@ -29,7 +29,7 @@ public class OrganisationCreationService {
 
 	@Transactional
 	public OrganisationResponse create(AuthenticatedUser principal, CreateOrganisationRequest request) {
-		requireActiveAdmin(principal);
+		UserAccount admin = requireActiveAdmin(principal);
 		if (request == null) {
 			throw new InvalidOrganisationException(InvalidOrganisationException.CODE);
 		}
@@ -38,14 +38,14 @@ public class OrganisationCreationService {
 			throw new DuplicateOrganisationException();
 		}
 		try {
-			Company saved = companies.saveAndFlush(Company.createActive(identity.code(), identity.name()));
+			Company saved = companies.saveAndFlush(Company.createActive(identity.code(), identity.name(), admin));
 			return new OrganisationResponse(saved.getId(), saved.getCode(), saved.getName());
 		} catch (DataIntegrityViolationException ex) {
 			throw new DuplicateOrganisationException();
 		}
 	}
 
-	private void requireActiveAdmin(AuthenticatedUser principal) {
+	private UserAccount requireActiveAdmin(AuthenticatedUser principal) {
 		UserAccount account = users.findById(principal.id()).orElseThrow(SessionEndedException::new);
 		if (account.getRole() != Role.ADMIN) {
 			throw new AssignmentForbiddenException();
@@ -54,5 +54,6 @@ public class OrganisationCreationService {
 		if (company == null || !company.isActive()) {
 			throw new OrganisationCreationForbiddenException();
 		}
+		return account;
 	}
 }
