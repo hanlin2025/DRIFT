@@ -43,3 +43,7 @@ With no email variables set, Spring Mail continues to use `localhost:1025` witho
 The invitation-based signup path remains unchanged: the invitation link opens the existing signup flow, registration consumes the invitation, and login continues to use the existing HTTP-only session cookie. Password reset keeps its generic request response so it does not disclose whether an address has an account. A delivery failure discards the newly issued reset token and logs only the exception type; it never logs the SMTP exception message or credentials.
 
 Automated verification uses the existing mocked `JavaMailSender` and Mailpit workflow. It does not send a real email. For a manual end-to-end check, use only a test recipient whose owner has explicitly authorized the send, then verify signup, cookie-authenticated navigation, and reset using the received links.
+
+## Retired sender variables
+
+`INVITATION_FROM`, `PASSWORD_RESET_FROM`, and `RISK_ALERTS_FROM` are no longer read. Invitation, password-reset, and risk-alert messages all use `MAIL_FROM_ADDRESS`. A dashboard that still sets the old names has no effect; set `MAIL_FROM_ADDRESS` instead.
