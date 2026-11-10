@@ -266,7 +266,7 @@ describe('deadline assessment on the shipment page', () => {
     renderDetail(saved);
     expect(await screen.findByText(NO_IMPACT)).toBeInTheDocument();
     expect(screen.getByText('On schedule')).toBeInTheDocument();
-    expect(screen.getByText('Low')).toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Shipment HL-1001' })).getByText('Low')).toBeInTheDocument();
 
     const input = screen.getByLabelText('Deadline');
     await user.clear(input);
