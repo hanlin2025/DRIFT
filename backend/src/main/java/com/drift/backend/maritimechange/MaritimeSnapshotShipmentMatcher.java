@@ -64,6 +64,10 @@ public class MaritimeSnapshotShipmentMatcher {
 		return matchFacts(viewerCompanyId, change, shipments.forCompany(viewerCompanyId));
 	}
 
+	MaritimeShipmentMatch match(long viewerCompanyId, MaritimeSnapshotChange change, List<ShipmentMatchFacts> visibleFacts) {
+		return matchFacts(viewerCompanyId, change, visibleFacts);
+	}
+
 	MaritimeShipmentMatch matchFacts(long viewerCompanyId, MaritimeSnapshotChange change, List<ShipmentMatchFacts> facts) {
 		if (change == null) {
 			throw new IllegalArgumentException("Change is required");
@@ -90,6 +94,22 @@ public class MaritimeSnapshotShipmentMatcher {
 	private static Decision decide(MaritimeSnapshotChange change, ShipmentMatchFacts facts) {
 		if (MaritimeSnapshotChangeDetector.NEA_WEATHER.equals(change.sourceType())) {
 			return regional(change, facts);
+		}
+		if (MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE.equals(change.sourceType()) && change.vesselImo() == null) {
+			String activity = activity(change);
+			String location = location(change, facts.transshipmentPort());
+			String time = schedule(change, facts, NONE);
+			if (MaritimeSnapshotChangeDetector.INCOMPATIBLE.equals(activity)
+					|| MaritimeSnapshotChangeDetector.INCOMPATIBLE.equals(location)) {
+				return Decision.exclude(INCOMPATIBLE);
+			}
+			if (MaritimeSnapshotChangeDetector.INCOMPATIBLE.equals(time)) return Decision.exclude(OUT_OF_WINDOW);
+			if (MaritimeSnapshotChangeDetector.COMPATIBLE.equals(location)) {
+				// A port-level notice can merit human review, but without a source-backed
+				// vessel/berth/time link it never becomes a verified vessel impact.
+				return Decision.include(NONE, UNCONFIRMED_CONTEXT, false, activity, location, time);
+			}
+			return Decision.exclude(NOT_ASSOCIATED);
 		}
 		String role = role(change, facts);
 		if ("AMBIGUOUS".equals(role)) {
