@@ -52,6 +52,15 @@ public class Company {
 		this.createdBy = creator;
 	}
 
+	/** A pending self-service signup may change its code and name until the company is activated. */
+	public void replacePendingIdentity(String code, String name) {
+		if (active) {
+			throw new IllegalStateException("Only an inactive company can change its identity");
+		}
+		this.code = code;
+		this.name = name;
+	}
+
 	public void activate() {
 		this.active = true;
 	}

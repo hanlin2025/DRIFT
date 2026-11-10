@@ -139,6 +139,35 @@ class EmailVerificationRateLimitIntegrationTests {
 				.andExpect(content().json(LIMITED, JsonCompareMode.STRICT));
 	}
 
+	@Test
+	void repeatSignupsOverTheResendLimitChangeNothing() throws Exception {
+		String email = track(SignupFixtures.uniqueEmail("cdg363-rl-repeat"));
+		String first = SignupFixtures.uniqueCode("CDG363F_");
+		codes.add(first);
+		perform(post("/api/register/company"), SignupFixtures.body(first, "First Imports", "Lee Tan", email, "Str0ngPass"),
+				nextAddress()).andExpect(status().isAccepted());
+		// Use up the per-email resend allowance (2 in this context).
+		resend(email, nextAddress()).andExpect(status().isOk());
+		resend(email, nextAddress()).andExpect(status().isOk());
+		mailer.reset();
+
+		String second = SignupFixtures.uniqueCode("CDG363S_");
+		codes.add(second);
+		perform(post("/api/register/company"), SignupFixtures.body(second, "Second Imports", "Someone Else", email, "Oth3rPass"),
+				nextAddress())
+				.andExpect(status().isAccepted())
+				.andExpect(content().json("{\"message\":\"Check your email to verify your account before signing in.\"}",
+						JsonCompareMode.STRICT));
+
+		org.assertj.core.api.Assertions.assertThat(mailer.sentTo(email)).isEmpty();
+		org.assertj.core.api.Assertions.assertThat(jdbc.queryForMap("""
+				SELECT companies.code, users.full_name FROM users JOIN companies ON companies.id = users.company_id
+				WHERE users.email = ?
+				""", email)).containsEntry("code", first).containsEntry("full_name", "Lee Tan");
+		org.assertj.core.api.Assertions.assertThat(
+				jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, second)).isZero();
+	}
+
 	private ResultActions signup(String email, String ip) throws Exception {
 		String code = SignupFixtures.uniqueCode("CDG363L_");
 		codes.add(code);

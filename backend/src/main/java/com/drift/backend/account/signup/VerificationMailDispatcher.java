@@ -7,7 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.passwordreset.ResetTokens;
+import com.drift.backend.company.Company;
 
 /**
  * Sends a verification email once the transaction that created the token has committed. A delivery failure is
@@ -30,23 +32,28 @@ public class VerificationMailDispatcher {
 	}
 
 	/** Must be called inside the transaction that stored the token. */
-	public void sendAfterCommit(String email, EmailVerificationTokens.IssuedVerification issued) {
+	public void sendAfterCommit(UserAccount account, EmailVerificationTokens.IssuedVerification issued) {
+		// Read the details now, inside the transaction, so the email shows exactly what was committed.
+		Company company = account.getCompany();
+		EmailVerificationMailer.VerificationEmail email = new EmailVerificationMailer.VerificationEmail(account.getEmail(),
+				ResetTokens.link(linkBaseUrl, issued.rawToken()), tokens.ttl(), account.getFullName(),
+				company.getName(), company.getCode());
 		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
 			throw new IllegalStateException("A verification email must be sent after a transaction commits");
 		}
 		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
 			@Override
 			public void afterCommit() {
-				deliver(email, issued);
+				deliver(email, issued.userId());
 			}
 		});
 	}
 
-	private void deliver(String email, EmailVerificationTokens.IssuedVerification issued) {
+	private void deliver(EmailVerificationMailer.VerificationEmail email, Long userId) {
 		try {
-			mailer.sendVerificationLink(email, ResetTokens.link(linkBaseUrl, issued.rawToken()), tokens.ttl());
+			mailer.sendVerificationLink(email);
 		} catch (RuntimeException ex) {
-			log.error("Email verification message could not be sent for user {} ({})", issued.userId(),
+			log.error("Email verification message could not be sent for user {} ({})", userId,
 					ex.getClass().getSimpleName());
 		}
 	}

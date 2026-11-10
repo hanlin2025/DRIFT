@@ -74,8 +74,8 @@ export function LoginPage() {
       setPassword('');
       navigate(homePath(session.role), { replace: true });
     } catch (reason) {
-      // 403: the password was right but the email of a new company administrator is not verified yet.
-      if (reason instanceof ApiError && reason.status === 403) setUnverified(true);
+      // Only this marker means "the password was right but the email is not verified yet"; any other 403 stays generic.
+      if (reason instanceof ApiError && reason.status === 403 && reason.errorCode === 'EMAIL_NOT_VERIFIED') setUnverified(true);
       if (reason instanceof ApiError) {
         const mapped: { email?: string; password?: string } = {};
         if (reason.fields.email) mapped.email = reason.fields.email;
@@ -96,7 +96,7 @@ export function LoginPage() {
     {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
     {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}
     {error && <div className="error-notice" role="alert">{error}{unverified && !resending ? <><br /><button type="button" className="retry-button" onClick={() => setResending(true)}>Resend the verification email</button></> : null}</div>}
-    {unverified && resending ? <ResendVerificationForm key={email} initialEmail={email.trim()} label="Resend verification email" /> : null}
+    {unverified && resending ? <ResendVerificationForm initialEmail={email.trim()} label="Resend verification email" /> : null}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
         <label htmlFor="login-email">Email</label>

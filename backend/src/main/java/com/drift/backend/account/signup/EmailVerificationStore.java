@@ -66,6 +66,6 @@ public class EmailVerificationStore {
 			return;
 		}
 		tokenRows.deleteAllUnused(account.getId());
-		mail.sendAfterCommit(account.getEmail(), tokens.issue(account));
+		mail.sendAfterCommit(account, tokens.issue(account));
 	}
 }

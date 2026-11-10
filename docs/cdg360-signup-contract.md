@@ -1,4 +1,4 @@
-# CDG-360 API Contract (v0.2)
+# CDG-360 API Contract (v0.3)
 
 Status: **Agreed for implementation** (one ADMIN per company confirmed; open questions resolved in §9). Both developers (and their AI assistants) must treat this file as the single source of truth for request/response shapes. Change it only by agreement, and bump the version line.
 
@@ -52,16 +52,17 @@ Checks run in this order:
 
 1. Validate fields: `400` on failure.
 2. Rate limit (per client address and per email): `429`.
-3. **Email already registered** (any status): return the same `202` as success. Create nothing. If the existing account is `PENDING_VERIFICATION` and belongs to a company with the same code, resend the verification email (still subject to the resend limit). Otherwise, optionally send an "account already exists" notice to that address. The response must not reveal which case happened.
-4. **Company code already taken** by another company: `409` (see below). This discloses that an organisation code exists, which is acceptable because codes are not secret (see Open question Q3).
-5. Create in **one transaction**:
+3. **Company code held by a company other than this email's own pending company**: `409` `errors.companyCode` (see below), **whether or not the email is registered**. Checking the code before the email means a taken code never reveals whether an email exists. Disclosing that an organisation code exists is acceptable because codes are not secret (see Q3). "This email's own pending company" is the inactive company whose `PENDING_VERIFICATION` admin has this email; repeating that code is not a conflict.
+4. **Email is `ACTIVE` or `REMOVED`**: the same `202` as success. Nothing changes.
+5. **Email is `PENDING_VERIFICATION`**: the newest submission **replaces** the pending one, within the per-email resend limit (§3), and the answer is the same `202`. In one transaction, with the pending user row and its company row locked: the user's full name and password hash and the inactive company's code and name are updated in place, every unused verification token is deleted, a new one is issued, a `RESUBMITTED` audit row is written, and the email is sent after commit. Links from earlier submissions stop working, so only someone who can read the mailbox can activate the latest submission (this also defeats pre-registration of someone else's email). Over the resend limit, nothing changes and the answer is still `202` (a `429` would reveal the email). If the company is not an inactive company with only this user, nothing changes (`202`). A code taken concurrently maps to `409` with everything rolled back.
+6. Otherwise, create in **one transaction**:
    - `companies` row with `active = false` (so it does not appear in invitation or shipment-linking lookups until verified), `created_by_user_id` = the new user.
    - `users` row with role `ADMIN`, `status = PENDING_VERIFICATION`, linked to the new company.
    - `email_verification_tokens` row (hash only).
    - A `REGISTERED` row in `company_signup_audits` (see §7).
-6. Send the verification email **after commit**. A delivery failure must not roll back the account. The user can use "resend" (§3). The response is still `202`.
+7. Send the verification email **after commit**. A delivery failure must not roll back the account. The user can use "resend" (§3). The response is still `202`.
 
-If any step in 5 fails (including a unique-index violation from a concurrent request), nothing is persisted. A concurrent duplicate company code maps to `409`, and a concurrent duplicate email maps to the generic `202`.
+If any step in 6 fails (including a unique-index violation from a concurrent request), nothing is persisted. A concurrent duplicate company code maps to `409`, and a concurrent duplicate email maps to the generic `202`.
 
 ### Responses
 
@@ -150,6 +151,7 @@ Emailed link: `{app.signup.link-base-url}#token=<43-character token>` (frontend 
 - If the email belongs to a `PENDING_VERIFICATION` account, issue a new token (earlier unused tokens are invalidated) and send it.
 - In every other case (unknown email, already active, removed), do nothing.
 - The response is identical in all cases.
+- The email names the company (name and code) and the administrator's full name from the latest submission, and says: "If you did not request this, ignore this email; the account will not be activated."
 
 ### Responses
 
@@ -173,8 +175,11 @@ Emailed link: `{app.signup.link-base-url}#token=<43-character token>` (frontend 
 - **Correct password** but the account is `PENDING_VERIFICATION`: `403`. No session cookie is issued.
 
 ```json
-{"message": "Verify your email before signing in. You can request a new verification link."}
+{"message": "Verify your email before signing in. You can request a new verification link.",
+ "code": "EMAIL_NOT_VERIFIED"}
 ```
+
+`code` is a stable, machine-readable marker: clients show the "verify your email" state only when `code` is `EMAIL_NOT_VERIFIED`, and treat any other `403` as a generic error. The message may change.
 
 Rationale: the caller has already proven the password, so this does not enable email enumeration.
 
@@ -219,7 +224,7 @@ Rejected requests leave the user row and `user_assignment_audits` unchanged.
 
 ## 7. Data and configuration (owned by CDG-361 / CDG-363, developer A)
 
-Flyway migration **V39** (number to be confirmed with the team before use):
+Flyway migration **V40** `V40__company_self_signup.sql` (V39 is taken by the maritime snapshot index from CDG-358, which merges first):
 
 - `users_status_check` (from V22): allow `PENDING_VERIFICATION` in addition to `ACTIVE` and `REMOVED`. Add the value to the `AccountStatus` enum as well.
 - New table, mirroring `password_reset_tokens` (V6):
@@ -236,7 +241,9 @@ CREATE UNIQUE INDEX email_verification_tokens_token_hash_key ON email_verificati
 CREATE INDEX email_verification_tokens_user_id ON email_verification_tokens (user_id);
 ```
 
-- Audit: new table `company_signup_audits (id BIGSERIAL PK, user_id BIGINT NOT NULL REFERENCES users(id), company_id BIGINT NOT NULL REFERENCES companies(id), event VARCHAR(32) NOT NULL CHECK (event IN ('REGISTERED','EMAIL_VERIFIED')), recorded_at TIMESTAMPTZ NOT NULL)`. `REGISTERED` is written in the signup transaction; `EMAIL_VERIFIED` in the verification transaction.
+- Audit: new table `company_signup_audits (id BIGSERIAL PK, user_id BIGINT NOT NULL REFERENCES users(id), company_id BIGINT NOT NULL REFERENCES companies(id), event VARCHAR(32) NOT NULL CHECK (event IN ('REGISTERED','EMAIL_VERIFIED','RESUBMITTED')), recorded_at TIMESTAMPTZ NOT NULL)`. `REGISTERED` is written in the signup transaction; `EMAIL_VERIFIED` in the verification transaction; `RESUBMITTED` when a newer signup replaces a pending one (CDG-363).
+- `users.status` is widened from `VARCHAR(16)` to `VARCHAR(32)`, because `PENDING_VERIFICATION` is 20 characters.
+- `users.created_at` already exists (V1), so pending signups can be aged by a later cleanup job; V40 does not add it.
 
 Configuration (suggested names and defaults, following `app.password-reset.*`):
 
@@ -244,9 +251,11 @@ Configuration (suggested names and defaults, following `app.password-reset.*`):
 |---|---|
 | `app.signup.link-base-url` | `http://localhost:5173/verify-email` |
 | `app.signup.verification-ttl` | `PT24H` |
-| `app.signup.rate-limit.ip` | 5 per window |
+| `app.signup.rate-limit.ip` | 30 per window |
 | `app.signup.rate-limit.email` | 3 per window |
-| `app.signup.rate-limit.window` | `PT1H` |
+| `app.signup.rate-limit.window` | `PT15M` |
+
+**Client address behind the production proxy.** Production runs Vercel in front of Render, so `getRemoteAddr()` is the proxy's address for every request. The per-IP limit is therefore effectively a **global** ceiling, and the per-email limits do the real work. Forwarded headers (`X-Forwarded-For`) are not trusted, because they can be spoofed unless the proxy chain is pinned. Deriving the real client address from trusted proxy headers is a follow-up for both signup and password reset. The in-memory limiter prunes keys whose newest attempt is older than the window every 100th check, so its memory stays bounded.
 
 **Test hook for E2E (CDG-366):** Playwright reads the real verification email from Mailpit (`docker-compose.yml`, SMTP 1025, HTTP API 8025), the same way `scripts/run-password-reset.mjs` does. No test-only token endpoint.
 
@@ -273,6 +282,6 @@ Errors are thrown as the existing `ApiError` with `status`, `message` and field 
 - **Q3.** A taken organisation code returns `409` with `errors.companyCode` (CDG-362 requires a duplicate-company state).
 - **Q4.** Cleanup of unverified companies/accounts is out of scope.
 - **Q5.** `POST /api/register` (join path) keeps its current behaviour.
-- **Q6.** Use the next free Flyway number on `origin/main` at implementation time (V39 as of this draft); confirm with the team before pushing.
+- **Q6.** V40: V39 went to the maritime snapshot index (CDG-358, #298/#310), which merges first.
 
 Out of scope: platform-wide administrators, changes to the operator-only `/api/setup/administrator` bootstrap path, company types or approval workflows, and cleanup of unverified signups.

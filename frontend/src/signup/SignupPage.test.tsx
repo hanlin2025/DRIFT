@@ -119,6 +119,25 @@ describe('signup form', () => {
     expect(screen.getByLabelText(/Email/)).toHaveValue(invitation.email);
     expect(screen.getByLabelText(/Your role/)).toHaveAttribute('readonly');
   });
+  it.each([
+    ['a link without an invitation code', 'https://drift.example/signup', 'This link has no invitation code.'],
+    ['a link with an empty invitation code', 'https://drift.example/signup#invite=', 'This link has no invitation code.'],
+    ['nothing', '   ', 'Paste your invitation link or code.'],
+  ])('shows a field error for %s and does not look it up', async (_name, pasted, message) => {
+    window.history.replaceState(null, '', '/signup');
+    const user = userEvent.setup();
+    render(<SignupPage />);
+    await user.click(screen.getByRole('button', { name: /Join an existing company/ }));
+    const field = screen.getByLabelText('Invitation link or code');
+    await user.type(field, pasted);
+    await user.click(screen.getByRole('button', { name: /Continue with invitation/ }));
+
+    expect(resolveInvitation).not.toHaveBeenCalled();
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById(field.getAttribute('aria-describedby') ?? '')).toHaveTextContent(message);
+    await user.type(field, 'x');
+    expect(field).not.toHaveAttribute('aria-invalid', 'true');
+  });
   it('accepts a bare invitation code on the join path', async () => {
     window.history.replaceState(null, '', '/signup');
     const user = userEvent.setup();

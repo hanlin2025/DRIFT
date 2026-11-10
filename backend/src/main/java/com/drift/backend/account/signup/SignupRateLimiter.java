@@ -16,6 +16,13 @@ import org.springframework.stereotype.Component;
  * In-memory sliding-window limits for company signup, email verification and verification resends, modelled on
  * the password reset limiter. Each action has its own buckets, so signing up does not use up the verify allowance.
  * Attempts count whether or not the email is registered, so a 429 reveals nothing about an account.
+ * <p>
+ * Behind the production proxy (Vercel to Render) every request has the proxy's address, so the per-address
+ * limit acts as a coarse global ceiling; the per-email limits do the real work. Forwarded headers are not
+ * trusted because they can be spoofed unless the proxy chain is pinned.
+ * <p>
+ * Every {@value #PRUNE_EVERY}th check removes keys whose newest attempt is older than the window, so memory
+ * stays bounded by the traffic of one window.
  */
 @Component
 public class SignupRateLimiter {
@@ -26,6 +33,8 @@ public class SignupRateLimiter {
 	private final Clock clock;
 	private final Object lock = new Object();
 	private final Map<String, ArrayDeque<Instant>> attempts = new HashMap<>();
+	static final int PRUNE_EVERY = 100;
+	private int checksSincePrune;
 
 	@Autowired
 	public SignupRateLimiter(
@@ -64,6 +73,10 @@ public class SignupRateLimiter {
 	private void allow(String action, String email, String clientAddress) {
 		synchronized (lock) {
 			Instant now = clock.instant();
+			if (++checksSincePrune >= PRUNE_EVERY) {
+				checksSincePrune = 0;
+				prune(now);
+			}
 			String addressKey = action + ":ip:" + (clientAddress == null || clientAddress.isBlank() ? "unknown" : clientAddress);
 			String emailKey = email == null ? null : action + ":email:" + email;
 			if (count(addressKey, now) >= addressLimit || (emailKey != null && count(emailKey, now) >= emailLimit)) {
@@ -73,6 +86,17 @@ public class SignupRateLimiter {
 			if (emailKey != null) {
 				add(emailKey, now);
 			}
+		}
+	}
+
+	private void prune(Instant now) {
+		Instant oldest = now.minus(window);
+		attempts.values().removeIf(hits -> hits.isEmpty() || !hits.peekLast().isAfter(oldest));
+	}
+
+	int trackedKeys() {
+		synchronized (lock) {
+			return attempts.size();
 		}
 	}
 
