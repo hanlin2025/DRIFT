@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account, type Role } from './api';
 import { CreateCompanyForm } from './CreateCompanyForm';
-import { invitationTokenFrom, passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
+import { MISSING_INVITATION_CODE, invitationTokenFrom, passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
 
 const roleNames: Record<Role, string> = {
   IMPORTER: 'Importer',
@@ -18,6 +18,7 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
   // A link with #invite= goes straight to the invitation flow; otherwise the visitor chooses a path first.
   const [mode, setMode] = useState<Mode>(() => (token ? 'join' : 'choose'));
   const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
@@ -132,14 +133,20 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
         <section className="invitation-entry" aria-labelledby="join-heading">
           <h3 id="join-heading">Join an existing company</h3>
           <p>An invitation from your company administrator is required. Open the link they sent you, or paste the link or the invitation code below.</p>
-          <form onSubmit={event => { event.preventDefault(); setToken(invitationTokenFrom(code)); setAttempt(value => value + 1); }}>
+          <form noValidate onSubmit={event => {
+            event.preventDefault();
+            const pasted = invitationTokenFrom(code);
+            if (!pasted) { setCodeError(code.trim() ? MISSING_INVITATION_CODE : 'Paste your invitation link or code.'); return; }
+            setCodeError(''); setToken(pasted); setAttempt(value => value + 1);
+          }}>
             <label htmlFor="invitation-code">Invitation link or code</label>
-            <input id="invitation-code" value={code} onChange={event => setCode(event.target.value)} required autoComplete="off" spellCheck={false} />
+            <input id="invitation-code" value={code} onChange={event => { setCode(event.target.value); if (codeError) setCodeError(''); }} required autoComplete="off" spellCheck={false} aria-invalid={Boolean(codeError)} aria-describedby={codeError ? 'invitation-code-error' : undefined} />
+            {codeError && <p className="field-error" id="invitation-code-error">{codeError}</p>}
             <button className="primary-button" type="submit">Continue with invitation <span aria-hidden="true">&#8594;</span></button>
           </form>
           {token && <button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Retry invitation</button>}
           <p className="invitation-help">No invitation? Ask your company administrator to invite you to DRIFT.</p>
-          <button type="button" className="retry-button" onClick={() => { setToken(''); setCode(''); choose('choose'); }}>Back to the signup choices</button>
+          <button type="button" className="retry-button" onClick={() => { setToken(''); setCode(''); setCodeError(''); choose('choose'); }}>Back to the signup choices</button>
         </section>
       ) : (
         <form onSubmit={submit} className="signup-form" noValidate aria-busy={submitting}>

@@ -55,5 +55,9 @@ export function invitationTokenFrom(value: string) {
   const trimmed = value.trim();
   const marker = trimmed.indexOf('#');
   if (marker >= 0) return new URLSearchParams(trimmed.slice(marker + 1)).get('invite')?.trim() ?? '';
+  // A pasted link without an #invite= part has no code to use.
+  if (/[/:]/.test(trimmed)) return '';
   return trimmed;
 }
+
+export const MISSING_INVITATION_CODE = 'This link has no invitation code. Paste the full link from your invitation email, or just the code.';

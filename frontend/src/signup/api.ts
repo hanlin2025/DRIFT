@@ -4,7 +4,8 @@ export type Registration = { fullName: string; email: string; password: string; 
 export type Account = { id: number; fullName: string; email: string; role: Role };
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly fields: Record<string, string> = {}) {
+  /** `errorCode` is the machine-readable `code` marker from the server, such as `EMAIL_NOT_VERIFIED`, when it sends one. */
+  constructor(message: string, readonly status: number, readonly fields: Record<string, string> = {}, readonly errorCode?: string) {
     super(message);
   }
 }
@@ -41,7 +42,8 @@ export async function post(path: string, body: unknown): Promise<unknown> {
     if (isRecord(data) && isRecord(data.errors)) {
       for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
     }
-    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
+    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields,
+      isRecord(data) && typeof data.code === 'string' ? data.code : undefined);
   }
   return data;
 }

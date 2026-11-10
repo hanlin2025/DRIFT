@@ -262,7 +262,7 @@ describe('login acceptance criteria', () => {
   });
   it('tells an unverified company administrator to verify and offers a new link', async () => {
     const message = 'Verify your email before signing in. You can request a new verification link.';
-    vi.mocked(login).mockRejectedValueOnce(new ApiError(message, 403));
+    vi.mocked(login).mockRejectedValueOnce(new ApiError(message, 403, {}, 'EMAIL_NOT_VERIFIED'));
     vi.mocked(resendVerification).mockResolvedValue({ message: 'If this email is awaiting verification, a new link has been sent.' });
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
@@ -276,6 +276,23 @@ describe('login acceptance criteria', () => {
     await user.click(screen.getByRole('button', { name: 'Resend verification email' }));
     expect(resendVerification).toHaveBeenCalledWith('alex@pacificgate.example');
     expect(await screen.findByText('If this email is awaiting verification, a new link has been sent.')).toBeInTheDocument();
+
+    // Editing the login email must not wipe the confirmation.
+    await user.type(screen.getByLabelText('Email'), 'x');
+    expect(screen.getByText('If this email is awaiting verification, a new link has been sent.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Signup email')).toHaveValue('alex@pacificgate.example');
+  });
+
+  it('treats a 403 without the unverified marker as a generic error', async () => {
+    vi.mocked(login).mockRejectedValueOnce(new ApiError('This request was rejected.', 403));
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/login']}><AppRoutes /></MemoryRouter>);
+    await user.type(screen.getByLabelText('Email'), 'alex@pacificgate.example');
+    await user.type(screen.getByLabelText('Password', { exact: true }), 'Str0ngPass');
+    await user.click(screen.getByRole('button', { name: /Log in/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This request was rejected.');
+    expect(screen.queryByRole('button', { name: /verification email/ })).not.toBeInTheDocument();
   });
 
   it('does not offer a verification link for a wrong password', async () => {
