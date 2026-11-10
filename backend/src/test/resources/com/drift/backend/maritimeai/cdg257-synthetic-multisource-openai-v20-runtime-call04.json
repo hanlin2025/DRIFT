@@ -1,0 +1,28 @@
+{
+  "validationStatus": "CONTEXTUAL_EVIDENCE_OVERSTATED",
+  "httpStatus": 200,
+  "model": "gpt-4.1-mini",
+  "provider": "openai-responses",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.1",
+  "evidence": [
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"MPA_ETA_REVISION","evidenceId":"demo-synthetic-mpa-schedule-001"},
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"MPA_OFFICIAL_NOTICE","evidenceId":"demo-synthetic-notice-001"},
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"NEA_WEATHER","evidenceId":"demo-synthetic-nea-rainfall-001"}
+  ],
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {"statement":"The documented revision warrants schedule review.","evidenceIds":["demo-synthetic-mpa-schedule-001"],"applicability":"VERIFIED","vesselRole":"MOTHER","observationType":"EXPECTED_ARRIVAL","associationScope":"VESSEL_OBSERVATION","factReferences":["evidence:demo-synthetic-mpa-schedule-001","schedule:MOTHER:PLANNED_ARRIVAL","schedule:FEEDER:PLANNED_DEPARTURE"],"relationshipType":"SCHEDULE_REVIEW","riskReview":null},
+      {"statement":"The cited port notice provides contextual information about port conditions without confirming vessel impact or shipment disruption.","evidenceIds":["demo-synthetic-notice-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"PORT_CONTEXT","factReferences":["evidence:demo-synthetic-notice-001"],"relationshipType":"PORT_CONTEXT_REVIEW","riskReview":null},
+      {"statement":"The cited regional rainfall observation offers contextual weather information without establishing a direct effect on the vessel or shipment.","evidenceIds":["demo-synthetic-nea-rainfall-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"REGIONAL_CONTEXT","factReferences":["evidence:demo-synthetic-nea-rainfall-001"],"relationshipType":"REGIONAL_WEATHER_CONTEXT","riskReview":null}
+    ],
+    "uncertainties": ["The evidence does not establish whether this shipment is urgent."],
+    "followUpConsiderations": [
+      "Verify the current vessel position with the carrier or operations team.",
+      "Confirm the latest stored planned schedule details for the mother vessel.",
+      "Check for any updates on port notices or regional weather conditions affecting the shipment."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}

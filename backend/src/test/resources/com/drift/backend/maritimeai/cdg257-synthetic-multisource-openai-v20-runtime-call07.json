@@ -1,0 +1,86 @@
+{
+  "provider": "openai-responses",
+  "model": "gpt-4.1-mini",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.2",
+  "httpStatus": 200,
+  "validationStatus": "CONTEXTUAL_EVIDENCE_OVERSTATED",
+  "evidence": [
+    {
+      "sourceMode": "SYNTHETIC_DEMONSTRATION",
+      "sourceType": "MPA_ETA_REVISION",
+      "evidenceId": "demo-synthetic-mpa-schedule-001"
+    },
+    {
+      "sourceMode": "SYNTHETIC_DEMONSTRATION",
+      "sourceType": "MPA_OFFICIAL_NOTICE",
+      "evidenceId": "demo-synthetic-notice-001"
+    },
+    {
+      "sourceMode": "SYNTHETIC_DEMONSTRATION",
+      "sourceType": "NEA_WEATHER",
+      "evidenceId": "demo-synthetic-nea-rainfall-001"
+    }
+  ],
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {
+        "statement": "The documented revision warrants schedule review.",
+        "evidenceIds": [
+          "demo-synthetic-mpa-schedule-001"
+        ],
+        "applicability": "VERIFIED",
+        "vesselRole": "MOTHER",
+        "observationType": "EXPECTED_ARRIVAL",
+        "associationScope": "VESSEL_OBSERVATION",
+        "factReferences": [
+          "evidence:demo-synthetic-mpa-schedule-001",
+          "schedule:MOTHER:PLANNED_ARRIVAL",
+          "schedule:FEEDER:PLANNED_DEPARTURE"
+        ],
+        "relationshipType": "SCHEDULE_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic port-area maintenance notice provides contextual port information without confirmed shipment impact or disruption.",
+        "evidenceIds": [
+          "demo-synthetic-notice-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "PORT_CONTEXT",
+        "factReferences": [
+          "evidence:demo-synthetic-notice-001"
+        ],
+        "relationshipType": "PORT_CONTEXT_REVIEW",
+        "riskReview": null
+      },
+      {
+        "statement": "The synthetic regional weather observation offers contextual weather information without established effect on the shipment or vessel schedule.",
+        "evidenceIds": [
+          "demo-synthetic-nea-rainfall-001"
+        ],
+        "applicability": "CONTEXTUAL",
+        "vesselRole": null,
+        "observationType": null,
+        "associationScope": "REGIONAL_CONTEXT",
+        "factReferences": [
+          "evidence:demo-synthetic-nea-rainfall-001"
+        ],
+        "relationshipType": "REGIONAL_WEATHER_CONTEXT",
+        "riskReview": null
+      }
+    ],
+    "uncertainties": [
+      "The evidence does not establish whether this shipment is urgent."
+    ],
+    "followUpConsiderations": [
+      "Verify the current vessel position with the carrier or operations team.",
+      "Confirm the planned schedule details stored in the shipment plan.",
+      "Verify whether a transshipment-arrival deadline is recorded for this shipment."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}

@@ -29,7 +29,7 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(result.interpretation().claims()).hasSize(1);
 			assertThat(result.provider()).isEqualTo("openai-responses");
 			assertThat(result.promptVersion())
-					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.1")
+					.isEqualTo("cdg247.evidence.v20.cdg257-selective-three-source-coverage.2")
 					.isEqualTo(ConfiguredMaritimeAiClient.PROMPT_VERSION);
 			assertThat(ConfiguredMaritimeAiClient.PREVIOUS_PROMPT_VERSION)
 					.isEqualTo("cdg247.evidence.v19.cdg252-source-mode-provenance.1");
@@ -71,7 +71,8 @@ class ConfiguredMaritimeAiClientTest {
 					.contains("No miss probability is supplied here")
 					.contains("Do not infer one or state a probability")
 					.contains("Risk severity is the backend's existing threshold-based output")
-					.contains("including negated, hypothetical, or uncertain statements; no cargo facts are supplied")
+					.contains("No goods-handling details are supplied")
+					.doesNotContain("cargo")
 					.contains("Every evidence-dependent claim, including every RISK_BUFFER_REVIEW claim")
 					.contains("exact evidence:<id> canonical factReference")
 					.contains("Risk references do not replace evidence citations")

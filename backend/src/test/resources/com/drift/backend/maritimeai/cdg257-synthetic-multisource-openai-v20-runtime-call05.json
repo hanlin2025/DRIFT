@@ -1,0 +1,29 @@
+{
+  "validationStatus": "CONTEXTUAL_EVIDENCE_OVERSTATED",
+  "httpStatus": 200,
+  "model": "gpt-4.1-mini",
+  "provider": "openai-responses",
+  "promptVersion": "cdg247.evidence.v20.cdg257-selective-three-source-coverage.1",
+  "evidence": [
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"MPA_ETA_REVISION","evidenceId":"demo-synthetic-mpa-schedule-001"},
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"MPA_OFFICIAL_NOTICE","evidenceId":"demo-synthetic-notice-001"},
+    {"sourceMode":"SYNTHETIC_DEMONSTRATION","sourceType":"NEA_WEATHER","evidenceId":"demo-synthetic-nea-rainfall-001"}
+  ],
+  "interpretation": {
+    "summary": "Review the grounded interpretation and limitations.",
+    "claims": [
+      {"statement":"The documented revision warrants schedule review.","evidenceIds":["demo-synthetic-mpa-schedule-001"],"applicability":"VERIFIED","vesselRole":"MOTHER","observationType":"EXPECTED_ARRIVAL","associationScope":"VESSEL_OBSERVATION","factReferences":["evidence:demo-synthetic-mpa-schedule-001","schedule:MOTHER:PLANNED_ARRIVAL","schedule:FEEDER:PLANNED_DEPARTURE"],"relationshipType":"SCHEDULE_REVIEW","riskReview":null},
+      {"statement":"The synthetic port-area maintenance notice provides contextual information relevant to timing but does not establish vessel impact, shipment disruption, or delay.","evidenceIds":["demo-synthetic-notice-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"PORT_CONTEXT","factReferences":["evidence:demo-synthetic-notice-001"],"relationshipType":"PORT_CONTEXT_REVIEW","riskReview":null},
+      {"statement":"The synthetic regional rainfall observation offers contextual weather information without direct evidence of vessel impact, shipment applicability, or cause for delay.","evidenceIds":["demo-synthetic-nea-rainfall-001"],"applicability":"CONTEXTUAL","vesselRole":null,"observationType":null,"associationScope":"REGIONAL_CONTEXT","factReferences":["evidence:demo-synthetic-nea-rainfall-001"],"relationshipType":"REGIONAL_WEATHER_CONTEXT","riskReview":null},
+      {"statement":"The cited observation warrants human review alongside backend HIGH risk based on the planned connection window; the AIS estimate is unavailable.","evidenceIds":["demo-synthetic-mpa-schedule-001"],"applicability":"CONTEXTUAL","vesselRole":"MOTHER","observationType":"EXPECTED_ARRIVAL","associationScope":"VESSEL_OBSERVATION","factReferences":["evidence:demo-synthetic-mpa-schedule-001","risk:CONNECTION_SEVERITY","risk:PLANNED_CONNECTION_WINDOW","risk:ARRIVAL_ESTIMATE_FRESHNESS","risk:ARRIVAL_ESTIMATE_NOT_USED"],"relationshipType":"RISK_BUFFER_REVIEW","riskReview":{"severity":"HIGH","selectedWindowBasis":"PLANNED_SHIPMENT_SCHEDULE","selectedWindowState":"AVAILABLE","estimateFreshness":"UNAVAILABLE"}}
+    ],
+    "uncertainties": ["The evidence does not establish whether this shipment is urgent."],
+    "followUpConsiderations": [
+      "Verify the current vessel position and transshipment schedule with the carrier or operations team.",
+      "Check for any updates to the planned arrival and departure schedules after the documented revision.",
+      "Verify whether a transshipment-arrival deadline is recorded for this shipment."
+    ],
+    "evidenceSufficient": true,
+    "formalRecommendationCode": null
+  }
+}
