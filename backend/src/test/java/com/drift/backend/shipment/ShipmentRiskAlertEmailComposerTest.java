@@ -18,5 +18,7 @@ class ShipmentRiskAlertEmailComposerTest {
 				.isEqualTo("https://app.example.test/admin/shipments/42");
 		assertThat(ShipmentRiskAlertEmailComposer.shipmentLink("https://app.example.test", Role.LOGISTICS_MANAGER, 42L))
 				.isEqualTo("https://app.example.test/logistics-manager/shipments/42");
+		assertThat(ShipmentRiskAlertEmailComposer.shipmentLink("https://app.example.test//", Role.IMPORTER, 15L))
+				.isEqualTo("https://app.example.test/importer/shipments/15");
 	}
 }

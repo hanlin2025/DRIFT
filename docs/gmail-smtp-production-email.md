@@ -18,7 +18,7 @@ Set these on the backend web service in Render. Keep the password in Render's se
 | `MAIL_FROM_ADDRESS` | Same Gmail address as `MAIL_USERNAME`, or a verified send-as alias |
 | `FRONTEND_BASE_URL` | The production Vercel frontend origin, for example `https://<your-production-domain>` |
 
-Do not include a trailing slash in `FRONTEND_BASE_URL`. Invitation and password-reset links append `/signup` and `/reset-password`; risk-alert links use the same origin with the existing role path. Leave `INVITATION_LINK_BASE_URL`, `PASSWORD_RESET_LINK_BASE_URL`, and `RISK_ALERTS_FRONTEND_BASE_URL` unset unless an intentional per-message override is needed.
+Invitation and password-reset links append `/signup` and `/reset-password`; risk-alert links use the same origin with the existing role path. A trailing slash on `FRONTEND_BASE_URL` is removed when the link is built, so the message does not contain `//signup` or `//reset-password`. Leave `INVITATION_LINK_BASE_URL`, `PASSWORD_RESET_LINK_BASE_URL`, and `RISK_ALERTS_FRONTEND_BASE_URL` unset unless an intentional per-message override is needed.
 
 The deployment blueprint declares the SMTP settings but marks account-specific values as unsynchronized. Add the values in the Render dashboard. The repository's `render.yaml` is review-only and must not be applied without deployment approval.
 
