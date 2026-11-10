@@ -39,7 +39,7 @@ test('the first administrator can invite a colleague who stays signed in across 
   await page.getByLabel('Invitation organisation').selectOption(harbourline);
   await page.getByLabel('Invitation role').selectOption('LOGISTICS_MANAGER');
   await page.getByRole('button', { name: 'Send invitation' }).click();
-  await expect(page.getByRole('status')).toContainText(`Invitation sent to ${guest}`);
+  await expect(page.getByRole('status').filter({ hasText: 'Invitation sent' })).toContainText(`Invitation sent to ${guest}`);
 
   let messageId = '';
   await expect.poll(async () => {

@@ -63,3 +63,22 @@ export async function registerAccount(registration: Registration): Promise<Accou
   }
   return { id: data.id, email: data.email, fullName: data.fullName, role: data.role };
 }
+
+export type CompanySignup = { companyCode: string; companyName: string; fullName: string; email: string; password: string };
+
+function messageOf(data: unknown, fallback: string): { message: string } {
+  if (!isRecord(data) || typeof data.message !== 'string') throw new ApiError(fallback, 502);
+  return { message: data.message };
+}
+
+export async function registerCompany(input: CompanySignup): Promise<{ message: string }> {
+  return messageOf(await post('/api/register/company', input), 'We could not confirm your signup. Please try again.');
+}
+
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return messageOf(await post('/api/auth/verify-email', { token }), 'We could not confirm your email. Please try again.');
+}
+
+export async function resendVerification(email: string): Promise<{ message: string }> {
+  return messageOf(await post('/api/auth/resend-verification', { email }), 'We could not send a new link. Please try again.');
+}

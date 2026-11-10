@@ -646,3 +646,12 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .change-history-changes dd { margin: 4px 0 0; font-size: 12px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
 .change-history-changes .is-missing { color: var(--muted); font-weight: 500; }
 .change-history-arrow { color: var(--muted); font-weight: 500; }
+
+/* CDG-362: create-company and join-company signup choices */
+.signup-choices { display: grid; gap: 12px; margin: 20px 0; }
+.signup-choice { display: grid; gap: 6px; text-align: left; width: 100%; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); color: var(--ink); cursor: pointer; }
+.signup-choice:hover, .signup-choice:focus-visible { border-color: var(--lime-deep); }
+.signup-choice strong { font-size: 15px; }
+.signup-choice span { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.form-section-title { font-size: 16px; margin: 8px 0 4px; }
+.resend-verification { margin-top: 8px; }

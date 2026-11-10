@@ -93,10 +93,39 @@ describe('signup form', () => {
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
     expect(registerAccount).not.toHaveBeenCalled();
   });
-  it('asks for an invitation when no link was supplied', () => {
+  it('offers both signup paths when no invitation link was supplied', async () => {
     window.history.replaceState(null, '', '/signup');
     render(<SignupPage />);
-    expect(screen.getByLabelText('Invitation code')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Create a company/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Join an existing company/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Invitation link or code/)).not.toBeInTheDocument();
     expect(resolveInvitation).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: /Create a company/ }));
+    expect(screen.getByLabelText('Company code')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Back to the signup choices/ }));
+    expect(screen.getByRole('button', { name: /Join an existing company/ })).toBeInTheDocument();
+  });
+  it('explains that joining needs an invitation and accepts a pasted invitation link', async () => {
+    window.history.replaceState(null, '', '/signup');
+    const user = userEvent.setup();
+    render(<SignupPage />);
+    await user.click(screen.getByRole('button', { name: /Join an existing company/ }));
+    expect(screen.getByText(/An invitation from your company administrator is required/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Invitation link or code'), `https://drift.example/signup#invite=${'b'.repeat(43)}`);
+    await user.click(screen.getByRole('button', { name: /Continue with invitation/ }));
+    expect(resolveInvitation).toHaveBeenCalledWith('b'.repeat(43));
+    expect(await screen.findByText(invitation.companyName)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Email/)).toHaveAttribute('readonly');
+    expect(screen.getByLabelText(/Email/)).toHaveValue(invitation.email);
+    expect(screen.getByLabelText(/Your role/)).toHaveAttribute('readonly');
+  });
+  it('accepts a bare invitation code on the join path', async () => {
+    window.history.replaceState(null, '', '/signup');
+    const user = userEvent.setup();
+    render(<SignupPage />);
+    await user.click(screen.getByRole('button', { name: /Join an existing company/ }));
+    await user.type(screen.getByLabelText('Invitation link or code'), ` ${'c'.repeat(43)} `);
+    await user.click(screen.getByRole('button', { name: /Continue with invitation/ }));
+    expect(resolveInvitation).toHaveBeenCalledWith('c'.repeat(43));
   });
 });

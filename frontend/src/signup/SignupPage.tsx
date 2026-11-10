@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, registerAccount, resolveInvitation, type Invitation, type Account, type Role } from './api';
-import { passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
+import { CreateCompanyForm } from './CreateCompanyForm';
+import { invitationTokenFrom, passwordRules, validateSignup, type FieldErrors, type SignupFields } from './validation';
 
 const roleNames: Record<Role, string> = {
   IMPORTER: 'Importer',
@@ -9,9 +10,13 @@ const roleNames: Record<Role, string> = {
 };
 const emptyFields: SignupFields = { fullName: '', password: '', confirmation: '' };
 
+type Mode = 'choose' | 'create' | 'join';
+
 export function SignupPage({ onRegistered }: { onRegistered?: (account: Account) => void }) {
   useEffect(() => { document.title = "Create your account | DRIFT"; }, []);
   const [token, setToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? '');
+  // A link with #invite= goes straight to the invitation flow; otherwise the visitor chooses a path first.
+  const [mode, setMode] = useState<Mode>(() => (token ? 'join' : 'choose'));
   const [code, setCode] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
@@ -81,22 +86,60 @@ export function SignupPage({ onRegistered }: { onRegistered?: (account: Account)
     } finally { busy.current = false; setSubmitting(false); }
   }
 
+  function choose(next: Mode) {
+    setError('');
+    setMode(next);
+  }
+
+  if (mode === 'choose') {
+    return (
+      <>
+        <p className="eyebrow form-eyebrow">WELCOME ABOARD</p>
+        <h1>Create your account</h1>
+        <p className="intro">How would you like to start?</p>
+        <div className="signup-choices">
+          <button type="button" className="signup-choice" onClick={() => choose('create')} aria-describedby="choice-create-help">
+            <strong>Create a company</strong>
+            <span id="choice-create-help">Register a new company on DRIFT and become its administrator.</span>
+          </button>
+          <button type="button" className="signup-choice" onClick={() => choose('join')} aria-describedby="choice-join-help">
+            <strong>Join an existing company</strong>
+            <span id="choice-join-help">Use the invitation your company administrator sent you.</span>
+          </button>
+        </div>
+        <p className="login-prompt">Already part of the team? <a href="/login">Log in</a></p>
+      </>
+    );
+  }
+
+  if (mode === 'create') {
+    return (
+      <>
+        <p className="eyebrow form-eyebrow">WELCOME ABOARD</p>
+        <h1>Create your account</h1>
+        <CreateCompanyForm onBack={() => choose('choose')} />
+        <p className="login-prompt">Already part of the team? <a href="/login">Log in</a></p>
+      </>
+    );
+  }
+
   return (
     <>
       <p className="eyebrow form-eyebrow">WELCOME ABOARD</p>
       <h1>Create your account</h1>
       {error && <div className="error-notice" role="alert">{error}</div>}
       {loading ? <div className="notice" role="status">Checking your invitation...</div> : !invitation ? (
-        <section className="invitation-entry">
-          <h3>It starts with an invitation.</h3>
-          <p>Open the link shared by your administrator, or enter your invitation code below.</p>
-          <form onSubmit={event => { event.preventDefault(); setToken(code.trim()); setAttempt(value => value + 1); }}>
-            <label htmlFor="invitation-code">Invitation code</label>
+        <section className="invitation-entry" aria-labelledby="join-heading">
+          <h3 id="join-heading">Join an existing company</h3>
+          <p>An invitation from your company administrator is required. Open the link they sent you, or paste the link or the invitation code below.</p>
+          <form onSubmit={event => { event.preventDefault(); setToken(invitationTokenFrom(code)); setAttempt(value => value + 1); }}>
+            <label htmlFor="invitation-code">Invitation link or code</label>
             <input id="invitation-code" value={code} onChange={event => setCode(event.target.value)} required autoComplete="off" spellCheck={false} />
             <button className="primary-button" type="submit">Continue with invitation <span aria-hidden="true">&#8594;</span></button>
           </form>
           {token && <button type="button" className="retry-button" onClick={() => setAttempt(value => value + 1)}>Retry invitation</button>}
           <p className="invitation-help">No invitation? Ask your company administrator to invite you to DRIFT.</p>
+          <button type="button" className="retry-button" onClick={() => { setToken(''); setCode(''); choose('choose'); }}>Back to the signup choices</button>
         </section>
       ) : (
         <form onSubmit={submit} className="signup-form" noValidate aria-busy={submitting}>
