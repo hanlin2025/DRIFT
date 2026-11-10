@@ -204,6 +204,7 @@ describe('connection window on the shipment detail', () => {
     expect(link).toHaveAttribute('href', '/freight-forwarder/shipments/7');
     await user.click(link);
     expect(await screen.findByRole('heading', { name: 'HL-1001' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
     expect(getShipment).toHaveBeenCalledWith('forwarder-token', '7');
     expect(getShipmentTracking).toHaveBeenCalledWith('forwarder-token', '7');

@@ -48,6 +48,8 @@ function readSidebarCollapsed() {
 function currentPage(section: WorkspaceSection, item: 'shipments' | 'import' | 'users' | 'profile') {
   switch (section) {
     case 'shipments':
+    case 'shipment':
+    case 'register':
       return item === 'shipments' ? 'page' as const : undefined;
     case 'import':
       return item === 'import' ? 'page' as const : undefined;
@@ -55,9 +57,6 @@ function currentPage(section: WorkspaceSection, item: 'shipments' | 'import' | '
       return item === 'users' ? 'page' as const : undefined;
     case 'profile':
       return item === 'profile' ? 'page' as const : undefined;
-    case 'shipment':
-    case 'register':
-      return undefined;
     default: {
       const exhaustive: never = section;
       return exhaustive;

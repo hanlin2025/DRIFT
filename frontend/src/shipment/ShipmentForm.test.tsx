@@ -128,6 +128,7 @@ describe('shipment registration', () => {
 
     render(<MemoryRouter initialEntries={['/freight-forwarder/shipments/new']}><AppRoutes /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Register a shipment' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Shipments' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('This shipment is registered for Harbourline Logistics (Demo).')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
