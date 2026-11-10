@@ -87,11 +87,12 @@ defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file i
 
 - One transaction creates an **inactive** company, an `ADMIN` account with status
   `PENDING_VERIFICATION`, an email verification token (SHA-256 hash only, table
-  `email_verification_tokens`) and a `REGISTERED` row in `company_signup_audits` (migration V39).
+  `email_verification_tokens`) and a `REGISTERED` row in `company_signup_audits` (migration V40).
 - The response is always `202` with the same body, including when the email is already registered
-  (nothing is created in that case). A taken company code returns `409` with `errors.companyCode`.
+  (nothing is created in that case). A taken company code returns `409` with `errors.companyCode`; the code is checked before
+  the email, so the `409` does not depend on whether the email is registered.
 - A pending account cannot sign in: the correct password returns `403` with a "verify your email"
-  message and no session; a wrong password stays `401`. Any session whose account is not `ACTIVE` is
+  message, `"code":"EMAIL_NOT_VERIFIED"` and no session; a wrong password stays `401`. Any session whose account is not `ACTIVE` is
   rejected with `401`. Admins cannot remove or reactivate a pending account (`409`).
 - While inactive, the company is not offered for invitations or shipment linking.
 - The verification email is sent **after** the signup commits, with a link of the form
@@ -100,8 +101,12 @@ defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file i
 - `POST /api/auth/verify-email` uses up the link, activates the account and the company, and
   records `EMAIL_VERIFIED`. A used, expired, replaced or unknown link gets the same `400`.
 - `POST /api/auth/resend-verification` replaces any unused link of a pending account and emails a
-  new one. The `200` body is the same for every email. Repeating a pending signup with the same
-  company code also sends a fresh link.
+  new one. The `200` body is the same for every email.
+- Signing up again with an email that is still pending **replaces** the pending submission (company
+  code and name, full name, password) within the per-email resend limit, deletes earlier links,
+  records `RESUBMITTED` and emails a new link. Only the latest submission can be activated, and only
+  from the mailbox. The email shows the company name and code and the full name, with an
+  "ignore this email" line. A code held by another company still answers `409`.
 
 ### Signup settings
 
@@ -110,15 +115,17 @@ defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file i
 | `app.signup.link-base-url` | `SIGNUP_LINK_BASE_URL` | `${app.frontend-base-url}/verify-email` (`http://localhost:5173/verify-email`) |
 | `app.signup.verification-ttl` | `SIGNUP_VERIFICATION_TTL` | `PT24H` |
 | `app.signup.from` | (uses `MAIL_FROM_ADDRESS`) | `${app.mail.from}` |
-| `app.signup.rate-limit.ip` | `SIGNUP_IP_LIMIT` | `5` per window |
+| `app.signup.rate-limit.ip` | `SIGNUP_IP_LIMIT` | `30` per window |
 | `app.signup.rate-limit.email` | `SIGNUP_EMAIL_LIMIT` | `3` per window |
-| `app.signup.rate-limit.window` | `SIGNUP_RATE_WINDOW` | `PT1H` |
+| `app.signup.rate-limit.window` | `SIGNUP_RATE_WINDOW` | `PT15M` |
 
 Signup, verification and resend each have their own buckets. Signup and resend are limited per
 client address and per email, verification per client address. A limited request gets
 `429 {"message":"Too many requests. Try again later.","errors":{}}` whether or not the email is
 registered. The limiter is in memory, so limits reset when the backend restarts and are not shared
-between instances. In production, `ProductionMailConfigurationGuard` requires a hosted HTTPS
+between instances; it prunes expired keys every 100th check. Behind the production proxy (Vercel to
+Render) every request has the proxy's address, so the per-address limit is effectively a global
+ceiling; forwarded headers are not trusted (see contract §7). In production, `ProductionMailConfigurationGuard` requires a hosted HTTPS
 `SIGNUP_LINK_BASE_URL` on the `FRONTEND_BASE_URL` host and a non-local sender.
 
 ### Reading verification mail locally

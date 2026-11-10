@@ -218,6 +218,35 @@ class CompanySignupIntegrationTests {
 	}
 
 	@Test
+	void aTakenCodeAnswers409WhetherOrNotTheEmailIsRegistered() throws Exception {
+		String registered = trackEmail(SignupFixtures.uniqueEmail("cdg361-known"));
+		jdbc.update("""
+				INSERT INTO users (full_name, email, password_hash, role_id, company_id)
+				SELECT 'Known', ?, ?, id, (SELECT id FROM companies WHERE code = 'STRAITS_FRESH_DEMO') FROM roles WHERE code = 'IMPORTER'
+				""", registered, passwords.encode(PASSWORD));
+		long companies = jdbc.queryForObject("SELECT COUNT(*) FROM companies", Long.class);
+
+		String forRegistered = signup("HARBOURLINE_DEMO", "Pacific Gate", "Alex Tan", registered, PASSWORD)
+				.andExpect(status().isConflict()).andReturn().getResponse().getContentAsString();
+		String forUnknown = signup("HARBOURLINE_DEMO", "Pacific Gate", "Alex Tan", email, PASSWORD)
+				.andExpect(status().isConflict()).andReturn().getResponse().getContentAsString();
+
+		assertThat(forRegistered).isEqualTo(forUnknown);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies", Long.class)).isEqualTo(companies);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Long.class, email)).isZero();
+		assertThat(jdbc.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, registered)).isEqualTo("Known");
+	}
+
+	@Test
+	void aPendingEmailRepeatingItsOwnCodeIsNotTreatedAsATakenCode() throws Exception {
+		signup(code, "Pacific Gate", "Alex Tan", email, PASSWORD).andExpect(status().isAccepted());
+		signup(code.toLowerCase(), "Pacific Gate", "Alex Tan", email, PASSWORD)
+				.andExpect(status().isAccepted())
+				.andExpect(content().json(ACCEPTED, org.springframework.test.json.JsonCompareMode.STRICT));
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = ?", Long.class, code)).isEqualTo(1L);
+	}
+
+	@Test
 	void theSameRequestTwiceCreatesOneCompanyAndOneUser() throws Exception {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			signup(code, "Pacific Gate", "Alex Tan", email, PASSWORD)
@@ -239,8 +268,8 @@ class CompanySignupIntegrationTests {
 				.content("{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"))
 				.andExpect(status().isForbidden())
 				.andExpect(header().doesNotExist("Set-Cookie"))
-				.andExpect(content().json("{\"message\":\"" + EmailNotVerifiedException.MESSAGE + "\"}",
-						org.springframework.test.json.JsonCompareMode.STRICT));
+				.andExpect(content().json("{\"message\":\"" + EmailNotVerifiedException.MESSAGE
+						+ "\",\"code\":\"EMAIL_NOT_VERIFIED\"}", org.springframework.test.json.JsonCompareMode.STRICT));
 		mvc.perform(post("/api/login").contentType(MediaType.APPLICATION_JSON)
 				.content("{\"email\":\"" + email + "\",\"password\":\"Wr0ngPass\"}"))
 				.andExpect(status().isUnauthorized())

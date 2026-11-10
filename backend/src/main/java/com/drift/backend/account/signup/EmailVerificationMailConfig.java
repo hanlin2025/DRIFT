@@ -30,20 +30,29 @@ public class EmailVerificationMailConfig {
 		}
 
 		@Override
-		public void sendVerificationLink(String email, String verificationLink, Duration validFor) {
+		public void sendVerificationLink(EmailVerificationMailer.VerificationEmail email) {
 			SimpleMailMessage message = new SimpleMailMessage();
 			message.setFrom(from);
-			message.setTo(email);
+			message.setTo(email.to());
 			message.setSubject("Verify your DRIFT account");
-			message.setText("""
-					A DRIFT company account was created with this email address.
-					Open this link to verify your email and activate the company. It expires in %s.
-					%s
-
-					If you did not sign up, you can ignore this email.
-					""".formatted(describe(validFor), verificationLink));
+			message.setText(text(email));
 			mailSender.send(message);
 		}
+	}
+
+	static String text(EmailVerificationMailer.VerificationEmail email) {
+		return """
+				A DRIFT company account was requested with this email address.
+
+				Company: %s (%s)
+				Administrator: %s
+
+				Open this link to verify your email and activate the company. It expires in %s.
+				%s
+
+				If you did not request this, ignore this email; the account will not be activated.
+				""".formatted(email.companyName(), email.companyCode(), email.fullName(), describe(email.validFor()),
+				email.link());
 	}
 
 	static String describe(Duration validFor) {

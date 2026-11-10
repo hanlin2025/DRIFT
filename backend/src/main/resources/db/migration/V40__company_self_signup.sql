@@ -1,4 +1,5 @@
 -- CDG-361: self-service company signup with a first administrator awaiting email verification.
+-- V39 is used by the maritime snapshot index (CDG-358). users.created_at already exists (V1) for ageing pending signups.
 
 -- 'PENDING_VERIFICATION' is 20 characters, longer than the VARCHAR(16) added in V22.
 ALTER TABLE users ALTER COLUMN status TYPE VARCHAR(32);
@@ -21,6 +22,6 @@ CREATE TABLE company_signup_audits (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
     company_id BIGINT NOT NULL REFERENCES companies(id),
-    event VARCHAR(32) NOT NULL CHECK (event IN ('REGISTERED', 'EMAIL_VERIFIED')),
+    event VARCHAR(32) NOT NULL CHECK (event IN ('REGISTERED', 'EMAIL_VERIFIED', 'RESUBMITTED')),
     recorded_at TIMESTAMPTZ NOT NULL
 );
