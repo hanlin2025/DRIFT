@@ -196,6 +196,13 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .maritime-ai-status { color: var(--muted); }
 .maritime-ai-provider-label { margin: 12px 0; }
 .maritime-ai-assessment-time, .maritime-ai-note { color: var(--muted); }
+.maritime-ai-summary { border-left: 3px solid #78916f; margin: 14px 0; padding: 2px 12px; }
+.maritime-ai-summary h3, .maritime-ai-risk-summary h3 { margin-top: 8px; }
+.maritime-ai-risk-summary { background: #f6f7f0; border: 1px solid #c8d9bf; border-radius: 4px; margin: 14px 0; padding: 4px 14px 8px; }
+.maritime-ai-risk-summary dl { margin: 6px 0; }
+.maritime-ai-risk-summary dl div { padding: 6px 0; }
+.maritime-ai-limitations { border-left: 3px solid #9a6d0b; margin: 12px 0; padding: 2px 12px; }
+.maritime-ai-limitations h3 { font-size: 14px; margin: 8px 0; }
 .maritime-ai-evidence, .maritime-ai-schedule, .maritime-ai-uncertainty { border-top: 1px solid #d5e0cc; margin-top: 14px; padding-top: 4px; }
 .maritime-ai-observation { border-left: 2px solid #92ac8c; margin: 10px 0 12px; padding-left: 12px; }
 .maritime-ai-observation p { margin: 4px 0; overflow-wrap: anywhere; }
