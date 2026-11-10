@@ -77,6 +77,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [maritimeContext, setMaritimeContext] = useState<MaritimeContext | null>(null);
   const [maritimeContextUnavailable, setMaritimeContextUnavailable] = useState(false);
   const [maritimeChanges, setMaritimeChanges] = useState<MaritimeChangeEvents | null>(null);
+  const maritimeChangesRef = useRef<MaritimeChangeEvents | null>(null);
   const [maritimeChangesLoading, setMaritimeChangesLoading] = useState(false);
   const [maritimeChangesLoadingOlder, setMaritimeChangesLoadingOlder] = useState(false);
   const [maritimeChangesError, setMaritimeChangesError] = useState<string | null>(null);
@@ -87,9 +88,11 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
   const [portCapture, setPortCapture] = useState<{ nonce: number; port: string } | null>(null);
   const historySeq = useRef(0);
   const maritimeChangeSeq = useRef(0);
+  const maritimeChangeCursorSince = useRef<string | undefined>(undefined);
   const decisionSeq = useRef(0);
   const refreshNonce = useRef(0);
   const contextKey = `${shipmentId}:${viewerCompanyId ?? ''}:${token}`;
+  useEffect(() => { maritimeChangesRef.current = maritimeChanges; }, [maritimeChanges]);
   const [context, setContext] = useState(contextKey);
   if (context !== contextKey) {
     setContext(contextKey);
@@ -309,38 +312,52 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     }
   }, [token, shipmentId, onSessionEnded]);
 
-  const reloadMaritimeChanges = useCallback(async (cursor?: string) => {
+  const reloadMaritimeChanges = useCallback(async (cursor?: string, isRefresh = true) => {
     const loadingOlder = cursor !== undefined;
+    const existing = maritimeChangesRef.current;
+    const latestDetectedAt = isRefresh && existing?.events.length
+      ? existing.events.reduce((latest, event) => Date.parse(event.detectedAt) > Date.parse(latest) ? event.detectedAt : latest, existing.events[0].detectedAt)
+      : undefined;
+    const requestSince = loadingOlder ? maritimeChangeCursorSince.current : latestDetectedAt;
     const requestId = ++maritimeChangeSeq.current;
     setMaritimeChangesLoading(!loadingOlder);
     setMaritimeChangesLoadingOlder(loadingOlder);
     setMaritimeChangesError(null);
     try {
-      const found = await getMaritimeChangeEvents(token, shipmentId, { limit: 100, ...(cursor ? { cursor } : {}) });
-      if (requestId !== maritimeChangeSeq.current) return;
-      if (!loadingOlder) setMaritimeChanges(found);
-      else setMaritimeChanges(current => {
-        if (!current) return found;
-        const unique = new Map([...current.events, ...found.events].map(event => [event.id, event]));
-        return { ...found, events: [...unique.values()] };
+      const found = await getMaritimeChangeEvents(token, shipmentId, {
+        limit: 100, ...(cursor ? { cursor } : {}), ...(requestSince ? { since: requestSince } : {}),
       });
+      if (requestId !== maritimeChangeSeq.current) return;
+      if (!loadingOlder && (!isRefresh || !existing)) {
+        maritimeChangeCursorSince.current = requestSince;
+        setMaritimeChanges(found);
+      } else {
+        if (loadingOlder) maritimeChangeCursorSince.current = requestSince;
+        setMaritimeChanges(current => {
+          if (!current) return found;
+          const unique = new Map([...current.events, ...found.events].map(event => [event.id, event]));
+          // An incremental refresh uses a different since boundary. Keep the cursor and
+          // cutoff from the existing page chain so “Load older changes” remains continuous.
+          if (!loadingOlder) return { ...found, nextCursor: current.nextCursor, events: [...unique.values()] };
+          return { ...found, events: [...unique.values()] };
+        });
+      }
     } catch (reason: unknown) {
       if (requestId !== maritimeChangeSeq.current) return;
-      if (reason instanceof ApiError && reason.status === 401) {
-        onSessionEnded();
-        return;
-      }
-      if (!loadingOlder) setMaritimeChanges({ events: [], availability: 'UNAVAILABLE' });
+      // This optional endpoint can be absent on a backend that has not integrated CDG-358 yet.
+      // Its 401 fallback must not be treated as proof that the viewer's session has ended.
+      if (!loadingOlder) setMaritimeChanges(current => current ?? { events: [], availability: 'UNAVAILABLE' });
       setMaritimeChangesError(reason instanceof ApiError && reason.status === 403
         ? 'Change information is not available for this shipment.'
-        : loadingOlder ? 'Older maritime changes could not be loaded.' : 'The maritime change timeline could not be refreshed.');
+        : loadingOlder ? 'Older maritime changes could not be loaded.'
+          : isRefresh ? 'The maritime change timeline could not be refreshed.' : 'The maritime change timeline could not be loaded.');
     } finally {
       if (requestId === maritimeChangeSeq.current) {
         setMaritimeChangesLoading(false);
         setMaritimeChangesLoadingOlder(false);
       }
     }
-  }, [token, shipmentId, onSessionEnded]);
+  }, [token, shipmentId]);
 
   useEffect(() => {
     let active = true;
@@ -360,7 +377,9 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
     setPlaybackVesselName(null);
     setCdg201Evidence(null);
     setMaritimeContext(null); setMaritimeContextUnavailable(false);
-    setMaritimeChanges(null); setMaritimeChangesLoading(true); setMaritimeChangesLoadingOlder(false); setMaritimeChangesError(null);
+    setMaritimeChanges(null); setMaritimeChangesLoading(false); setMaritimeChangesLoadingOlder(false); setMaritimeChangesError(null);
+    maritimeChangesRef.current = null;
+    maritimeChangeCursorSince.current = undefined;
     setMaritimeAiAssessments([]); setMaritimeAiUnavailable(false);
     setSelectedId(null);
     getShipment(token, shipmentId).then(found => {
@@ -420,22 +439,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       .catch(() => {
         if (active && requestId === requestSeq.current) setMaritimeContextUnavailable(true);
       });
-    void Promise.resolve().then(() => getMaritimeChangeEvents(token, shipmentId, { limit: 100 })).then(found => {
-      if (!active || requestId !== requestSeq.current) return;
-      setMaritimeChanges(found);
-      setMaritimeChangesLoading(false);
-    }).catch((reason: unknown) => {
-      if (!active || requestId !== requestSeq.current) return;
-      if (reason instanceof ApiError && reason.status === 401) {
-        onSessionEnded();
-        return;
-      }
-      setMaritimeChanges({ events: [], availability: 'UNAVAILABLE' });
-      setMaritimeChangesError(reason instanceof ApiError && reason.status === 403
-        ? 'Change information is not available for this shipment.'
-        : 'The maritime change timeline could not be loaded.');
-      setMaritimeChangesLoading(false);
-    });
+    void reloadMaritimeChanges(undefined, false);
     // AI assessments are independently additive and must not prevent the evidence panel or
     // shipment detail from rendering when an optional client throws or returns a non-Promise.
     void Promise.resolve()
@@ -453,7 +457,7 @@ export function ShipmentDetail({ token, shipmentId, basePath, onSessionEnded, ca
       requestSeq.current += 1;
       maritimeChangeSeq.current += 1;
     };
-  }, [token, shipmentId, viewerCompanyId, attempt, onSessionEnded]);
+  }, [token, shipmentId, viewerCompanyId, attempt, onSessionEnded, reloadMaritimeChanges]);
 
   const shipmentLoaded = shipment !== null;
   useEffect(() => {

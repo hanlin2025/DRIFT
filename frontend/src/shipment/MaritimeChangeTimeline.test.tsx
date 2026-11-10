@@ -63,6 +63,13 @@ describe('MaritimeChangeTimeline', () => {
     expect(event).toHaveTextContent('A port notice does not by itself establish a vessel visit or berth event.');
   });
 
+  it('displays nullable compatibility as unknown', () => {
+    render(<MaritimeChangeTimeline result={result([{
+      ...eta, id: 'legacy-compatibility', compatibility: { activity: null, location: null, time: 'UNKNOWN' },
+    }])} loading={false} loadingOlder={false} error={null} onRefresh={() => {}} onLoadOlder={() => {}} risk={null} />);
+    expect(within(screen.getByRole('list')).getByRole('listitem')).toHaveTextContent('Compatibility: activity UNKNOWN; location UNKNOWN; time UNKNOWN.');
+  });
+
   it('marks historical backfills separately from a live observation', () => {
     render(<MaritimeChangeTimeline result={result([{
       ...eta, id: 'backfill-1', sourceMode: 'HISTORICAL_BACKFILL', eventType: 'REVISED',
@@ -84,7 +91,7 @@ describe('MaritimeChangeTimeline', () => {
     expect(screen.getByText('Loading maritime changes…')).toBeInTheDocument();
   });
 
-  it('requests older changes with the opaque next cursor and reports pagination loading', async () => {
+  it('requests older changes with the opaque cursor and reports pagination loading', async () => {
     const onLoadOlder = vi.fn();
     const user = userEvent.setup();
     const { rerender } = render(<MaritimeChangeTimeline result={result([eta], 'AVAILABLE', 'opaque cursor + 2')} loading={false} loadingOlder={false}

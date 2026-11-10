@@ -173,12 +173,16 @@ describe('connection window on the shipment detail', () => {
       provenance: 'Replay manifest', freshness: 'HISTORICAL', associationConfidence: 'UNVERIFIED_IMO_ONLY',
       compatibility: { activity: 'UNKNOWN', location: 'UNKNOWN', time: 'COMPATIBLE' }, requiresHumanReview: true,
     }] };
-    const olderPage: MaritimeChangeEvents = { availability: 'AVAILABLE', events: [{
-      ...firstPage.events[0], id: 'weather:rev-1', sourceType: 'NEA_WEATHER' as const, sourceIdentity: 'NEA regional weather',
-      eventType: 'NEW' as const, sourceMode: 'HISTORICAL_BACKFILL' as const, detectedAt: '2026-10-27T18:00:01Z',
-      previousValue: null, currentValue: 'Moderate rainfall', requiresHumanReview: false,
-    }] };
-    vi.mocked(getMaritimeChangeEvents).mockResolvedValueOnce(firstPage).mockResolvedValueOnce(olderPage).mockResolvedValue({ availability: 'AVAILABLE', events: firstPage.events });
+    const olderPage: MaritimeChangeEvents = { availability: 'AVAILABLE', nextCursor: 'opaque-cursor/older-3', events: [
+      { ...firstPage.events[0] },
+      {
+        ...firstPage.events[0], id: 'weather:rev-1', sourceType: 'NEA_WEATHER' as const, sourceIdentity: 'NEA regional weather',
+        eventType: 'NEW' as const, sourceMode: 'HISTORICAL_BACKFILL' as const, detectedAt: '2026-10-27T18:00:01Z',
+        previousValue: null, currentValue: 'Moderate rainfall', requiresHumanReview: false,
+      },
+    ] };
+    vi.mocked(getMaritimeChangeEvents).mockResolvedValueOnce(firstPage).mockResolvedValueOnce(olderPage)
+      .mockRejectedValueOnce(new ApiError('temporary backend failure', 500)).mockResolvedValueOnce({ availability: 'AVAILABLE', events: [] });
     const user = userEvent.setup();
     open(forwarder, '/freight-forwarder/shipments/7');
     const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
@@ -187,12 +191,39 @@ describe('connection window on the shipment detail', () => {
     await user.click(within(timeline).getByRole('button', { name: 'Load older changes' }));
     expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, cursor: 'opaque-cursor/older-2' });
     expect(await within(timeline).findByText('NEA weather update')).toBeInTheDocument();
-    expect(within(timeline).queryByRole('button', { name: 'Load older changes' })).not.toBeInTheDocument();
+    expect(within(timeline).getAllByText('MPA arrival estimate revision')).toHaveLength(1);
+    expect(within(timeline).getByRole('button', { name: 'Load older changes' })).toBeInTheDocument();
     await user.click(within(timeline).getByRole('button', { name: 'Refresh changes' }));
     await waitFor(() => expect(getMaritimeChangeEvents).toHaveBeenCalledTimes(3));
-    expect(within(timeline).queryByText('NEA weather update')).not.toBeInTheDocument();
+    expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, since: '2026-10-28T18:00:01Z' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be refreshed.')).toBeInTheDocument();
+    expect(within(timeline).getByText('NEA weather update')).toBeInTheDocument();
+    expect(within(timeline).getAllByText('MPA arrival estimate revision')).toHaveLength(1);
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('AVAILABLE');
+    await user.click(within(timeline).getByRole('button', { name: 'Load older changes' }));
+    expect(getMaritimeChangeEvents).toHaveBeenLastCalledWith('forwarder-token', '7', { limit: 100, cursor: 'opaque-cursor/older-3' });
     expect(generateMaritimeAiAssessment).not.toHaveBeenCalled();
     expect(within(timeline).getByRole('link', { name: 'Review AI assessment and request an explanation' })).toHaveAttribute('href', '#maritime-ai-assessment');
+  });
+
+  it('does not end the shipment session when the optional change-events endpoint responds 401', async () => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Your session has ended.', 401));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be loaded.')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+    expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
+  });
+
+  it('shows a shipment-specific unavailable message for a 403 without hiding the shipment', async () => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Not available for this shipment.', 403));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('Change information is not available for this shipment.')).toBeInTheDocument();
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
   });
 
   it('lets the viewer request an advisory without changing shipment detail state', async () => {

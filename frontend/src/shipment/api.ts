@@ -63,7 +63,7 @@ export type MaritimeChangeEvent = {
   provenance: string;
   associationConfidence: MaritimeChangeAssociationConfidence;
   freshness: MaritimeChangeFreshness;
-  compatibility: { activity: MaritimeChangeCompatibility; location: MaritimeChangeCompatibility; time: MaritimeChangeCompatibility };
+  compatibility: { activity: MaritimeChangeCompatibility | null; location: MaritimeChangeCompatibility | null; time: MaritimeChangeCompatibility | null };
   requiresHumanReview: boolean;
 };
 export type MaritimeChangeEvents = {
@@ -1846,24 +1846,39 @@ function isMaritimeChangeAssociationConfidence(value: unknown): value is Maritim
   return value === 'VERIFIED_ASSOCIATION' || value === 'UNVERIFIED_IMO_ONLY'
     || value === 'REGIONAL_CONTEXT' || value === 'UNCONFIRMED_CONTEXT';
 }
+function safeMaritimeChangeTimestamp(value: string | null): string | null {
+  if (value === null || apiInstantNanoseconds(value) !== undefined) return value;
+  // Historical V31 rows may contain an offset-qualified ISO timestamp without seconds.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value))) return value;
+  return null;
+}
 function isMaritimeChangeEvent(value: unknown): value is MaritimeChangeEvent {
   if (!isRecord(value) || !['MPA_ETA_REVISION', 'MPA_OFFICIAL_NOTICE', 'NEA_WEATHER'].includes(value.sourceType as string)
     || !['id', 'sourceIdentity', 'provenance'].every(key => isPresentText(value[key]))
     || !isMaritimeChangeAssociationConfidence(value.associationConfidence) || !isMaritimeChangeFreshness(value.freshness)
     || (value.eventType !== 'NEW' && value.eventType !== 'REVISED')
-    || !isMaritimeChangeSourceMode(value.sourceMode) || !isNullableApiInstant(value.sourceEventTime) || !isNullableApiInstant(value.observedAt)
+    || !isMaritimeChangeSourceMode(value.sourceMode) || !isNullableText(value.sourceEventTime) || !isNullableText(value.observedAt)
     || !['retrievedAt', 'detectedAt'].every(key => typeof value[key] === 'string' && apiInstantNanoseconds(value[key]) !== undefined)
-    || !isNullableText(value.previousValue) || !isNullableText(value.currentValue) || typeof value.requiresHumanReview !== 'boolean'
-    || !isRecord(value.compatibility)) return false;
-  const compatibility = value.compatibility as Record<string, unknown>;
+    || !isNullableText(value.previousValue) || !isNullableText(value.currentValue) || typeof value.requiresHumanReview !== 'boolean') return false;
+  const compatibility = isRecord(value.compatibility) ? value.compatibility : {};
   return ['activity', 'location', 'time'].every(key =>
-    compatibility[key] === 'COMPATIBLE' || compatibility[key] === 'INCOMPATIBLE' || compatibility[key] === 'UNKNOWN');
+    compatibility[key] === undefined || compatibility[key] === null || isCompatibility(compatibility[key]));
 }
 export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents | undefined {
   if (!isRecord(value) || !['AVAILABLE', 'PARTIAL', 'UNAVAILABLE'].includes(value.availability as string)
-    || !Array.isArray(value.events) || !value.events.every(isMaritimeChangeEvent)
+    || !Array.isArray(value.events)
     || (value.nextCursor !== undefined && value.nextCursor !== null && !isPresentText(value.nextCursor))) return undefined;
-  return { events: value.events, availability: value.availability as MaritimeChangeAvailability,
+  const events = value.events.filter(isMaritimeChangeEvent).map(event => ({
+    ...event,
+    sourceEventTime: safeMaritimeChangeTimestamp(event.sourceEventTime),
+    observedAt: safeMaritimeChangeTimestamp(event.observedAt),
+    compatibility: {
+      activity: isCompatibility(event.compatibility?.activity) ? event.compatibility.activity : 'UNKNOWN',
+      location: isCompatibility(event.compatibility?.location) ? event.compatibility.location : 'UNKNOWN',
+      time: isCompatibility(event.compatibility?.time) ? event.compatibility.time : 'UNKNOWN',
+    },
+  }));
+  return { events, availability: value.availability as MaritimeChangeAvailability,
     ...(value.nextCursor !== undefined ? { nextCursor: value.nextCursor as string | null } : {}) };
 }
 function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {

@@ -374,11 +374,10 @@ describe('CDG-357 maritime change events API', () => {
       credentials: 'include', headers: expect.objectContaining({ 'X-DRIFT-Request': '1' }),
     }));
   });
-  it('rejects malformed event identity, mode, chronology or compatibility', () => {
+  it('drops a malformed event without discarding valid events from the response', () => {
     const invalid = [
       { ...event, sourceMode: 'UNAVAILABLE' },
       { ...event, detectedAt: 'later' },
-      { ...event, sourceEventTime: 'yesterday' },
       { ...event, eventType: 'UPDATED' },
       { ...event, compatibility: { activity: 'MATCHED', location: null, time: 'UNKNOWN' } },
       { ...event, freshness: 'RECORDED_REPLAY' },
@@ -389,9 +388,21 @@ describe('CDG-357 maritime change events API', () => {
       { ...event, requiresHumanReview: 'true' },
       { ...event, sourceType: 'AIS_TRACK' },
     ];
-    for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad] })).toBeUndefined();
+    for (const bad of invalid) expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [bad, event] })).toEqual({ availability: 'AVAILABLE', events: [event] });
     expect(decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [event], nextCursor: ['not', 'opaque text'] })).toBeUndefined();
     expect(decodeMaritimeChangeEvents({ availability: 'UNKNOWN', events: [] })).toBeUndefined();
+  });
+
+  it('accepts legacy source timestamps and nullable compatibility without inventing values', () => {
+    const decoded = decodeMaritimeChangeEvents({ availability: 'AVAILABLE', events: [
+      { ...event, sourceEventTime: '2026-10-29T02:00+08:00', observedAt: 'legacy observation timestamp' },
+      { ...event, id: 'source-2:abc123', compatibility: { activity: null, location: null, time: 'UNKNOWN' } },
+      { ...event, id: 'source-3:abc123', compatibility: undefined },
+    ] });
+    expect(decoded?.events).toHaveLength(3);
+    expect(decoded?.events[0]).toMatchObject({ sourceEventTime: '2026-10-29T02:00+08:00', observedAt: null });
+    expect(decoded?.events[1].compatibility).toEqual({ activity: 'UNKNOWN', location: 'UNKNOWN', time: 'UNKNOWN' });
+    expect(decoded?.events[2].compatibility).toEqual({ activity: 'UNKNOWN', location: 'UNKNOWN', time: 'UNKNOWN' });
   });
 });
 

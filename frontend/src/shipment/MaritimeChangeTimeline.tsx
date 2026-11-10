@@ -40,7 +40,7 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
     {result && <p className="maritime-change-source-status">Source availability <strong>{result.availability}</strong></p>}
     {error && <p className="refresh-note" role="status">{error}</p>}
     {!result && loading && <p role="status">Loading maritime changes…</p>}
-    {result?.availability === 'UNAVAILABLE' && <p className="refresh-note">Change information is unavailable. No source observation is implied.</p>}
+    {result?.availability === 'UNAVAILABLE' && !error && <p className="refresh-note">Change information is unavailable. No source observation is implied.</p>}
     {result && result.events.length === 0 && result.availability !== 'UNAVAILABLE' && <p>No detected maritime source changes are available for this shipment.</p>}
     {events && events.length > 0 && <ol className="maritime-change-list">
       {events.map(event => <li key={event.id}>
@@ -61,7 +61,7 @@ export function MaritimeChangeTimeline({ result, loading, loadingOlder, error, o
             <div><dt>Freshness</dt><dd>{event.freshness}</dd></div>
             <div><dt>Association confidence</dt><dd>{event.associationConfidence}</dd></div>
           </dl>
-          <p><strong>Compatibility:</strong> activity {event.compatibility.activity}; location {event.compatibility.location}; time {event.compatibility.time}.</p>
+          <p><strong>Compatibility:</strong> activity {event.compatibility.activity ?? 'UNKNOWN'}; location {event.compatibility.location ?? 'UNKNOWN'}; time {event.compatibility.time ?? 'UNKNOWN'}.</p>
           <p><strong>Provenance:</strong> {event.provenance}</p>
           {event.sourceMode === 'HISTORICAL_BACKFILL' && <p className="maritime-change-caveat">Historical backfill; this record is not a newly observed live change.</p>}
           {event.requiresHumanReview && <p className="maritime-change-review" role="note"><strong>Human review needed.</strong> Confirm this source and shipment association before changing an operational plan.</p>}
