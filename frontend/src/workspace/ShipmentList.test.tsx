@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { loadSession } from '../login/api';
 import { clearSession, writeSession, type Session } from '../session/session';
-import { archiveShipment, getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, type Shipment } from '../shipment/api';
+import { archiveShipment, getCdg201ArrivalEvidence, getMaritimeChangeEvents, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, listShipments, restoreShipment, type Shipment } from '../shipment/api';
 import { formatWhen } from '../shipment/ShipmentForm';
 import { ApiError } from '../signup/api';
 import { ShipmentList } from './ShipmentList';
 
 vi.mock('../login/api', () => ({ login: vi.fn(), loadSession: vi.fn() }));
-vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
+vi.mock('../shipment/api', () => ({ listShipments: vi.fn(), createShipment: vi.fn(), updateShipment: vi.fn(), getShipment: vi.fn(), getShipmentTracking: vi.fn(), getCdg201ArrivalEvidence: vi.fn(), getMaritimeChangeEvents: vi.fn(), archiveShipment: vi.fn(), restoreShipment: vi.fn(), getVesselTrack: vi.fn(), getShipmentHistory: vi.fn() }));
 
 const newer: Shipment = {
   id: 2,
@@ -72,6 +72,7 @@ beforeEach(() => {
   clearSession();
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 1, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getVesselTrack).mockResolvedValue({
     vessel: 'MOTHER', vesselName: null, mmsi: null, windowHours: 24,
     from: '2026-10-04T00:00:00Z', to: '2026-10-05T00:00:00Z',
@@ -96,6 +97,7 @@ beforeEach(() => {
     };
   });
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
+  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getVesselTrack).mockResolvedValue({
     vessel: 'MOTHER',
     vesselName: null,
