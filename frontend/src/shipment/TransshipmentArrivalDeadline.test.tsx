@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../signup/api';
-import { getCdg201ArrivalEvidence, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, updateTransshipmentArrivalDeadline, type Shipment } from './api';
+import { getCdg201ArrivalEvidence, getMaritimeChangeEvents, getShipment, getShipmentHistory, getShipmentTracking, getVesselTrack, updateTransshipmentArrivalDeadline, type Shipment } from './api';
 import { ShipmentDetail, TRACKING_POLL_MS } from './ShipmentDetail';
 import { toOffsetDateTime } from './validation';
 
@@ -14,6 +14,7 @@ vi.mock('./api', () => ({
   updateTransshipmentArrivalDeadline: vi.fn(),
   getShipmentHistory: vi.fn(),
   getCdg201ArrivalEvidence: vi.fn(),
+  getMaritimeChangeEvents: vi.fn(),
 }));
 
 const EXACT = '2026-10-28T16:00:00.123456789Z';
@@ -61,6 +62,7 @@ function renderDetail(current: Shipment, viewerCompanyId: number | null = 8) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getMaritimeChangeEvents).mockResolvedValue({ availability: 'AVAILABLE', events: [] });
   vi.mocked(getShipmentHistory).mockResolvedValue({ shipmentId: 7, earlierChangesUnrecorded: false, entries: [] });
   vi.mocked(getCdg201ArrivalEvidence).mockResolvedValue(null);
   vi.mocked(getShipmentTracking).mockResolvedValue({
