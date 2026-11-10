@@ -60,7 +60,7 @@ public class PasswordResetStore {
 			return false;
 		}
 		UserAccount account = token.getUser();
-		if (account.getStatus() == AccountStatus.REMOVED) {
+		if (account.getStatus() != AccountStatus.ACTIVE) {
 			return false;
 		}
 		// Bumps sessionGeneration, which ends every session issued before the reset.

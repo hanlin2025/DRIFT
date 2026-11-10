@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
+import com.drift.backend.account.exception.EmailNotVerifiedException;
 import com.drift.backend.account.exception.InvalidCredentialsException;
 import com.drift.backend.account.exception.SessionEndedException;
 
@@ -32,7 +33,11 @@ public class AuthenticationService {
 		if (account == null || !passwordEncoder.matches(request.password(), hash)) {
 			throw new InvalidCredentialsException();
 		}
-		if (account.getStatus() == AccountStatus.REMOVED) {
+		if (account.getStatus() == AccountStatus.PENDING_VERIFICATION) {
+			// The password is already proven, so this does not reveal whether the email is registered.
+			throw new EmailNotVerifiedException();
+		}
+		if (account.getStatus() != AccountStatus.ACTIVE) {
 			throw new InvalidCredentialsException();
 		}
 		return LoginResponse.of(account, tokens.issue(account));

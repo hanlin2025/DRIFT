@@ -57,7 +57,7 @@ public class UserAccount {
 	private RiskNotificationLevel minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
 
 	@Enumerated(EnumType.STRING)
-	@Column(name = "status", nullable = false, length = 16)
+	@Column(name = "status", nullable = false, length = 32)
 	private AccountStatus status = AccountStatus.ACTIVE;
 
 	@Version
@@ -78,6 +78,18 @@ public class UserAccount {
 		this.riskEmailNotificationsEnabled = false;
 		this.minimumRiskNotificationLevel = RiskNotificationLevel.HIGH;
 		this.status = AccountStatus.ACTIVE;
+	}
+
+	/** The first administrator of a self-service company, who cannot sign in until their email is verified. */
+	public static UserAccount pendingAdministrator(String fullName, String email, String passwordHash, AccountRole role,
+			Company company) {
+		UserAccount account = new UserAccount(fullName, email, passwordHash, role, company);
+		account.status = AccountStatus.PENDING_VERIFICATION;
+		return account;
+	}
+
+	public boolean isActive() {
+		return status == AccountStatus.ACTIVE;
 	}
 
 	public Long getId() {
@@ -168,8 +180,8 @@ public class UserAccount {
 	}
 
 	public void remove() {
-		if (status == AccountStatus.REMOVED) {
-			throw new IllegalStateException("Account is already removed");
+		if (status != AccountStatus.ACTIVE) {
+			throw new IllegalStateException("Only an active account can be removed");
 		}
 		this.status = AccountStatus.REMOVED;
 		sessionGeneration++;

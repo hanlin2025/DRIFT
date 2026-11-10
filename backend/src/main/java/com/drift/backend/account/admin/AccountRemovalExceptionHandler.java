@@ -11,6 +11,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.drift.backend.account.admin.exception.AccountAlreadyActiveException;
 import com.drift.backend.account.admin.exception.AccountAlreadyRemovedException;
+import com.drift.backend.account.admin.exception.AccountPendingVerificationException;
 import com.drift.backend.account.admin.exception.AssignedUserNotFoundException;
 import com.drift.backend.account.admin.exception.AssignmentForbiddenException;
 import com.drift.backend.account.admin.exception.InvalidRemovalException;
@@ -48,6 +49,11 @@ public class AccountRemovalExceptionHandler {
 
 	@ExceptionHandler(AccountAlreadyActiveException.class)
 	public ResponseEntity<Map<String, String>> handleAlreadyActive(AccountAlreadyActiveException ex) {
+		return message(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AccountPendingVerificationException.class)
+	public ResponseEntity<Map<String, String>> handlePending(AccountPendingVerificationException ex) {
 		return message(HttpStatus.CONFLICT, ex.getMessage());
 	}
 

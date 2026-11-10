@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.drift.backend.account.exception.EmailNotVerifiedException;
 import com.drift.backend.account.exception.InvalidCredentialsException;
 import com.drift.backend.account.exception.SessionEndedException;
 
@@ -36,6 +37,12 @@ public class AuthenticationExceptionHandler {
 	public ResponseEntity<Map<String, String>> handleCredentials(InvalidCredentialsException ex) {
 		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).cacheControl(CacheControl.noStore())
 				.body(Map.of("message", ex.getMessage()));
+	}
+
+	@ExceptionHandler(EmailNotVerifiedException.class)
+	public ResponseEntity<Map<String, String>> handleUnverified(EmailNotVerifiedException ex) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
+				.body(Map.of("message", ex.getMessage(), "code", EmailNotVerifiedException.CODE));
 	}
 
 	@ExceptionHandler(SessionEndedException.class)

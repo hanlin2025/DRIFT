@@ -89,7 +89,7 @@ class RecommendationDecisionSchemaIntegrationTests {
 				Integer.class, shipment.getId())).isEqualTo(1);
 		assertThat(jdbc.queryForList(
 				"SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class))
-				.endsWith("29", "30", "31", "32", "33", "34", "35", "36", "37", "38");
+				.endsWith("29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "40");
 	}
 
 	@Test

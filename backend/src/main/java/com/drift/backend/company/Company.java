@@ -39,6 +39,23 @@ public class Company {
 		return company;
 	}
 
+	/** A self-service company stays inactive until its first administrator verifies their email. */
+	public static Company createInactive(String code, String name) {
+		Company company = new Company();
+		company.code = code;
+		company.name = name;
+		company.active = false;
+		return company;
+	}
+
+	public void assignCreator(UserAccount creator) {
+		this.createdBy = creator;
+	}
+
+	public void activate() {
+		this.active = true;
+	}
+
 	public Long getId() { return id; }
 	public String getCode() { return code; }
 	public String getName() { return name; }

@@ -78,3 +78,31 @@ docker compose exec -T postgres createdb -U drift drift
 Start the backend again to apply the migrations and preset company records, then create
 new local invitations with the invitation helper. Do not reset a database whose data you
 need to keep; that database requires a deliberate schema reconciliation instead.
+
+## Company self-service signup (CDG-360)
+
+Besides joining through an invitation, anyone can create a new company and become its first
+administrator with `POST /api/register/company` (public). The route is **off by default**: it is
+only registered when `app.signup.enabled` (`SIGNUP_ENABLED`) is `true`, and otherwise answers `404`.
+Leave it off until the verification email and verify endpoint (CDG-363) and the rate limits in the
+contract are integrated; until then a new account could not finish signing up and the public route
+would create accounts unthrottled. The request and response shapes are
+defined in [`cdg360-signup-contract.md`](cdg360-signup-contract.md); that file is the source of truth.
+
+- One transaction creates an **inactive** company, an `ADMIN` account with status
+  `PENDING_VERIFICATION`, an email verification token (SHA-256 hash only, table
+  `email_verification_tokens`) and a `REGISTERED` row in `company_signup_audits` (migration V40).
+- The response is always `202` with the same body, including when the email is already registered
+  (nothing is created in that case). A taken company code returns `409` with `errors.companyCode`; the code is checked before
+  the email, so the `409` does not depend on whether the email is registered.
+- A pending account cannot sign in: the correct password returns `403` with a "verify your email"
+  message, `"code":"EMAIL_NOT_VERIFIED"` and no session; a wrong password stays `401`. Any session whose account is not `ACTIVE` is
+  rejected with `401`. Admins cannot remove or reactivate a pending account (`409`).
+- While inactive, the company is not offered for invitations or shipment linking.
+- `app.signup.verification-ttl` (`SIGNUP_VERIFICATION_TTL`, default `PT24H`) sets how long a
+  verification link stays valid.
+- The code lives in `com.drift.backend.account.signup`. The admin-only organisation creation
+  (CDG-313), the invitation flow (`/api/register`) and the operator bootstrap (`/api/setup/*`) are
+  unchanged.
+
+Tests: `CompanySignupIntegrationTests` and `CompanySignupConcurrencyIntegrationTests`.
