@@ -223,7 +223,7 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .maritime-change-review { padding: 9px 11px; border-left: 3px solid #9a6d0b; background: #f8efd8; }
 .maritime-change-caveat { padding-left: 9px; border-left: 2px solid #9a6d0b; color: #694c15; }
 .maritime-change-risk { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
-.maritime-change-risk > strong { display: inline; margin-right: 8px; font-size: 13px; }
+.maritime-change-timeline .maritime-change-risk > strong { display: inline; margin-right: 8px; font-size: 13px; }
 .maritime-change-risk > p { margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .maritime-change-ai-link { display: inline-block; margin: 8px 0 14px; font-size: 13px; font-weight: 700; }
 .maritime-change-load-older { margin: 2px 0 12px; }

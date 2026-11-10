@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -43,6 +45,28 @@ describe('MaritimeChangeTimeline', () => {
     expect(entries[1]).toHaveTextContent('Regional weather context does not establish a shipment-specific cause.');
     expect(screen.getByLabelText('Current backend risk assessment')).toHaveTextContent('High');
     expect(screen.getByRole('link', { name: 'Review AI assessment and request an explanation' })).toHaveAttribute('href', '#maritime-ai-assessment');
+  });
+
+  it('keeps event grids and the current-risk label above the shared shipment-card styles', () => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
+    document.head.append(style);
+    try {
+      render(<MaritimeChangeTimeline result={result([eta])} loading={false} loadingOlder={false} error={null}
+        onRefresh={() => {}} onLoadOlder={() => {}} risk={{ level: 'HIGH', explanation: 'Backend risk.' }} />);
+      const timeline = screen.getByRole('region', { name: 'Maritime change timeline' });
+      const event = within(timeline).getByRole('listitem');
+      const values = event.querySelector('dl');
+      const firstRow = values?.querySelector('div');
+      const sourceLabel = within(event).getByText('Source:');
+      const riskLabel = within(timeline).getByText('Current shipment risk:');
+      expect(getComputedStyle(sourceLabel).display).toBe('inline');
+      expect(values && getComputedStyle(values).display).toBe('grid');
+      expect(firstRow && getComputedStyle(firstRow).display).toBe('grid');
+      expect(getComputedStyle(riskLabel).display).toBe('inline');
+    } finally {
+      style.remove();
+    }
   });
 
   it('labels unavailable source data without representing it as an observation', () => {
