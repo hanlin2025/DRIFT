@@ -41,7 +41,7 @@ import com.drift.backend.organisation.exception.DuplicateOrganisationException;
 import com.drift.backend.organisation.exception.InvalidOrganisationException;
 import com.jayway.jsonpath.JsonPath;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.signup.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CompanySignupIntegrationTests {

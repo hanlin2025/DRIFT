@@ -1,5 +1,6 @@
 package com.drift.backend.account.signup;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +18,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
+/**
+ * Off unless {@code app.signup.enabled=true}. Keep it off until the verification email and verify endpoint
+ * (CDG-363) and the signup rate limits from the contract are in place: without them a new account cannot
+ * finish signing up, and the public route creates accounts unthrottled.
+ */
 @RestController
+@ConditionalOnProperty(prefix = "app.signup", name = "enabled", havingValue = "true")
 @Tag(name = "Company signup", description = "Create a company and its first administrator, who verifies their email before signing in.")
 public class CompanySignupController {
 
