@@ -64,6 +64,7 @@ public class AccountRemovalController {
 			+ "The administrator's organisation must be active. "
 			+ "A user from another organisation is reported as not found. "
 			+ "An administrator cannot remove their own account. "
+			+ "A removal that would leave the organisation without an active administrator is rejected. "
 			+ "The user's existing session stops working. "
 			+ "An account that is already removed cannot be removed again. "
 			+ "A removal that overlaps another change to the same account is rejected. "
@@ -92,10 +93,13 @@ public class AccountRemovalController {
 					mediaType = "application/json", examples = @ExampleObject(value = """
 							{"message":"User not found."}
 							"""))),
-			@ApiResponse(responseCode = "409", description = "The account has already been removed, or it was changed by someone else during the removal", content = @Content(
+			@ApiResponse(responseCode = "409", description = "The account has already been removed, removing it would leave the organisation without an active administrator, or it was changed by someone else during the removal", content = @Content(
 					mediaType = "application/json", examples = {
 							@ExampleObject(name = "Already removed", value = """
 									{"message":"This account has already been removed."}
+									"""),
+							@ExampleObject(name = "Last administrator", value = """
+									{"message":"A company must keep at least one active administrator."}
 									"""),
 							@ExampleObject(name = "Changed concurrently", value = """
 									{"message":"This account was changed by someone else. Reload and try again."}

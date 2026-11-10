@@ -95,6 +95,14 @@ class OrdinaryMaritimeAiContractTest {
 				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 3 hours before the cited note.";
 		String marginInWords = "The expected arrival was revised by 60 minutes. "
 				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by nine hours.";
+		String marginAboveTen = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by twelve hours.";
+		String marginInTens = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by ninety minutes.";
+		String delayedByNamesTheRevision = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline, delayed by 60 minutes.";
+		String twoRevisionDurations = "The expected arrival was revised by 60 minutes and later changed by 60 minutes. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 3 hours.";
 
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(exceeds, laterDeadlineMiss)),
 				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
@@ -111,6 +119,14 @@ class OrdinaryMaritimeAiContractTest {
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginUsesTheRevisionDuration, laterDeadlineMiss)),
 				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginInWords, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginAboveTen, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginInTens, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(delayedByNamesTheRevision, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(twoRevisionDurations, laterDeadlineMiss)),
 				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
 	}
 
