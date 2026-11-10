@@ -45,7 +45,7 @@ create_owned_database() {
 	local database="$1"
 	local token
 	token="$(openssl rand -hex 16)"
-	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison|198_(migration|activation_(service|concurrency|race))|279|289)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
+	if [[ ! "$database" =~ ^drift_cdg(81(archive|visibility|filterapi|filterservice|identity)|80status|150_arrival|152_coverage|168_pagesort|203_deadline|206_comparison|198_(migration|activation_(service|concurrency|race)|monitoring_e2e)|279|289)_[0-9]{14}_[a-f0-9]{12}$ ]]; then
 		echo "Generated database name failed the ownership guard: $database" >&2
 		return 1
 	fi
@@ -115,6 +115,10 @@ if [[ -f "$activation_test_dir/ShipmentRiskAlertActivationMigrationIntegrationTe
 	export CDG198_MIGRATION_DATABASE_URL="$DRIFT_CDG198_MIGRATION_JDBC_URL"
 	export CDG198_MIGRATION_DATABASE_USERNAME="$DRIFT_CDG198_MIGRATION_DB_USERNAME"
 	export CDG198_MIGRATION_DATABASE_PASSWORD="$DRIFT_CDG198_MIGRATION_DB_PASSWORD"
+fi
+
+if [[ -f "$activation_test_dir/ShipmentRiskMonitoringScenarioIntegrationTests.java" ]]; then
+	configure_database DRIFT_CDG198_MONITORING_E2E drift_cdg198_monitoring_e2e DRIFT_CDG198_MONITORING_E2E
 fi
 
 if [[ -f "$activation_test_dir/SyntheticDisruptionScenarioIntegrationTests.java" ]]; then
