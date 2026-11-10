@@ -258,12 +258,13 @@ class ConfiguredMaritimeAiClient implements MaritimeAiClient {
 		var riskReview = (tools.jackson.databind.node.ObjectNode) riskProperties.path("riskReview").path("properties");
 		var deadlineProperties = (tools.jackson.databind.node.ObjectNode) properties.path("deadline").path("properties");
 		((tools.jackson.databind.node.ObjectNode) riskProperties.path("evidenceRef")).set("enum", mapper.valueToTree(revisions));
-		((tools.jackson.databind.node.ObjectNode) riskProperties.path("statement")).set("enum", mapper.valueToTree(riskChoices.stream().limit(2).toList()));
+		// Offer distinct evidence-relevance interpretations, not only a reordered copy of one sentence.
+		((tools.jackson.databind.node.ObjectNode) riskProperties.path("statement")).set("enum", mapper.valueToTree(List.of(riskChoices.get(0), riskChoices.get(8))));
 		((tools.jackson.databind.node.ObjectNode) riskReview.path("severity")).set("enum", mapper.valueToTree(List.of(risk.severity().name())));
 		((tools.jackson.databind.node.ObjectNode) riskReview.path("selectedWindowState")).set("enum", mapper.valueToTree(List.of(risk.selectedWindowState().name())));
 		((tools.jackson.databind.node.ObjectNode) deadlineProperties.path("evidenceRef")).set("enum", mapper.valueToTree(revisions));
 		((tools.jackson.databind.node.ObjectNode) deadlineProperties.path("outcome")).set("enum", mapper.valueToTree(List.of(comparison.outcome().name())));
-		((tools.jackson.databind.node.ObjectNode) deadlineProperties.path("statement")).set("enum", mapper.valueToTree(deadlineChoices.stream().limit(2).toList()));
+		((tools.jackson.databind.node.ObjectNode) deadlineProperties.path("statement")).set("enum", mapper.valueToTree(List.of(deadlineChoices.get(0), deadlineChoices.get(4))));
 		((tools.jackson.databind.node.ObjectNode) properties.path("uncertainty")).set("enum", mapper.valueToTree(ScenarioMaritimeAiProse.uncertaintyAlternatives()));
 		((tools.jackson.databind.node.ObjectNode) properties.path("etaCheck")).set("enum", mapper.valueToTree(ScenarioMaritimeAiProse.etaCheckAlternatives()));
 		((tools.jackson.databind.node.ObjectNode) properties.path("deadlineCheck")).set("enum", mapper.valueToTree(ScenarioMaritimeAiProse.deadlineCheckAlternatives()));

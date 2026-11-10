@@ -214,11 +214,20 @@ class ConfiguredMaritimeAiClientTest {
 			assertThat(properties.at("/risk/properties/evidenceRef/enum/0").asString())
 					.isEqualTo("evidence:cdg279-v1-revision-1");
 			String selectedDeadline = properties.at("/deadline/properties/statement/enum/0").asString();
+			String alternativeDeadline = properties.at("/deadline/properties/statement/enum/1").asString();
 			assertThat(ScenarioMaritimeAiProse.matchesDeadline(selectedDeadline, key, comparison)).isTrue();
+			assertThat(ScenarioMaritimeAiProse.matchesDeadline(alternativeDeadline, key, comparison)).isTrue();
+			assertThat(alternativeDeadline).isNotEqualTo(selectedDeadline);
 			assertThat(selectedDeadline).contains(ScenarioDeadlineImpact.from(comparison).magnitude());
+			assertThat(alternativeDeadline).contains(ScenarioDeadlineImpact.from(comparison).magnitude());
 			assertThat(ScenarioMaritimeAiProse.matchesRisk(
 					properties.at("/risk/properties/statement/enum/0").asString(), risk.severity(),
 					risk.selectedWindowState())).isTrue();
+			assertThat(ScenarioMaritimeAiProse.matchesRisk(
+					properties.at("/risk/properties/statement/enum/1").asString(), risk.severity(),
+					risk.selectedWindowState())).isTrue();
+			assertThat(properties.at("/risk/properties/statement/enum/1").asString())
+					.isNotEqualTo(properties.at("/risk/properties/statement/enum/0").asString());
 			assertThat(ScenarioMaritimeAiProse.matchesUncertainty(
 					properties.at("/uncertainty/enum/0").asString())).isTrue();
 		}

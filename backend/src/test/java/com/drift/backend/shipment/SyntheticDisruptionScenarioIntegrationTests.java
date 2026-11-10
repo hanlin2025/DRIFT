@@ -917,7 +917,7 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(assessment.path("provider").asText()).isEqualTo("offline-scenario-quality-stub");
 		assertThat(assessment.path("model").asText()).isEqualTo("deterministic-fixture");
 		assertThat(assessment.path("promptVersion").asText())
-				.isEqualTo("cdg290.scenario-grounded-v1.7.1");
+				.isEqualTo("cdg290.scenario-grounded-v1.7.2");
 		JsonNode claims = assessment.at("/interpretation/claims");
 		JsonNode riskClaim = claimWithRelationship(claims, "RISK_BUFFER_REVIEW");
 		JsonNode businessClaim = claimWithRelationship(claims, "DELAY_COMPARISON_REVIEW");
