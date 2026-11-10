@@ -17,6 +17,15 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 	@EntityGraph(attributePaths = "company")
 	Optional<UserAccount> findByEmailIgnoreCase(String email);
 
+	@Query("""
+			SELECT COUNT(account) FROM UserAccount account
+			WHERE account.company.id = :companyId
+				AND account.id <> :excludedUserId
+				AND account.role.code = com.drift.backend.account.Role.ADMIN
+				AND account.status = com.drift.backend.account.AccountStatus.ACTIVE
+			""")
+	long countOtherActiveAdministrators(@Param("companyId") Long companyId, @Param("excludedUserId") Long excludedUserId);
+
 	@Query("SELECT account.sessionGeneration FROM UserAccount account WHERE account.id = :id")
 	Optional<Long> findSessionGenerationById(@Param("id") Long id);
 
