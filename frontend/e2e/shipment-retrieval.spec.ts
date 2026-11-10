@@ -207,7 +207,8 @@ test('a freight forwarder prioritises at-risk shipments across two importers', {
     await expect(tableRows.filter({ hasText: 'Straits Fresh' })).toHaveCount(2);
 
     const byRisk = page.waitForResponse(response => shipmentList(response, { sort: 'risk' }));
-    await page.getByRole('combobox', { name: 'Sort by' }).selectOption('risk');
+    await page.getByRole('combobox', { name: 'Sort by' }).click();
+    await page.getByRole('option', { name: 'Risk level (Critical first)' }).click();
     await page.getByRole('button', { name: 'Apply filters' }).click();
     expect((await byRisk).status()).toBe(200);
     await expect(page).toHaveURL(/sort=risk/);
@@ -283,7 +284,8 @@ test("a freight forwarder sees which customers' deadlines a delay is likely to m
 
     const tableRows = page.locator('tbody tr');
     const byRisk = page.waitForResponse(response => shipmentList(response, { sort: 'risk' }));
-    await page.getByRole('combobox', { name: 'Sort by' }).selectOption('risk');
+    await page.getByRole('combobox', { name: 'Sort by' }).click();
+    await page.getByRole('option', { name: 'Risk level (Critical first)' }).click();
     await page.getByRole('button', { name: 'Apply filters' }).click();
     const ranked = await (await byRisk).json() as ListedShipment[];
     expect(ranked.map(item => item.risk?.level)).toEqual(['HIGH', 'HIGH', 'HIGH']);

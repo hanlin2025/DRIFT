@@ -252,7 +252,7 @@ test('an administrator assigns a role in their own organisation and it takes eff
   try {
     await signIn(page, member.email, '/freight-forwarder');
     await expect(page.getByRole('heading', { name: 'Shipment portfolio' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Register a shipment' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Register a shipment' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'User management' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: shipment.shipmentReference })).toBeVisible();
 

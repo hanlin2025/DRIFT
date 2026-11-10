@@ -131,19 +131,53 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .login-fields { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
 .login-fields:disabled .primary-button { cursor: not-allowed; }
 .workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100dvh; background: var(--cream); }
+.workspace.is-sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
 .workspace:not(:has(.workspace-bar)) { grid-template-columns: 1fr; }
 .workspace-bar { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 20px 12px 16px; background: var(--paper); color: var(--ink); border-right: 1px solid var(--line); position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
+.workspace-bar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sidebar-toggle { width: 36px; height: 36px; display: grid; place-items: center; margin: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--muted); flex: none; }
+.sidebar-toggle:hover { background: var(--hover); color: var(--ink); }
+.nav-icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .workspace-bar .wordmark { font-size: 18px; letter-spacing: 0.08em; margin: 4px 8px 16px; color: var(--ink); }
-.sign-out { width: auto; margin: auto 0 0; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 14px; font-weight: 650; text-align: left; }
+.workspace-identity { display: grid; gap: 2px; margin: 0 8px 16px; }
+.workspace-identity strong { font-size: 14px; font-weight: 650; }
+.workspace-identity span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+.page-heading .intro { margin-bottom: 0; }
+a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: none; white-space: nowrap; }
+.shipment-step { width: 100%; }
+.empty-shipments { margin-top: 8px; }
+.sign-out { display: flex; align-items: center; gap: 10px; width: auto; margin: auto 0 0; min-height: 40px; padding: 8px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 14px; font-weight: 650; text-align: left; }
+.workspace.is-sidebar-collapsed .workspace-bar { align-items: center; padding: 16px 10px; }
+.workspace.is-sidebar-collapsed .workspace-bar-head { flex-direction: column; align-items: center; }
+.workspace.is-sidebar-collapsed .workspace-bar .wordmark { margin: 0 0 8px; }
+.workspace.is-sidebar-collapsed .workspace-bar .wordmark svg { margin-right: 0; }
+.workspace.is-sidebar-collapsed .nav-label,
+.workspace.is-sidebar-collapsed .workspace-identity,
+.workspace.is-sidebar-collapsed .wordmark-name { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.workspace.is-sidebar-collapsed .workspace-nav,
+.workspace.is-sidebar-collapsed .sign-out { justify-content: center; width: 44px; padding: 10px; }
 .sign-out:hover { background: var(--hover); color: var(--ink); }
-.workspace-main { max-width: 1120px; width: 100%; margin: 0; padding: 32px 32px 64px; }
+.workspace-main { max-width: none; width: 100%; margin: 0; padding: 40px 40px 72px; }
 .session-facts { display: grid; gap: 14px; margin: 8px 0 0; }
 .session-facts div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
 .session-facts dt { color: var(--muted); font-size: 11px; }
 .session-facts dd { margin: 0; font-size: 12px; font-weight: 700; text-align: right; }
-.shipment-panel { margin-top: 28px; border-top: 1px solid var(--line); }
-.shipment-panel h3 { font-family: var(--font-sans); font-weight: 650; font-size: 28px; letter-spacing: -0.03em; margin: 28px 0 8px; }
-.shipment-panel .intro { margin-bottom: 18px; }
+.shipment-panel { margin-top: 8px; border-top: 0; }
+.shipment-panel h3 { font-family: var(--font-sans); font-weight: 650; font-size: 28px; letter-spacing: -0.03em; margin: 0 0 20px; }
+.shipment-form { display: grid; gap: 14px; }
+.form-section { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 20px 2px; }
+.form-section h4 { margin: 0 0 14px; font-size: 12px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.route-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }
+.connection-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+.identity-fields { padding: 0; }
+.identity-fields summary { display: grid; gap: 4px; cursor: pointer; padding: 16px 20px; list-style: none; }
+.identity-fields summary::-webkit-details-marker { display: none; }
+.identity-title { font-size: 15px; font-weight: 650; }
+.identity-note { color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.45; }
+.identity-body { padding: 2px 20px 8px; }
+.shipment-form .form-actions { justify-content: flex-end; margin-top: 4px; }
+.shipment-form .primary-button { width: auto; min-width: 200px; }
 .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .shipment-record { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 16px 4px; margin: 0 0 22px; }
 .maritime-context details { margin: 8px 0 12px; font-size: 12px; }
@@ -176,10 +210,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .maritime-ai-details section { margin: 12px 0; }
 .maritime-ai-details section > section { border-top: 1px solid #d5e0cc; padding-top: 8px; }
 .maritime-ai-panel button { margin-top: 8px; }
-.shipment-list { margin-top: 28px; overflow-x: auto; }
-.shipment-list table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12px; }
-.shipment-list th, .shipment-list td { text-align: left; white-space: nowrap; padding: 12px 16px 12px 0; border-top: 1px solid var(--line); }
-.shipment-list th { color: var(--muted); font-size: 11px; font-weight: 750; }
+.shipment-list { margin-top: 28px; overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 4px 28px 12px; }
+.shipment-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.shipment-list th, .shipment-list td { text-align: left; white-space: nowrap; padding: 14px 24px 14px 0; border: 0; }
+.shipment-list tbody td { border-top: 1px solid var(--line); }
+.shipment-list th { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: 0.03em; }
 .shipment-list tbody tr { position: relative; }
 .shipment-row-link { color: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .shipment-row-link::after { content: ''; position: absolute; inset: 0; }
@@ -193,17 +228,56 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .remove-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .remove-dialog-actions .primary-button { width: auto; min-height: 36px; margin: 0; padding: 8px 14px; }
 .shipment-list tbody tr:hover td { background: #f3f6ef; }
-.shipment-filters { margin-top: 28px; padding: 22px 0 4px; border-top: 1px solid var(--line); }
+.shipment-filters { margin-top: 36px; padding: 0; border: 0; }
 .shipment-filters fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.shipment-filters legend { font-family: var(--font-sans); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; margin-bottom: 18px; }
-.shipment-filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-.field-checkbox { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; align-self: center; }
-.field-checkbox input { width: 18px; min-height: 18px; margin: 0; padding: 0; }
-.field-checkbox label { margin: 0; justify-content: flex-start; }
-.field-checkbox .field-hint { grid-column: 2; margin-top: 2px; }
-.shipment-filter-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
-.shipment-filter-actions .primary-button { width: auto; margin: 0; min-width: 150px; }
-.shipment-filter-actions .secondary-button { min-height: 47px; }
+.shipment-filters .field { margin-bottom: 0; }
+.shipment-filters label { font-size: 12px; margin-bottom: 4px; }
+.shipment-filters input, .shipment-filters select { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper); border-radius: var(--radius-sm); color: var(--ink); font: inherit; font-size: 15px; }
+.shipment-filters select:focus, .shipment-filters input:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--focus-ring); }
+.choice-menu { position: relative; display: inline-block; max-width: 100%; }
+.choice-menu-button { width: max-content; max-width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; font-size: 15px; text-align: left; }
+.choice-menu-button svg { width: 16px; height: 16px; flex: none; }
+.choice-menu-list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content; margin: 0; padding: 4px; list-style: none; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+.choice-menu-list button { width: 100%; min-height: 36px; margin: 0; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 500; text-align: left; }
+.choice-menu-list button.is-active, .choice-menu-list button[aria-selected="true"] { background: var(--hover); }
+.choice-menu-list button:hover:not(:disabled) { background: var(--hover); }
+.choice-menu-list button:disabled { color: var(--muted); }
+.calendar-field { position: relative; }
+.calendar-field input { padding-right: 40px; }
+.calendar-field-button { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; display: grid; place-items: center; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.calendar-field-button:hover { background: var(--hover); color: var(--ink); }
+.calendar-field-button svg { width: 16px; height: 16px; }
+.calendar-panel { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: 100%; min-width: 280px; box-sizing: border-box; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.calendar-heading button { width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 18px; }
+.calendar-heading button:hover { background: var(--hover); }
+.calendar-heading .calendar-title { width: auto; height: auto; min-height: 28px; padding: 2px 8px; font-size: 14px; font-weight: 650; }
+.calendar-choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.calendar-choice-grid button { width: 100%; height: 36px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; }
+.calendar-choice-grid button:hover { background: var(--hover); }
+.calendar-choice-grid button[aria-pressed="true"] { background: var(--accent); color: #000; }
+.calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calendar-weekdays span { color: var(--muted); font-size: 11px; font-weight: 650; text-align: center; }
+.calendar-days button { width: 32px; height: 32px; margin: 0 auto; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; }
+.calendar-days button:hover { background: var(--hover); }
+.calendar-days button[aria-pressed="true"] { background: var(--accent); color: #000; }
+.calendar-time { display: grid; justify-items: stretch; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.calendar-time-row { display: flex; justify-content: center; gap: 16px; }
+.calendar-time-part { display: grid; justify-items: center; gap: 6px; }
+.calendar-time-part span { color: var(--muted); font-size: 11px; font-weight: 650; line-height: 1; }
+.calendar-time-controls { display: grid; grid-template-columns: 28px 44px 28px; align-items: center; justify-content: center; gap: 2px; }
+.calendar-time-controls button { width: 28px; height: 28px; margin: 0; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink); line-height: 1; }
+.calendar-time-controls button:hover { background: var(--hover); }
+.calendar-field .calendar-time input { width: 44px; min-width: 44px; height: 36px; min-height: 36px; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: none; text-align: center; font-size: 14px; font-weight: 650; line-height: 36px; }
+.calendar-field .calendar-time input:focus { border-color: var(--ink); background: var(--paper); box-shadow: 0 0 0 3px var(--focus-ring); }
+.calendar-time .secondary-button { width: 100%; min-height: 36px; margin: 0; }
+.shipment-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px 20px; }
+.field-checkbox { display: flex; align-items: center; gap: 8px; align-self: center; }
+.field-checkbox input { width: 16px; min-height: 16px; margin: 0; padding: 0; }
+.field-checkbox label { margin: 0; }
+.shipment-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-top: 12px; }
+.shipment-filter-actions .primary-button, .shipment-filter-actions .secondary-button { width: auto; min-width: 0; min-height: 44px; margin: 0; padding: 8px 16px; }
+.filter-buttons { display: flex; gap: 8px; margin-left: auto; }
 .shipment-import { max-width: 640px; }
 .profile-page { max-width: 640px; }
 .profile-page fieldset { border: 0; padding: 0; margin: 8px 0 0; min-width: 0; }
@@ -414,9 +488,19 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .shipment-detail .route-facts dl { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(14, auto); grid-auto-flow: column; column-gap: 32px; }
 }
 @media (max-width: 760px) {
-  .workspace { grid-template-columns: 1fr; }
+  .workspace, .workspace.is-sidebar-collapsed { grid-template-columns: 1fr; }
+  .sidebar-toggle { display: none; }
+  .workspace.is-sidebar-collapsed .nav-label,
+  .workspace.is-sidebar-collapsed .workspace-identity,
+  .workspace.is-sidebar-collapsed .wordmark-name { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; }
+  .workspace.is-sidebar-collapsed .workspace-nav,
+  .workspace.is-sidebar-collapsed .sign-out { width: auto; justify-content: flex-start; }
+  .workspace.is-sidebar-collapsed .workspace-bar { align-items: center; }
   .workspace-bar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
   .workspace-bar .wordmark { margin: 0 8px 0 0; }
+  .workspace-identity { margin: 0 12px 0 0; }
+  .page-heading { align-items: flex-start; flex-direction: column; }
+  a.page-action { width: 100%; }
   .sign-out { margin: 0 0 0 auto; }
   .workspace-main { padding: 32px 16px 48px; }
   .shipment-title { align-items: flex-start; flex-direction: column; }
@@ -425,6 +509,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
   .session-facts dd, .shipment-record dd { text-align: left; margin-top: 4px; }
   .maritime-ai-uncertainty { grid-template-columns: 1fr; gap: 0; }
   .pair-grid { grid-template-columns: 1fr; }
+  .route-grid, .connection-grid { grid-template-columns: 1fr; }
   .shipment-filter-grid { grid-template-columns: 1fr; }
   .shipment-panel h3 { font-size: 24px; }
   .profile-page .primary-button { width: 100%; }

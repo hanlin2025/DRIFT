@@ -41,6 +41,7 @@ export function AppRoutes() {
     <Route path="/profile" element={<ProfileRoute />} />
     <Route path="/importer/shipments/:shipmentId" element={<WorkspaceRoute role="IMPORTER" />} />
     <Route path="/importer" element={<WorkspaceRoute role="IMPORTER" />} />
+    <Route path="/freight-forwarder/shipments/new" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="register" />} />
     <Route path="/freight-forwarder/import/:jobId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
     <Route path="/freight-forwarder/import" element={<WorkspaceRoute role="FREIGHT_FORWARDER" page="import" />} />
     <Route path="/freight-forwarder/shipments/:shipmentId" element={<WorkspaceRoute role="FREIGHT_FORWARDER" />} />
