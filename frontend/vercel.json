@@ -6,11 +6,11 @@
   "rewrites": [
     {
       "source": "/api",
-      "destination": "https://drift-cs203-presentation-api.onrender.com/api"
+      "destination": "https://drift-free-api.onrender.com/api"
     },
     {
       "source": "/api/:path*",
-      "destination": "https://drift-cs203-presentation-api.onrender.com/api/:path*"
+      "destination": "https://drift-free-api.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
