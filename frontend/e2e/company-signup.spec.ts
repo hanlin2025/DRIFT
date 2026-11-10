@@ -259,3 +259,39 @@ test('the new administrator invites a colleague who joins with a locked email, c
   await expect(page.getByRole('radio')).toHaveCount(2);
   await expect(page.getByRole('radio', { name: new RegExp(colleague.name) })).toHaveAccessibleName(/Logistics manager/);
 });
+
+test('signing up again replaces the pending signup, so only the newest emailed link activates', { tag: '@disposable-database' }, async ({ page }) => {
+  test.setTimeout(90_000);
+  const email = `cdg366-repeat-${suffix}@example.com`;
+  const first = { code: `CDG366_A_${suffix}`.toUpperCase(), name: `First Try Imports ${suffix}` };
+  const second = { code: `CDG366_B_${suffix}`.toUpperCase(), name: `Second Try Imports ${suffix}` };
+
+  await createCompany(page, { ...first, fullName: 'Rae First', email });
+  await expect(page.getByRole('status').filter({ hasText: 'Check your email' })).toBeVisible();
+  const firstMail = await latestMailText(email, 1);
+  await createCompany(page, { ...second, fullName: 'Rae Second', email });
+  await expect(page.getByRole('status').filter({ hasText: 'Check your email' })).toBeVisible();
+  const secondMail = await latestMailText(email, 2);
+
+  const linkIn = (text: string) => text.match(/https?:\/\/\S+\/verify-email#token=[A-Za-z0-9_-]{43}/)?.[0] ?? '';
+  const firstLink = linkIn(firstMail);
+  const secondLink = linkIn(secondMail);
+  expect(firstLink).not.toBe('');
+  expect(secondLink).not.toBe('');
+  expect(secondLink).not.toBe(firstLink);
+  expect(secondMail).toContain(`${second.name} (${second.code})`);
+  expect(secondMail).toContain('If you did not request this, ignore this email; the account will not be activated.');
+  expect(sql("SELECT COUNT(*) FROM companies WHERE code = :'code';", { code: first.code })).toBe('0');
+
+  await page.goto(firstLink);
+  await expect(page.getByRole('alert')).toHaveText(INVALID_LINK);
+  expect(sql("SELECT status FROM users WHERE email = :'email';", { email })).toBe('PENDING_VERIFICATION');
+
+  // Only the hash differs from the first link, so leave the page first to force a fresh load.
+  await page.goto('/login');
+  await page.goto(secondLink);
+  await expect(page.getByText(VERIFIED)).toBeVisible();
+  await signIn(page, email);
+  await expect(page).toHaveURL('/admin');
+  await expect(page.locator('.workspace-identity span')).toHaveText(second.name);
+});
