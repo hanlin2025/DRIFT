@@ -2,6 +2,7 @@ package com.drift.backend.maritimecontext;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,21 +16,41 @@ public class MaritimeContextService {
 	private final boolean demoEnabled;
 	private final List<MaritimeEvidenceSourceAdapter> adapters;
 	private final Clock clock;
+	private final Instant configuredCutoff;
 
 	@Autowired
 	public MaritimeContextService(@Value("${app.maritime-context.demo-enabled:false}") boolean demoEnabled,
-			List<MaritimeEvidenceSourceAdapter> adapters) {
-		this(demoEnabled, adapters, Clock.systemUTC());
+			List<MaritimeEvidenceSourceAdapter> adapters,
+			@Value("${app.maritime-context.assessment-cutoff:}") String assessmentCutoff) {
+		this(demoEnabled, adapters, Clock.systemUTC(), parseCutoff(assessmentCutoff));
+	}
+
+	public MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters) {
+		this(demoEnabled, adapters, Clock.systemUTC(), null);
 	}
 
 	MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters, Clock clock) {
+		this(demoEnabled, adapters, clock, null);
+	}
+
+	MaritimeContextService(boolean demoEnabled, List<MaritimeEvidenceSourceAdapter> adapters, Clock clock, Instant configuredCutoff) {
 		this.demoEnabled = demoEnabled;
 		this.adapters = List.copyOf(adapters);
 		this.clock = clock;
+		this.configuredCutoff = configuredCutoff;
 	}
 
 	public MaritimeContextResponse forShipment(ShipmentDetailResponse shipment) {
-		return forShipment(shipment, clock.instant());
+		return forShipment(shipment, configuredCutoff == null ? clock.instant() : configuredCutoff);
+	}
+
+	private static Instant parseCutoff(String value) {
+		if (value == null || value.isBlank()) return null;
+		try {
+			return Instant.parse(value.trim());
+		} catch (DateTimeParseException ex) {
+			throw new IllegalStateException("app.maritime-context.assessment-cutoff must be an ISO-8601 instant");
+		}
 	}
 
 	MaritimeContextResponse forShipment(ShipmentDetailResponse shipment, Instant assessmentCutoffUtc) {

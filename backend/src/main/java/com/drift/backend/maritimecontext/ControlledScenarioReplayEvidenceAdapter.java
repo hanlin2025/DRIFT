@@ -25,11 +25,19 @@ class ControlledScenarioReplayEvidenceAdapter implements MaritimeEvidenceSourceA
 	}
 
 	@Override public List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant cutoff) {
-		if (!enabled || !matches(shipment)) return List.of();
+		if (!enabled || cutoff == null || !matches(shipment)) return List.of();
+		return available(stage).stream()
+				.filter(item -> !Instant.parse(item.retrievedAtUtc()).isAfter(cutoff))
+				.toList();
+	}
+
+	/** The stage is the maximum set. Retrieval time is the availability cutoff, so a later
+	 * snapshot of the same fictional source stays hidden until that instant. */
+	private static List<MaritimeEvidence> available(Stage stage) {
 		return switch (stage) {
 			case BASELINE -> List.of();
 			case ARRIVAL_REVISION -> List.of(mpa());
-			case MARITIME_CONTEXT -> List.of(mpa(), notice(), weather(), incompatibleNotice());
+			case MARITIME_CONTEXT -> List.of(mpa(), notice(), weather(), revisedMpa(), incompatibleNotice());
 		};
 	}
 
@@ -45,6 +53,11 @@ class ControlledScenarioReplayEvidenceAdapter implements MaritimeEvidenceSourceA
 	private static MaritimeEvidence mpa() { return evidence("MPA_ETA_REVISION", "demo-synthetic-mpa-schedule-001",
 			"Synthetic expected-arrival schedule revision", "SYNTHETIC-MPA-REVISION-001", "Synthetic MPA-style revision; fictional source and retrieval record.",
 			null, null, "2026-09-30T21:00:00Z", "2026-10-01T05:00:00+08:00", "2026-10-01T06:00:00+08:00", "+60 minutes",
+			"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION"); }
+	private static MaritimeEvidence revisedMpa() { return evidence("MPA_ETA_REVISION", "demo-synthetic-mpa-schedule-002",
+			"Synthetic expected-arrival schedule revision, later snapshot", "SYNTHETIC-MPA-REVISION-001",
+			"Later fictional snapshot of SYNTHETIC-MPA-REVISION-001. It revises the first snapshot's expected arrival and does not replace an operational arrival estimate.",
+			null, null, "2026-09-30T22:15:00Z", "2026-10-01T06:00:00+08:00", "2026-10-01T08:00:00+08:00", "+120 minutes",
 			"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION"); }
 	private static MaritimeEvidence notice() { return evidence("MPA_OFFICIAL_NOTICE", "demo-synthetic-notice-001",
 			"Synthetic port-area maintenance notice", "SYNTHETIC-PMN-001", "Synthetic Notice 001, page 1: fictional maintenance at Synthetic Port Area, effective 06:00-12:00 SGT.",
