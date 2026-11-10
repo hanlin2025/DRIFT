@@ -20,8 +20,8 @@ import tools.jackson.databind.ObjectMapper;
 class OrdinaryMaritimeAiContractTest {
 	private static final String LIMITATION = "Matching IMO verifies vessel identity only; it does not verify a shipment booking.";
 	private static final OffsetDateTime DEADLINE = OffsetDateTime.parse("2026-10-02T10:00:00Z");
-	private static final OffsetDateTime LATER_ESTIMATE = OffsetDateTime.parse("2026-10-02T11:00:00Z");
-	private static final OffsetDateTime EARLIER_ESTIMATE = OffsetDateTime.parse("2026-10-02T09:00:00Z");
+	private static final OffsetDateTime LATER_ESTIMATE = OffsetDateTime.parse("2026-10-02T13:00:00Z");
+	private static final OffsetDateTime EARLIER_ESTIMATE = OffsetDateTime.parse("2026-10-02T08:00:00Z");
 
 	@Test void ordinaryPromptAsksForGroundedApplicabilityInsteadOfAFixedSentence() {
 		AtomicReference<String> requestBody = new AtomicReference<>();
@@ -84,19 +84,33 @@ class OrdinaryMaritimeAiContractTest {
 		MaritimeAiEvidencePackage earlierDeadlineClear = shipment(DelayComparison.Outcome.NO_PREDICTED_IMPACT, null,
 				MaritimeAiBusinessContext.ComparisonState.AVAILABLE);
 		String exceeds = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
-				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 1 hour.";
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 3 hours.";
 		String before = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
-				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows no predicted impact because the predicted arrival is 1 hour before the applicable transshipment-arrival deadline.";
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows no predicted impact because the predicted arrival is 2 hours before the applicable transshipment-arrival deadline.";
+		String bothFacts = "The expected arrival was revised by 60 minutes. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 3 hours.";
+		String marginUsesTheRevisionDuration = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the delayed predicted arrival exceeds that deadline by 60 minutes.";
+		String earlierPhraseDoesNotFlipTheMargin = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by 3 hours before the cited note.";
+		String marginInWords = "The expected arrival was revised by 60 minutes. "
+				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline by nine hours.";
 
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(exceeds, laterDeadlineMiss)),
 				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(before, earlierDeadlineClear)),
 				List.of(), List.of(), true), earlierDeadlineClear)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(bothFacts, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(earlierPhraseDoesNotFlipTheMargin, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isNull();
 		String swappedOutcome = "The retrospective expected-arrival revision applies as a mother-vessel observation and is not the operational arrival estimate. "
 				+ "Review the cited revision alongside the applicable transshipment-arrival deadline: the backend comparison shows the predicted arrival exceeds that deadline.";
 		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(swappedOutcome, earlierDeadlineClear)),
 				List.of(), List.of(), true), earlierDeadlineClear)).isEqualTo("UNSUPPORTED_DELAY_COMPARISON");
-		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(exceeds.replace("1 hour", "3 hours"), laterDeadlineMiss)),
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginUsesTheRevisionDuration, laterDeadlineMiss)),
+				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
+		assertThat(MaritimeAiResponseValidator.validate(interpretation(List.of(delayClaim(marginInWords, laterDeadlineMiss)),
 				List.of(), List.of(), true), laterDeadlineMiss)).isEqualTo("UNSTRUCTURED_FACTUAL_DETAIL");
 	}
 
