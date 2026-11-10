@@ -182,7 +182,18 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 .shipment-record { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 16px 4px; margin: 0 0 22px; }
 .maritime-context details { margin: 8px 0 12px; font-size: 12px; }
 .maritime-context summary { cursor: pointer; color: var(--ink); font-weight: 700; min-height: 32px; display: flex; align-items: center; }
-.maritime-context article + article { margin-top: 12px; }
+.maritime-context-ai-note { padding: 10px 12px; border-left: 3px solid #526b7a; background: #eef3f5; font-size: 13px; line-height: 1.5; }
+.maritime-evidence-list { display: grid; gap: 10px; }
+.maritime-context .maritime-evidence-summary { margin: 0; padding: 12px; border: 1px solid #d5e0cc; border-radius: 6px; background: #fcfcf8; }
+.maritime-evidence-summary h4 { margin: 2px 0 8px; font-size: 16px; }
+.maritime-evidence-summary p { margin: 6px 0; line-height: 1.45; }
+.maritime-evidence-summary strong { display: inline; margin: 0; font-size: inherit; }
+.maritime-evidence-kind { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.maritime-evidence-quality { color: #46554d; font-size: 12px; }
+.maritime-evidence-caveat { padding-left: 9px; border-left: 2px solid #9a6d0b; color: #694c15; font-size: 12px; }
+.maritime-context .maritime-evidence-summary details { margin: 8px 0 0; border-top: 1px solid #d5e0cc; }
+.maritime-context .maritime-evidence-summary details article { margin-top: 8px; }
+.maritime-context-limitation { margin-top: 12px; }
 .shipment-record strong { display: block; font-size: 16px; margin: 4px 0 6px; }
 .shipment-route { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .shipment-record dl { margin: 0; }
@@ -446,6 +457,12 @@ a.page-action { width: auto; margin: 0; padding: 10px 16px; text-decoration: non
 }
 .globe-pin.live.mother .globe-dot { background: #3d2a6d; }
 .globe-pin.live.feeder .globe-dot { background: #1e6b45; }
+.globe-pin.live.stale .globe-dot { background: #76634e; box-shadow: none; outline: 3px dashed #9a6d0b; outline-offset: 3px; }
+.globe-pin.live.seeded .globe-dot,
+.globe-pin.position-marker.synthetic .globe-dot { border-radius: 2px; border-style: dashed; box-shadow: none; outline: 2px dashed #9a6d0b; outline-offset: 3px; }
+.globe-pin.live.seeded .globe-dot { background: #8a6b37; }
+.globe-pin.position-marker.synthetic .globe-dot { background: #9a6d0b; }
+.globe-pin.live.unknown .globe-dot { background: #777; box-shadow: none; outline: 2px dotted #777; outline-offset: 3px; }
 .globe-copy { position: absolute; width: 128px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #f8f6ed; text-align: center; color: var(--ink); box-shadow: 0 1px 2px #223e3618; }
 .globe-pin.departure .globe-copy, .globe-pin.transshipment .globe-copy, .globe-pin.destination .globe-copy { bottom: 16px; left: 0; transform: translateX(-50%); }
 .globe-pin.mother .globe-copy { top: 14px; left: 0; transform: translateX(-78%); text-align: right; }

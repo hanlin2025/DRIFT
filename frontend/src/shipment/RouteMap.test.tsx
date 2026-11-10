@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteMap } from './RouteMap';
 import type { Shipment, ShipmentTracking, VesselTrack } from './api';
 
@@ -12,6 +12,7 @@ const mapCalls = vi.hoisted(() => ({
   layerHandlers: new Map<string, (event: unknown) => void>(),
   errorHandlers: [] as (() => void)[],
   sources: new Map<string, { setData: (data: unknown) => void }>(),
+  markerElements: [] as HTMLElement[],
   mapInstances: 0,
   styleLoaded: true,
   loadOnSubscribe: true,
@@ -46,7 +47,7 @@ vi.mock('maplibre-gl', () => ({
   },
   NavigationControl: class NavigationControl {},
   Marker: class Marker {
-    constructor(private readonly options: { element: HTMLElement }) {}
+    constructor(private readonly options: { element: HTMLElement }) { mapCalls.markerElements.push(options.element); }
     setLngLat() { return this; }
     addTo() { return this; }
     remove() {}
@@ -92,7 +93,8 @@ const loneTracking: ShipmentTracking = {
     speedOverGroundKnots: 12.4,
     courseOverGroundDegrees: 175,
     trueHeadingDegrees: 176,
-    ingestedAt: '2026-10-05T03:00:00Z',
+    ingestedAt: '2026-11-10T03:00:00Z',
+    source: 'AIS_STREAM',
   },
   motherVesselNameWarning: null,
   feederVesselName: 'MV Strait Runner',
@@ -102,6 +104,8 @@ const loneTracking: ShipmentTracking = {
 
 describe('shipment route display', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-10T04:00:00Z'));
     vi.stubGlobal('WebGL2RenderingContext', class WebGL2RenderingContext {});
     mapCalls.jumpTo.mockClear();
     mapCalls.fitBounds.mockClear();
@@ -111,9 +115,15 @@ describe('shipment route display', () => {
     mapCalls.layerHandlers.clear();
     mapCalls.errorHandlers.length = 0;
     mapCalls.sources.clear();
+    mapCalls.markerElements.length = 0;
     mapCalls.mapInstances = 0;
     mapCalls.styleLoaded = true;
     mapCalls.loadOnSubscribe = true;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('lists the stored route in connection order', () => {
@@ -134,7 +144,7 @@ describe('shipment route display', () => {
 
     expect(await screen.findByText(/The basemap is unavailable/)).toBeInTheDocument();
     expect(routeText()).toContain('DEPARTURE Shanghai, CN');
-    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(screen.getByText(/MOTHER FRESH AIS PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
     expect(mapCalls.mapInstances).toBe(0);
   });
 
@@ -166,7 +176,8 @@ describe('shipment route display', () => {
         speedOverGroundKnots: 12.4,
         courseOverGroundDegrees: 175,
         trueHeadingDegrees: 176,
-        ingestedAt: '2026-10-05T03:00:00Z',
+        ingestedAt: '2026-11-10T03:00:00Z',
+        source: 'AIS_STREAM',
       },
       motherVesselNameWarning: null,
       feederVesselName: 'MV Strait Runner',
@@ -181,7 +192,7 @@ describe('shipment route display', () => {
       'FEEDER MV Strait Runner',
       'DESTINATION Jakarta, ID',
     ]);
-    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
+    expect(screen.getByText(/MOTHER FRESH AIS PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last received/)).toBeInTheDocument();
     expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SEEDED/)).not.toBeInTheDocument();
     await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalled());
@@ -193,8 +204,37 @@ describe('shipment route display', () => {
       ...loneTracking,
       motherVessel: { ...loneTracking.motherVessel!, source: 'SEEDED' },
     }} />);
-    expect(screen.getByText(/MOTHER SEEDED PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
-    expect(screen.queryByText(/MOTHER LIVE/)).not.toBeInTheDocument();
+    expect(screen.getByText(/MOTHER SEEDED PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last received/)).toBeInTheDocument();
+    expect(screen.queryByText(/MOTHER FRESH AIS/)).not.toBeInTheDocument();
+  });
+
+  it('labels synthetic scenario markers with the exact simulated cutoff and distinct styling', async () => {
+    const cutoff = '2026-10-01T08:00:00Z';
+    render(<RouteMap shipment={shipment} displayMode="scenario" scenarioReferenceTime={cutoff} displayPositions={[{
+      role: 'MOTHER', name: 'Fictional mother', latitude: 1.26, longitude: 103.82,
+      ingestedAt: '2026-10-01T07:00:00Z', speedOverGroundKnots: 3, label: 'SCENARIO',
+    }]} />);
+    expect(screen.getByText(new RegExp(`MOTHER SCENARIO Fictional mother .*At simulated cutoff ${cutoff}`))).toBeInTheDocument();
+    await waitFor(() => {
+      const marker = mapCalls.markerElements.find(element => element.classList.contains('position-marker') && element.classList.contains('mother'));
+      expect(marker).toBeDefined();
+      expect(marker).toHaveClass('synthetic', 'scenario');
+      expect(marker).not.toHaveClass('live', 'fresh');
+      expect(marker).toHaveAttribute('aria-label', expect.stringContaining(`At simulated cutoff ${cutoff}`));
+    });
+  });
+
+  it('labels stale AIS as last-known on the map and distinguishes its marker', async () => {
+    const stale = { ...loneTracking, motherVessel: { ...loneTracking.motherVessel!, ingestedAt: '2026-11-09T21:00:00Z' } };
+    render(<RouteMap shipment={shipment} tracking={stale} />);
+    expect(screen.getByText(/MOTHER LAST KNOWN AIS PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(screen.getByText(/Last received/)).toBeInTheDocument();
+    await waitFor(() => {
+      const marker = mapCalls.markerElements.find(element => element.classList.contains('live') && element.classList.contains('mother'));
+      expect(marker).toBeDefined();
+      expect(marker).toHaveClass('stale');
+      expect(marker).toHaveAttribute('aria-label', expect.stringContaining('LAST KNOWN AIS'));
+    });
   });
 
   it('keeps the initial view when a live position arrives and no port can be placed', async () => {
@@ -214,7 +254,7 @@ describe('shipment route display', () => {
     const { rerender } = render(<RouteMap shipment={quiet} />);
     await waitFor(() => expect(mapCalls.mapInstances).toBe(1));
     rerender(<RouteMap shipment={quiet} tracking={loneTracking} />);
-    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
+    expect(await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON · 1.264, 103.82/)).toBeInTheDocument();
     expect(mapCalls.jumpTo).not.toHaveBeenCalled();
     expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });
@@ -223,13 +263,13 @@ describe('shipment route display', () => {
     const { rerender } = render(<RouteMap shipment={shipment} />);
     await waitFor(() => expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1));
     rerender(<RouteMap shipment={shipment} tracking={loneTracking} />);
-    await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82/);
+    await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON · 1.264, 103.82/);
     expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
     rerender(<RouteMap shipment={shipment} tracking={{
       ...loneTracking,
       motherVessel: { ...loneTracking.motherVessel!, latitude: 8.5, longitude: 110 },
     }} />);
-    await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 8.5, 110/);
+    await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON · 8.5, 110/);
     expect(mapCalls.fitBounds).toHaveBeenCalledTimes(1);
     expect(mapCalls.jumpTo).not.toHaveBeenCalled();
   });
@@ -242,7 +282,7 @@ describe('shipment route display', () => {
       ...loneTracking,
       motherVessel: { ...loneTracking.motherVessel!, latitude: 8.5, longitude: 110 },
     }} />);
-    await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 8.5, 110/);
+    await screen.findByText(/MOTHER FRESH AIS PACIFIC HORIZON · 8.5, 110/);
     expect(mapCalls.jumpTo).not.toHaveBeenCalled();
     expect(mapCalls.fitBounds).not.toHaveBeenCalled();
   });

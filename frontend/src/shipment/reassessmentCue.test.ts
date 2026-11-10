@@ -26,10 +26,10 @@ function context(overrides: Partial<MaritimeContext> = {}, items: MaritimeEviden
 }
 
 describe('reassessment cue', () => {
-  it('keeps a disabled bundle not authorized and without a validated result', () => {
+  it('keeps a disabled bundle not authorized and identifies the maritime evidence workflow', () => {
     const result = reassessmentCue(context({ enabled: false, sourceMode: 'DISABLED', evidence: [] }));
     expect(result).toMatchObject({ state: 'denied', headline: 'Not authorized' });
-    expect(result.detail).toContain('nothing was sent');
+    expect(result.detail).toContain('No maritime context evidence was gathered or sent');
     expect(result.detail).toContain(REASSESSMENT_DOES_NOT_CHANGE);
     expect(result.detail).not.toMatch(/\b(GENERATED|VALID)\b/);
   });
@@ -37,7 +37,7 @@ describe('reassessment cue', () => {
   it('marks a recorded change as updated evidence that is still waiting for review', () => {
     const result = reassessmentCue(context({}, [evidence({ changeMagnitude: '+180 minutes', previousValue: 'before', currentValue: 'after', humanReviewRequired: true })]));
     expect(result.state).toBe('updated');
-    expect(result.detail).toContain('No validated result is recorded');
+    expect(result.detail).toContain('AI assessment status is shown in the separate AI Interpretation panel');
     expect(result.detail).not.toMatch(/\b(GENERATED|VALID)\b/);
   });
 
@@ -60,16 +60,16 @@ describe('reassessment cue', () => {
   it('marks a live applicable reading as evidence available without producing an assessment', () => {
     const result = reassessmentCue(context({}, [evidence({ sourceMode: 'LIVE', freshness: 'APPLICABLE', shipmentAssociationConfidence: 'UNKNOWN' })]));
     expect(result).toMatchObject({ state: 'available', headline: 'Evidence available' });
-    expect(result.detail).toContain('No validated result is recorded');
+    expect(result.detail).toContain('AI assessment status is shown in the separate AI Interpretation panel');
   });
 
-  it('keeps an unavailable source as a failure and does not call it a validated result', () => {
+  it('keeps an unavailable source as a failure and identifies the separate AI workflow', () => {
     const result = reassessmentCue(context({}, [evidence({
       sourceType: 'NEA_WEATHER', sourceMode: 'UNAVAILABLE', freshness: 'UNAVAILABLE', evidenceSufficient: false,
       humanReviewRequired: true, shipmentAssociationConfidence: 'UNAVAILABLE', evidenceId: 'weather-none',
     })]));
     expect(result.state).toBe('failed');
-    expect(result.detail).toContain('No validated result was stored');
+    expect(result.detail).toContain('AI assessment status is shown in the separate AI Interpretation panel');
     expect(result.detail).not.toMatch(/\b(GENERATED|VALID)\b/);
   });
 

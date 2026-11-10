@@ -77,11 +77,16 @@ describe('controlled shipment track presentation', () => {
     expect(screen.getByRole('complementary', { name: 'Mother vessel AIS' })).toHaveTextContent('Configured mother');
     expect(routeMapState.lastProps).toMatchObject({
       displayMode: 'scenario', routeIdentityKey: 'route:44:shanghai-singapore-jakarta',
+      scenarioReferenceTime: '2026-10-13T06:00:00Z',
       displayPositions: [
         { role: 'MOTHER', label: 'SCENARIO', latitude: 1.2, longitude: 103.8 },
         { role: 'FEEDER', label: 'SCENARIO', latitude: 1.5 },
       ],
     });
+    const motherPanel = screen.getByRole('complementary', { name: 'Mother vessel AIS' });
+    expect(within(motherPanel).getByText('2026-10-13T06:00:00Z', { exact: true })).toHaveAttribute('dateTime', '2026-10-13T06:00:00Z');
+    expect(motherPanel).toHaveTextContent('At simulated cutoff');
+    expect(motherPanel).not.toHaveTextContent('Updated just now');
     expect(vi.getTimerCount()).toBe(0);
     expect(fetchSpy).not.toHaveBeenCalled();
 

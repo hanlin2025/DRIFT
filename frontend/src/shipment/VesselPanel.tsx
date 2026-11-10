@@ -78,10 +78,14 @@ export function VesselPanel({ name, position, view }: { name: string | null; pos
               <Reading label="Speed" value={displayed.speedOverGroundKnots == null ? null : `${displayed.speedOverGroundKnots} kn`} />
               <Reading label="Course" value={formatBearing(displayed.courseOverGroundDegrees)} />
               <Reading label="Heading" value={formatBearing(displayed.trueHeadingDegrees)} />
-              <div>
-                <dt>{view?.mode === 'recorded' ? 'Receipt time' : 'Last report'}</dt>
-                <dd><time dateTime={displayed.ingestedAt} title={formatWhen(displayed.ingestedAt)}>{view?.mode === 'recorded' ? formatWhen(displayed.ingestedAt) : `Updated ${formatAge(displayed.ingestedAt, Number.isFinite(displayTime) ? displayTime : now)}`}</time></dd>
-              </div>
+              {view?.mode === 'scenario'
+                ? <div><dt>Simulation time</dt><dd>{view.referenceTime
+                    ? <>At simulated cutoff <time dateTime={view.referenceTime}>{view.referenceTime}</time></>
+                    : 'At simulated cutoff: Not recorded'}</dd></div>
+                : <div>
+                    <dt>{view?.mode === 'recorded' ? 'Receipt time' : 'Last report'}</dt>
+                    <dd><time dateTime={displayed.ingestedAt} title={formatWhen(displayed.ingestedAt)}>{view?.mode === 'recorded' ? formatWhen(displayed.ingestedAt) : `Updated ${formatAge(displayed.ingestedAt, Number.isFinite(displayTime) ? displayTime : now)}`}</time></dd>
+                  </div>}
             </dl>
           </>}
     </aside>

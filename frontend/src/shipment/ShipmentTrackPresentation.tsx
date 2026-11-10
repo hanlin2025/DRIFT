@@ -85,7 +85,7 @@ export function ShipmentTrackPresentation({ ownershipMode = 'controlled', data, 
         <div className="tracking-map">
           <RouteMap shipment={data.shipment} history={history} selectedId={data.selectedPointId}
             onSelectPoint={selectPoint} displayPositions={displayPositions} displayMode={data.displayMode}
-            contextKey={contextKey} routeIdentityKey={data.routeKey} />
+            contextKey={contextKey} routeIdentityKey={data.routeKey} scenarioReferenceTime={data.scenarioReferenceCutoff} />
           <TrackHistory vessel={role} hours={data.window} history={history}
             loading={selected.state === 'loading'} failed={selected.state === 'error'}
             feederAssigned={Boolean(data.shipment.feederVessel?.trim())} selectedId={data.selectedPointId}

@@ -92,6 +92,16 @@ describe('mother vessel AIS panel', () => {
     expect(screen.getByText(STALE_DETAIL, { exact: false })).toBeInTheDocument();
   });
 
+  it('shows an explicit simulation cutoff instead of relative freshness in scenario mode', () => {
+    const cutoff = '2026-10-01T08:00:00Z';
+    render(<VesselPanel name="Fictional mother" position={fix(cutoff, { source: 'SEEDED' })} view={{
+      role: 'MOTHER', mode: 'scenario', ownershipMode: 'controlled', referenceTime: cutoff,
+    }} />);
+    const panel = screen.getByRole('complementary', { name: 'Mother vessel AIS' });
+    expect(within(panel).getByText('Simulation time').nextElementSibling).toHaveTextContent(`At simulated cutoff ${cutoff}`);
+    expect(within(panel).queryByText(/Updated .*ago/)).not.toBeInTheDocument();
+  });
+
   it('advances the age and stale state while the page stays open', async () => {
     render(<VesselPanel name="MV Pacific Horizon" position={fix(new Date(now - STALE_AFTER_MS + 60_000).toISOString())} />);
     expect(reading('Last report')).toHaveTextContent('Updated 5 h 59 min ago');
