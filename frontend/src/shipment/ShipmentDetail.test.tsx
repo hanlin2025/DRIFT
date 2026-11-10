@@ -226,6 +226,16 @@ describe('connection window on the shipment detail', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
   });
 
+  it.each([404, 500])('keeps shipment detail available when the change-events endpoint returns %i', async status => {
+    vi.mocked(getMaritimeChangeEvents).mockRejectedValueOnce(new ApiError('Optional endpoint unavailable.', status));
+    open(forwarder, '/freight-forwarder/shipments/7');
+    expect(await screen.findByRole('article', { name: 'Shipment HL-1001' })).toBeInTheDocument();
+    const timeline = await screen.findByRole('region', { name: 'Maritime change timeline' });
+    expect(await within(timeline).findByText('The maritime change timeline could not be loaded.')).toBeInTheDocument();
+    expect(within(timeline).getByText('Source availability').parentElement).toHaveTextContent('UNAVAILABLE');
+    expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder/shipments/7');
+  });
+
   it('lets the viewer request an advisory without changing shipment detail state', async () => {
     open(forwarder, '/freight-forwarder/shipments/7');
     const user = userEvent.setup();

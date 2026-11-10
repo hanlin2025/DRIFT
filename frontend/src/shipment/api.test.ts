@@ -374,6 +374,10 @@ describe('CDG-357 maritime change events API', () => {
       credentials: 'include', headers: expect.objectContaining({ 'X-DRIFT-Request': '1' }),
     }));
   });
+  it('turns a malformed change-event envelope into a controlled API error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ availability: 'AVAILABLE', events: 'not an array' })));
+    await expect(getMaritimeChangeEvents('token', '9')).rejects.toEqual(expect.objectContaining({ status: 502 }));
+  });
   it('drops a malformed event without discarding valid events from the response', () => {
     const invalid = [
       { ...event, sourceMode: 'UNAVAILABLE' },
