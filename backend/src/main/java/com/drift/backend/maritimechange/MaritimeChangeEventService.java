@@ -35,7 +35,8 @@ class MaritimeChangeEventService {
 		Instant since = detectedSince == null ? Instant.EPOCH : detectedSince;
 		int limit = Math.max(1, Math.min(requestedLimit, 100));
 		Cursor position = decodeCursor(cursor);
-		List<ShipmentMatchFacts> facts = visibleShipments.forCompany(viewerCompanyId);
+		List<ShipmentMatchFacts> facts = visibleShipments.forCompany(viewerCompanyId).stream()
+				.filter(item -> item.shipmentId() == shipmentId).toList();
 		List<MaritimeChangeEventResponse.Event> events = new ArrayList<>();
 		Instant scanRecordedAt = position.recordedAt();
 		long scanId = position.id();

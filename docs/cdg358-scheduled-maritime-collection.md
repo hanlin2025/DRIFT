@@ -8,6 +8,8 @@ The backend has an opt-in scheduled worker that invokes the repository's existin
 
 The worker runs each collector in its own temporary directory. It reads successful collector manifests and normalized outputs, maps source observations through `MaritimeSnapshotNormalizer`, and submits them to `MaritimeSnapshotChangeDetector` and the existing persisted snapshot store. Temporary raw responses are removed after each poll. Live NEA polling is limited to the two-hour forecast; recorded historical rainfall appears only in the explicitly labeled offline replay fixture. Collector errors and missing or invalid source pages are reported as unavailable; they do not delete or replace stored observations. The detector suppresses repeated content and keeps older observations from becoming the current head.
 
+The saved OCEANS-X due-arrival schema exposes vessel IMO/call sign, route and expected arrival time, but no voyage or port-call identifier. The collector therefore keys an arrival by IMO, call sign (or vessel name fallback), route, and Singapore-local scheduled arrival date. This separates same-vessel/same-route calls on different dates and groups same-day ETA revisions; because the source supplies no durable call ID, a revision that crosses a date boundary is conservatively recorded under a new source identity.
+
 ## Runtime configuration
 
 Keep collection disabled by default. Enable it only on one persistent backend worker with the repository tools and Python available:
@@ -36,6 +38,8 @@ GET /api/shipments/{shipmentId}/maritime-change-events?since=<ISO-8601>&limit=<1
 ```
 
 It uses the existing shipment-view authorization. The first page is newest-first by detected/recorded time and stable row id; `nextCursor` advances toward older records. `since` is inclusive and filters detection/recording time, not the older source event time. Results include prior/current values, provenance, source mode, freshness, compatibility, and association confidence. Associated notices and weather are human-review cues only; this feature does not change operational shipment risk. Failed polling is reflected by response availability and leaves previous observations available. Compatibility fields and legacy source/observation time strings can be null or malformed, so clients should parse them defensively.
+
+The V39 migration adds the composite `(recorded_at DESC, id DESC)` index used by newest-first event retrieval and cursor paging.
 
 ## Offline deterministic replay
 

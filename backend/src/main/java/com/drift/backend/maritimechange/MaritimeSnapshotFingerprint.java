@@ -12,8 +12,16 @@ final class MaritimeSnapshotFingerprint {
 
 	static String of(String sourceType, String sourceIdentity, String vesselImo, String location, String previousValue,
 			String currentValue, String sourceEventAt, String effectiveFrom, String effectiveUntil) {
+		return of(sourceType, sourceIdentity, vesselImo, location, previousValue, currentValue, sourceEventAt,
+				effectiveFrom, effectiveUntil, null);
+	}
+
+	static String of(String sourceType, String sourceIdentity, String vesselImo, String location, String previousValue,
+			String currentValue, String sourceEventAt, String effectiveFrom, String effectiveUntil,
+			String predecessorFingerprint) {
 		String canonical = String.join("\n", text(sourceType), text(sourceIdentity), text(vesselImo), text(location),
-				text(previousValue), text(currentValue), text(sourceEventAt), text(effectiveFrom), text(effectiveUntil));
+				text(previousValue), text(currentValue), text(sourceEventAt), text(effectiveFrom), text(effectiveUntil),
+				text(predecessorFingerprint));
 		try {
 			byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
 			return HexFormat.of().formatHex(digest);

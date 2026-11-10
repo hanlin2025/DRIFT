@@ -80,6 +80,32 @@ class MaritimeSnapshotChangeDetectorTest {
 	}
 
 	@Test
+	void aRepeatedTransitionAfterARevertGetsAUniqueFingerprint() {
+		MaritimeSnapshot ten = revision("2026-10-26T15:46:03Z", "", "10:00");
+		MaritimeSnapshot twelve = revision("2026-10-26T16:46:03Z", "10:00", "12:00");
+		MaritimeSnapshot tenAgain = revision("2026-10-26T17:46:03Z", "12:00", "10:00");
+		MaritimeSnapshot twelveAgain = revision("2026-10-26T18:46:03Z", "10:00", "12:00");
+
+		MaritimeSnapshotChangeBatch first = detector.accept(List.of(ten));
+		assertThat(detector.accept(List.of(ten)).changes()).isEmpty();
+		MaritimeSnapshotChangeBatch second = detector.accept(List.of(twelve));
+		assertThat(detector.accept(List.of(twelve)).changes()).isEmpty();
+		MaritimeSnapshotChangeBatch third = detector.accept(List.of(tenAgain));
+		assertThat(detector.accept(List.of(tenAgain)).changes()).isEmpty();
+		MaritimeSnapshotChangeBatch fourth = detector.accept(List.of(twelveAgain));
+
+		assertThat(List.of(first, second, third, fourth)).extracting(batch -> batch.changes().size())
+				.containsExactly(1, 1, 1, 1);
+		assertThat(fourth.changes()).singleElement().satisfies(change -> {
+			assertThat(change.previousValue()).isEqualTo("10:00");
+			assertThat(change.currentValue()).isEqualTo("12:00");
+			assertThat(change.contentFingerprint()).isNotEqualTo(second.changes().getFirst().contentFingerprint());
+		});
+		assertThat(memory.headValue("mpa:9351048:SIN:SIN")).isEqualTo("12:00");
+		assertThat(memory.size()).isEqualTo(4);
+	}
+
+	@Test
 	void anOlderRetrievalDoesNotReplaceTheHeadAndRepeatsStayQuiet() {
 		detector.accept(List.of(revision("2026-10-26T17:46:03Z", "2026-10-28 23:00:00", "2026-10-29 05:00:00")));
 		MaritimeSnapshot older = revision("2026-10-26T15:46:03Z", "2026-10-28 20:00:00", "2026-10-28 23:00:00");
@@ -92,6 +118,7 @@ class MaritimeSnapshotChangeDetectorTest {
 			assertThat(change.forwardLooking()).isFalse();
 			assertThat(change.freshness()).isEqualTo("HISTORICAL");
 			assertThat(change.sourceMode()).isEqualTo("LIVE");
+			assertThat(change.previousValue()).isNull();
 		});
 		assertThat(again.changes()).isEmpty();
 		assertThat(memory.headValue("mpa:9351048:SIN:SIN")).isEqualTo("2026-10-29 05:00:00");

@@ -93,11 +93,11 @@ class MaritimeSnapshotPollingService {
 							? MaritimeSnapshotChangeDetector.APPLICABLE : MaritimeSnapshotChangeDetector.HISTORICAL;
 					String value = "arrival=" + arrival + ";departure=" + departure + ";port=" + location;
 					MaritimeSourceObservation source = new MaritimeSourceObservation(
-							MaritimeSnapshotChangeDetector.MPA_ETA_REVISION, "mpa:" + imo + ":" + arrivalIdentity(record),
+							MaritimeSnapshotChangeDetector.MPA_ETA_REVISION,
+							"mpa:" + imo + ":" + arrivalIdentity(record, eventInstant),
 							provenance, normalizedArrival, retrievedAt, retrievedAt, MaritimeSnapshotChangeDetector.LIVE, freshness,
 							imo, location.isBlank() ? "Singapore" : location, normalizedArrival, normalizedDeparture,
-							value, MaritimeSnapshotChangeDetector.UNKNOWN, MaritimeSnapshotChangeDetector.UNKNOWN,
-							MaritimeSnapshotChangeDetector.UNKNOWN);
+							value, null, null, null);
 					out.add(normalizer.normalize(source));
 				}
 			}
@@ -140,8 +140,7 @@ class MaritimeSnapshotPollingService {
 								MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE, "mpa-notice:" + id, provenance,
 								publicationTime, retrieved, retrieved, MaritimeSnapshotChangeDetector.LIVE,
 								MaritimeSnapshotChangeDetector.UNKNOWN, null, "Singapore", null, null, encoded,
-								MaritimeSnapshotChangeDetector.UNKNOWN, null,
-								MaritimeSnapshotChangeDetector.UNKNOWN)));
+								null, null, null)));
 					}
 				}
 			}
@@ -186,8 +185,7 @@ class MaritimeSnapshotPollingService {
 							"tools/cdg201/contextual/nea_weather_collect.py:" + csv.getFileName() + ":" + raw,
 							sourceTime, sourceTime, retrieved, MaritimeSnapshotChangeDetector.LIVE, freshness, null,
 							location.isBlank() ? "Singapore" : location, effectiveFrom, effectiveUntil, rawValue,
-							MaritimeSnapshotChangeDetector.UNKNOWN, MaritimeSnapshotChangeDetector.UNKNOWN,
-							MaritimeSnapshotChangeDetector.UNKNOWN)));
+							null, null, null)));
 				}
 			}
 			return out;
@@ -267,8 +265,16 @@ class MaritimeSnapshotPollingService {
 		catch (IOException ignored) { }
 	}
 	private static String firstText(JsonNode node, String... names) { for (String name : names) { String value = node.path(name).asText(""); if (!value.isBlank()) return value; } return ""; }
-	private static String arrivalIdentity(JsonNode record) {
-		return firstText(record, "locationFrom", "location_from") + ":" + firstText(record, "locationTo", "location_to");
+	static String arrivalIdentity(JsonNode record, Instant arrival) {
+		String callSign = firstText(record.path("vesselParticulars"), "callSign", "call_sign");
+		String vesselName = firstText(record.path("vesselParticulars"), "vesselName", "name");
+		String vesselKey = callSign.isBlank() ? vesselName : callSign;
+		String route = firstText(record, "locationFrom", "location_from") + ":"
+				+ firstText(record, "locationTo", "location_to");
+		// The saved OCEANS-X schema has no port-call or voyage ID. Including the scheduled
+		// arrival date keeps same-vessel/same-route calls distinct; a revision crossing a
+		// date boundary is conservatively treated as a separate source identity.
+		return vesselKey + ":" + route + ":" + arrival.atZone(SINGAPORE).toLocalDate();
 	}
 	private static String first(String a, String b) { return a == null || a.isBlank() ? (b == null ? "" : b) : a; }
 	private static Instant instant(String value) {
