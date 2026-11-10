@@ -86,6 +86,13 @@ describe('session identity and recovery', () => {
     expect(sessionStorage.getItem(hintKey)).toBe(sid);
     expect(sessionStorage.getItem(hintKey)).not.toContain('token');
   });
+  it('creates a session for a cookie-authenticated browser with no retained bearer token', async () => {
+    const { result } = await ready({ ...options, viewer: { ...options.viewer!, token: '' } });
+    expect(api.createScenarioSession).toHaveBeenCalledExactlyOnceWith('', sid, { anchorShipmentId: 142 }, { signal: expect.any(AbortSignal) });
+    expect(result.current.status).toBe('ready');
+    expect(result.current.session?.state).toBe('UNSTARTED');
+    expect(sessionStorage.getItem(hintKey)).toBe(sid);
+  });
   it('recovers the same session by GET on remount, including B navigation', async () => {
     server = envelope('CHANGE');
     sessionStorage.setItem(hintKey, sid);

@@ -228,7 +228,7 @@ export function useScenarioSnapshot({ viewer, anchorShipmentId }: UseScenarioSna
   const [view, setView] = useState<View | null>(null);
 
   useLayoutEffect(() => {
-    const storageKey = scope.userId && scope.companyId && scope.token
+    const storageKey = scope.userId && scope.companyId
       ? `drift.scenario.v1:${scope.userId}:${scope.companyId}` : null;
     if (previousStorageKey.current && previousStorageKey.current !== storageKey) writeHint(previousStorageKey.current, null);
     previousStorageKey.current = storageKey;
