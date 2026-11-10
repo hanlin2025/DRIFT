@@ -33,8 +33,11 @@ class MaritimeRecordedSnapshotReplayTest {
 				.extracting(MaritimeSnapshotChange::kind).containsExactly("NEW", "REVISED");
 		assertThat(first.changes()).filteredOn(change -> change.sourceType().equals("MPA_ETA_REVISION"))
 				.last().satisfies(change -> {
-					assertThat(change.previousValue()).isEqualTo("2026-10-28T23:00:00+08:00");
-					assertThat(change.currentValue()).isEqualTo("2026-10-29T02:00:00+08:00");
+					assertThat(change.sourceIdentity()).isEqualTo("mpa:9470662:VRGG5:SEAE:PEBGC:2026-11-06");
+					assertThat(change.sourceEventAt()).isEqualTo("2026-11-06T01:15:00+08:00");
+					assertThat(change.effectiveFrom()).isEqualTo("2026-11-05T17:15:00Z");
+					assertThat(change.previousValue()).isEqualTo("arrival=2026-11-06 00:45:00;departure=null;port=PEBGC");
+					assertThat(change.currentValue()).isEqualTo("arrival=2026-11-06 01:15:00;departure=null;port=PEBGC");
 					assertThat(change.sourceMode()).isEqualTo("RECORDED_REPLAY");
 					assertThat(change.forwardLooking()).isFalse();
 				});

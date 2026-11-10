@@ -77,26 +77,31 @@ class MaritimeSnapshotPollingService {
 			invoke("tools/cdg201/mpa/mpa_oceansx_collect.py", args);
 			Instant retrieved = Instant.now();
 			List<MaritimeSnapshot> out = new ArrayList<>();
+			Map<String, Long> rejectedRecords = new HashMap<>();
+			long sourceRecordCount = 0;
 			for (Path manifest : jsonFiles(temp, "due_to_arrive_*.manifest.json")) {
 				JsonNode m = read(manifest);
-				if (!m.path("schema_valid").asBoolean(false) || !m.path("error").asText("").isBlank()) {
+				if (!m.path("schema_valid").asBoolean(false) || !m.path("error").asText("").isBlank()
+						|| m.path("http_status").asInt() != 200) {
 					throw new IOException("MPA expected-arrival collector returned an invalid source page");
 				}
 				String rawName = m.path("raw_file").asText("");
-				if (rawName.isBlank()) continue;
+				if (rawName.isBlank()) throw new IOException("MPA expected-arrival collector returned no raw page");
 				JsonNode records = read(temp.resolve(rawName));
-				if (!records.isArray()) continue;
+				if (!records.isArray()) throw new IOException("MPA expected-arrival response is not a record list");
+				sourceRecordCount += records.size();
 				String retrievedAt = m.path("retrieval_completed_utc").asText(m.path("retrieval_started_utc").asText(retrieved.toString()));
 				String provenance = "tools/cdg201/mpa/mpa_oceansx_collect.py:" + manifest.getFileName();
 				for (JsonNode record : records) {
 					JsonNode vessel = record.path("vesselParticulars");
 					String imo = firstText(vessel, "imoNumber", "imo");
 					String arrival = firstText(record, "duetoArriveTime", "dueToArriveTime", "due_to_arrive_time");
-					if (imo.isBlank() || arrival.isBlank()) continue;
+					if (imo.isBlank()) { rejectedRecords.merge("IMO_MISSING", 1L, Long::sum); continue; }
+					if (arrival.isBlank()) { rejectedRecords.merge("ARRIVAL_MISSING", 1L, Long::sum); continue; }
 					String location = firstText(record, "locationTo", "location_to", "port");
 					String departure = firstText(record, "duetoDepartTime", "dueToDepartTime", "due_to_depart_time");
 					Instant eventInstant = instant(arrival);
-					if (eventInstant == null) continue;
+					if (eventInstant == null) { rejectedRecords.merge("ARRIVAL_TIMESTAMP", 1L, Long::sum); continue; }
 					String normalizedArrival = formatMpaTimestamp(eventInstant);
 					Instant departureInstant = instant(departure);
 					String normalizedDeparture = departureInstant == null ? null : formatMpaTimestamp(departureInstant);
@@ -116,6 +121,10 @@ class MaritimeSnapshotPollingService {
 			if (jsonFiles(temp, "due_to_arrive_*.manifest.json").isEmpty()) {
 				throw new IOException("MPA expected-arrival collector returned no source manifests");
 			}
+			logMappingRejections("MPA_EXPECTED_ARRIVALS", rejectedRecords);
+			if (sourceRecordCount > 0 && out.isEmpty() && !rejectedRecords.isEmpty()) {
+				throw new IOException("MPA expected-arrival page contained no valid arrival records");
+			}
 			return out;
 		});
 	}
@@ -125,41 +134,54 @@ class MaritimeSnapshotPollingService {
 			invoke("tools/maritime_notices/mpa_official_notices_collect.py", List.of("--raw-output", temp.toString(),
 					"--year", Integer.toString(java.time.Year.now(ZoneOffset.UTC).getValue()), "--limit", "100",
 					"--observation-mode", "prospective"));
-			List<MaritimeSnapshot> out = new ArrayList<>();
-			for (Path manifest : jsonFiles(temp, "*.manifest.json")) {
-				JsonNode m = read(manifest);
-				if (!m.path("schema_valid").asBoolean(false) || !m.path("valid_coverage").asBoolean(false)) {
-					throw new IOException("MPA notice collector returned an incomplete listing");
+			return mapNoticeSnapshots(temp, Instant.now());
+		});
+	}
+
+	/** Maps the official notice collector's run manifest and its nested page manifests. */
+	List<MaritimeSnapshot> mapNoticeSnapshots(Path directory, Instant now) throws IOException {
+		List<Path> manifests = jsonFiles(directory, "*.manifest.json");
+		if (manifests.isEmpty()) throw new IOException("MPA notice collector returned no manifests");
+		List<MaritimeSnapshot> out = new ArrayList<>();
+		for (Path manifest : manifests) {
+			JsonNode run = read(manifest);
+			if (!run.path("schema_valid").asBoolean(false) || !run.path("valid_coverage").asBoolean(false)
+					|| run.path("http_status").asInt() != 200 || !run.path("error").asText("").isBlank()) {
+				throw new IOException("MPA notice collector returned an incomplete listing");
+			}
+			String retrieved = run.path("retrieval_completed_utc")
+					.asText(run.path("retrieval_started_utc").asText(now.toString()));
+			String provenance = "tools/maritime_notices/mpa_official_notices_collect.py:" + manifest.getFileName();
+			JsonNode pages = run.path("pages");
+			if (!pages.isArray() || pages.isEmpty()) throw new IOException("MPA notice collector returned no pages");
+			for (JsonNode page : pages) {
+				String rawName = page.path("raw_file").asText("");
+				if (page.path("http_status").asInt() != 200 || !page.path("schema_valid").asBoolean(false)
+						|| rawName.isBlank()) {
+					throw new IOException("MPA notice collector returned a failed page");
 				}
-				String retrieved = m.path("retrieval_completed_utc").asText(m.path("retrieval_started_utc").asText(Instant.now().toString()));
-				String provenance = "tools/maritime_notices/mpa_official_notices_collect.py:" + manifest.getFileName();
-				JsonNode pages = m.path("pages");
-				for (JsonNode page : pages) {
-					String rawName = page.path("raw_file").asText("");
-					if (page.path("http_status").asInt() != 200 || !page.path("schema_valid").asBoolean(false) || rawName.isBlank()) continue;
-					JsonNode raw = read(temp.resolve(rawName));
-					for (JsonNode item : raw.path("data")) {
-						String id = item.path("id").asText("");
-						if (id.isBlank()) continue;
-						Map<String, String> value = new LinkedHashMap<>();
-						value.put("title", item.path("title").asText(""));
-						value.put("release_date", item.path("release_date").asText(""));
-						value.put("status", item.path("status").asText(""));
-						String publication = item.path("release_date").asText("");
-						String publicationTime = normalizeMpaNoticeTime(publication);
-						if (!noticeWithinLookback(publicationTime, Instant.now(), noticeLookbackDays)) continue;
-						String encoded = mapper.writeValueAsString(value);
-						out.add(normalizer.normalize(new MaritimeSourceObservation(
-								MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE, "mpa-notice:" + id, provenance,
-								publicationTime, retrieved, retrieved, MaritimeSnapshotChangeDetector.LIVE,
-								MaritimeSnapshotChangeDetector.UNKNOWN, null, "Singapore", null, null, encoded,
-								null, null, null)));
-					}
+				JsonNode raw = read(directory.resolve(rawName));
+				JsonNode data = raw.path("data");
+				if (!data.isArray()) throw new IOException("MPA notice response is not a record list");
+				for (JsonNode item : data) {
+					String id = item.path("id").asText("");
+					if (id.isBlank()) continue;
+					Map<String, String> value = new LinkedHashMap<>();
+					value.put("title", item.path("title").asText(""));
+					value.put("release_date", item.path("release_date").asText(""));
+					value.put("status", item.path("status").asText(""));
+					String publicationTime = normalizeMpaNoticeTime(item.path("release_date").asText(""));
+					if (!noticeWithinLookback(publicationTime, now, noticeLookbackDays)) continue;
+					String encoded = mapper.writeValueAsString(value);
+					out.add(normalizer.normalize(new MaritimeSourceObservation(
+							MaritimeSnapshotChangeDetector.MPA_OFFICIAL_NOTICE, "mpa-notice:" + id, provenance,
+							publicationTime, retrieved, retrieved, MaritimeSnapshotChangeDetector.LIVE,
+							MaritimeSnapshotChangeDetector.UNKNOWN, null, "Singapore", null, null, encoded,
+							null, null, null)));
 				}
 			}
-			if (jsonFiles(temp, "*.manifest.json").isEmpty()) throw new IOException("MPA notice collector returned no manifests");
-			return out;
-		});
+		}
+		return List.copyOf(out);
 	}
 
 	private MaritimeCollectionPoll runNea() {
@@ -169,11 +191,16 @@ class MaritimeSnapshotPollingService {
 					"--pause-seconds", "1", "--max-retries", "3"));
 			Path normalized = temp.resolve("normalized");
 			Map<String, String> retrievalByRaw = new HashMap<>();
-			for (Path manifest : jsonFiles(temp, "*.manifest.json")) {
+			List<Path> manifests = jsonFiles(temp, "*.manifest.json");
+			for (Path manifest : manifests) {
 				JsonNode m = read(manifest);
-				if (m.path("error").asText("").isBlank()) retrievalByRaw.put(m.path("raw_file").asText(""), m.path("retrieval_completed_utc").asText(m.path("retrieval_started_utc").asText("")));
+				String raw = m.path("raw_file").asText("");
+				if (!m.path("error").asText("").isBlank() || m.path("http_status").asInt() != 200 || raw.isBlank()) {
+					throw new IOException("NEA weather collector returned an incomplete source page");
+				}
+				retrievalByRaw.put(raw, m.path("retrieval_completed_utc").asText(m.path("retrieval_started_utc").asText("")));
 			}
-			if (retrievalByRaw.isEmpty()) throw new IOException("NEA weather collector returned no successful source pages");
+			if (retrievalByRaw.isEmpty()) throw new IOException("NEA weather collector returned no source pages");
 			List<MaritimeSourceObservation> observations = new ArrayList<>();
 			if (Files.isDirectory(normalized)) for (Path csv : jsonlessCsvFiles(normalized)) {
 				observations.addAll(neaForecastObservations(readCsv(csv), retrievalByRaw,
@@ -234,6 +261,14 @@ class MaritimeSnapshotPollingService {
 		org.slf4j.LoggerFactory.getLogger(MaritimeSnapshotPollingService.class)
 				.warn("Maritime source poll failed source={} exception={} exit={}", source,
 						ex.getClass().getSimpleName(), exit);
+	}
+
+	private static void logMappingRejections(String source, Map<String, Long> reasons) {
+		if (!reasons.isEmpty()) {
+			org.slf4j.LoggerFactory.getLogger(MaritimeSnapshotPollingService.class)
+					.warn("Maritime source records rejected during mapping source={} rejected={} reasons={}",
+							source, reasons.values().stream().mapToLong(Long::longValue).sum(), reasons);
+		}
 	}
 
 	private static final class CollectorExitException extends IOException {

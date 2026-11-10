@@ -37,6 +37,9 @@ class MaritimeSnapshotNormalizerTest {
 	void convertsMpaLocalExpectedTimesToSingaporeOffsetAndRejectsUnknownFormats() {
 		assertThat(MaritimeSnapshotPollingService.normalizeMpaTime("2026-10-28 23:00:00"))
 				.isEqualTo("2026-10-28T23:00:00+08:00");
+		// OffsetDateTime.toString() omits :00 seconds; the source contract must keep them.
+		assertThat(MaritimeSnapshotPollingService.normalizeMpaTime("2026-10-29T02:00+08:00"))
+				.isEqualTo("2026-10-29T02:00:00+08:00");
 		assertThat(MaritimeSnapshotPollingService.normalizeMpaTime("2026-10-29T02:00:00Z"))
 				.isEqualTo("2026-10-29T10:00:00+08:00");
 		assertThat(MaritimeSnapshotPollingService.normalizeMpaTime("not-a-source-time")).isNull();
@@ -52,14 +55,14 @@ class MaritimeSnapshotNormalizerTest {
 	}
 
 	@Test
-	void normalizedMpaCollectorTimestampIsAcceptedByTheSnapshotDetector() {
-		String arrival = MaritimeSnapshotPollingService.normalizeMpaTime("2026-11-12 13:30:00");
-		String departure = MaritimeSnapshotPollingService.normalizeMpaTime("2026-11-12 15:45:00");
+	void pollerShapedMpaTimestampWithZeroSecondsIsAcceptedByTheSnapshotDetector() {
+		String arrival = MaritimeSnapshotPollingService.normalizeMpaTime("2026-11-12T13:30+08:00");
+		String departure = MaritimeSnapshotPollingService.normalizeMpaTime("2026-11-12T15:45+08:00");
 		MaritimeSnapshotNormalizer normalizer = new MaritimeSnapshotNormalizer();
 		MaritimeSnapshot snapshot = normalizer.normalize(new MaritimeSourceObservation(
 				MaritimeSnapshotChangeDetector.MPA_ETA_REVISION, "mpa:9351048:SEA:SGSIN", "MPA poll fixture",
 				arrival, "2026-11-11T00:00:00Z", "2026-11-11T00:00:00Z", "LIVE", "APPLICABLE", "9351048",
-				"Singapore", arrival, departure, "arrival=" + arrival + ";departure=" + departure,
+				"Singapore", arrival, departure, "arrival=2026-11-12 13:30:00;departure=2026-11-12 15:45:00",
 				"UNKNOWN", "UNKNOWN", "UNKNOWN"));
 		MemoryStore store = new MemoryStore();
 		MaritimeSnapshotChangeDetector detector = new MaritimeSnapshotChangeDetector(store,

@@ -101,6 +101,7 @@ class MaritimeChangeEventControllerIntegrationTests {
 					.header("Authorization", "Bearer " + ownerToken)
 					.param("since", "2026-10-01T00:00:00Z").param("limit", "10"))
 				.andExpect(status().isOk())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
 				.andExpect(jsonPath("$.availability").value("PARTIAL"))
 				.andExpect(jsonPath("$.events[0].sourceType").value("MPA_ETA_REVISION"))
 				.andExpect(jsonPath("$.events[0].eventType").value("NEW"))
