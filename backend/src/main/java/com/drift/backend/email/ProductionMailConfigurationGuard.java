@@ -36,11 +36,20 @@ public class ProductionMailConfigurationGuard {
 		if (!"smtp.gmail.com".equalsIgnoreCase(value(host)) || port != 587) {
 			throw new IllegalStateException("Production mail must use smtp.gmail.com on port 587");
 		}
-		if (!smtpAuth || !startTls || !startTlsRequired) {
-			throw new IllegalStateException("Production mail requires SMTP authentication and required STARTTLS");
+		if (!smtpAuth) {
+			throw new IllegalStateException("Production mail requires MAIL_SMTP_AUTH");
 		}
-		if (blank(username) || blank(password)) {
-			throw new IllegalStateException("Production mail requires MAIL_USERNAME and MAIL_PASSWORD");
+		if (!startTls) {
+			throw new IllegalStateException("Production mail requires MAIL_SMTP_STARTTLS_ENABLE");
+		}
+		if (!startTlsRequired) {
+			throw new IllegalStateException("Production mail requires MAIL_SMTP_STARTTLS_REQUIRED");
+		}
+		if (blank(username)) {
+			throw new IllegalStateException("Production mail requires MAIL_USERNAME");
+		}
+		if (blank(password)) {
+			throw new IllegalStateException("Production mail requires MAIL_PASSWORD");
 		}
 		if (blank(from) || value(from).toLowerCase(Locale.ROOT).endsWith("@localhost")) {
 			throw new IllegalStateException("Production mail requires a non-local MAIL_FROM_ADDRESS");

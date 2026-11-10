@@ -8,6 +8,8 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 
+import com.drift.backend.email.MailLinks;
+
 public final class ResetTokens {
 
 	private static final SecureRandom RANDOM = new SecureRandom();
@@ -31,7 +33,6 @@ public final class ResetTokens {
 	}
 
 	public static String link(String baseUrl, String token) {
-		String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-		return base + "#token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
+		return MailLinks.normalize(baseUrl) + "#token=" + URLEncoder.encode(token, StandardCharsets.UTF_8);
 	}
 }

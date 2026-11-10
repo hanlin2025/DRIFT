@@ -215,10 +215,20 @@ class AdminInvitationIntegrationTests {
 				VALUES (?, ?, 'FREIGHT_FORWARDER', ?, NOW() + INTERVAL '1 day')
 				""", pending, harbourline, "a".repeat(64));
 		mailer.failNext = true;
-		mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail))
-				.contentType(MediaType.APPLICATION_JSON).content(invite(harbourline, "FREIGHT_FORWARDER", pending)))
-				.andExpect(status().isBadGateway())
-				.andExpect(jsonPath("$.message").value(InvitationDeliveryException.MESSAGE));
+		Logger logger = (Logger) LoggerFactory.getLogger(AdminInvitationService.class);
+		ListAppender<ILoggingEvent> logs = new ListAppender<>();
+		logs.start();
+		logger.addAppender(logs);
+		try {
+			mvc.perform(post("/api/admin/invitations").header("Authorization", "Bearer " + token(adminEmail))
+					.contentType(MediaType.APPLICATION_JSON).content(invite(harbourline, "FREIGHT_FORWARDER", pending)))
+					.andExpect(status().isBadGateway())
+					.andExpect(jsonPath("$.message").value(InvitationDeliveryException.MESSAGE));
+		} finally {
+			logger.detachAppender(logs);
+		}
+		assertThat(logs.list).anyMatch(event -> event.getFormattedMessage().contains("IllegalStateException"));
+		assertThat(logs.list).noneMatch(event -> event.getFormattedMessage().contains("app-password-secret"));
 		assertThat(jdbc.queryForObject("SELECT status || ':' || token_hash FROM invitations WHERE email = ?", String.class, pending))
 				.isEqualTo("PENDING:" + "a".repeat(64));
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM invitations WHERE email = ? AND status = 'PENDING'", Integer.class, pending))
@@ -548,7 +558,7 @@ class AdminInvitationIntegrationTests {
 		public void sendInvitation(String email, String link, String code, String organisationName, String roleLabel, Duration validFor) {
 			if (failNext) {
 				failNext = false;
-				throw new IllegalStateException("mailpit unavailable");
+				throw new IllegalStateException("smtp failed for app-password-secret");
 			}
 			lastCode.set(code);
 			assertThat(link).contains("#invite=" + code);
