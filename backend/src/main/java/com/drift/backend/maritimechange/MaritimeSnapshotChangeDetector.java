@@ -77,15 +77,22 @@ public class MaritimeSnapshotChangeDetector {
 	}
 
 	private Optional<MaritimeSnapshotChange> record(Prepared prepared) {
-		if (store.find(prepared.sourceType(), prepared.sourceIdentity(), prepared.fingerprint()).isPresent()) {
+		Optional<MaritimeSnapshotObservation> head = store.head(prepared.sourceType(), prepared.sourceIdentity());
+		if (head.isPresent() && prepared.currentValue().equals(head.get().getCurrentValue())) {
 			return Optional.empty();
 		}
-		Optional<MaritimeSnapshotObservation> head = store.head(prepared.sourceType(), prepared.sourceIdentity());
-		boolean older = head.isPresent() && prepared.retrievedAt().isBefore(head.get().getRetrievedAtUtc());
+		boolean older = head.isPresent() && (prepared.retrievedAt().isBefore(head.get().getRetrievedAtUtc())
+				|| observedBefore(prepared.observedAt(), head.get().getObservedAt()));
+		if (head.isPresent() && HISTORICAL.equals(prepared.freshness())
+				&& sourceEventBefore(prepared.sourceEventAt(), head.get().getSourceEventAt())) {
+			older = true;
+		}
 		String ordering;
 		boolean becomesHead;
 		boolean forwardLooking;
 		String freshness;
+		String previousValue = null;
+		String fingerprint = prepared.fingerprint();
 		if (HISTORICAL_BACKFILL.equals(prepared.sourceMode())) {
 			ordering = BACKFILL;
 			becomesHead = !older;
@@ -101,21 +108,39 @@ public class MaritimeSnapshotChangeDetector {
 			becomesHead = true;
 			freshness = prepared.freshness();
 			forwardLooking = LIVE.equals(prepared.sourceMode()) && APPLICABLE.equals(freshness);
+			previousValue = head.map(MaritimeSnapshotObservation::getCurrentValue).orElse(prepared.previousValue());
+			fingerprint = MaritimeSnapshotFingerprint.of(prepared.sourceType(), prepared.sourceIdentity(),
+					prepared.vesselImo(), prepared.location(), previousValue, prepared.currentValue(),
+					prepared.sourceEventAt(), prepared.effectiveFrom(), prepared.effectiveUntil(),
+					head.map(MaritimeSnapshotObservation::getContentFingerprint).orElse(null));
+		}
+		if (store.find(prepared.sourceType(), prepared.sourceIdentity(), fingerprint).isPresent()) {
+			return Optional.empty();
 		}
 		String kind = head.isEmpty() ? NEW : REVISED;
 		Instant recordedAt = clock.instant();
-		store.add(MaritimeSnapshotObservation.record(prepared.sourceType(), prepared.sourceIdentity(), prepared.fingerprint(),
+		store.add(MaritimeSnapshotObservation.record(prepared.sourceType(), prepared.sourceIdentity(), fingerprint,
 				kind, ordering, forwardLooking, prepared.provenance(), prepared.sourceEventAt(), prepared.observedAt(),
 				prepared.retrievedAt(), prepared.sourceMode(), freshness, prepared.vesselImo(), prepared.location(),
-				prepared.effectiveFromInstant(), prepared.effectiveUntilInstant(), prepared.previousValue(),
+				prepared.effectiveFromInstant(), prepared.effectiveUntilInstant(), previousValue,
 				prepared.currentValue(), prepared.activityCompatibility(), prepared.locationCompatibility(),
 				prepared.timeCompatibility(), recordedAt), becomesHead);
-		return Optional.of(new MaritimeSnapshotChange(prepared.sourceType(), prepared.sourceIdentity(), prepared.fingerprint(),
+		return Optional.of(new MaritimeSnapshotChange(prepared.sourceType(), prepared.sourceIdentity(), fingerprint,
 				kind, ordering, forwardLooking, prepared.provenance(), prepared.sourceEventAt(), prepared.observedAt(),
 				prepared.retrievedAtUtc(), prepared.retrievedAt(), prepared.sourceMode(), freshness, prepared.vesselImo(),
-				prepared.location(), prepared.effectiveFrom(), prepared.effectiveUntil(), prepared.previousValue(),
+				prepared.location(), prepared.effectiveFrom(), prepared.effectiveUntil(), previousValue,
 				prepared.currentValue(), prepared.activityCompatibility(), prepared.locationCompatibility(),
 				prepared.timeCompatibility(), recordedAt));
+	}
+
+	private static boolean observedBefore(String incoming, String stored) {
+		Instant incomingAt = parseInstant(incoming);
+		Instant storedAt = parseInstant(stored);
+		return incomingAt != null && storedAt != null && incomingAt.isBefore(storedAt);
+	}
+
+	private static boolean sourceEventBefore(String incoming, String stored) {
+		return observedBefore(incoming, stored);
 	}
 
 	private Prepared prepare(MaritimeSnapshot snapshot) {
@@ -146,9 +171,6 @@ public class MaritimeSnapshotChangeDetector {
 		}
 		String freshness = trim(snapshot.freshness());
 		if (freshness != null && !FRESHNESS.contains(freshness)) {
-			return Prepared.rejected(identity, "FRESHNESS");
-		}
-		if (LIVE.equals(sourceMode) && HISTORICAL.equals(freshness)) {
 			return Prepared.rejected(identity, "FRESHNESS");
 		}
 		if (freshness == null) {
