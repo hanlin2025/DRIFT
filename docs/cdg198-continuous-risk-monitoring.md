@@ -2,7 +2,7 @@
 
 DRIFT's scheduled evaluator runs a bounded keyset sweep of active shipments. For each shipment it calculates the existing connection risk, compares it with the last valid risk level persisted in `shipment_risk_states`, and persists only an initial alertable risk or an upward transition. Repeated or lower assessments update the baseline without creating another transition. A decrease therefore becomes the baseline for a later upward crossing.
 
-The interval is configurable with `RISK_ALERTS_EVALUATION_INTERVAL`; supported values are 5 to 15 minutes, and the default is 15 minutes. `RISK_ALERTS_EVALUATION_ENABLED` gates the sweep. The scheduler uses separate transactions per shipment, and a failure for one shipment does not stop the remaining batch.
+The interval is configurable with `RISK_ALERTS_EVALUATION_INTERVAL` and defaults to 15 minutes. The configured duration is passed through without an added application-level range restriction. `RISK_ALERTS_EVALUATION_ENABLED` gates the sweep. The scheduler uses separate transactions per shipment, and a failure for one shipment does not stop the remaining batch.
 
 ## Risk inputs and evidence
 
@@ -12,7 +12,7 @@ Reevaluation does not fetch external evidence. It reads the shipment's persisted
 
 Risk evaluation stays gated until the durable risk-alert activation has completed. For a maintenance run against the intended database, set `RISK_ALERTS_ACTIVATION_COMMAND=true`, keep `RISK_ALERTS_EVALUATION_ENABLED=false` and both risk-mail flags false, and start the application once. The activation command silently baselines currently active shipments, suppresses deliveries from older generations, records the new generation, and exits the process. Return `RISK_ALERTS_ACTIVATION_COMMAND=false` for normal service starts.
 
-After that baseline, set `RISK_ALERTS_EVALUATION_ENABLED=true` and choose an interval from `5m` through `15m`. This evaluates and records transitions; it does not itself enable the delivery poller. Keep `RISK_ALERTS_MAIL_ENABLED=false` and `RISK_ALERTS_DISPATCH_ENABLED=false` until delivery is explicitly approved and recipient preferences, frontend URL, SMTP configuration, and deployment behavior are reviewed. The poller is created only when dispatch is enabled. Eligible users still need the existing notification preference enabled with a minimum level; the selected level includes itself and all higher levels.
+After that baseline, set `RISK_ALERTS_EVALUATION_ENABLED=true`; leave `RISK_ALERTS_EVALUATION_INTERVAL` at its 15-minute default or configure the desired interval. This evaluates and records transitions; it does not itself enable the delivery poller. Keep `RISK_ALERTS_MAIL_ENABLED=false` and `RISK_ALERTS_DISPATCH_ENABLED=false` until delivery is explicitly approved and recipient preferences, frontend URL, SMTP configuration, and deployment behavior are reviewed. The poller is created only when dispatch is enabled. Eligible users still need the existing notification preference enabled with a minimum level; the selected level includes itself and all higher levels.
 
 An email links to the recipient's authorized shipment detail route (`/logistics-manager/shipments/{id}` or `/importer/shipments/{id}`). AI assessment generation remains available as an explicit action on that page and is never invoked by the scheduler or email path.
 
