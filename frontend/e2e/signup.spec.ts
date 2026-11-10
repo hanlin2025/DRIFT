@@ -50,8 +50,10 @@ test('invited user registers, reaches login and cannot reuse the invitation', as
 
 test('missing and invalid invitations do not reveal a company or enable registration', async ({ page }) => {
   await page.goto('/signup');
-  await expect(page.getByLabel('Invitation code')).toBeVisible();
-  await page.getByLabel('Invitation code').fill('z'.repeat(43));
+  await expect(page.getByRole('button', { name: /Create a company/ })).toBeVisible();
+  await page.getByRole('button', { name: /Join an existing company/ }).click();
+  await expect(page.getByLabel('Invitation link or code')).toBeVisible();
+  await page.getByLabel('Invitation link or code').fill('z'.repeat(43));
   await page.getByRole('button', { name: /Continue with invitation/ }).click();
   await expect(page.getByRole('alert')).toContainText('invitation');
   await expect(page.getByLabel('Full name')).toHaveCount(0);

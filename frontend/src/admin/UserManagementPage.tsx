@@ -13,7 +13,7 @@ import { RemoveUser } from './RemoveUser';
 
 type StatusFilter = 'ALL' | AccountStatus;
 
-const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED: 'Removed' };
+const STATUS_LABELS: Record<AccountStatus, string> = { ACTIVE: 'Active', REMOVED: 'Removed', PENDING_VERIFICATION: 'Awaiting verification' };
 
 function shows(filter: StatusFilter, user: AdminUser) {
   return filter === 'ALL' || user.status === filter;

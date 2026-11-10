@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../signup/api';
+import { ResendVerificationForm } from '../signup/CreateCompanyForm';
 import { homePath, sessionHasEnded, writeSession } from '../session/session';
 import { login } from './api';
 
@@ -37,6 +38,8 @@ export function LoginPage() {
   const [error, setError] = useState(!passwordChanged && !passwordReset && (expiredState(location.state) || sessionHasEnded()) ? 'Your session has ended. Log in again.' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [unverified, setUnverified] = useState(false);
+  const [resending, setResending] = useState(false);
   const busy = useRef(false);
 
   useEffect(() => { document.title = 'Log in | DRIFT'; }, []);
@@ -56,6 +59,8 @@ export function LoginPage() {
     const validation = validate();
     setErrors(validation);
     setError('');
+    setUnverified(false);
+    setResending(false);
     if (Object.keys(validation).length) {
       const first = event.currentTarget.elements.namedItem(Object.keys(validation)[0]);
       if (first instanceof HTMLElement) first.focus();
@@ -69,6 +74,8 @@ export function LoginPage() {
       setPassword('');
       navigate(homePath(session.role), { replace: true });
     } catch (reason) {
+      // Only this marker means "the password was right but the email is not verified yet"; any other 403 stays generic.
+      if (reason instanceof ApiError && reason.status === 403 && reason.errorCode === 'EMAIL_NOT_VERIFIED') setUnverified(true);
       if (reason instanceof ApiError) {
         const mapped: { email?: string; password?: string } = {};
         if (reason.fields.email) mapped.email = reason.fields.email;
@@ -88,7 +95,8 @@ export function LoginPage() {
     {registered && <div className="success-notice" role="status"><strong>Account created successfully.</strong><br />You're registered with {invitedEmail}.</div>}
     {passwordChanged && <div className="success-notice" role="status">Your password was changed. Log in with the new password.</div>}
     {passwordReset && <div className="success-notice" role="status">{passwordReset}</div>}
-    {error && <div className="error-notice" role="alert">{error}</div>}
+    {error && <div className="error-notice" role="alert">{error}{unverified && !resending ? <><br /><button type="button" className="retry-button" onClick={() => setResending(true)}>Resend the verification email</button></> : null}</div>}
+    {unverified && resending ? <ResendVerificationForm initialEmail={email.trim()} label="Resend verification email" /> : null}
     <form onSubmit={submit} className="login-fields" noValidate aria-busy={submitting}>
       <div className="field">
         <label htmlFor="login-email">Email</label>

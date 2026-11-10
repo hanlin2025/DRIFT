@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { registerAccount, resolveInvitation } from './api';
+import { post, registerAccount, resolveInvitation } from './api';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -61,5 +61,19 @@ describe('invitation and registration roles', () => {
       password: 'Example123',
       invitationToken: 'invite-token',
     })).rejects.toMatchObject({ status: 502 });
+  });
+});
+
+describe('error markers', () => {
+  it('keeps the machine-readable code from an error body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      message: 'Verify your email before signing in. You can request a new verification link.', code: 'EMAIL_NOT_VERIFIED',
+    }, 403)));
+    await expect(post('/api/login', {})).rejects.toMatchObject({ status: 403, errorCode: 'EMAIL_NOT_VERIFIED' });
+  });
+
+  it('leaves the code empty when the body has none', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ message: 'Forbidden' }, 403)));
+    await expect(post('/api/login', {})).rejects.toMatchObject({ status: 403, errorCode: undefined });
   });
 });
