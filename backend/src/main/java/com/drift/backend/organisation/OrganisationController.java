@@ -35,7 +35,7 @@ public class OrganisationController {
 	}
 
 	@GetMapping("/api/organisations")
-	@Operation(summary = "Search importer organisations", description = "Returns active importer organisations other than the authenticated user's own company. "
+	@Operation(summary = "Search importer organisations", description = "Returns active importer organisations other than the authenticated user's own company. A freight forwarder receives only importers their company is authorised to use. "
 			+ "There is no separate organisation-type column: an importer organisation is any other active company. "
 			+ "The name filter matches any part of the organisation name, ignoring letter case. "
 			+ "Percent and underscore characters in the name are matched literally. "
