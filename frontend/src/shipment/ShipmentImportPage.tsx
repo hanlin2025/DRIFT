@@ -123,21 +123,30 @@ export function ShipmentImportPage({ token, basePath, jobId, onSessionEnded }: {
 
   return (
     <section className="shipment-import" aria-labelledby="import-shipments">
-      <Link className="back-link" to={basePath}>Back to shipments</Link>
-      <p className="eyebrow">SHIPMENT PORTFOLIO</p>
-      <h2 id="import-shipments">Import shipments</h2>
-      <p className="intro">Upload the DRIFT CSV template to create multiple shipment plans. Importing continues safely if you leave this page.</p>
-      <p><a className="template-link" href="/shipment-import-template.csv" download>Download CSV Template</a></p>
+      <Link className="back-link" to={basePath}><span aria-hidden="true">&#8592;</span> Back to shipments</Link>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">SHIPMENT PORTFOLIO</p>
+          <h2 id="import-shipments">Import shipments</h2>
+          <p className="intro">Upload the DRIFT CSV template to create multiple shipment plans. Importing continues safely if you leave this page.</p>
+        </div>
+      </div>
       {jobId ? <JobStatus job={job} errors={errors} problem={statusProblem} onRetry={() => setRetry(value => value + 1)} basePath={basePath} /> : (
-        <form className="shipment-import-form" onSubmit={submit} noValidate aria-busy={submitting}>
+        <form className="shipment-import-form form-section" onSubmit={submit} noValidate aria-busy={submitting}>
           {fileProblem && <div className="error-notice" role="alert">{fileProblem}</div>}
           <label className="import-file-field" htmlFor="shipment-import-file">
             <span>CSV file</span>
-            <input id="shipment-import-file" type="file" accept=".csv,text/csv" aria-label="CSV file" onChange={selectFile} disabled={submitting} />
+            <span className="import-file-picker">
+              <input id="shipment-import-file" type="file" accept=".csv,text/csv" aria-label="CSV file" onChange={selectFile} disabled={submitting} />
+              <span className="import-file-button">Choose file</span>
+              <span className="import-file-name">{file ? <>Selected: <strong>{file.name}</strong></> : 'No file chosen'}</span>
+            </span>
             <small>One non-empty .csv file, up to 5 MB.</small>
           </label>
-          {file && <p className="selected-file" role="status">Selected: <strong>{file.name}</strong></p>}
-          <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Starting import...' : 'Import shipments'}<span aria-hidden="true">→</span></button>
+          <div className="import-actions">
+            <button type="submit" className="primary-button" disabled={submitting}>{submitting ? 'Starting import...' : 'Import shipments'}</button>
+            <a className="template-link" href="/shipment-import-template.csv" download>Download CSV Template</a>
+          </div>
         </form>
       )}
     </section>
