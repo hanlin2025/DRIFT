@@ -3,7 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Shipment, ShipmentTracking, VesselPosition, VesselTrack } from './api';
 import { formatWhen, PENDING_ASSIGNMENT } from './ShipmentForm';
-import { trackingNotice } from './positionNotice';
+import { isStalePosition, trackingNotice } from './positionNotice';
 import { along, arc, locate, type LngLat } from './places';
 import { trackPoints, trackSegments } from './trackSegments';
 
@@ -56,17 +56,20 @@ type LiveFix = {
   id: 'mother' | 'feeder';
   kicker: string;
   name: string;
-  position: Pick<VesselPosition, 'latitude' | 'longitude' | 'ingestedAt' | 'speedOverGroundKnots'>;
+  position: Pick<VesselPosition, 'latitude' | 'longitude' | 'ingestedAt' | 'speedOverGroundKnots' | 'source'>;
   displayMode: 'live' | 'scenario' | 'recorded';
+  scenarioReferenceTime?: string | null;
 };
 
-function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
+const FUTURE_RECEIPT_SKEW_TOLERANCE_MS = 60_000;
+
+function liveFixes(tracking: ShipmentTracking | null | undefined, now: number): LiveFix[] {
   if (!tracking) return [];
   const fixes: LiveFix[] = [];
   if (tracking.motherVessel) {
     fixes.push({
       id: 'mother',
-      kicker: positionKicker('MOTHER', tracking.motherVessel),
+      kicker: positionKicker('MOTHER', tracking.motherVessel, now),
       name: tracking.motherVessel.vesselName?.trim() || tracking.motherVesselName,
       position: tracking.motherVessel,
       displayMode: 'live',
@@ -75,7 +78,7 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
   if (tracking.feederVessel) {
     fixes.push({
       id: 'feeder',
-      kicker: positionKicker('FEEDER', tracking.feederVessel),
+      kicker: positionKicker('FEEDER', tracking.feederVessel, now),
       name: tracking.feederVessel.vesselName?.trim() || tracking.feederVesselName?.trim() || 'Feeder vessel',
       position: tracking.feederVessel,
       displayMode: 'live',
@@ -84,17 +87,24 @@ function liveFixes(tracking: ShipmentTracking | null | undefined): LiveFix[] {
   return fixes;
 }
 
-function positionKicker(role: 'MOTHER' | 'FEEDER', position: VesselPosition) {
-  return position.source === 'SEEDED' ? `${role} SEEDED` : `${role} LIVE`;
+function positionKicker(role: 'MOTHER' | 'FEEDER', position: VesselPosition, now: number) {
+  if (position.source === 'SEEDED') return `${role} SEEDED`;
+  if (position.source !== 'AIS_STREAM') return `${role} POSITION SOURCE UNKNOWN`;
+  const receivedAt = Date.parse(position.ingestedAt);
+  if (!Number.isFinite(receivedAt) || receivedAt > now + FUTURE_RECEIPT_SKEW_TOLERANCE_MS) {
+    return `${role} AIS FRESHNESS UNKNOWN`;
+  }
+  return isStalePosition(position.ingestedAt, now) ? `${role} LAST KNOWN AIS` : `${role} FRESH AIS`;
 }
 
-function displayFixes(positions: RouteDisplayPosition[] | undefined, displayMode: LiveFix['displayMode']): LiveFix[] {
+function displayFixes(positions: RouteDisplayPosition[] | undefined, displayMode: LiveFix['displayMode'], scenarioReferenceTime?: string | null): LiveFix[] {
   return (positions ?? []).map(position => ({
     id: position.role.toLowerCase() as LiveFix['id'],
     kicker: `${position.role} ${position.label}`,
     name: position.name,
     position,
     displayMode: position.label === 'SCENARIO' ? 'scenario' : displayMode,
+    scenarioReferenceTime,
   }));
 }
 
@@ -150,9 +160,7 @@ function placeLive(handle: LiveGlobe, fixes: LiveFix[]) {
 }
 
 function updateLivePin(marker: InstanceType<MapLibre['Marker']>, fix: LiveFix) {
-  const root = marker.getElement();
-  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${fix.id}`;
-  root.title = markerTitle(fix);
+  applyLivePinPresentation(marker.getElement(), fix);
 }
 
 function routeIdentity(stops: Stop[]) {
@@ -283,20 +291,39 @@ function markSelected(handle: LiveGlobe, selectedId: number | null | undefined) 
 
 function livePin(fix: LiveFix) {
   const root = document.createElement('div');
-  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${fix.id}`;
-  root.title = markerTitle(fix);
+  applyLivePinPresentation(root, fix);
   const dot = document.createElement('span');
   dot.className = 'globe-dot';
   root.append(dot);
   return root;
 }
 
-function markerTitle(fix: LiveFix) {
-  const timeLabel = fix.displayMode === 'recorded' ? 'Receipt time' : fix.displayMode === 'scenario' ? 'Scenario time' : 'Last updated';
-  return `${fix.kicker} ${fix.name}. ${timeLabel} ${formatWhen(fix.position.ingestedAt)}`;
+function applyLivePinPresentation(root: HTMLElement, fix: LiveFix) {
+  const statusClass = fix.displayMode === 'scenario' ? 'synthetic'
+    : fix.kicker.includes('LAST KNOWN') ? 'stale'
+      : fix.kicker.includes('SEEDED') ? 'seeded'
+        : fix.kicker.includes('FRESH AIS') ? 'fresh' : 'unknown';
+  const label = markerTitle(fix);
+  root.className = `globe-pin ${fix.displayMode === 'live' ? 'live' : 'position-marker'} ${fix.displayMode} ${statusClass} ${fix.id}`;
+  root.title = label;
+  root.setAttribute('aria-label', label);
+  root.setAttribute('role', 'img');
+  root.tabIndex = 0;
 }
 
-export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoint, displayPositions, displayMode = 'live', contextKey, routeIdentityKey }: {
+function markerTitle(fix: LiveFix) {
+  return `${fix.kicker} ${fix.name}. ${positionTimeLabel(fix)}`;
+}
+
+function positionTimeLabel(fix: LiveFix) {
+  if (fix.displayMode === 'scenario') return fix.scenarioReferenceTime
+    ? `At simulated cutoff ${fix.scenarioReferenceTime}`
+    : `Scenario observation time ${formatWhen(fix.position.ingestedAt)}`;
+  if (fix.displayMode === 'recorded') return `Receipt time ${formatWhen(fix.position.ingestedAt)}`;
+  return `Last received ${formatWhen(fix.position.ingestedAt)}`;
+}
+
+export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoint, displayPositions, displayMode = 'live', contextKey, routeIdentityKey, scenarioReferenceTime }: {
   shipment: Shipment;
   tracking?: ShipmentTracking | null;
   history?: VesselTrack | null;
@@ -306,6 +333,7 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
   displayMode?: 'live' | 'scenario' | 'recorded';
   contextKey?: string;
   routeIdentityKey?: string;
+  scenarioReferenceTime?: string | null;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const historyRef = useRef(history);
@@ -314,6 +342,7 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
   const stopsRef = useRef<Stop[]>([]);
   const routeIdentityRef = useRef(routeIdentityKey);
   const contextRef = useRef(contextKey ?? String(shipment.id));
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
   historyRef.current = history;
   selectedRef.current = selectedId;
   onSelectRef.current = onSelectPoint;
@@ -323,10 +352,17 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
   const stops = stopsFor(shipment);
   stopsRef.current = stops;
   routeIdentityRef.current = routeIdentityKey;
+  const hasTracking = tracking !== null && tracking !== undefined;
+  useEffect(() => {
+    if (displayMode !== 'live' || !hasTracking) return;
+    const ticker = window.setInterval(() => setFreshnessNow(Date.now()), 30_000);
+    return () => window.clearInterval(ticker);
+  }, [displayMode, hasTracking]);
+  const liveNow = Math.max(freshnessNow, Date.now());
   const fixes = displayPositions
-    ? displayFixes(displayPositions, displayMode)
-    : displayMode === 'recorded' ? [] : liveFixes(tracking);
-  const notice = displayMode === 'recorded' ? null : trackingNotice(tracking);
+    ? displayFixes(displayPositions, displayMode, scenarioReferenceTime)
+    : displayMode === 'recorded' ? [] : liveFixes(tracking, liveNow);
+  const notice = displayMode === 'recorded' ? null : trackingNotice(tracking, liveNow);
   fixesRef.current = fixes;
   const [mapState, setMapState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const unmapped = [stops[0], stops[2], stops[4]].filter(stop => stop.name !== 'Not recorded' && !stop.at).map(stop => stop.name);
@@ -418,7 +454,7 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
     const handle = globeRef.current;
     if (!handle || !mapReadyRef.current) return;
     placeLive(handle, fixes);
-  }, [tracking, displayMode, displayPositions]);
+  }, [tracking, displayMode, displayPositions, freshnessNow]);
 
   useEffect(() => {
     const handle = globeRef.current;
@@ -450,7 +486,7 @@ export function RouteMap({ shipment, tracking, history, selectedId, onSelectPoin
             <li key={fix.id}>
               {fix.kicker} {fix.name} · {fix.position.latitude}, {fix.position.longitude}
               {fix.position.speedOverGroundKnots == null ? '' : ` · ${fix.position.speedOverGroundKnots} kn`}
-              {' · '}{displayMode === 'recorded' ? 'Receipt time' : displayMode === 'scenario' ? 'Scenario time' : 'Last updated'} {formatWhen(fix.position.ingestedAt)}
+              {' · '}{positionTimeLabel(fix)}
             </li>
           ))}
         </ul>

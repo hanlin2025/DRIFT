@@ -71,6 +71,7 @@ const shipment: Shipment = {
     courseOverGroundDegrees: 175,
     trueHeadingDegrees: 176,
     ingestedAt: '2026-10-05T03:00:00Z',
+    source: 'AIS_STREAM',
   },
   feederVesselPosition: null,
   arrivalComparison: null,
@@ -224,8 +225,8 @@ describe('connection window on the shipment detail', () => {
     expect(within(record).getByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
     expect(within(record).getByText('No live AIS position')).toBeInTheDocument();
     expect(screen.getByRole('figure', { name: 'Planned route' })).toBeInTheDocument();
-    expect(await screen.findByText(/MOTHER LIVE PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last updated/)).toBeInTheDocument();
-    expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/MOTHER LAST KNOWN AIS PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn · Last received/)).toBeInTheDocument();
+    expect(screen.queryByText(/FEEDER FRESH AIS/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Back' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/freight-forwarder');
     expect(await screen.findByRole('heading', { name: 'Shipment portfolio' })).toBeInTheDocument();
@@ -389,7 +390,7 @@ describe('connection window on the shipment detail', () => {
     expect(within(remaining).getByText(formatWhen('2026-10-01T18:00:00Z'))).toBeInTheDocument();
     expect(factValue(record, 'Feeder vessel position')).toHaveTextContent('Seeded position');
     expect(screen.getByText(/FEEDER SEEDED STRAIT RUNNER/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Last updated/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Last received/).length).toBeGreaterThan(0);
     shown.unmount();
 
     for (const status of ['LIVE', 'DELAYED'] as const) {
@@ -561,8 +562,8 @@ describe('connection window on the shipment detail', () => {
     vi.mocked(getShipmentTracking).mockRejectedValue(new ApiError('Shipment not found', 404));
     open(forwarder, '/freight-forwarder/shipments/7');
     expect(await screen.findByText('PACIFIC HORIZON · 1.264, 103.82 · 12.4 kn')).toBeInTheDocument();
-    expect(screen.queryByText(/MOTHER LIVE/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/FEEDER LIVE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/MOTHER FRESH AIS/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/FEEDER FRESH AIS/)).not.toBeInTheDocument();
   });
 
   it('shows a loading skeleton until the shipment arrives', async () => {

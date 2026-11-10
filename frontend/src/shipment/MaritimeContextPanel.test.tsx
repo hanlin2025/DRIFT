@@ -29,10 +29,10 @@ function context(items: MaritimeEvidence[], overrides: Partial<MaritimeContext> 
 
 function showsNoSuccessfulAssessment() {
   const region = screen.getByRole('region', { name: 'Maritime Context' });
-  expect(region).toHaveTextContent('Validated result');
-  expect(region).toHaveTextContent('None');
-  expect(region).toHaveTextContent('Generation time');
-  expect(region).toHaveTextContent('Not recorded');
+  expect(region).toHaveTextContent('Evidence review');
+  expect(region).toHaveTextContent('This panel lists context records and quality signals; it does not report model-input eligibility or AI citations.');
+  expect(region).not.toHaveTextContent('Validated result');
+  expect(region).not.toHaveTextContent('Generation timeNot recorded');
   expect(region.textContent).not.toMatch(/\b(GENERATED|VALID)\b/);
   expect(region).toHaveTextContent('This does not change the shipment, ETA, risk, alerts, recommendation, or decision.');
 }
@@ -57,12 +57,17 @@ describe('MaritimeContextPanel', () => {
     ])} unavailable={false} />);
     showsNoSuccessfulAssessment();
     expect(screen.getByText('Updated evidence')).toBeInTheDocument();
+    expect(screen.getByText('Evidence available to review (2)')).toBeInTheDocument();
     expect(screen.getByRole('time')).toHaveAttribute('dateTime', '2026-10-28T00:00:00Z');
-    expect(screen.getByText('What changed:')).toBeInTheDocument();
-    expect(screen.getByText(/Relevant vessel, port, and weather information/)).toBeInTheDocument();
-    await user.click(screen.getByText('Source details'));
+    expect(screen.getByText('Arrival schedule revision · recorded replay')).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.textContent?.replace(/\s+/g, ' ').trim() === 'Compatibility: unknown · Freshness: recorded replay · Evidence signal: sufficient')).toBeInTheDocument();
+    expect(screen.getByText('Change:')).toBeInTheDocument();
+    expect(screen.getAllByText(/Planning relevance:/).length).toBeGreaterThan(0);
+    const details = screen.getAllByText('Full record, provenance, timestamps and citations');
+    await user.click(details[0]);
     expect(screen.getByRole('heading', { name: 'Recorded MPA expected-arrival revision' })).toBeInTheDocument();
-    expect(screen.getByText(/An IMO match is not a verified visit/)).toBeInTheDocument();
+    expect(screen.getAllByText(/An IMO match is not a verified visit/).length).toBeGreaterThan(0);
+    await user.click(details[1]);
     expect(screen.getByText(/This source failed\. It is not a validated result\./)).toBeInTheDocument();
     expect(screen.getByText(/Regional weather is not a demonstrated cause for this shipment/)).toBeInTheDocument();
     expect(screen.getAllByText(/\+180 minutes/)).toHaveLength(2);
@@ -78,8 +83,9 @@ describe('MaritimeContextPanel', () => {
     })])} unavailable={false} />);
     expect(screen.getByText('Pending review')).toBeInTheDocument();
     showsNoSuccessfulAssessment();
-    await user.click(screen.getByText('Source details'));
+    await user.click(screen.getByText('Full record, provenance, timestamps and citations'));
     expect(screen.getByText('A general notice is not a specific berth event.')).toBeInTheDocument();
+    expect(screen.getByText(/Fictional demo evidence; it is not an authentic maritime observation/)).toBeInTheDocument();
   });
 
   it('shows stale recorded evidence when nothing live or changed is present', () => {

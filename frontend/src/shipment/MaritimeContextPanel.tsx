@@ -17,6 +17,35 @@ function operationalTitle(item: MaritimeEvidence) {
   return 'Weather conditions';
 }
 
+function evidenceState(item: MaritimeEvidence) {
+  if (item.sourceMode === 'UNAVAILABLE') return 'Source unavailable';
+  if (item.compatibilityState === 'INCOMPATIBLE') return 'Incompatible control';
+  if (item.freshness.toUpperCase() === 'STALE') return 'Stale evidence';
+  if (!item.evidenceSufficient) return 'Insufficient evidence';
+  if (item.sourceMode === 'SYNTHETIC_DEMONSTRATION') return 'Synthetic demo evidence';
+  return 'Available to review';
+}
+
+function sourceTypeLabel(value: MaritimeEvidence['sourceType']) {
+  if (value === 'MPA_ETA_REVISION') return 'Arrival schedule revision';
+  if (value === 'MPA_OFFICIAL_NOTICE') return 'Port operating notice';
+  return 'Weather context';
+}
+
+function displayCode(value: string) {
+  return value.toLowerCase().replaceAll('_', ' ');
+}
+
+function summaryCaveat(item: MaritimeEvidence) {
+  if (item.sourceMode === 'SYNTHETIC_DEMONSTRATION') return 'Fictional demo evidence; it is not an authentic maritime observation or a verified vessel visit.';
+  if (item.sourceMode === 'UNAVAILABLE') return 'No source observation is available; a failed source is not an observed condition.';
+  if (item.compatibilityState === 'INCOMPATIBLE') return 'Retained as an excluded control; it is not suitable for this shipment context.';
+  if (item.shipmentAssociationConfidence === 'UNVERIFIED_IMO_ONLY') return 'An IMO match alone does not verify a vessel visit or shipment association.';
+  if (item.sourceType === 'NEA_WEATHER') return 'Regional weather context does not establish a shipment-specific cause.';
+  if (item.sourceType === 'MPA_OFFICIAL_NOTICE') return 'A general port notice does not establish a specific berth event.';
+  return null;
+}
+
 export function MaritimeContextPanel({ context, unavailable }: {
   context: MaritimeContext | null;
   unavailable: boolean;
@@ -38,25 +67,33 @@ export function MaritimeContextPanel({ context, unavailable }: {
   return <section className="shipment-record maritime-context" aria-label="Maritime Context">
     <p className="eyebrow">MARITIME CONTEXT</p>
     <dl>
-      <div><dt>Reassessment</dt><dd>{cue.headline}</dd></div>
-      <div><dt>Validated result</dt><dd>None</dd></div>
-      <div><dt>Generation time</dt><dd>Not recorded</dd></div>
+      <div><dt>Evidence review</dt><dd>{cue.headline}</dd></div>
       <div><dt>Evidence cutoff</dt><dd><time dateTime={context.assessmentCutoffUtc}>{formatWhen(context.assessmentCutoffUtc)}</time></dd></div>
     </dl>
     <p className="refresh-note">{cue.detail}</p>
     <p className="refresh-note">Evidence cutoff: {formatWhen(context.assessmentCutoffUtc)}. Retrieval times, not future source events, determine whether replay evidence is included.</p>
-    <p>{context.limitation}</p>
-    <p>Relevant vessel, port, and weather information for the current shipment review.</p>
-    {context.evidence.map(item => <article key={item.evidenceId}>
-      <h3>{operationalTitle(item)}</h3>
-      {item.changeMagnitude && <p><strong>What changed:</strong> {item.previousValue || 'Not recorded'} → {item.currentValue || 'Not recorded'} ({item.changeMagnitude})</p>}
-      <p><strong>Why it matters:</strong> {operationalRelevance(item)}</p>
-      <p><strong>Uncertainty:</strong> {item.limitation}</p>
-      {item.humanReviewRequired && <p><strong>Recommended next checks:</strong> Review this information alongside current vessel and port operations before changing any plan.</p>}
-    </article>)}
-    <details>
-      <summary>Source details</summary>
-      {context.evidence.map(item => <EvidenceItem key={item.evidenceId} item={item} />)}
+    <p className="maritime-context-ai-note">This panel lists context records and quality signals; it does not report model-input eligibility or AI citations. Availability or compatibility does not mean an item was eligible or cited. Check AI Interpretation for assessment status, generation time, and any explicit claim citations.</p>
+    <h3>Evidence available to review ({context.evidence.length})</h3>
+    <div className="maritime-evidence-list">
+      {context.evidence.map(item => <article className="maritime-evidence-summary" key={item.evidenceId}>
+        <p className="maritime-evidence-kind">{sourceTypeLabel(item.sourceType)} · {displayCode(item.sourceMode)}</p>
+        <h4>{operationalTitle(item)}</h4>
+        <p><strong>Status:</strong> {evidenceState(item)}</p>
+        <p className="maritime-evidence-quality"><strong>Compatibility:</strong> {displayCode(item.compatibilityState)} · <strong>Freshness:</strong> {displayCode(item.freshness)} · <strong>Evidence signal:</strong> {item.evidenceSufficient ? 'sufficient' : 'insufficient'}</p>
+        {item.changeMagnitude && <p><strong>Change:</strong> {item.previousValue || 'Not recorded'} → {item.currentValue || 'Not recorded'} ({item.changeMagnitude})</p>}
+        <p><strong>Planning relevance:</strong> {operationalRelevance(item)}</p>
+        <p><strong>Uncertainty:</strong> {item.limitation}</p>
+        {summaryCaveat(item) && <p className="maritime-evidence-caveat">{summaryCaveat(item)}</p>}
+        {item.humanReviewRequired && <p><strong>Human follow-up:</strong> Check this information against current vessel and port operations before changing a plan.</p>}
+        <details>
+          <summary>Full record, provenance, timestamps and citations</summary>
+          <EvidenceItem item={item} />
+        </details>
+      </article>)}
+    </div>
+    <details className="maritime-context-limitation">
+      <summary>Context limitations</summary>
+      <p>{context.limitation}</p>
     </details>
   </section>;
 }

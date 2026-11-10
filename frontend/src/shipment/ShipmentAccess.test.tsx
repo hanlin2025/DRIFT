@@ -139,6 +139,7 @@ describe('map permission and missing position', () => {
         courseOverGroundDegrees: null,
         trueHeadingDegrees: null,
         ingestedAt: '2020-01-01T00:00:00Z',
+        source: 'AIS_STREAM',
       },
       motherVesselNameWarning: null,
       feederVesselName: shipment.feederVessel,
@@ -146,6 +147,6 @@ describe('map permission and missing position', () => {
       feederVesselNameWarning: null,
     }} />);
     expect(screen.getByText(STALE_NOTICE)).toBeInTheDocument();
-    expect(screen.getByText(/MOTHER LIVE PACIFIC HORIZON/)).toBeInTheDocument();
+    expect(screen.getByText(/MOTHER LAST KNOWN AIS PACIFIC HORIZON/)).toBeInTheDocument();
   });
 });

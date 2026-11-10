@@ -21,6 +21,8 @@ const headline: Record<ReassessmentState, string> = {
   stale: 'Stale recorded evidence',
 };
 
+const SEPARATE_AI_WORKFLOW = 'AI assessment status is shown in the separate AI Interpretation panel.';
+
 function cue(state: ReassessmentState, detail: string): ReassessmentCue {
   return { state, headline: headline[state], detail: `${detail} ${REASSESSMENT_DOES_NOT_CHANGE}` };
 }
@@ -39,23 +41,23 @@ function live(item: MaritimeEvidence) {
 
 export function reassessmentCue(context: MaritimeContext | null): ReassessmentCue {
   if (!context?.enabled) {
-    return cue('denied', 'Maritime reassessment is off. No assessment was produced, and nothing was sent.');
+    return cue('denied', 'Maritime reassessment is off. No maritime context evidence was gathered or sent.');
   }
   if (context.evidence.length === 0) {
-    return cue('empty', 'No validated result is recorded.');
+    return cue('empty', `No evidence is available. ${SEPARATE_AI_WORKFLOW}`);
   }
   const open = context.evidence.filter(readable);
   if (open.length === 0) {
-    return cue('failed', 'A source could not be read. No validated result was stored in its place.');
+    return cue('failed', `A source could not be read. ${SEPARATE_AI_WORKFLOW}`);
   }
   if (open.some(changed)) {
-    return cue('updated', 'Recorded evidence changed and is waiting for review. No validated result is recorded.');
+    return cue('updated', `Recorded evidence changed and is waiting for review. ${SEPARATE_AI_WORKFLOW}`);
   }
   if (context.evidence.some(item => item.humanReviewRequired)) {
-    return cue('pending', 'A person needs to review this evidence. No validated result is recorded.');
+    return cue('pending', `A person needs to review this evidence. ${SEPARATE_AI_WORKFLOW}`);
   }
   if (open.some(live)) {
-    return cue('available', 'Current evidence is available to review. No validated result is recorded.');
+    return cue('available', `Current evidence is available to review. ${SEPARATE_AI_WORKFLOW}`);
   }
-  return cue('stale', 'This evidence is a recorded replay, not a live reassessment. No validated result is recorded.');
+  return cue('stale', `This evidence is a recorded replay, not a live reassessment. ${SEPARATE_AI_WORKFLOW}`);
 }
