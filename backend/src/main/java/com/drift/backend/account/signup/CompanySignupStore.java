@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.drift.backend.account.AccountRole;
 import com.drift.backend.account.AccountRoleRepository;
+import com.drift.backend.account.AccountStatus;
 import com.drift.backend.account.Role;
 import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.UserAccountRepository;
@@ -42,17 +43,24 @@ public class CompanySignupStore {
 	 * Creates the inactive company, its pending administrator, a verification token and the REGISTERED audit
 	 * row in one transaction. Returns empty, and writes nothing, when the email is already registered.
 	 *
-	 * @throws DuplicateOrganisationException when another company already has the code
+	 * @throws DuplicateOrganisationException when the code belongs to any company other than the inactive
+	 *         company of this email's own pending signup, whether or not the email is registered
 	 * @throws SignupEmailTakenException when a concurrent signup committed the same email first
 	 */
 	@Transactional
 	public Optional<CreatedSignup> create(OrganisationIdentity identity, String fullName, String email,
 			String passwordHash) {
-		if (users.existsByEmailIgnoreCase(email)) {
+		// The code is checked before the email, so a taken code answers 409 whether or not the email is registered.
+		UserAccount existing = users.findByEmailIgnoreCase(email).orElse(null);
+		Long ownPendingCompanyId = existing != null && existing.getStatus() == AccountStatus.PENDING_VERIFICATION
+				&& existing.getCompany() != null ? existing.getCompany().getId() : null;
+		companies.findByNormalisedCode(identity.code())
+				.filter(holder -> !holder.getId().equals(ownPendingCompanyId))
+				.ifPresent(holder -> {
+					throw new DuplicateOrganisationException();
+				});
+		if (existing != null) {
 			return Optional.empty();
-		}
-		if (companies.findByNormalisedCode(identity.code()).isPresent()) {
-			throw new DuplicateOrganisationException();
 		}
 		Company company;
 		try {

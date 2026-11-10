@@ -42,7 +42,7 @@ public class AuthenticationExceptionHandler {
 	@ExceptionHandler(EmailNotVerifiedException.class)
 	public ResponseEntity<Map<String, String>> handleUnverified(EmailNotVerifiedException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore())
-				.body(Map.of("message", ex.getMessage()));
+				.body(Map.of("message", ex.getMessage(), "code", EmailNotVerifiedException.CODE));
 	}
 
 	@ExceptionHandler(SessionEndedException.class)
