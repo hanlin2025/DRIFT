@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,9 @@ class MaritimeSnapshotPollingService {
 	private static final ZoneId SINGAPORE = ZoneId.of("Asia/Singapore");
 	private static final DateTimeFormatter MPA_LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final DateTimeFormatter MPA_OFFSET_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX");
+	private static final Pattern SECRET_ASSIGNMENT = Pattern.compile("(?i)((?:api[_-]?key|access[_-]?token|token)\\s*[=:]\\s*|authorization\\s*[=:]\\s*(?:bearer\\s+)?)[^\\s,;]+");
+	private static final Pattern URL_CREDENTIALS = Pattern.compile("(?i)(https?://)[^/@\\s]+@");
+	private static final Pattern URL_QUERY_SECRET = Pattern.compile("(?i)([?&](?:api[_-]?key|token|key)=)[^&\\s]+");
 	static final String NEA_TWO_HOUR_FORECAST = "two_hr_forecast";
 	/** NEA forecast areas that contain Singapore's container and multipurpose terminals. */
 	static final String DEFAULT_NEA_AREAS = "Tuas,Pioneer,Queenstown,Bukit Merah,Southern Islands";
@@ -74,7 +78,7 @@ class MaritimeSnapshotPollingService {
 		return run("MPA_EXPECTED_ARRIVALS", "tools/cdg201/mpa/mpa_oceansx_collect.py", temp -> {
 			List<String> args = List.of("--rolling", "--feed-group", "expected", "--lookback-days",
 					Integer.toString(lookbackDays), "--lookahead-days", "3", "--output", temp.toString());
-			invoke("tools/cdg201/mpa/mpa_oceansx_collect.py", args);
+			invoke("tools/cdg201/mpa/mpa_oceansx_collect.py", args, temp);
 			Instant retrieved = Instant.now();
 			List<MaritimeSnapshot> out = new ArrayList<>();
 			Map<String, Long> rejectedRecords = new HashMap<>();
@@ -85,7 +89,9 @@ class MaritimeSnapshotPollingService {
 				if (emptyExpectedArrivalDay(m)) continue;
 				if (!m.path("schema_valid").asBoolean(false) || !m.path("error").asText("").isBlank()
 						|| m.path("http_status").asInt() != 200) {
-					throw new IOException("MPA expected-arrival collector returned an invalid source page");
+					throw new IOException("MPA expected-arrival page rejected http_status="
+							+ m.path("http_status").asText("unknown") + " error="
+							+ safeDiagnostic(m.path("error").asText("schema-invalid")));
 				}
 				String rawName = m.path("raw_file").asText("");
 				if (rawName.isBlank()) throw new IOException("MPA expected-arrival collector returned no raw page");
@@ -135,7 +141,7 @@ class MaritimeSnapshotPollingService {
 		return run("MPA_OFFICIAL_NOTICES", "tools/maritime_notices/mpa_official_notices_collect.py", temp -> {
 			invoke("tools/maritime_notices/mpa_official_notices_collect.py", List.of("--raw-output", temp.toString(),
 					"--year", Integer.toString(java.time.Year.now(ZoneOffset.UTC).getValue()), "--limit", "100",
-					"--observation-mode", "prospective"));
+					"--observation-mode", "prospective"), temp);
 			return mapNoticeSnapshots(temp, Instant.now());
 		});
 	}
@@ -190,7 +196,7 @@ class MaritimeSnapshotPollingService {
 		return run("NEA_WEATHER", "tools/cdg201/contextual/nea_weather_collect.py", temp -> {
 			invoke("tools/cdg201/contextual/nea_weather_collect.py", List.of("--output", temp.toString(),
 					"--datasets", "two_hr_forecast",
-					"--pause-seconds", "1", "--max-retries", "3"));
+					"--pause-seconds", "1", "--max-retries", "3"), temp);
 			Path normalized = temp.resolve("normalized");
 			Map<String, String> retrievalByRaw = new HashMap<>();
 			List<Path> manifests = jsonFiles(temp, "*.manifest.json");
@@ -245,24 +251,44 @@ class MaritimeSnapshotPollingService {
 		return new MaritimeCollectionPoll(source, false, List.of());
 	}
 
-	private void invoke(String script, List<String> args) throws IOException, InterruptedException {
+	private void invoke(String script, List<String> args, Path temp) throws IOException, InterruptedException {
 		List<String> command = new ArrayList<>(); command.add(python); command.add(script); command.addAll(args);
+		Path stderr = temp.resolve("collector-stderr.log");
 		Process process = new ProcessBuilder(command).directory(projectDirectory.toFile())
-				.redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+				.redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(stderr.toFile()).start();
 		if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
 			process.destroyForcibly();
 			process.waitFor(5, TimeUnit.SECONDS);
-			throw new CollectorTimeoutException();
+			throw new CollectorTimeoutException(readDiagnostic(stderr));
 		}
-		if (process.exitValue() != 0) throw new CollectorExitException(process.exitValue());
+		if (process.exitValue() != 0) throw new CollectorExitException(process.exitValue(), readDiagnostic(stderr));
 	}
 
 	private static void logFailure(String source, Exception ex) {
 		String exit = ex instanceof CollectorExitException collectorExit ? Integer.toString(collectorExit.exitCode())
 				: ex instanceof CollectorTimeoutException ? "timeout" : "n/a";
+		String diagnostic = ex instanceof CollectorExitException collectorExit ? collectorExit.diagnostic()
+				: ex instanceof CollectorTimeoutException timeout ? timeout.diagnostic()
+				: safeDiagnostic(ex.getMessage());
 		org.slf4j.LoggerFactory.getLogger(MaritimeSnapshotPollingService.class)
-				.warn("Maritime source poll failed source={} exception={} exit={}", source,
-						ex.getClass().getSimpleName(), exit);
+				.warn("Maritime source poll failed source={} exception={} exit={} diagnostic={}", source,
+						ex.getClass().getSimpleName(), exit, diagnostic);
+	}
+
+	private static String readDiagnostic(Path stderr) {
+		try (var input = Files.newInputStream(stderr)) {
+			byte[] bytes = input.readNBytes(1024);
+			return safeDiagnostic(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+		} catch (IOException ignored) { return ""; }
+	}
+
+	private static String safeDiagnostic(String diagnostic) {
+		if (diagnostic == null || diagnostic.isBlank()) return "";
+		String oneLine = diagnostic.replaceAll("[\\r\\n\\t]+", " ").replaceAll("\\s{2,}", " ").trim();
+		oneLine = URL_CREDENTIALS.matcher(oneLine).replaceAll("$1[redacted]@");
+		oneLine = URL_QUERY_SECRET.matcher(oneLine).replaceAll("$1[redacted]");
+		oneLine = SECRET_ASSIGNMENT.matcher(oneLine).replaceAll("$1[redacted]");
+		return oneLine.substring(0, Math.min(240, oneLine.length()));
 	}
 
 	private static void logMappingRejections(String source, Map<String, Long> reasons) {
@@ -276,12 +302,17 @@ class MaritimeSnapshotPollingService {
 	private static final class CollectorExitException extends IOException {
 		private static final long serialVersionUID = 1L;
 		private final int exitCode;
-		private CollectorExitException(int exitCode) { this.exitCode = exitCode; }
+		private final String diagnostic;
+		private CollectorExitException(int exitCode, String diagnostic) { this.exitCode = exitCode; this.diagnostic = diagnostic; }
 		private int exitCode() { return exitCode; }
+		private String diagnostic() { return diagnostic; }
 	}
 
 	private static final class CollectorTimeoutException extends IOException {
 		private static final long serialVersionUID = 1L;
+		private final String diagnostic;
+		private CollectorTimeoutException(String diagnostic) { this.diagnostic = diagnostic; }
+		private String diagnostic() { return diagnostic; }
 	}
 
 	private JsonNode read(Path path) throws IOException { return mapper.readTree(path.toFile()); }
