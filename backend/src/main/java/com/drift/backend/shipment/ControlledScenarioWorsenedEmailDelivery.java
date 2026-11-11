@@ -64,7 +64,7 @@ class ControlledScenarioWorsenedEmailDelivery {
 		for (String recipient : recipients) {
 			recipientIndex++;
 			try {
-				SimpleMailMessage message = composer.compose(event.snapshot(), from, recipient, frontendBaseUrl);
+				SimpleMailMessage message = composer.compose(event.snapshot(), event.scenarioShipmentKey(), from, recipient, frontendBaseUrl);
 				sender.send(message);
 				sent++;
 			} catch (RuntimeException exception) {

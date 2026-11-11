@@ -135,7 +135,7 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
         <div>
           <p className="eyebrow">CONTROLLED SCENARIO · SYNTHETIC DEMONSTRATION</p>
           <h2>{anchor.shipmentReference}</h2>
-          <p className="intro">Scenario view for authorized shipment {anchor.shipmentReference}. Fictional scenario facts are display-only.</p>
+          <p className="intro">Independent scenario session for authorized shipment {anchor.shipmentReference}. Fictional scenario facts are display-only; Scenario A and B progress separately.</p>
         </div>
         <button type="button" className="secondary-button" onClick={onExit} disabled={navigationDisabled}>
           Exit to live Shipment Details
@@ -151,7 +151,7 @@ export function ControlledScenarioDetail({ viewer, anchor, authContextGeneration
               Scenario {candidate.scenarioShipmentKey} · {candidate.shipmentReference}
             </button>
           ))}
-          <p>Each selection is independently authorized before its scenario data is read.</p>
+          <p>Each selection has its own authorized session and stage. Switching scenarios preserves both progressions independently.</p>
         </div>
       )}
 

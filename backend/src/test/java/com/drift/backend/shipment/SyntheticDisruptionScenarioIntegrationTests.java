@@ -159,18 +159,21 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		configureControlledScenario(owner, shipmentIds);
 		controlledScenarioEmailProperties.setEnabled(true);
 		controlledScenarioEmailProperties.setRecipients(" demo@example.test,DEMO@example.test,invalid-address ");
-		UUID sessionId = UUID.randomUUID();
-		JsonNode created = scenarioCreate(sessionId, owner.managerToken(), shipmentIds.get(0));
-		JsonNode baseline = scenarioCommand(sessionId, owner.managerToken(), "start", created, "mail-start", 200);
+		UUID sessionA = UUID.randomUUID();
+		UUID sessionB = UUID.randomUUID();
+		JsonNode createdA = scenarioCreate(sessionA, owner.managerToken(), shipmentIds.get(0));
+		JsonNode createdB = scenarioCreate(sessionB, owner.managerToken(), shipmentIds.get(1));
+		JsonNode baseline = scenarioCommand(sessionA, owner.managerToken(), "start", createdA, "mail-start-a", 200);
 		assertThat(baseline.path("emailNotificationStatus").asText()).isEqualTo("NOT_TRIGGERED");
 		verifyNoInteractions(controlledScenarioMailSender);
-		JsonNode change = scenarioCommand(sessionId, owner.managerToken(), "next", baseline, "mail-change", 200);
+		JsonNode baselineB = scenarioCommand(sessionB, owner.managerToken(), "start", createdB, "mail-start-b", 200);
+		JsonNode change = scenarioCommand(sessionA, owner.managerToken(), "next", baseline, "mail-change-a", 200);
 		assertThat(change.at("/snapshot/stage").asText()).isEqualTo("CHANGE");
 		assertThat(change.path("emailNotificationStatus").asText()).isEqualTo("NOT_TRIGGERED");
 		verifyNoInteractions(controlledScenarioMailSender);
-		assertThat(scenarioAi(sessionId, shipmentIds.get(0), owner.managerToken(), Map.of("scenarioShipmentKey", "A"))
+		assertThat(scenarioAi(sessionA, shipmentIds.get(0), owner.managerToken(), Map.of("scenarioShipmentKey", "A"))
 				.getResponse().getStatus()).isEqualTo(400);
-		mvc.perform(post(scenarioSessionPath(sessionId) + "/next")
+		mvc.perform(post(scenarioSessionPath(sessionA) + "/next")
 				.header("Authorization", "Bearer " + otherTenant.managerToken())
 				.header("Idempotency-Key", "unauthorized-mail-next").contentType(MediaType.APPLICATION_JSON)
 				.content(json.writeValueAsString(Map.of("expectedEpochId", change.path("epochId").asText(),
@@ -178,21 +181,35 @@ class SyntheticDisruptionScenarioIntegrationTests {
 			.andExpect(status().isForbidden());
 		verifyNoInteractions(controlledScenarioMailSender);
 
-		JsonNode worsened = scenarioCommand(sessionId, owner.managerToken(), "next", change, "mail-worsened", 200);
+		JsonNode worsened = scenarioCommand(sessionA, owner.managerToken(), "next", change, "mail-worsened-a", 200);
 		assertThat(worsened.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
 		assertThat(worsened.path("emailNotificationStatus").asText()).isIn("SUBMISSION_PENDING", "SUBMITTED");
-		assertThat(scenarioCommand(sessionId, owner.managerToken(), "next", change, "mail-worsened", 200)).isEqualTo(worsened);
-		assertThat(scenarioGet(sessionId, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("SUBMITTED");
+		assertThat(scenarioCommand(sessionA, owner.managerToken(), "next", change, "mail-worsened-a", 200)).isEqualTo(worsened);
+		assertThat(scenarioGet(sessionA, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("SUBMITTED");
+		assertThat(scenarioGet(sessionB, owner.managerToken()).at("/snapshot/stage").asText()).isEqualTo("BASELINE");
 		org.mockito.ArgumentCaptor<SimpleMailMessage> sent = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
 		verify(controlledScenarioMailSender, times(1)).send(sent.capture());
 		assertThat(sent.getValue().getTo()).containsExactly("demo@example.test");
-		assertThat(sent.getValue().getSubject()).contains("SYNTHETIC DEMO").contains("NOT REAL");
+		assertThat(sent.getValue().getSubject()).contains("SYNTHETIC DEMO").contains("NOT REAL", "Scenario A");
 		assertThat(sent.getValue().getText()).contains("Scenario A (CS203-DEMO-A)", "Backend-calculated connection risk: HIGH",
 				"Remaining connection window: AVAILABLE — 4 hours (14400 seconds)", "EXCEEDS_DEADLINE", "20 hours",
-				"Scenario B (CS203-DEMO-B)", "Backend-calculated connection risk: HIGH",
-				"Remaining connection window: AVAILABLE — 4 hours (14400 seconds)", "NO_PREDICTED_IMPACT", "2 hours",
-				"/freight-forwarder/shipments/" + shipmentIds.get(0), "/freight-forwarder/shipments/" + shipmentIds.get(1),
-				"No real maritime disruption", "user-triggered AI assessment");
+				"/freight-forwarder/shipments/" + shipmentIds.get(0), "No real maritime disruption", "user-triggered AI assessment");
+		assertThat(sent.getValue().getText()).doesNotContain("Scenario B", "NO_PREDICTED_IMPACT");
+
+		JsonNode changeB = scenarioCommand(sessionB, owner.managerToken(), "next", baselineB, "mail-change-b", 200);
+		assertThat(changeB.at("/snapshot/stage").asText()).isEqualTo("CHANGE");
+		JsonNode worsenedB = scenarioCommand(sessionB, owner.managerToken(), "next", changeB, "mail-worsened-b", 200);
+		assertThat(worsenedB.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+		assertThat(worsenedB.path("emailNotificationStatus").asText()).isIn("SUBMISSION_PENDING", "SUBMITTED");
+		assertThat(scenarioGet(sessionB, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("SUBMITTED");
+		assertThat(scenarioCommand(sessionB, owner.managerToken(), "next", changeB, "mail-worsened-b", 200)).isEqualTo(worsenedB);
+		org.mockito.ArgumentCaptor<SimpleMailMessage> bothEmails = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+		verify(controlledScenarioMailSender, times(2)).send(bothEmails.capture());
+		assertThat(bothEmails.getAllValues().getLast().getSubject()).contains("Scenario B (CS203-DEMO-B)");
+		assertThat(bothEmails.getAllValues().getLast().getText()).contains("Scenario B (CS203-DEMO-B)",
+				"Backend-calculated connection risk: HIGH", "NO_PREDICTED_IMPACT", "2 hours",
+				"/freight-forwarder/shipments/" + shipmentIds.get(1), "No real maritime disruption");
+		assertThat(bothEmails.getAllValues().getLast().getText()).doesNotContain("Scenario A", "EXCEEDS_DEADLINE", "20 hours");
 		assertThat(OFFLINE_CLIENT.inputs()).isEmpty();
 	}
 
@@ -235,6 +252,19 @@ class SyntheticDisruptionScenarioIntegrationTests {
 		assertThat(failure.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
 		assertThat(scenarioGet(failureSession, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("FAILED");
 		assertThat(scenarioGet(failureSession, owner.managerToken()).at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+
+		reset(controlledScenarioMailSender);
+		UUID unaffectedSession = UUID.randomUUID();
+		JsonNode unaffectedStart = scenarioCommand(unaffectedSession, owner.managerToken(), "start",
+			scenarioCreate(unaffectedSession, owner.managerToken(), shipmentIds.get(1)), "unaffected-start", 200);
+		JsonNode unaffectedChange = scenarioCommand(unaffectedSession, owner.managerToken(), "next", unaffectedStart, "unaffected-change", 200);
+		JsonNode unaffectedWorsened = scenarioCommand(unaffectedSession, owner.managerToken(), "next", unaffectedChange, "unaffected-worsened", 200);
+		assertThat(unaffectedWorsened.at("/snapshot/stage").asText()).isEqualTo("WORSENED");
+		assertThat(scenarioGet(unaffectedSession, owner.managerToken()).path("emailNotificationStatus").asText()).isEqualTo("SUBMITTED");
+		org.mockito.ArgumentCaptor<SimpleMailMessage> unaffectedEmail = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+		verify(controlledScenarioMailSender, times(1)).send(unaffectedEmail.capture());
+		assertThat(unaffectedEmail.getValue().getText()).contains("Scenario B (CS203-DEMO-B)")
+				.doesNotContain("Scenario A", "EXCEEDS_DEADLINE");
 	}
 
 	@Test

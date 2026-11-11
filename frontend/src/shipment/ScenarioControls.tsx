@@ -19,18 +19,20 @@ const EMAIL_STATUS_LABELS = {
 export function ScenarioControls({ controller }: ScenarioControlsProps) {
   const id = useId();
   const { session, snapshot, status, busy, error, pendingAction } = controller;
+  const scenarioLabel = controller.binding?.scenarioShipmentKey
+    ? `Scenario ${controller.binding.scenarioShipmentKey}` : 'this scenario';
   const enabled = !!session?.capabilities.canRead && !busy && !pendingAction && status === 'ready';
   const current = session?.state === 'UNSTARTED' ? 'UNSTARTED — no scenario snapshot.'
     : session && snapshot ? `${session.state} — ${snapshot.stage}` : 'No confirmed scenario state.';
   const confirmedStageOrder = snapshot?.stageOrder ?? null;
   return (
     <section aria-label="Controlled scenario" aria-describedby={`${id}-description`} aria-busy={busy}>
-      <p id={`${id}-description`}>Controlled scenario. Actions affect A and B in this session together. Reset returns this session to UNSTARTED.</p>
+      <p id={`${id}-description`}>Controlled scenario. Actions advance {scenarioLabel} in its independent session; the other scenario keeps its own stage. Reset returns this session to UNSTARTED.</p>
       <div role="status" aria-live="polite" aria-atomic="true">
         <p>Last confirmed state: {current}</p>
         {snapshot && <p>Snapshot cutoff (UTC): <time dateTime={snapshot.simulationCutoffUtc}>{snapshot.simulationCutoffUtc}</time></p>}
         {snapshot?.stage === 'WORSENED' && session?.emailNotificationStatus
-          && <p>Synthetic email status: {EMAIL_STATUS_LABELS[session.emailNotificationStatus]}</p>}
+          && <p>Synthetic email status for {scenarioLabel}: {EMAIL_STATUS_LABELS[session.emailNotificationStatus]}</p>}
         {status === 'refreshing' && <p>Refreshing scenario…</p>}
         {status === 'loading' && <p>Loading scenario…</p>}
         {status === 'command' && <p>Confirming {pendingAction}…</p>}
