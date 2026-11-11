@@ -49,7 +49,7 @@ class ShipmentRiskTest {
 	@Test
 	void leavesTheRiskUnassessedUntilTheFeederIsScheduled() {
 		assertThat(ShipmentRisk.of(windows.calculate(OffsetDateTime.parse("2026-10-15T08:00:00Z"), null), null)).isNull();
-		assertThat(windows.remaining(null, null)).isNull();
+		assertThat(windows.remaining(null, (OffsetDateTime) null)).isNull();
 	}
 
 	@Test

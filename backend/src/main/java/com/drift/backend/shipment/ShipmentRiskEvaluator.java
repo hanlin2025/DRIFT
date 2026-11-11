@@ -61,7 +61,7 @@ public class ShipmentRiskEvaluator {
 
 	private ShipmentRisk assessMpa(Shipment shipment, VerifiedMpaArrival evidence) {
 		if (shipment.getPlannedFeederDepartureAt() == null
-				|| !shipment.getPlannedFeederDepartureAt().isAfter(Instant.now(clock))) return null;
+				|| !shipment.getPlannedFeederDepartureAt().toInstant().isAfter(Instant.now(clock))) return null;
 		return withSource(connectionRisk.assessMpaExpectedArrival(shipment, evidence.expectedArrivalAt()), evidence);
 	}
 

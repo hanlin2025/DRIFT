@@ -190,7 +190,7 @@ class ConnectionWindowServiceTest {
 		OffsetDateTime departure = OffsetDateTime.parse("2026-10-16T08:00:00Z");
 		ArrivalEstimate usable = estimate("2026-10-15T08:00:00Z", false);
 
-		assertThat(windows.remaining(departure, null)).isNull();
+		assertThat(windows.remaining(departure, (OffsetDateTime) null)).isNull();
 		assertThat(windows.remaining(null, usable)).isNull();
 		assertThat(windows.remaining(departure, estimate("2026-10-15T08:00:00Z", true))).isNull();
 		assertThat(windows.remaining(departure, ArrivalEstimate.unavailable("NO_POSITION",

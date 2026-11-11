@@ -289,7 +289,7 @@ class MaritimeSnapshotShipmentMatcherTest {
 		});
 		assertThat(unverified.candidates()).isEmpty();
 		assertThat(unverified.exclusions()).singleElement().extracting(MaritimeShipmentExclusion::reason)
-				.isEqualTo("INCOMPATIBLE");
+				.isEqualTo("OUT_OF_WINDOW");
 	}
 
 	private MaritimeShipmentMatch match(MaritimeSnapshotChange change, ShipmentMatchFacts facts) {
