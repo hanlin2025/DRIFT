@@ -34,7 +34,7 @@ export type ShipmentRisk = {
 export type MaritimeNoticeEvidence = { noticeId: string; title: string; officialSourceUrl: string; citation: string; publishedAt: string | null; observedAt: string | null; effectiveFrom: string | null; effectiveUntil: string | null; supersessionStatus: string; compatibilityState: 'COMPATIBLE' | 'INCOMPATIBLE' | 'UNKNOWN'; evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; activityEvidence: string[]; locationEvidence: string[]; limitation: string; };
 export type MaritimeEvidence = {
   sourceType: 'MPA_ETA_REVISION' | 'MPA_OFFICIAL_NOTICE' | 'NEA_WEATHER';
-  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE';
+  sourceMode: 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'HISTORICAL_BACKFILL' | 'UNAVAILABLE';
   evidenceId: string; title: string; sourceIdentifier: string; sourceUrl: string; citation: string;
   sourceEventAt: string | null; observedAt: string | null; retrievedAtUtc: string | null; freshness: string;
   previousValue: string | null; currentValue: string | null; changeMagnitude: string | null;
@@ -1887,7 +1887,7 @@ export function decodeMaritimeChangeEvents(value: unknown): MaritimeChangeEvents
 }
 function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['sourceMode'] {
   return value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
-    || value === 'SYNTHETIC_DEMONSTRATION' || value === 'UNAVAILABLE';
+    || value === 'SYNTHETIC_DEMONSTRATION' || value === 'HISTORICAL_BACKFILL' || value === 'UNAVAILABLE';
 }
 function isContextSourceMode(value: unknown): value is MaritimeContext['sourceMode'] {
   return value === 'DISABLED' || value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
