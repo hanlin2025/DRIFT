@@ -10,8 +10,23 @@ the configured OpenAI Responses client only when all technical controls are set:
 
 When global authentic-retrospective approval is disabled, an otherwise sufficient compatible record
 is blocked before a provider call. When enabled, a bundle that mixes approved and unapproved records
-also abstains before calling a provider; DRIFT does not silently trim it. Recorded replay, live,
-unknown, stale, incompatible, and insufficient evidence remain ineligible.
+also abstains before calling a provider; DRIFT does not silently trim it. Recorded replay,
+unknown, stale, incompatible, and insufficient evidence remain ineligible. A historical
+retrospective ID does not approve a live record.
+
+## Live evidence exact-ID gate
+
+`MARITIME_AI_LIVE_EVIDENCE_IDS_APPROVED` (`app.maritime-ai.live-evidence-ids-approved`) is a
+comma-separated list of exact evidence IDs. It is empty by default. `MARITIME_AI_ENABLED` and
+`MARITIME_AI_EXTERNAL_REQUESTS_APPROVED` stay separate controls. The OpenAI Responses request still
+sets `store:false`.
+
+`MaritimeAiAssessmentService.generate` enforces the list before `interpret`. A sufficient,
+compatible, non-stale `LIVE` record reaches the provider only when its evidence ID is listed.
+An unlisted sufficient live record abstains the whole bundle as `UNAPPROVED_LIVE_EVIDENCE` and
+persists an empty evidence package. Incompatible or insufficient live records do not cause that
+abstain and do not become eligible. Approving one fingerprint does not approve a later fingerprint
+for the same source identity. `previousValue` on an approved head is part of that one record.
 
 The OpenAI Responses request sends only the bounded `MaritimeAiEvidencePackage` and canonical fact
 references. It contains no credentials, raw collector/PDF bodies, database access, company or
