@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +59,21 @@ class MaritimeSnapshotChangeDetectorTest {
 
 		assertThat(batch.changes()).hasSize(1);
 		assertThat(memory.size()).isEqualTo(1);
+	}
+
+	@Test
+	void identicalSourceRetrievalPublishesOnlyOneRiskReassessmentEvent() {
+		AtomicInteger published = new AtomicInteger();
+		MaritimeSnapshotChangeDetector publishingDetector = new MaritimeSnapshotChangeDetector(memory,
+				Clock.fixed(RECORDED, ZoneOffset.UTC), event -> {
+					if (event instanceof MaritimeSnapshotChangeDetectedEvent) published.incrementAndGet();
+				});
+		MaritimeSnapshot observation = revision("2026-10-26T15:46:03Z", "2026-10-28 23:00:00", "2026-10-29 02:00:00");
+
+		assertThat(publishingDetector.accept(List.of(observation)).changes()).hasSize(1);
+		assertThat(publishingDetector.accept(List.of(observation)).changes()).isEmpty();
+
+		assertThat(published).hasValue(1);
 	}
 
 	@Test

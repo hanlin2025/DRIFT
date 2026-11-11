@@ -27,6 +27,8 @@ import com.drift.backend.account.UserAccount;
 import com.drift.backend.account.authentication.AuthenticatedUser;
 import com.drift.backend.company.Company;
 import com.drift.backend.company.CompanyRepository;
+import com.drift.backend.maritimechange.MaritimeSnapshot;
+import com.drift.backend.maritimechange.MaritimeSnapshotChangeDetector;
 
 import jakarta.persistence.EntityManager;
 
@@ -50,17 +52,21 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	@Autowired ShipmentRiskStateRepository states;
 	@Autowired ShipmentRiskTransitionRepository transitions;
 	@Autowired ShipmentRiskAlertActivationService activation;
+	@Autowired MaritimeSnapshotChangeDetector maritimeSnapshots;
+	@Autowired ShipmentRiskAlertEvaluationProperties evaluationProperties;
 
 	private Company company;
 	private UserAccount user;
 	private String userEmail;
 	private final List<Long> shipmentIds = new ArrayList<>();
 	private final List<String> observedMmsis = new ArrayList<>();
+	private final List<String> maritimeSourceIdentities = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
 		shipmentIds.clear();
 		observedMmsis.clear();
+		maritimeSourceIdentities.clear();
 		jdbc.update("UPDATE companies SET active = true WHERE code = 'HARBOURLINE_DEMO'");
 		company = companies.findByCode("HARBOURLINE_DEMO").orElseThrow();
 		AccountRole role = entityManager.createQuery("SELECT role FROM AccountRole role WHERE role.code = :code", AccountRole.class)
@@ -176,6 +182,44 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	}
 
 	@Test
+	void verifiedLiveMpaRevisionPersistsRiskAndIsReusedWithoutDuplicateTransition() {
+		OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC).withNano(0);
+		OffsetDateTime plannedArrival = now.plusHours(2);
+		OffsetDateTime feederDeparture = now.plusHours(28);
+		OffsetDateTime revisedArrival = now.plusHours(22);
+		Shipment shipment = scheduled("MPA Mother " + UUID.randomUUID(), plannedArrival, feederDeparture,
+				ShipmentRiskBaselineMode.SILENT_FIRST_VALID);
+		jdbc.update("UPDATE shipments SET mother_vessel_imo = ? WHERE id = ?", "9351048", shipment.getId());
+		commitCurrentTransaction();
+
+		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.BASELINED);
+		assertThat(state(shipment).getLastRiskLevel()).isEqualTo(ShipmentRisk.Level.LOW);
+
+		boolean enabled = evaluationProperties.isEnabled();
+		evaluationProperties.setEnabled(false);
+		String sourceIdentity = "mpa:9351048:verified-call-" + UUID.randomUUID();
+		maritimeSourceIdentities.add(sourceIdentity);
+		try {
+			inCommittedTransaction(() -> {
+				Instant retrieved = Instant.now();
+				maritimeSnapshots.accept(List.of(mpaSnapshot(sourceIdentity, plannedArrival, retrieved,
+						"arrival=" + plannedArrival + ";departure=" + feederDeparture + ";port=Singapore"),
+						mpaSnapshot(sourceIdentity, revisedArrival, retrieved.plusSeconds(1),
+								"arrival=" + revisedArrival + ";departure=" + feederDeparture + ";port=Singapore")));
+			});
+		} finally {
+			evaluationProperties.setEnabled(enabled);
+		}
+
+		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.RISE_TRANSITION);
+		assertThat(state(shipment).getLastRiskLevel()).isEqualTo(ShipmentRisk.Level.HIGH);
+		assertThat(state(shipment).getLastExplanation()).contains("verified LIVE MPA expected arrival",
+				"MPA OCEANS-X integration fixture", "does not establish delay causation");
+		assertThat(evaluator.evaluate(shipment.getId())).isEqualTo(ShipmentRiskEvaluationOutcome.NO_TRANSITION);
+		assertThat(transitions.findByShipmentIdOrderBySequenceAsc(shipment.getId())).hasSize(1);
+	}
+
+	@Test
 	void silentlyRecoversMissingStateAndSkipsArchivedShipments() {
 		Shipment missing = shipmentWithoutState(hours(24));
 		commitCurrentTransaction();
@@ -201,6 +245,13 @@ class ShipmentRiskEvaluatorIntegrationTests {
 		shipmentIds.add(shipment.getId());
 		states.saveAndFlush(new ShipmentRiskState(shipment, baselineMode, Instant.now()));
 		return shipment;
+	}
+
+	private static MaritimeSnapshot mpaSnapshot(String identity, OffsetDateTime arrival, Instant retrieved,
+			String value) {
+		return new MaritimeSnapshot("MPA_ETA_REVISION", identity, "MPA OCEANS-X integration fixture",
+				arrival.toInstant().toString(), retrieved.toString(), retrieved.toString(), "LIVE", "APPLICABLE",
+				"9351048", "Singapore", arrival.toInstant().toString(), null, null, value, null, null, null);
 	}
 
 	private ShipmentDetailResponse detail(Shipment shipment) {
@@ -241,6 +292,11 @@ class ShipmentRiskEvaluatorIntegrationTests {
 	}
 
 	private void cleanupTestData() {
+		if (!maritimeSourceIdentities.isEmpty()) {
+			String placeholders = String.join(", ", Collections.nCopies(maritimeSourceIdentities.size(), "?"));
+			jdbc.update("DELETE FROM maritime_snapshot_observations WHERE source_identity IN (" + placeholders + ")",
+					maritimeSourceIdentities.toArray());
+		}
 		if (!shipmentIds.isEmpty()) {
 			String placeholders = String.join(", ", Collections.nCopies(shipmentIds.size(), "?"));
 			Object[] ids = shipmentIds.toArray();

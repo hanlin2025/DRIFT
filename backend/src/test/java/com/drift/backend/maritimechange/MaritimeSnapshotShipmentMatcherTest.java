@@ -262,6 +262,36 @@ class MaritimeSnapshotShipmentMatcherTest {
 		assertThatThrownBy(() -> matcher.match(1L, null)).isInstanceOf(IllegalArgumentException.class);
 	}
 
+	@Test
+	void aRevisedMpaEtaVerifiesTheVisitAgainstTheExactPriorScheduledArrival() {
+		MaritimeSnapshotChange revised = new MaritimeSnapshotChange("MPA_ETA_REVISION", "mpa:" + MOTHER + ":call-1",
+				"a".repeat(64), "REVISED", "FORWARD", true, "MPA OCEANS-X", "2026-10-28T12:00:00Z",
+				"2026-10-28T11:00:00Z", "2026-10-28T11:00:00Z", Instant.parse("2026-10-28T11:00:00Z"),
+				"LIVE", "APPLICABLE", MOTHER, "Tuas", "2026-10-28T12:00:00Z", null,
+				"arrival=2026-10-28T08:00:00Z;departure=2026-10-28T20:00:00Z;port=Tuas",
+				"arrival=2026-10-28T12:00:00Z;departure=2026-10-28T20:00:00Z;port=Tuas",
+				null, null, null, Instant.parse("2026-10-28T11:00:00Z"));
+		MaritimeShipmentMatch verified = match(revised,
+				shipment(30L, "Tuas", MOTHER, FEEDER, ARRIVAL, DEPARTURE));
+		MaritimeSnapshotChange wrongPriorSchedule = new MaritimeSnapshotChange(revised.sourceType(), revised.sourceIdentity(),
+				revised.contentFingerprint(), revised.kind(), revised.ordering(), revised.forwardLooking(), revised.provenance(),
+				revised.sourceEventAt(), revised.observedAt(), revised.retrievedAtUtc(), revised.retrievedAt(), revised.sourceMode(),
+				revised.freshness(), revised.vesselImo(), revised.location(), revised.effectiveFrom(), revised.effectiveUntil(),
+				"arrival=2026-10-28T08:00:01Z;departure=2026-10-28T20:00:00Z;port=Tuas", revised.currentValue(),
+				revised.activityCompatibility(), revised.locationCompatibility(), revised.timeCompatibility(), revised.recordedAt());
+		MaritimeShipmentMatch unverified = match(wrongPriorSchedule,
+				shipment(30L, "Tuas", MOTHER, FEEDER, ARRIVAL, DEPARTURE));
+
+		assertThat(verified.candidates()).singleElement().satisfies(candidate -> {
+			assertThat(candidate.association()).isEqualTo("VERIFIED_ASSOCIATION");
+			assertThat(candidate.vesselRole()).isEqualTo("MOTHER");
+			assertThat(candidate.timeCompatibility()).isEqualTo("COMPATIBLE");
+		});
+		assertThat(unverified.candidates()).isEmpty();
+		assertThat(unverified.exclusions()).singleElement().extracting(MaritimeShipmentExclusion::reason)
+				.isEqualTo("INCOMPATIBLE");
+	}
+
 	private MaritimeShipmentMatch match(MaritimeSnapshotChange change, ShipmentMatchFacts facts) {
 		return matcher.matchFacts(8L, change, List.of(facts));
 	}
