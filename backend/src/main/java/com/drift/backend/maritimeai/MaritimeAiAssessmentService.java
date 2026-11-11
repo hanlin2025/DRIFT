@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.Arrays;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,14 +42,25 @@ public class MaritimeAiAssessmentService {
 	private final ObjectMapper json; private final Clock clock; private final boolean enabled;
 	private final boolean authenticRetrospectiveInferenceApproved; private final Set<String> approvedAuthenticSourceTypes;
 	private final Set<String> approvedAuthenticEvidenceIds;
+	private final Set<String> approvedLiveEvidenceIds;
 
+	public MaritimeAiAssessmentService(ShipmentService shipments, ShipmentRepository shipmentRepository, MaritimeContextService context,
+			MaritimeAiClient client, MaritimeAiAssessmentRepository assessments, MaritimeAiAssessmentHistoryAccessPolicy historyAccess,
+			ObjectMapper json, ObjectProvider<Clock> clocks, boolean enabled, boolean authenticRetrospectiveInferenceApproved,
+			String approvedAuthenticSourceTypes, String approvedAuthenticEvidenceIds) {
+		this(shipments, shipmentRepository, context, client, assessments, historyAccess, json, clocks, enabled,
+				authenticRetrospectiveInferenceApproved, approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds, "");
+	}
+
+	@Autowired
 	public MaritimeAiAssessmentService(ShipmentService shipments, ShipmentRepository shipmentRepository, MaritimeContextService context,
 			MaritimeAiClient client, MaritimeAiAssessmentRepository assessments, MaritimeAiAssessmentHistoryAccessPolicy historyAccess,
 			ObjectMapper json, ObjectProvider<Clock> clocks,
 			@Value("${app.maritime-ai.enabled:false}") boolean enabled,
 			@Value("${app.maritime-ai.authentic-retrospective-inference-approved:false}") boolean authenticRetrospectiveInferenceApproved,
 			@Value("${app.maritime-ai.authentic-retrospective-source-types-approved:}") String approvedAuthenticSourceTypes,
-			@Value("${app.maritime-ai.authentic-retrospective-evidence-ids-approved:}") String approvedAuthenticEvidenceIds) {
+			@Value("${app.maritime-ai.authentic-retrospective-evidence-ids-approved:}") String approvedAuthenticEvidenceIds,
+			@Value("${app.maritime-ai.live-evidence-ids-approved:}") String approvedLiveEvidenceIds) {
 		this.shipments = shipments; this.shipmentRepository = shipmentRepository; this.context = context; this.client = client;
 		this.assessments = assessments; this.historyAccess = historyAccess; this.json = json;
 		this.clock = clocks.getIfAvailable(Clock::systemUTC); this.enabled = enabled;
@@ -56,6 +68,8 @@ public class MaritimeAiAssessmentService {
 		this.approvedAuthenticSourceTypes = Arrays.stream(approvedAuthenticSourceTypes.split(",")).map(String::trim)
 				.filter(value -> !value.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
 		this.approvedAuthenticEvidenceIds = Arrays.stream(approvedAuthenticEvidenceIds.split(",")).map(String::trim)
+				.filter(value -> !value.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+		this.approvedLiveEvidenceIds = Arrays.stream(approvedLiveEvidenceIds.split(",")).map(String::trim)
 				.filter(value -> !value.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
 	}
 
@@ -83,8 +97,17 @@ public class MaritimeAiAssessmentService {
 					"An authentic evidence record is not approved for external processing."),
 				MaritimeAiGenerationState.ABSTAINED, "UNAPPROVED_AUTHENTIC_EVIDENCE", null));
 		}
+		// A sufficient live record needs its own exact id. Historical retrospective ids do not approve it.
+		// A mixed live bundle abstains before a provider call rather than dropping the unapproved record.
+		if (hasUnapprovedLiveEvidence(bundle.evidence(), approvedLiveEvidenceIds)) {
+			MaritimeAiEvidencePackage blocked = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
+					bundle.shipmentAssociationConfidence(), shipmentContext, List.of());
+			return recheckShipmentAccess(user, shipmentId, persist(detail, blocked, now, MaritimeAiClient.MaritimeAiClientResult.unavailable(
+					"A live evidence record is not approved for external processing."),
+				MaritimeAiGenerationState.ABSTAINED, "UNAPPROVED_LIVE_EVIDENCE", null));
+		}
 		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence(), authenticRetrospectiveInferenceApproved,
-				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds);
+				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds, approvedLiveEvidenceIds);
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
 				bundle.shipmentAssociationConfidence(), shipmentContext, eligible);
 		if (input.evidence().isEmpty()) {
@@ -322,13 +345,25 @@ public class MaritimeAiAssessmentService {
 	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence,
 			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
 			Set<String> approvedAuthenticEvidenceIds) {
+		return eligibleForInference(evidence, authenticRetrospectiveInferenceApproved, approvedAuthenticSourceTypes,
+				approvedAuthenticEvidenceIds, Set.of());
+	}
+
+	/**
+	 * Live records require an exact id in the separate live allowlist. A retrospective id never
+	 * approves a live record, and a changed fingerprint is a different id.
+	 */
+	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence,
+			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
+			Set<String> approvedAuthenticEvidenceIds, Set<String> approvedLiveEvidenceIds) {
 		return evidence.stream()
 				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
 						&& !"STALE".equals(item.freshness()))
 				.filter(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode())
 						|| (authenticRetrospectiveInferenceApproved && "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode())
 								&& approvedAuthenticSourceTypes.contains(item.sourceType())
-								&& approvedAuthenticEvidenceIds.contains(item.evidenceId())))
+								&& approvedAuthenticEvidenceIds.contains(item.evidenceId()))
+						|| ("LIVE".equals(item.sourceMode()) && approvedLiveEvidenceIds.contains(item.evidenceId())))
 				.toList();
 	}
 
@@ -345,6 +380,17 @@ public class MaritimeAiAssessmentService {
 				.anyMatch(item -> !authenticRetrospectiveInferenceApproved
 						|| !approvedAuthenticSourceTypes.contains(item.sourceType())
 						|| !approvedAuthenticEvidenceIds.contains(item.evidenceId()));
+	}
+
+	/**
+	 * Incompatible or insufficient live records stay out of this check. They cannot authorise a
+	 * provider call, and they do not block an otherwise approved bundle.
+	 */
+	static boolean hasUnapprovedLiveEvidence(List<MaritimeEvidence> evidence, Set<String> approvedLiveEvidenceIds) {
+		return evidence.stream()
+				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
+						&& !"STALE".equals(item.freshness()) && "LIVE".equals(item.sourceMode()))
+				.anyMatch(item -> !approvedLiveEvidenceIds.contains(item.evidenceId()));
 	}
 
 	// History authorization takes a PostgreSQL row lock so importer reassignment serializes after the read.

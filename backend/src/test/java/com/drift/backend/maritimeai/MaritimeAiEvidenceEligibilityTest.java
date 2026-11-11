@@ -62,10 +62,48 @@ class MaritimeAiEvidenceEligibilityTest {
 				java.util.Set.of("MPA_ETA_REVISION", "NEA_WEATHER"), java.util.Set.of("nea-approved", mpa.evidenceId()))).isEmpty();
 	}
 
+	@Test
+	void liveEvidenceRequiresASeparateExactIdAndANewFingerprintNeedsNewApproval() {
+		MaritimeEvidence approved = liveEvidence("mpa-eta:mpa:9351048:identity:fingerprint-1");
+		MaritimeEvidence revised = liveEvidence("mpa-eta:mpa:9351048:identity:fingerprint-2");
+		MaritimeEvidence incompatible = liveEvidence("mpa-eta:mpa:9351048:identity:fingerprint-3", false, "INCOMPATIBLE");
+		MaritimeEvidence insufficient = liveEvidence("mpa-eta:mpa:9351048:identity:fingerprint-4", false, "COMPATIBLE");
+		MaritimeEvidence synthetic = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", true, "FRESH");
+		java.util.Set<String> approvedIds = java.util.Set.of(approved.evidenceId());
+
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(approved), false, java.util.Set.of(),
+				java.util.Set.of(), java.util.Set.of())).isEmpty();
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(approved), true,
+				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of(approved.evidenceId()), java.util.Set.of())).isEmpty();
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(approved, synthetic), false,
+				java.util.Set.of(), java.util.Set.of(), approvedIds)).containsExactly(approved, synthetic);
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(approved, revised), false,
+				java.util.Set.of(), java.util.Set.of(), approvedIds)).containsExactly(approved);
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(approved), false,
+				java.util.Set.of(), java.util.Set.of(), approvedIds)).singleElement()
+				.extracting(MaritimeEvidence::previousValue).isEqualTo("arrival=old;departure=old;port=Singapore");
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedLiveEvidence(List.of(approved, revised), approvedIds)).isTrue();
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedLiveEvidence(List.of(approved), approvedIds)).isFalse();
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedLiveEvidence(List.of(incompatible, insufficient), java.util.Set.of())).isFalse();
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(incompatible, insufficient), false,
+				java.util.Set.of(), java.util.Set.of(), java.util.Set.of(incompatible.evidenceId(), insufficient.evidenceId()))).isEmpty();
+	}
+
 	private static MaritimeEvidence authenticEvidence(String sourceType, String evidenceId, boolean sufficient, String compatibility) {
 		return new MaritimeEvidence(sourceType, "RETROSPECTIVE_ANALYSIS", evidenceId, "Authentic item", "authentic", "", "citation",
 				null, null, null, "HISTORICAL_REPLAY", "old", "new", "change", compatibility, compatibility, compatibility,
 				compatibility, sufficient, true, "UNVERIFIED_IMO_ONLY", "Historical context only");
+	}
+
+	private static MaritimeEvidence liveEvidence(String evidenceId) {
+		return liveEvidence(evidenceId, true, "COMPATIBLE");
+	}
+
+	private static MaritimeEvidence liveEvidence(String evidenceId, boolean sufficient, String compatibility) {
+		return new MaritimeEvidence("MPA_ETA_REVISION", "LIVE", evidenceId, "Persisted MPA expected arrival", "mpa:9351048:identity", "",
+				"citation", null, null, "2026-11-11T03:00:00Z", "APPLICABLE", "arrival=old;departure=old;port=Singapore",
+				"arrival=new;departure=new;port=Singapore", null, compatibility, compatibility, compatibility, compatibility,
+				sufficient, true, "UNVERIFIED_IMO_ONLY", "Persisted head", "9351048", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
 	}
 
 	private static MaritimeEvidence evidence(String mode, String compatibility, boolean sufficient, String freshness) {
