@@ -13,6 +13,8 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.databind.ObjectMapper;
+
 class MaritimeSnapshotPollingMappingTest {
 	private static final Instant NOW = Instant.parse("2026-11-11T06:00:00Z");
 	private static final Set<String> PORT_AREAS = MaritimeSnapshotPollingService.areaSet("Tuas, bukit  merah");
@@ -66,6 +68,19 @@ class MaritimeSnapshotPollingMappingTest {
 		assertThat(MaritimeSnapshotPollingService.noticeWithinLookback("2026-11-01T00:00:00+08:00", NOW, 14)).isTrue();
 		assertThat(MaritimeSnapshotPollingService.noticeWithinLookback("2026-10-01T00:00:00+08:00", NOW, 14)).isFalse();
 		assertThat(MaritimeSnapshotPollingService.noticeWithinLookback(null, NOW, 14)).isTrue();
+	}
+
+	@Test
+	void anEmptyExpectedArrivalDayIsKeptAndAnyOtherFailedPageIsNot() throws Exception {
+		ObjectMapper json = new ObjectMapper();
+		assertThat(MaritimeSnapshotPollingService.emptyExpectedArrivalDay(json.readTree(
+				"{\"http_status\":204,\"error\":\"HTTPNoContent\",\"raw_file\":\"\",\"schema_valid\":false}"))).isTrue();
+		assertThat(MaritimeSnapshotPollingService.emptyExpectedArrivalDay(json.readTree(
+				"{\"http_status\":200,\"error\":\"\",\"raw_file\":\"day.json\",\"schema_valid\":true}"))).isFalse();
+		assertThat(MaritimeSnapshotPollingService.emptyExpectedArrivalDay(json.readTree(
+				"{\"http_status\":401,\"error\":\"HTTPError:401\",\"raw_file\":\"day.json\",\"schema_valid\":false}"))).isFalse();
+		assertThat(MaritimeSnapshotPollingService.emptyExpectedArrivalDay(json.readTree(
+				"{\"http_status\":204,\"error\":\"HTTPNoContent\",\"raw_file\":\"day.json\",\"schema_valid\":false}"))).isFalse();
 	}
 
 	@Test

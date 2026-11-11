@@ -81,6 +81,8 @@ class MaritimeSnapshotPollingService {
 			long sourceRecordCount = 0;
 			for (Path manifest : jsonFiles(temp, "due_to_arrive_*.manifest.json")) {
 				JsonNode m = read(manifest);
+				// An empty OCEANS-X day is HTTP 204 with no body. Keep the other days.
+				if (emptyExpectedArrivalDay(m)) continue;
 				if (!m.path("schema_valid").asBoolean(false) || !m.path("error").asText("").isBlank()
 						|| m.path("http_status").asInt() != 200) {
 					throw new IOException("MPA expected-arrival collector returned an invalid source page");
@@ -325,6 +327,13 @@ class MaritimeSnapshotPollingService {
 					forecast, null, null, null));
 		}
 		return out;
+	}
+
+	/** A subscribed due-to-arrive day with no ships. Any other status remains a failed page. */
+	static boolean emptyExpectedArrivalDay(JsonNode manifest) {
+		return manifest.path("http_status").asInt() == 204
+				&& "HTTPNoContent".equals(manifest.path("error").asText(""))
+				&& manifest.path("raw_file").asText("").isBlank();
 	}
 
 	/** Only notices released within the lookback are new to a live poll; older listings are not changes. */
