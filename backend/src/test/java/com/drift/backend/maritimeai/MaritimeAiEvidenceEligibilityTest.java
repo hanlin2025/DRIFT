@@ -11,12 +11,15 @@ class MaritimeAiEvidenceEligibilityTest {
 	void onlySufficientNonStaleSyntheticDemonstrationEvidenceCanReachTheProvider() {
 		MaritimeEvidence synthetic = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", true, "FRESH");
 		MaritimeEvidence replay = evidence("RECORDED_REPLAY", "COMPATIBLE", true, "FRESH");
+		MaritimeEvidence live = evidence("LIVE", "COMPATIBLE", true, "APPLICABLE");
 		MaritimeEvidence stale = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", true, "STALE");
 		MaritimeEvidence insufficient = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", false, "FRESH");
 		MaritimeEvidence incompatible = evidence("SYNTHETIC_DEMONSTRATION", "INCOMPATIBLE", true, "FRESH");
 
-		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(synthetic, replay, stale, insufficient, incompatible)))
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(synthetic, replay, live, stale, insufficient, incompatible)))
 				.containsExactly(synthetic);
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(live), true,
+				java.util.Set.of("NEA_WEATHER"), java.util.Set.of(live.evidenceId()))).isEmpty();
 	}
 
 	@Test

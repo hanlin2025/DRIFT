@@ -69,6 +69,19 @@ class PersistedNeaWeatherEvidenceAdapterTest {
 	}
 
 	@Test
+	void limitsForecastsToTheSameConfiguredAreasUsedByTheCollector() {
+		var reader = mock(MaritimeSnapshotEvidenceReader.class);
+		when(reader.heads("NEA_WEATHER")).thenReturn(List.of(
+			snapshot("LIVE", "APPLICABLE", "2026-11-11T00:00:00Z", Instant.parse("2026-11-11T02:00:00Z"), "Tuas"),
+			snapshot("LIVE", "APPLICABLE", "2026-11-11T00:00:00Z", Instant.parse("2026-11-11T02:00:00Z"), "Jurong Island")));
+
+		var evidence = PersistedNeaWeatherEvidenceAdapter.forConfiguredAreas(reader, " Tuas , Pioneer ")
+				.forShipment(shipment("Singapore"), CUTOFF);
+
+		assertThat(evidence).singleElement().satisfies(item -> assertThat(item.title()).contains("Tuas"));
+	}
+
+	@Test
 	void keepsHistoricalBackfillModeAndFreshnessExplicit() {
 		var reader = mock(MaritimeSnapshotEvidenceReader.class);
 		when(reader.heads("NEA_WEATHER")).thenReturn(List.of(snapshot("HISTORICAL_BACKFILL", "HISTORICAL",

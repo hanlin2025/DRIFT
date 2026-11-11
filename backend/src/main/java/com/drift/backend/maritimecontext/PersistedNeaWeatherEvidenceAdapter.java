@@ -3,9 +3,14 @@ package com.drift.backend.maritimecontext;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.drift.backend.maritimechange.MaritimeSnapshotChangeDetector;
@@ -18,16 +23,39 @@ class PersistedNeaWeatherEvidenceAdapter implements MaritimeEvidenceSourceAdapte
 	private static final String RECORDED_REPLAY = "RECORDED_REPLAY";
 	private static final String HISTORICAL_BACKFILL = "HISTORICAL_BACKFILL";
 	private static final Duration MAX_SOURCE_AGE = Duration.ofHours(6);
+	private static final String DEFAULT_NEA_AREAS = "Tuas,Pioneer,Queenstown,Bukit Merah,Southern Islands";
 
 	private final MaritimeSnapshotEvidenceReader snapshots;
+	private final Set<String> configuredAreas;
 
 	PersistedNeaWeatherEvidenceAdapter(MaritimeSnapshotEvidenceReader snapshots) {
+		this(snapshots, configuredAreaSet(DEFAULT_NEA_AREAS));
+	}
+
+	@Autowired
+	PersistedNeaWeatherEvidenceAdapter(MaritimeSnapshotEvidenceReader snapshots,
+			@Value("${app.maritime-change.collection.nea-areas:" + DEFAULT_NEA_AREAS + "}") String configuredAreas) {
+		this(snapshots, configuredAreaSet(configuredAreas));
+	}
+
+	private PersistedNeaWeatherEvidenceAdapter(MaritimeSnapshotEvidenceReader snapshots, Set<String> configuredAreas) {
 		this.snapshots = snapshots;
+		this.configuredAreas = configuredAreas;
+	}
+
+	static PersistedNeaWeatherEvidenceAdapter forConfiguredAreas(MaritimeSnapshotEvidenceReader snapshots, String configuredAreas) {
+		return new PersistedNeaWeatherEvidenceAdapter(snapshots, configuredAreaSet(configuredAreas));
+	}
+
+	private static Set<String> configuredAreaSet(String configuredAreas) {
+		String areas = configuredAreas == null || configuredAreas.isBlank() ? DEFAULT_NEA_AREAS : configuredAreas;
+		return Arrays.stream(areas.split(",")).map(PersistedNeaWeatherEvidenceAdapter::areaKey)
+				.filter(area -> !area.isEmpty()).collect(Collectors.toUnmodifiableSet());
 	}
 
 	@Override
 	public List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant cutoff) {
-		if (!isSingaporePort(shipment)) return List.of();
+		if (!isRelevantPort(shipment)) return List.of();
 		return snapshots.heads(MaritimeSnapshotChangeDetector.NEA_WEATHER).stream()
 				.filter(snapshot -> !snapshot.retrievedAtUtc().isAfter(cutoff))
 				.filter(snapshot -> isDisplayableMode(snapshot.sourceMode()))
@@ -42,16 +70,20 @@ class PersistedNeaWeatherEvidenceAdapter implements MaritimeEvidenceSourceAdapte
 				|| HISTORICAL_BACKFILL.equals(sourceMode);
 	}
 
-	private static boolean isSingaporePort(ShipmentDetailResponse shipment) {
-		return shipment.transshipmentPort() != null
-				&& shipment.transshipmentPort().toLowerCase(Locale.ROOT).contains("singapore");
+	private boolean isRelevantPort(ShipmentDetailResponse shipment) {
+		if (shipment.transshipmentPort() == null) return false;
+		String port = shipment.transshipmentPort().toLowerCase(Locale.ROOT);
+		return port.contains("singapore") || configuredAreas.stream().anyMatch(port::contains);
 	}
 
-	private static boolean hasRelevantArea(String area) {
-		if (area == null || area.isBlank()) return false;
-		// NEA forecasts are regional. A Singapore transshipment port makes the selected Singapore
-		// forecast areas relevant planning context; this does not associate weather with the vessel.
-		return true;
+	private boolean hasRelevantArea(String area) {
+		// Keep the evidence filter aligned with the scheduler's configured area allowlist. A Singapore
+		// port alone must not pull in arbitrary persisted NEA regions outside the collected scope.
+		return area != null && configuredAreas.contains(areaKey(area));
+	}
+
+	private static String areaKey(String area) {
+		return area.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
 	}
 
 	private static MaritimeEvidence toEvidence(MaritimeSnapshotEvidenceReader.Snapshot snapshot, Instant cutoff) {
