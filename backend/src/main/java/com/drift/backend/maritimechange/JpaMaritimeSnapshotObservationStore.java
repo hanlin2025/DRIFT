@@ -47,6 +47,18 @@ class JpaMaritimeSnapshotObservationStore implements MaritimeSnapshotObservation
 	}
 
 	@Override
+	public List<MaritimeSnapshotObservation> heads(String sourceType) {
+		return entityManager.createQuery("""
+				SELECT observation FROM MaritimeSnapshotObservation observation
+				WHERE observation.sourceType = :sourceType AND observation.head = true
+				ORDER BY observation.recordedAt DESC, observation.id DESC
+				""", MaritimeSnapshotObservation.class)
+				.setParameter("sourceType", sourceType)
+				.setMaxResults(100)
+				.getResultList();
+	}
+
+	@Override
 	public void add(MaritimeSnapshotObservation observation, boolean becomesHead) {
 		if (becomesHead) {
 			entityManager.createQuery("""

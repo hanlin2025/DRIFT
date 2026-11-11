@@ -22,8 +22,8 @@ public class MaritimeSnapshotChangeDetector {
 
 	static final String MPA_ETA_REVISION = "MPA_ETA_REVISION";
 	static final String MPA_OFFICIAL_NOTICE = "MPA_OFFICIAL_NOTICE";
-	static final String NEA_WEATHER = "NEA_WEATHER";
-	static final String LIVE = "LIVE";
+	public static final String NEA_WEATHER = "NEA_WEATHER";
+	public static final String LIVE = "LIVE";
 	static final String RECORDED_REPLAY = "RECORDED_REPLAY";
 	static final String SYNTHETIC_DEMONSTRATION = "SYNTHETIC_DEMONSTRATION";
 	static final String HISTORICAL_BACKFILL = "HISTORICAL_BACKFILL";

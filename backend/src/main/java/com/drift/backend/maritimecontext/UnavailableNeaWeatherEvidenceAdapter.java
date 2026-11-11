@@ -14,24 +14,31 @@ import com.drift.backend.shipment.ShipmentDetailResponse;
 class UnavailableNeaWeatherEvidenceAdapter implements MaritimeEvidenceSourceAdapter {
 	private final boolean curatedSnapshotsEnabled;
 	private final boolean controlledReplayEnabled;
+	private final PersistedNeaWeatherEvidenceAdapter persistedEvidence;
 
-	UnavailableNeaWeatherEvidenceAdapter() { this(false, false); }
+	UnavailableNeaWeatherEvidenceAdapter() { this(false, false, null); }
 
-	UnavailableNeaWeatherEvidenceAdapter(boolean curatedSnapshotsEnabled) { this(curatedSnapshotsEnabled, false); }
+	UnavailableNeaWeatherEvidenceAdapter(boolean curatedSnapshotsEnabled) { this(curatedSnapshotsEnabled, false, null); }
+
+	UnavailableNeaWeatherEvidenceAdapter(boolean curatedSnapshotsEnabled, boolean controlledReplayEnabled) {
+		this(curatedSnapshotsEnabled, controlledReplayEnabled, null);
+	}
 
 	@Autowired
 	UnavailableNeaWeatherEvidenceAdapter(
 			@Value("${app.maritime-context.curated-snapshots-enabled:false}") boolean curatedSnapshotsEnabled,
-			@Value("${app.maritime-context.controlled-replay-enabled:false}") boolean controlledReplayEnabled) {
+			@Value("${app.maritime-context.controlled-replay-enabled:false}") boolean controlledReplayEnabled,
+			PersistedNeaWeatherEvidenceAdapter persistedEvidence) {
 		this.curatedSnapshotsEnabled = curatedSnapshotsEnabled;
 		this.controlledReplayEnabled = controlledReplayEnabled;
+		this.persistedEvidence = persistedEvidence;
 	}
 
 	@Override
 	public List<MaritimeEvidence> forShipment(ShipmentDetailResponse shipment, Instant cutoff) {
-		// A configured curated source is allowed to be absent for a particular vessel; do not
-		// add a contradictory "unavailable" weather row beside a real curated observation.
-		if (curatedSnapshotsEnabled || controlledReplayEnabled) return List.of();
+		// Configured replay sources own their own availability state; do not add a second row.
+		if (controlledReplayEnabled || curatedSnapshotsEnabled) return List.of();
+		if (persistedEvidence != null && !persistedEvidence.forShipment(shipment, cutoff).isEmpty()) return List.of();
 		return List.of(new MaritimeEvidence(
 				"NEA_WEATHER", "UNAVAILABLE", "nea-weather-not-ingested", "Live NEA weather context not ingested",
 				"NEA public weather API", "", "No persistent, point-in-time weather snapshot has been ingested into DRIFT.",
