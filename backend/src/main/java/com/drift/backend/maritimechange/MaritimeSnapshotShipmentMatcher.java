@@ -1,7 +1,10 @@
 package com.drift.backend.maritimechange;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +51,7 @@ public class MaritimeSnapshotShipmentMatcher {
 			"st john s island jetty",
 			"kusu island",
 			"western boarding ground");
+	private static final DateTimeFormatter MPA_LOCAL_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
 	private final VisibleShipments shipments;
 
@@ -62,6 +66,14 @@ public class MaritimeSnapshotShipmentMatcher {
 			throw new IllegalArgumentException("Change is required");
 		}
 		return matchFacts(viewerCompanyId, change, shipments.forCompany(viewerCompanyId));
+	}
+
+	/** Matches a source change against active shipments for internal, source-triggered processing. */
+	@Transactional(readOnly = true)
+	MaritimeShipmentMatch matchActive(MaritimeSnapshotChange change) {
+		if (change == null) throw new IllegalArgumentException("Change is required");
+		if (change.vesselImo() == null) return matchFacts(0, change, List.of());
+		return matchFacts(0, change, shipments.activeForMotherImo(change.vesselImo()));
 	}
 
 	MaritimeShipmentMatch match(long viewerCompanyId, MaritimeSnapshotChange change, List<ShipmentMatchFacts> visibleFacts) {
@@ -219,6 +231,10 @@ public class MaritimeSnapshotShipmentMatcher {
 	}
 
 	private static String schedule(MaritimeSnapshotChange change, ShipmentMatchFacts facts, String role) {
+		if (MaritimeSnapshotChangeDetector.MPA_ETA_REVISION.equals(change.sourceType())
+				&& MaritimeSnapshotChangeDetector.REVISED.equals(change.kind())) {
+			return previousMpaArrivalMatchesSchedule(change, facts);
+		}
 		String supplied = change.timeCompatibility();
 		if (MaritimeSnapshotChangeDetector.INCOMPATIBLE.equals(supplied)
 				|| MaritimeSnapshotChangeDetector.COMPATIBLE.equals(supplied)
@@ -248,6 +264,42 @@ public class MaritimeSnapshotShipmentMatcher {
 			return MaritimeSnapshotChangeDetector.INCOMPATIBLE;
 		}
 		return MaritimeSnapshotChangeDetector.UNKNOWN;
+	}
+
+	/**
+	 * An ETA revision moves the source's effective arrival forward or back. Comparing the revised ETA
+	 * to the old planned arrival would reject the very delay the event reports. Verify the visit using
+	 * the previous source ETA instead; without an exact recorded schedule anchor, keep it unverified.
+	 */
+	private static String previousMpaArrivalMatchesSchedule(MaritimeSnapshotChange change, ShipmentMatchFacts facts) {
+		if (facts.plannedMotherArrivalAt() == null) return MaritimeSnapshotChangeDetector.UNKNOWN;
+		Instant previousArrival = previousMpaArrival(change.previousValue());
+		if (previousArrival == null) return MaritimeSnapshotChangeDetector.UNKNOWN;
+		return previousArrival.equals(facts.plannedMotherArrivalAt().toInstant())
+				? MaritimeSnapshotChangeDetector.COMPATIBLE : MaritimeSnapshotChangeDetector.INCOMPATIBLE;
+	}
+
+	private static Instant previousMpaArrival(String previousValue) {
+		if (previousValue == null) return null;
+		for (String field : previousValue.split(";")) {
+			String[] pair = field.split("=", 2);
+			if (pair.length != 2 || !"arrival".equalsIgnoreCase(pair[0].trim())) continue;
+			String value = pair[1].trim();
+			try {
+				return Instant.parse(value);
+			} catch (DateTimeParseException ignored) {
+				try {
+					return OffsetDateTime.parse(value).toInstant();
+				} catch (DateTimeParseException ignoredOffset) {
+					try {
+						return LocalDateTime.parse(value, MPA_LOCAL_TIME).atZone(ZoneId.of("Asia/Singapore")).toInstant();
+					} catch (DateTimeParseException ignoredLocal) {
+						return null;
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	private static String against(MaritimeSnapshotChange change, OffsetDateTime planned) {

@@ -24,7 +24,13 @@ public class ConnectionWindowService {
 		if (plannedFeederDepartureAt == null || !usable(estimate)) {
 			return null;
 		}
-		Duration between = Duration.between(estimate.estimatedArrivalAt(), plannedFeederDepartureAt);
+		return remaining(plannedFeederDepartureAt, estimate.estimatedArrivalAt());
+	}
+
+	/** Compares a source-backed expected arrival with the planned feeder departure. */
+	RemainingConnectionWindow remaining(OffsetDateTime plannedFeederDepartureAt, OffsetDateTime expectedArrivalAt) {
+		if (plannedFeederDepartureAt == null || expectedArrivalAt == null) return null;
+		Duration between = Duration.between(expectedArrivalAt, plannedFeederDepartureAt);
 		if (between.isPositive()) {
 			ConnectionWindow window = ConnectionWindow.of(between);
 			return RemainingConnectionWindow.available(window.duration(), window.totalSeconds());

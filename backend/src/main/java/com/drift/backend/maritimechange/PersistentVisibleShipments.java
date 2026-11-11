@@ -23,6 +23,13 @@ class PersistentVisibleShipments implements VisibleShipments {
 				.toList();
 	}
 
+	@Override
+	public List<ShipmentMatchFacts> activeForMotherImo(String imo) {
+		return shipments.findActiveForMotherVesselImo(imo).stream()
+				.map(PersistentVisibleShipments::facts)
+				.toList();
+	}
+
 	private static ShipmentMatchFacts facts(Shipment shipment) {
 		return new ShipmentMatchFacts(shipment.getId(), shipment.getCompany().getId(), shipment.getTransshipmentPort(),
 				shipment.getMotherVesselImo(), shipment.getFeederVesselImo(), shipment.getPlannedMotherArrivalAt(),
