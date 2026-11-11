@@ -62,13 +62,15 @@ public class MaritimeContextService {
 				.toList();
 		String association = shipmentAssociationConfidence(evidence);
 		return new MaritimeContextResponse("cdg246.maritime-evidence-bundle.v1", true, bundleMode(evidence), assessmentCutoffUtc.toString(), association,
-				"Human review is required. This bundle is a read-only replay/demo and does not change ETA, shipment, risk, alerts, or operational decisions.",
+				"Human review is required. This is a read-only evidence view and does not change ETA, shipment, risk, alerts, or operational decisions.",
 				evidence, notices, null, null);
 	}
 
 	private static String bundleMode(List<MaritimeEvidence> evidence) {
-		if (evidence.stream().anyMatch(item -> "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))) return "RETROSPECTIVE_ANALYSIS";
+		if (evidence.stream().anyMatch(item -> "LIVE".equals(item.sourceMode()))) return "LIVE";
 		if (evidence.stream().anyMatch(item -> "RECORDED_REPLAY".equals(item.sourceMode()))) return "RECORDED_REPLAY";
+		if (evidence.stream().anyMatch(item -> "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode())
+				|| "HISTORICAL_BACKFILL".equals(item.sourceMode()))) return "RETROSPECTIVE_ANALYSIS";
 		if (evidence.stream().anyMatch(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) return "SYNTHETIC_DEMONSTRATION";
 		return "UNAVAILABLE";
 	}
