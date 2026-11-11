@@ -84,6 +84,8 @@ class EmailVerificationIntegrationTests {
 	void cleanup() {
 		mailer.reset();
 		SignupFixtures.cleanup(jdbc, emails, codes);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM companies WHERE code = 'HARBOURLINE_DEMO'", Long.class))
+				.isEqualTo(1L);
 	}
 
 	@Test
@@ -485,7 +487,9 @@ class EmailVerificationIntegrationTests {
 
 	private ResultActions signup(String companyCode, String address, String fullName, String companyName, String password)
 			throws Exception {
-		codes.add(companyCode);
+		if (companyCode != null && companyCode.startsWith("CDG363")) {
+			codes.add(companyCode);
+		}
 		return mvc.perform(post("/api/register/company").contentType(MediaType.APPLICATION_JSON)
 				.content(SignupFixtures.body(companyCode, companyName, fullName, address, password)));
 	}
