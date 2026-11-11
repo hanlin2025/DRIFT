@@ -65,6 +65,18 @@ class TestResponseClassification(unittest.TestCase):
                 collector.main()
         self.assertIn("MPA_DUE_TO_ARRIVE_PATH is required", str(error.exception))
 
+    def test_expected_poll_stops_after_rate_limit_failure(self):
+        calls = []
+        collector.get = lambda *args: (calls.append(args) or (b"", 429))
+        os.environ["MPA_REQUEST_RETRIES"] = "0"
+        with tempfile.TemporaryDirectory() as directory:
+            sys.argv = ["collector", "--start", "2026-10-26", "--days", "3", "--feed-group", "expected", "--output", directory]
+            collector.main()
+            manifests = list(Path(directory).glob("*.manifest.json"))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(manifests), 1)
+        self.assertEqual(json.loads(manifests[0].read_text())["error"], "HTTPError:429")
+
 
 if __name__ == "__main__":
     unittest.main()

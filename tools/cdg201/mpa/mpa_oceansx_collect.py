@@ -52,6 +52,7 @@ def main():
  if a.rolling:
   event_days=[start+timedelta(days=n) for n in range(-a.lookback_days,1)]
   due_days=[start+timedelta(days=n) for n in range(-a.lookback_days,a.lookahead_days+1)]
+ stop_polling=False
  for dataset,template in templates.items():
   if a.feed_group=='expected' and not dataset.startswith('due_to_'):continue
   if a.feed_group=='reported' and dataset.startswith('due_to_'):continue
@@ -83,5 +84,9 @@ def main():
    if raw: out.write_bytes(raw)
    meta={'collection_run_id':run_id,'dataset':dataset,'queried_date':day,'retrieval_started_utc':begin.isoformat(),'retrieval_completed_utc':end.isoformat(),'endpoint_without_credentials':endpoint,'http_status':http_status,'retry_count':retry_count,'response_body_present':bool(raw),'schema_valid':schema_valid,'raw_file':out.name if raw else '','record_count':len(parsed) if schema_valid else None,'sha256':hashlib.sha256(raw).hexdigest() if raw else '','error':err}
    (root/f'{dataset}_{day}_{stamp}.manifest.json').write_text(json.dumps(meta,indent=2))
+   if err and a.feed_group=='expected':
+    stop_polling=True
+    break
    if request_pause>0:time.sleep(request_pause)
+  if stop_polling:break
 if __name__=='__main__':main()
