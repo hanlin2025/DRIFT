@@ -42,7 +42,7 @@ export type MaritimeEvidence = {
   evidenceSufficient: boolean; humanReviewRequired: boolean; shipmentAssociationConfidence: string; limitation: string;
   vesselIdentity?: string | null; vesselRole?: 'MOTHER' | 'FEEDER' | null; observationType?: string | null; associationScope?: string | null;
 };
-export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
+export type MaritimeContext = { contractVersion: string; enabled: boolean; sourceMode: 'DISABLED' | 'LIVE' | 'RECORDED_REPLAY' | 'RETROSPECTIVE_ANALYSIS' | 'SYNTHETIC_DEMONSTRATION' | 'UNAVAILABLE'; assessmentCutoffUtc: string; shipmentAssociationConfidence: string; limitation: string; evidence: MaritimeEvidence[]; notices: MaritimeNoticeEvidence[]; aiExplanation: null; suggestedActions: null; };
 export type MaritimeChangeSourceMode = 'LIVE' | 'RECORDED_REPLAY' | 'SYNTHETIC_DEMONSTRATION' | 'HISTORICAL_BACKFILL';
 export type MaritimeChangeAvailability = 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE';
 export type MaritimeChangeFreshness = 'APPLICABLE' | 'HISTORICAL' | 'UNKNOWN';
@@ -1890,7 +1890,7 @@ function isEvidenceSourceMode(value: unknown): value is MaritimeEvidence['source
     || value === 'SYNTHETIC_DEMONSTRATION' || value === 'UNAVAILABLE';
 }
 function isContextSourceMode(value: unknown): value is MaritimeContext['sourceMode'] {
-  return value === 'DISABLED' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
+  return value === 'DISABLED' || value === 'LIVE' || value === 'RECORDED_REPLAY' || value === 'RETROSPECTIVE_ANALYSIS'
     || value === 'SYNTHETIC_DEMONSTRATION' || value === 'UNAVAILABLE';
 }
 function isSourceUrl(value: unknown): value is string {
