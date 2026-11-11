@@ -52,6 +52,14 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
 			""")
 	List<Shipment> findVisibleByCompanyIdOrderByCreatedAtDesc(@Param("companyId") Long companyId);
 
+	@Query("""
+			SELECT shipment FROM Shipment shipment
+			WHERE shipment.status = com.drift.backend.shipment.ShipmentStatus.ACTIVE
+				AND shipment.motherVesselImo = :imo
+			ORDER BY shipment.id
+			""")
+	List<Shipment> findActiveForMotherVesselImo(@Param("imo") String imo);
+
 	Optional<Shipment> findByIdAndCompanyId(Long id, Long companyId);
 
 	@Query("""

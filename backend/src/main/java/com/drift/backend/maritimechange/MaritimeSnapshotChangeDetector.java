@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,15 +48,26 @@ public class MaritimeSnapshotChangeDetector {
 
 	private final MaritimeSnapshotObservationStore store;
 	private final Clock clock;
+	private final ApplicationEventPublisher events;
 
 	@Autowired
-	public MaritimeSnapshotChangeDetector(MaritimeSnapshotObservationStore store) {
-		this(store, Clock.systemUTC());
+	public MaritimeSnapshotChangeDetector(MaritimeSnapshotObservationStore store, ApplicationEventPublisher events) {
+		this(store, Clock.systemUTC(), events);
+	}
+
+	MaritimeSnapshotChangeDetector(MaritimeSnapshotObservationStore store) {
+		this(store, Clock.systemUTC(), null);
 	}
 
 	MaritimeSnapshotChangeDetector(MaritimeSnapshotObservationStore store, Clock clock) {
+		this(store, clock, null);
+	}
+
+	MaritimeSnapshotChangeDetector(MaritimeSnapshotObservationStore store, Clock clock,
+			ApplicationEventPublisher events) {
 		this.store = store;
 		this.clock = clock;
+		this.events = events;
 	}
 
 	@Transactional
@@ -71,7 +83,10 @@ public class MaritimeSnapshotChangeDetector {
 				rejections.add(prepared.rejection());
 				continue;
 			}
-			record(prepared).ifPresent(changes::add);
+			record(prepared).ifPresent(change -> {
+				changes.add(change);
+				if (events != null) events.publishEvent(new MaritimeSnapshotChangeDetectedEvent(change));
+			});
 		}
 		return new MaritimeSnapshotChangeBatch(List.copyOf(changes), List.copyOf(rejections));
 	}

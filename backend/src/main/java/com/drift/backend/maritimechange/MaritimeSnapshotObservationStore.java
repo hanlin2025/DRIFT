@@ -10,6 +10,7 @@ interface MaritimeSnapshotObservationStore {
 
 	Optional<MaritimeSnapshotObservation> find(String sourceType, String sourceIdentity, String contentFingerprint);
 
+	default Optional<MaritimeSnapshotObservation> latestMpaHeadForImo(String imo) { return Optional.empty(); }
 	void add(MaritimeSnapshotObservation observation, boolean becomesHead);
 
 	default List<MaritimeSnapshotObservation> before(Instant detectedSince, Instant beforeRecordedAt, long beforeId, int limit) {

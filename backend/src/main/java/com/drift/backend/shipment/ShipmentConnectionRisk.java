@@ -108,6 +108,15 @@ class ShipmentConnectionRisk {
 				arrivalComparison, ShipmentRisk.of(planned, remaining), lateArrivalChance);
 	}
 
+	/** Risk against a verified MPA expected arrival, without changing the shipment's planned schedule. */
+	ShipmentRisk assessMpaExpectedArrival(Shipment shipment, OffsetDateTime expectedArrivalAt) {
+		ConnectionWindowCalculation planned = connectionWindows.calculate(shipment.getPlannedMotherArrivalAt(),
+				shipment.getPlannedFeederDepartureAt());
+		RemainingConnectionWindow remaining = connectionWindows.remaining(shipment.getPlannedFeederDepartureAt(),
+				expectedArrivalAt);
+		return ShipmentRisk.of(planned, remaining);
+	}
+
 	private static void addLookupNames(List<String> names, String vesselName) {
 		if (vesselName != null) {
 			names.add(vesselName);

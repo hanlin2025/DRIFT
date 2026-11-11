@@ -47,6 +47,21 @@ class JpaMaritimeSnapshotObservationStore implements MaritimeSnapshotObservation
 	}
 
 	@Override
+	public Optional<MaritimeSnapshotObservation> latestMpaHeadForImo(String imo) {
+		return entityManager.createQuery("""
+				SELECT observation FROM MaritimeSnapshotObservation observation
+				WHERE observation.sourceType = :sourceType AND observation.vesselImo = :imo
+					AND observation.head = true
+				ORDER BY observation.retrievedAtUtc DESC, observation.id DESC
+				""", MaritimeSnapshotObservation.class)
+				.setParameter("sourceType", MaritimeSnapshotChangeDetector.MPA_ETA_REVISION)
+				.setParameter("imo", imo)
+				.setMaxResults(1)
+				.getResultStream()
+				.findFirst();
+	}
+
+	@Override
 	public void add(MaritimeSnapshotObservation observation, boolean becomesHead) {
 		if (becomesHead) {
 			entityManager.createQuery("""
