@@ -32,11 +32,13 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('ScenarioControls', () => {
   it('provides a named region, action group and keyboard-accessible Start', async () => {
-    const model = controller();
+    const model = controller(session(), { binding: {
+      scenarioShipmentKey: 'A', shipmentId: 142, shipmentReference: 'ORDINARY-A', scenarioShipmentReference: 'FIXTURE-A',
+    } });
     render(<ScenarioControls controller={model} />);
     const region = screen.getByRole('region', { name: 'Controlled scenario' });
     expect(region).toHaveAttribute('aria-busy', 'false');
-    expect(region).toHaveAccessibleDescription(/Actions affect A and B/);
+    expect(region).toHaveAccessibleDescription(/advance Scenario A in its independent session/);
     expect(within(region).getByRole('group', { name: 'Scenario actions' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('UNSTARTED — no scenario snapshot.');
     const progression = within(region).getByRole('list', { name: 'Scenario stage progression' });
@@ -84,6 +86,13 @@ describe('ScenarioControls', () => {
     const final = { ...session('WORSENED'), emailNotificationStatus: 'FAILED' as const };
     render(<ScenarioControls controller={controller(final)} />);
     expect(screen.getByRole('status')).toHaveTextContent('Synthetic email submission failed. The WORSENED scenario remains complete.');
+  });
+  it('identifies B as an independent session when B is the selected anchor', () => {
+    const model = controller(session('CHANGE'), { binding: {
+      scenarioShipmentKey: 'B', shipmentId: 143, shipmentReference: 'ORDINARY-B', scenarioShipmentReference: 'FIXTURE-B',
+    } });
+    render(<ScenarioControls controller={model} />);
+    expect(screen.getByLabelText('Controlled scenario')).toHaveAccessibleDescription(/advance Scenario B in its independent session/);
   });
   it('explains read-only capabilities without granting controls', () => {
     const readOnly = session('BASELINE');

@@ -180,7 +180,11 @@ public class ControlledScenarioSessionService {
 								: ControlledScenarioEmailStatus.SUBMISSION_PENDING;
 				session.emailSubmissions.put(session.epochId, new EmailSubmission(revision, status));
 				if (status == ControlledScenarioEmailStatus.SUBMISSION_PENDING) {
-					triggered.set(new ControlledScenarioWorsenedEvent(sessionId, session.epochId, revision, snapshot));
+					String scenarioShipmentKey = session.shipments.stream()
+							.filter(binding -> binding.shipmentId().equals(session.anchorShipmentId))
+							.map(ShipmentBinding::scenarioShipmentKey).findFirst().orElseThrow();
+					triggered.set(new ControlledScenarioWorsenedEvent(sessionId, session.epochId, revision,
+							scenarioShipmentKey, snapshot));
 				}
 			}
 			return response(sessionId, session);

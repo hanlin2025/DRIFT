@@ -1,8 +1,6 @@
 package com.drift.backend.shipment;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.mail.SimpleMailMessage;
@@ -11,44 +9,38 @@ import org.springframework.stereotype.Component;
 /** Renders only facts from the immutable backend-owned WORSENED snapshot. */
 @Component
 class ControlledScenarioWorsenedEmailComposer {
-	static final String SUBJECT = "[DRIFT SYNTHETIC DEMO — NOT REAL] Scenario A/B risk worsened";
+	private static final String SUBJECT_PREFIX = "[DRIFT SYNTHETIC DEMO — NOT REAL] ";
 
-	SimpleMailMessage compose(ControlledScenarioSnapshot snapshot, String from, String recipient, String frontendBaseUrl) {
+	SimpleMailMessage compose(ControlledScenarioSnapshot snapshot, String scenarioShipmentKey, String from,
+			String recipient, String frontendBaseUrl) {
 		if (snapshot == null || snapshot.stage() != ControlledScenarioStage.WORSENED) {
 			throw new IllegalArgumentException("A WORSENED controlled-scenario snapshot is required");
 		}
-		List<ControlledScenarioSnapshot.ShipmentRead> shipments = snapshot.shipments().stream()
-				.sorted(Comparator.comparing(ControlledScenarioSnapshot.ShipmentRead::scenarioShipmentKey))
-				.toList();
-		ControlledScenarioSnapshot.ShipmentRead a = find(shipments, "A");
-		ControlledScenarioSnapshot.ShipmentRead b = find(shipments, "B");
+		if (!"A".equals(scenarioShipmentKey) && !"B".equals(scenarioShipmentKey)) {
+			throw new IllegalArgumentException("A Scenario A or B shipment key is required");
+		}
+		ControlledScenarioSnapshot.ShipmentRead shipment = find(snapshot.shipments(), scenarioShipmentKey);
 		String body = """
 				DRIFT CONTROLLED SYNTHETIC DEMONSTRATION — NOT REAL
 
-				This is a fictional CS203 demonstration. The controlled scenario has reached WORSENED.
-				The risk and deadline comparisons below were calculated by DRIFT from the WORSENED snapshot.
+				This is a fictional CS203 demonstration. %s has reached WORSENED in its independent scenario session.
+				The risk and deadline comparison below were calculated by DRIFT from that session's WORSENED snapshot.
 
-				%s
-
-				%s
-
-				Key difference between the shipments:
 				%s
 
 				Before taking any action, verify the latest arrival estimate and the recorded transshipment-arrival deadline and port applicability with the responsible carrier and operations team. Treat unknown or unavailable values as unknown.
 
 				No real maritime disruption, booking, cargo impact, or missed connection has been established by this fictional demonstration.
-				""".formatted(describe(a, frontendBaseUrl), describe(b, frontendBaseUrl), difference(a, b));
+				""".formatted(label(scenarioShipmentKey), describe(shipment, frontendBaseUrl));
 		SimpleMailMessage message = new SimpleMailMessage();
 		message.setFrom(from);
 		message.setTo(recipient);
-		message.setSubject(SUBJECT);
+		message.setSubject(SUBJECT_PREFIX + label(scenarioShipmentKey) + " risk worsened");
 		message.setText(body);
 		return message;
 	}
 
 	private static String describe(ControlledScenarioSnapshot.ShipmentRead shipment, String frontendBaseUrl) {
-		String label = shipment.scenarioShipmentKey().equals("A") ? "Scenario A (CS203-DEMO-A)" : "Scenario B (CS203-DEMO-B)";
 		String risk = shipment.risk() == null || shipment.risk().level() == null
 				? "Unknown in the snapshot"
 				: shipment.risk().level().name() + (shipment.risk().explanation() == null ? "" : " — " + shipment.risk().explanation());
@@ -59,7 +51,7 @@ class ControlledScenarioWorsenedEmailComposer {
 				Backend-calculated connection risk: %s
 				Remaining connection window: %s
 				Deadline comparison: %s
-				""".formatted(label, detailUrl, risk, remainingWindow(shipment.remainingConnectionWindow()),
+				""".formatted(label(shipment.scenarioShipmentKey()), detailUrl, risk, remainingWindow(shipment.remainingConnectionWindow()),
 					deadlineComparison(shipment.businessImpact()));
 	}
 
@@ -96,26 +88,8 @@ class ControlledScenarioWorsenedEmailComposer {
 		return text == null || text.isBlank() ? "No explanatory message is available." : text;
 	}
 
-	private static String difference(ControlledScenarioSnapshot.ShipmentRead a, ControlledScenarioSnapshot.ShipmentRead b) {
-		List<String> differences = new ArrayList<>();
-		if (a.risk() != null && b.risk() != null && a.risk().level() != b.risk().level()) {
-			differences.add("Scenario A is " + a.risk().level() + " while Scenario B is " + b.risk().level() + " risk.");
-		}
-		DelayComparison aImpact = a.businessImpact();
-		DelayComparison bImpact = b.businessImpact();
-		if (aImpact != null && bImpact != null && aImpact.outcome() != bImpact.outcome()) {
-			differences.add("A's deadline comparison is " + (aImpact.outcome() == null ? "unknown" : aImpact.outcome())
-					+ ", while B's is " + (bImpact.outcome() == null ? "unknown" : bImpact.outcome()) + ".");
-		}
-		RemainingConnectionWindow aWindow = a.remainingConnectionWindow();
-		RemainingConnectionWindow bWindow = b.remainingConnectionWindow();
-		if (aWindow != null && bWindow != null && (aWindow.status() != bWindow.status()
-				|| !java.util.Objects.equals(aWindow.totalSeconds(), bWindow.totalSeconds()))) {
-			differences.add("The remaining connection windows also differ (A: " + remainingWindow(aWindow)
-					+ " B: " + remainingWindow(bWindow) + ").");
-		}
-		if (differences.isEmpty()) return "The WORSENED snapshot does not establish a different risk level or completed deadline outcome for A and B.";
-		return String.join(" ", differences);
+	private static String label(String key) {
+		return "A".equals(key) ? "Scenario A (CS203-DEMO-A)" : "Scenario B (CS203-DEMO-B)";
 	}
 
 	private static ControlledScenarioSnapshot.ShipmentRead find(

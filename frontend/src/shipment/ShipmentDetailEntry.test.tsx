@@ -7,7 +7,9 @@ import { ScenarioApiError } from './scenarioApi';
 import * as scenarioApi from './scenarioApi';
 import * as api from './api';
 import { ShipmentDetailEntry } from './ShipmentDetailEntry';
-import { EPOCH_ID, RESET_EPOCH_ID, SESSION_ID, scenarioEnvelope } from './controlledScenarioTestFixtures';
+import { RESET_EPOCH_ID, SESSION_ID, scenarioEnvelope } from './controlledScenarioTestFixtures';
+
+const SESSION_ID_B = 'c13842ec-12ab-4e86-9b5a-2fcb8bd4f2a1';
 
 const mapLifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }));
 
@@ -110,15 +112,22 @@ beforeEach(() => {
   mapLifecycle.unmounts = 0;
   server = scenarioEnvelope(null);
 
-  vi.mocked(scenarioApi.createScenarioSessionId).mockReturnValue(SESSION_ID);
-  vi.mocked(scenarioApi.createScenarioSession).mockImplementation(async (_token, sessionId) => ({ ...server, sessionId }));
-  vi.mocked(scenarioApi.getScenarioSession).mockImplementation(async () => server);
-  vi.mocked(scenarioApi.startScenarioSession).mockImplementation(async () => { server = scenarioEnvelope('BASELINE'); return server; });
-  vi.mocked(scenarioApi.advanceScenarioSession).mockImplementation(async () => {
-    server = scenarioEnvelope(server.snapshot?.stage === 'BASELINE' ? 'CHANGE' : 'WORSENED');
-    return server;
+  vi.mocked(scenarioApi.createScenarioSessionId).mockReturnValueOnce(SESSION_ID).mockReturnValue(SESSION_ID_B);
+  vi.mocked(scenarioApi.createScenarioSession).mockImplementation(async (_token, sessionId, request) => {
+    if (request.anchorShipmentId === 143) server = scenarioEnvelope(null);
+    return { ...server, sessionId };
   });
-  vi.mocked(scenarioApi.resetScenarioSession).mockImplementation(async () => { server = scenarioEnvelope(null, RESET_EPOCH_ID); return server; });
+  vi.mocked(scenarioApi.getScenarioSession).mockImplementation(async (_token, sessionId) => ({ ...server, sessionId }));
+  vi.mocked(scenarioApi.startScenarioSession).mockImplementation(async (_token, sessionId) => {
+    server = scenarioEnvelope('BASELINE'); return { ...server, sessionId };
+  });
+  vi.mocked(scenarioApi.advanceScenarioSession).mockImplementation(async (_token, sessionId) => {
+    server = scenarioEnvelope(server.snapshot?.stage === 'BASELINE' ? 'CHANGE' : 'WORSENED');
+    return { ...server, sessionId };
+  });
+  vi.mocked(scenarioApi.resetScenarioSession).mockImplementation(async (_token, sessionId) => {
+    server = scenarioEnvelope(null, RESET_EPOCH_ID); return { ...server, sessionId };
+  });
 
   vi.mocked(api.getShipment).mockImplementation(async (_token, id) => anchor(Number(id)));
   vi.mocked(api.getShipmentTracking).mockResolvedValue({
@@ -193,14 +202,19 @@ describe('mounted controlled scenario in shipment details', () => {
     await user.click(screen.getByRole('button', { name: /Scenario B · DEMO-B-PORTFOLIO/ }));
     await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('143'));
     await screen.findByRole('heading', { name: 'DEMO-B-PORTFOLIO' });
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Scenario snapshot facts' })).toHaveTextContent('DEMO-CDG279-Api-B'));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled());
+    expect(screen.queryByRole('region', { name: 'Scenario snapshot facts' })).not.toBeInTheDocument();
+    expect(scenarioApi.createScenarioSession).toHaveBeenCalledTimes(2);
+    expect(scenarioApi.createScenarioSession).toHaveBeenNthCalledWith(
+      2, viewer.token, SESSION_ID_B, { anchorShipmentId: 143 }, expect.anything(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Scenario snapshot facts' })).toHaveTextContent('BASELINE'));
     facts = screen.getByRole('region', { name: 'Scenario snapshot facts' });
-    expect(facts.querySelector('time[datetime="2026-10-02T10:00:00Z"]')).toBeInTheDocument();
-    expect(facts.querySelector('time[datetime="2026-10-01T12:00:00Z"]')).not.toBeInTheDocument();
+    expect(within(facts).getByText('Low')).toBeInTheDocument();
+    expect(within(facts).queryByText('High')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'DEMO-B-PORTFOLIO' })).toBeInTheDocument();
     expect(mapLifecycle.mounts).toBe(controlledMapMounts + 1);
-    expect(scenarioApi.createScenarioSession).toHaveBeenCalledTimes(1);
-    expect(scenarioApi.getScenarioSession).toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Live' }));
     await screen.findByRole('button', { name: 'Enter controlled scenario' });

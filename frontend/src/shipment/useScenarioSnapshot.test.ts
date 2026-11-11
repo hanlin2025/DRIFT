@@ -12,7 +12,7 @@ const sid = 'd5f2390b-d610-4c5d-9b6c-7153f8a89fbf';
 const otherSid = '0915b4a8-c0f1-4fb0-9000-7153f8a89fbf';
 const epoch = '74dab1c6-1d4b-4889-8dde-0b31986fed28';
 const newEpoch = '4618e3c7-2006-4901-a211-01fbbaf8186c';
-const hintKey = 'drift.scenario.v1:7:11';
+const hintKey = 'drift.scenario.v1:7:11:142';
 const options: UseScenarioSnapshotOptions = {
   viewer: { id: 7, token: 'token', company: { id: 11, code: 'DEMO', name: 'Demo' } }, anchorShipmentId: 142,
 };
@@ -93,16 +93,21 @@ describe('session identity and recovery', () => {
     expect(result.current.session?.state).toBe('UNSTARTED');
     expect(sessionStorage.getItem(hintKey)).toBe(sid);
   });
-  it('recovers the same session by GET on remount, including B navigation', async () => {
+  it('recovers the same session on remount and keeps B progression independent', async () => {
     server = envelope('CHANGE');
     sessionStorage.setItem(hintKey, sid);
     const first = await ready();
     first.unmount();
+    server = envelope();
+    vi.mocked(api.createScenarioSessionId).mockReturnValue(otherSid);
     const second = await ready({ ...options, anchorShipmentId: 143 });
-    expect(second.result.current.snapshot?.stage).toBe('CHANGE');
+    expect(second.result.current.snapshot).toBeNull();
     expect(second.result.current.binding?.shipmentId).toBe(143);
-    expect(api.createScenarioSession).not.toHaveBeenCalled();
-    expect(api.getScenarioSession).toHaveBeenCalledTimes(2);
+    expect(api.getScenarioSession).toHaveBeenCalledTimes(1);
+    expect(api.createScenarioSession).toHaveBeenCalledTimes(1);
+    expect(api.createScenarioSession).toHaveBeenCalledWith('token', otherSid, { anchorShipmentId: 143 }, { signal: expect.any(AbortSignal) });
+    expect(sessionStorage.getItem(hintKey)).toBe(sid);
+    expect(sessionStorage.getItem('drift.scenario.v1:7:11:143')).toBe(otherSid);
   });
   it('ignores malformed UUID hints', async () => {
     sessionStorage.setItem(hintKey, '{"token":"untrusted"}');
@@ -349,7 +354,8 @@ describe('request and context fences', () => {
     await act(() => oldCallback());
     expect(api.startScenarioSession).not.toHaveBeenCalled();
     if (nextProps.viewer) {
-      const id = nextProps.viewer.id !== 7 || nextProps.viewer.company?.id !== 11 ? otherSid : sid;
+      const id = nextProps.viewer.id !== 7 || nextProps.viewer.company?.id !== 11
+        || nextProps.anchorShipmentId !== options.anchorShipmentId ? otherSid : sid;
       await act(async () => { replacement.resolve(envelope(undefined, epoch, id)); await replacement.promise; });
       expect(result.current.session?.state).toBe('UNSTARTED');
       expect(result.current.binding?.shipmentId).toBe(nextProps.anchorShipmentId);
@@ -373,7 +379,8 @@ describe('request and context fences', () => {
     await act(async () => { old.resolve(envelope('WORSENED')); await pending; });
     expect(result.current.snapshot).toBeNull();
     if (nextProps.viewer) {
-      const id = nextProps.viewer.id !== 7 || nextProps.viewer.company?.id !== 11 ? otherSid : sid;
+      const id = nextProps.viewer.id !== 7 || nextProps.viewer.company?.id !== 11
+        || nextProps.anchorShipmentId !== options.anchorShipmentId ? otherSid : sid;
       await act(async () => { replacement.resolve(envelope(undefined, epoch, id)); await replacement.promise; });
       expect(result.current.session?.state).toBe('UNSTARTED');
     } else expect(result.current.status).toBe('idle');
@@ -381,6 +388,7 @@ describe('request and context fences', () => {
   it('fences A→B→A and StrictMode effect replays', async () => {
     const old = deferred<api.ScenarioSessionEnvelope>();
     vi.mocked(api.createScenarioSession).mockReturnValueOnce(old.promise);
+    vi.mocked(api.createScenarioSessionId).mockReturnValueOnce(sid).mockReturnValue(otherSid);
     const { result, rerender } = renderHook(useScenarioSnapshot, { initialProps: options, reactStrictMode: true });
     await waitFor(() => expect(result.current.status).toBe('ready'));
     rerender({ ...options, anchorShipmentId: 143 });
@@ -389,6 +397,8 @@ describe('request and context fences', () => {
     await act(async () => { old.resolve(envelope('WORSENED')); await old.promise; });
     expect(result.current.session?.state).toBe('UNSTARTED');
     expect(result.current.binding?.scenarioShipmentKey).toBe('A');
+    expect(sessionStorage.getItem(hintKey)).toBe(sid);
+    expect(sessionStorage.getItem('drift.scenario.v1:7:11:143')).toBe(otherSid);
   });
 });
 

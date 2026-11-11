@@ -57,6 +57,18 @@ function writeHint(key: string, value: string | null) {
     else sessionStorage.setItem(key, value);
   } catch { /* Storage denial must not prevent an in-memory session. Never persist facts or tokens. */ }
 }
+function clearOwnerHints(ownerPrefix: string) {
+  try {
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith(ownerPrefix)) sessionStorage.removeItem(key);
+    }
+  } catch { /* Storage denial must not affect scenario ownership or API authorization. */ }
+}
+function clearLegacyOwnerHint(ownerPrefix: string) {
+  // Previous versions stored one session UUID under the owner key without a shipment suffix.
+  writeHint(ownerPrefix.slice(0, -1), null);
+}
 function current(rt: Runtime, ticket: Ticket): boolean {
   return rt.live() && rt.generation === ticket.generation;
 }
@@ -232,14 +244,19 @@ export function useScenarioSnapshot({ viewer, anchorShipmentId }: UseScenarioSna
     companyId: viewer?.company?.id, anchor: anchorShipmentId }),
   [viewer?.token, viewer?.id, viewer?.company?.id, anchorShipmentId]);
   const runtime = useRef<Runtime | null>(null);
-  const previousStorageKey = useRef<string | null>(null);
+  const previousOwnerPrefix = useRef<string | null>(null);
   const [view, setView] = useState<View | null>(null);
 
   useLayoutEffect(() => {
-    const storageKey = scope.userId && scope.companyId
-      ? `drift.scenario.v1:${scope.userId}:${scope.companyId}` : null;
-    if (previousStorageKey.current && previousStorageKey.current !== storageKey) writeHint(previousStorageKey.current, null);
-    previousStorageKey.current = storageKey;
+    const ownerPrefix = scope.userId && scope.companyId
+      ? `drift.scenario.v1:${scope.userId}:${scope.companyId}:` : null;
+    const storageKey = ownerPrefix && scope.anchor ? `${ownerPrefix}${scope.anchor}` : null;
+    if (previousOwnerPrefix.current && previousOwnerPrefix.current !== ownerPrefix) {
+      clearOwnerHints(previousOwnerPrefix.current);
+      clearLegacyOwnerHint(previousOwnerPrefix.current);
+    }
+    previousOwnerPrefix.current = ownerPrefix;
+    if (ownerPrefix) clearLegacyOwnerHint(ownerPrefix);
     if (!storageKey || !scope.anchor || !Number.isSafeInteger(scope.anchor) || scope.anchor <= 0) {
       runtime.current = null;
       return;

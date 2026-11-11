@@ -1,6 +1,6 @@
 # CDG-371 controlled-scenario WORSENED email
 
-This feature sends a synthetic demonstration email only when an authorized controlled-scenario session successfully advances from CHANGE to WORSENED. It is independent of shipment risk-alert evaluation, recipient resolution, delivery records, and activation generations. It does not update persistent shipment risk state or create real shipment risk transitions.
+This feature sends a synthetic demonstration email only when an authorized controlled-scenario session successfully advances from CHANGE to WORSENED. Scenario A and Scenario B use separate sessions keyed by the configured anchor shipment, so either scenario can progress while the other remains at its own stage. A's WORSENED transition sends an A-only message; B's WORSENED transition sends a B-only message. It is independent of shipment risk-alert evaluation, recipient resolution, delivery records, and activation generations. It does not update persistent shipment risk state or create real shipment risk transitions.
 
 The email uses the existing Spring `JavaMailSender` and shared `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_FROM_ADDRESS` configuration. It sends one individual message per configured recipient, never to a request-provided address. Each link opens the corresponding configured shipment detail page, where assessment generation remains a user action.
 
@@ -24,7 +24,7 @@ The recipient variable is a comma-separated, validated, case-insensitively dedup
 
 ## Transition, reset, and delivery semantics
 
-The backend creates the notification event only from the committed NEXT command that moves the session to WORSENED. BASELINE, CHANGE, GET, repeated reads, AI assessment requests, duplicate idempotency-key replays, and invalid/unauthorized commands do not enqueue mail. Reset creates a new epoch and permits one notification for a later WORSENED transition in that epoch. The existing process-local session lifetime and command limits bound this behavior.
+The backend creates the notification event only from the committed NEXT command that moves the selected session to WORSENED. The existing `anchorShipmentId` create contract selects Scenario A or B; the frontend retains a separate session UUID per anchor shipment. BASELINE, CHANGE, GET, repeated reads, AI assessment requests, duplicate idempotency-key replays, and invalid/unauthorized commands do not enqueue mail. Reset creates a new epoch and permits one notification for a later WORSENED transition in that anchored session. The existing process-local session lifetime and command limits bound this behavior.
 
 SMTP submission runs after transaction commit and after the scenario session monitor is released. A failed submission leaves the scenario WORSENED and reports `FAILED`; partial allowlist delivery reports `PARTIAL_FAILURE`. Failures are logged with session/revision, recipient ordinal, and exception class only. There is no automatic retry because SMTP can accept a message before the caller observes a timeout, so a retry could duplicate it. This is at-most-one submission attempt per recipient per in-memory session epoch, not an exactly-once SMTP guarantee. The session and its delivery status are process-local; a restart loses them, consistent with the controlled scenario's existing in-memory lifecycle.
 

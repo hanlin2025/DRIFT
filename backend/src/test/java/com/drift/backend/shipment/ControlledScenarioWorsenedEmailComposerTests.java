@@ -20,11 +20,13 @@ class ControlledScenarioWorsenedEmailComposerTests {
 		var b = shipment("B", 42L, null,
 				new DelayComparison(null, DelayComparison.Reason.MISSING_PREDICTION,
 						"The estimate is unavailable.", null, null, null), null);
-		SimpleMailMessageText rendered = render(a, b);
-		assertThat(rendered.body()).contains("Scenario A (CS203-DEMO-A)", "HIGH", "Unknown/unavailable — MISSING_CONSTRAINT",
-				"Scenario B (CS203-DEMO-B)", "Unknown in the snapshot", "MISSING_PREDICTION",
+		SimpleMailMessageText renderedA = render("A", a, b);
+		assertThat(renderedA.body()).contains("Scenario A (CS203-DEMO-A)", "HIGH", "Unknown/unavailable — MISSING_CONSTRAINT",
 				"Remaining connection window: Unavailable", "No real maritime disruption");
-		assertThat(rendered.body()).doesNotContain("overrun:", "time before the deadline:");
+		assertThat(renderedA.body()).doesNotContain("Scenario B", "overrun:", "time before the deadline:");
+		SimpleMailMessageText renderedB = render("B", a, b);
+		assertThat(renderedB.body()).contains("Scenario B (CS203-DEMO-B)", "Unknown in the snapshot", "MISSING_PREDICTION");
+		assertThat(renderedB.body()).doesNotContain("Scenario A", "overrun:", "time before the deadline:");
 	}
 
 	@Test
@@ -38,18 +40,24 @@ class ControlledScenarioWorsenedEmailComposerTests {
 				new DelayComparison(DelayComparison.Outcome.NO_PREDICTED_IMPACT, null, "No impact.", estimate,
 						estimate.plusHours(2), "Singapore"),
 				new RemainingConnectionWindow(RemainingConnectionWindow.Status.AVAILABLE, "6 hours", 21_600L, null, null));
-		SimpleMailMessageText rendered = render(a, b);
-		assertThat(rendered.body()).contains("Backend-calculated connection risk: HIGH", "Backend-calculated connection risk: MEDIUM", "EXCEEDS_DEADLINE", "20 hours",
-				"NO_PREDICTED_IMPACT", "2 hours", "Remaining connection window: AVAILABLE — 4 hours",
-				"Remaining connection window: AVAILABLE — 6 hours", "Scenario A is HIGH while Scenario B is MEDIUM");
+		SimpleMailMessageText renderedA = render("A", a, b);
+		assertThat(renderedA.subject()).contains("Scenario A (CS203-DEMO-A)");
+		assertThat(renderedA.body()).contains("Backend-calculated connection risk: HIGH", "EXCEEDS_DEADLINE", "20 hours",
+				"Remaining connection window: AVAILABLE — 4 hours");
+		assertThat(renderedA.body()).doesNotContain("Scenario B", "NO_PREDICTED_IMPACT", "6 hours");
+		SimpleMailMessageText renderedB = render("B", a, b);
+		assertThat(renderedB.subject()).contains("Scenario B (CS203-DEMO-B)");
+		assertThat(renderedB.body()).contains("Backend-calculated connection risk: MEDIUM", "NO_PREDICTED_IMPACT", "2 hours",
+				"Remaining connection window: AVAILABLE — 6 hours");
+		assertThat(renderedB.body()).doesNotContain("Scenario A", "EXCEEDS_DEADLINE", "20 hours");
 	}
 
-	private SimpleMailMessageText render(ControlledScenarioSnapshot.ShipmentRead a,
+	private SimpleMailMessageText render(String key, ControlledScenarioSnapshot.ShipmentRead a,
 			ControlledScenarioSnapshot.ShipmentRead b) {
 		ControlledScenarioSnapshot snapshot = new ControlledScenarioSnapshot(UUID.randomUUID(), UUID.randomUUID(), 3,
 				ControlledScenarioStage.WORSENED, 2, 3, "WORSENED", Instant.EPOCH, Instant.EPOCH,
 				List.of(b, a), List.of(), null);
-		var message = composer.compose(snapshot, "noreply@example.test", "approved@example.test", "https://drift.example.test");
+		var message = composer.compose(snapshot, key, "noreply@example.test", "approved@example.test", "https://drift.example.test");
 		return new SimpleMailMessageText(message.getSubject(), message.getText());
 	}
 
