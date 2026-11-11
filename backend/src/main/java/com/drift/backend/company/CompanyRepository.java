@@ -13,6 +13,10 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
 
 	Optional<Company> findByCode(String code);
 
+	@org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT company FROM Company company WHERE company.id = :id")
+	Optional<Company> findForSignupReplacement(@Param("id") Long id);
+
 	@Query("SELECT company FROM Company company WHERE UPPER(company.code) = :code")
 	Optional<Company> findByNormalisedCode(@Param("code") String code);
 

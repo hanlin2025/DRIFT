@@ -14,6 +14,13 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 
 	boolean existsByCompany_Id(Long companyId);
 
+	long countByCompany_Id(Long companyId);
+
+	/** Locks the account so two signups for the same pending email are applied one after the other. */
+	@org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT account FROM UserAccount account WHERE LOWER(account.email) = LOWER(:email)")
+	Optional<UserAccount> findForSignupReplacement(@Param("email") String email);
+
 	@EntityGraph(attributePaths = "company")
 	Optional<UserAccount> findByEmailIgnoreCase(String email);
 
@@ -31,7 +38,6 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
 			FROM UserAccount account WHERE account.id = :id
 			""")
 	Optional<SessionState> findSessionStateById(@Param("id") Long id);
-
 	@EntityGraph(attributePaths = { "company", "role" })
 	@Query("SELECT account FROM UserAccount account WHERE account.id = :id")
 	Optional<UserAccount> findForPermissionCheck(@Param("id") Long id);

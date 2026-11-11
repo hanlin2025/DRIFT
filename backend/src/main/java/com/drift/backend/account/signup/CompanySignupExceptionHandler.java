@@ -44,6 +44,11 @@ public class CompanySignupExceptionHandler {
 		return respond(HttpStatus.BAD_REQUEST, ex.getMessage(), Map.of("password", ex.getMessage()));
 	}
 
+	@ExceptionHandler(SignupRateLimitException.class)
+	public ResponseEntity<Map<String, Object>> handleRateLimit(SignupRateLimitException ex) {
+		return respond(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage(), Map.of());
+	}
+
 	@ExceptionHandler(DuplicateOrganisationException.class)
 	public ResponseEntity<Map<String, Object>> handleDuplicate(DuplicateOrganisationException ex) {
 		return respond(HttpStatus.CONFLICT, ex.getMessage(), Map.of("companyCode", ex.getMessage()));

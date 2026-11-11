@@ -3,7 +3,7 @@ import { type Role } from '../session/session';
 
 export type AdminOrganisation = { id: number; code: string; name: string };
 export type AdminRole = { code: Role; label: string };
-export type AccountStatus = 'ACTIVE' | 'REMOVED';
+export type AccountStatus = 'ACTIVE' | 'REMOVED' | 'PENDING_VERIFICATION';
 export type AdminUser = {
   id: number;
   fullName: string;
@@ -35,7 +35,7 @@ export type AccountStatusAudit = {
 
 const UNEXPECTED = 'DRIFT returned an unexpected response. Please try again shortly.';
 const ROLES: Role[] = ['IMPORTER', 'FREIGHT_FORWARDER', 'ADMIN', 'LOGISTICS_MANAGER'];
-const STATUSES: AccountStatus[] = ['ACTIVE', 'REMOVED'];
+const STATUSES: AccountStatus[] = ['ACTIVE', 'REMOVED', 'PENDING_VERIFICATION'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

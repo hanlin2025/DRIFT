@@ -4,7 +4,8 @@ export type Registration = { fullName: string; email: string; password: string; 
 export type Account = { id: number; fullName: string; email: string; role: Role };
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly fields: Record<string, string> = {}) {
+  /** `errorCode` is the machine-readable `code` marker from the server, such as `EMAIL_NOT_VERIFIED`, when it sends one. */
+  constructor(message: string, readonly status: number, readonly fields: Record<string, string> = {}, readonly errorCode?: string) {
     super(message);
   }
 }
@@ -41,7 +42,8 @@ export async function post(path: string, body: unknown): Promise<unknown> {
     if (isRecord(data) && isRecord(data.errors)) {
       for (const [key, value] of Object.entries(data.errors)) if (typeof value === 'string') fields[key] = value;
     }
-    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields);
+    throw new ApiError(isRecord(data) && typeof data.message === 'string' ? data.message : 'Your request could not be completed.', response.status, fields,
+      isRecord(data) && typeof data.code === 'string' ? data.code : undefined);
   }
   return data;
 }
@@ -62,4 +64,23 @@ export async function registerAccount(registration: Registration): Promise<Accou
     throw new ApiError('We could not confirm your registration. Check with your administrator before trying again.', 502);
   }
   return { id: data.id, email: data.email, fullName: data.fullName, role: data.role };
+}
+
+export type CompanySignup = { companyCode: string; companyName: string; fullName: string; email: string; password: string };
+
+function messageOf(data: unknown, fallback: string): { message: string } {
+  if (!isRecord(data) || typeof data.message !== 'string') throw new ApiError(fallback, 502);
+  return { message: data.message };
+}
+
+export async function registerCompany(input: CompanySignup): Promise<{ message: string }> {
+  return messageOf(await post('/api/register/company', input), 'We could not confirm your signup. Please try again.');
+}
+
+export async function verifyEmail(token: string): Promise<{ message: string }> {
+  return messageOf(await post('/api/auth/verify-email', { token }), 'We could not confirm your email. Please try again.');
+}
+
+export async function resendVerification(email: string): Promise<{ message: string }> {
+  return messageOf(await post('/api/auth/resend-verification', { email }), 'We could not send a new link. Please try again.');
 }
