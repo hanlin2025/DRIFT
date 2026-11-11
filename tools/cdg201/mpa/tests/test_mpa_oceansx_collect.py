@@ -57,6 +57,14 @@ class TestResponseClassification(unittest.TestCase):
         self.assertEqual(manifest["http_status"], 200)
         self.assertTrue(manifest["schema_valid"])
 
+    def test_expected_poll_fails_fast_when_feed_path_is_not_configured(self):
+        os.environ["MPA_DUE_TO_ARRIVE_PATH"] = ""
+        with tempfile.TemporaryDirectory() as directory:
+            sys.argv = ["collector", "--feed-group", "expected", "--output", directory]
+            with self.assertRaises(SystemExit) as error:
+                collector.main()
+        self.assertIn("MPA_DUE_TO_ARRIVE_PATH is required", str(error.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
