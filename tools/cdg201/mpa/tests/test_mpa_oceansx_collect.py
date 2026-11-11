@@ -73,9 +73,10 @@ class TestResponseClassification(unittest.TestCase):
             sys.argv = ["collector", "--start", "2026-10-26", "--days", "3", "--feed-group", "expected", "--output", directory]
             collector.main()
             manifests = list(Path(directory).glob("*.manifest.json"))
+            manifest = json.loads(manifests[0].read_text())
         self.assertEqual(len(calls), 1)
         self.assertEqual(len(manifests), 1)
-        self.assertEqual(json.loads(manifests[0].read_text())["error"], "HTTPError:429")
+        self.assertEqual(manifest["error"], "HTTPError:429")
 
 
 if __name__ == "__main__":
