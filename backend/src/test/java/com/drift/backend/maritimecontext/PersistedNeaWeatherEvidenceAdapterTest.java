@@ -117,7 +117,7 @@ class PersistedNeaWeatherEvidenceAdapterTest {
 		return new MaritimeSnapshotEvidenceReader.Snapshot("NEA_WEATHER", "nea:two_hr_forecast:" + area,
 				"fingerprint-" + area + sourceAt, "nea:two_hr_forecast:" + area + ":forecast.json", sourceAt,
 				sourceAt, Instant.parse(retrievedAt == null ? "2026-11-11T00:30:00Z" : retrievedAt), mode, freshness,
-				area, Instant.parse("2026-11-11T00:00:00Z"), validUntil, null, "Cloudy", null, null, null);
+				area, Instant.parse("2026-11-11T00:00:00Z"), validUntil, null, "Cloudy", null, null, null, null);
 	}
 
 	private static ShipmentDetailResponse shipment(String port) {

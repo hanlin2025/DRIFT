@@ -10,6 +10,8 @@ The worker runs each collector in its own temporary directory. It reads successf
 
 The saved OCEANS-X due-arrival schema exposes vessel IMO/call sign, route and expected arrival time, but no voyage or port-call identifier. The collector therefore keys an arrival by IMO, call sign (or vessel name fallback), route, and Singapore-local scheduled arrival date. This separates same-vessel/same-route calls on different dates and groups same-day ETA revisions; because the source supplies no durable call ID, a revision that crosses a date boundary is conservatively recorded under a new source identity.
 
+Ordinary shipment context reads those persisted MPA heads through `PersistedMpaEtaEvidenceAdapter`. It reuses `MaritimeSnapshotShipmentMatcher` for IMO, location and effective-window matching, and it keeps the collector's `arrival=...;departure=...;port=...` value instead of parsing it as a curated revision timestamp. The evidence id is `mpa-eta:{sourceIdentity}:{contentFingerprint}`. The snapshot reader returns only the current head, so a head retrieved after the assessment cutoff is omitted. That does not reconstruct an earlier superseded version. A repeated retrieval with the same fingerprint stays the same evidence id. A genuine revision has a new fingerprint and therefore a new id. An official location code such as `PEBGA` is not treated as the shipment port unless the existing matcher already calls it compatible.
+
 ## Runtime configuration
 
 Keep collection disabled by default. Enable it only on one persistent backend worker with the repository tools and Python available:

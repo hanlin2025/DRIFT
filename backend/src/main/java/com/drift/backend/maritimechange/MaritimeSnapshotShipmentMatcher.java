@@ -28,10 +28,10 @@ public class MaritimeSnapshotShipmentMatcher {
 	static final String MOTHER = "MOTHER";
 	static final String FEEDER = "FEEDER";
 	static final String NONE = "NONE";
-	static final String INCOMPATIBLE = "INCOMPATIBLE";
-	static final String OUT_OF_WINDOW = "OUT_OF_WINDOW";
-	static final String OUTSIDE_REGION = "OUTSIDE_REGION";
-	static final String NOT_ASSOCIATED = "NOT_ASSOCIATED";
+	public static final String INCOMPATIBLE = "INCOMPATIBLE";
+	public static final String OUT_OF_WINDOW = "OUT_OF_WINDOW";
+	public static final String OUTSIDE_REGION = "OUTSIDE_REGION";
+	public static final String NOT_ASSOCIATED = "NOT_ASSOCIATED";
 	static final String AMBIGUOUS_VESSEL = "AMBIGUOUS_VESSEL";
 	static final String MISSING_SCHEDULE = "MISSING_SCHEDULE";
 
@@ -56,6 +56,11 @@ public class MaritimeSnapshotShipmentMatcher {
 		this.shipments = shipments;
 	}
 
+	/** Matcher for one shipment's association. It does not query the visible-shipment list. */
+	public static MaritimeSnapshotShipmentMatcher forSingleShipmentAssociation() {
+		return new MaritimeSnapshotShipmentMatcher(companyId -> List.of());
+	}
+
 	@Transactional
 	public MaritimeShipmentMatch match(long viewerCompanyId, MaritimeSnapshotChange change) {
 		if (change == null) {
@@ -67,6 +72,24 @@ public class MaritimeSnapshotShipmentMatcher {
 	MaritimeShipmentMatch match(long viewerCompanyId, MaritimeSnapshotChange change, List<ShipmentMatchFacts> visibleFacts) {
 		return matchFacts(viewerCompanyId, change, visibleFacts);
 	}
+
+	/**
+	 * Applies the same IMO, location and effective-window decision used for timeline matching
+	 * to one shipment. Callers use this so ordinary evidence does not grow a second matcher.
+	 */
+	public EvidenceAssociation associate(MaritimeSnapshotChange change, String transshipmentPort, String motherVesselImo,
+			String feederVesselImo, OffsetDateTime plannedMotherArrivalAt, OffsetDateTime plannedFeederDepartureAt) {
+		if (change == null) {
+			throw new IllegalArgumentException("Change is required");
+		}
+		Decision decision = decide(change, new ShipmentMatchFacts(0L, 0L, transshipmentPort, motherVesselImo,
+				feederVesselImo, plannedMotherArrivalAt, plannedFeederDepartureAt));
+		return new EvidenceAssociation(decision.candidate(), decision.role(), decision.association(), decision.activity(),
+				decision.location(), decision.time(), decision.reason());
+	}
+
+	public record EvidenceAssociation(boolean included, String role, String association, String activity, String location,
+			String time, String exclusionReason) { }
 
 	MaritimeShipmentMatch matchFacts(long viewerCompanyId, MaritimeSnapshotChange change, List<ShipmentMatchFacts> facts) {
 		if (change == null) {

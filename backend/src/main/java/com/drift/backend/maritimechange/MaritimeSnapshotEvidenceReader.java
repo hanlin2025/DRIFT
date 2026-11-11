@@ -22,11 +22,11 @@ public class MaritimeSnapshotEvidenceReader {
 				row.getObservedAt(), row.getRetrievedAtUtc(), row.getSourceMode(), row.getFreshness(),
 				row.getLocation(), row.getEffectiveFrom(), row.getEffectiveUntil(), row.getPreviousValue(),
 				row.getCurrentValue(), row.getActivityCompatibility(), row.getLocationCompatibility(),
-				row.getTimeCompatibility())).toList();
+				row.getTimeCompatibility(), row.getVesselImo())).toList();
 	}
 
 	public record Snapshot(String sourceType, String sourceIdentity, String contentFingerprint, String provenance, String sourceEventAt,
 			String observedAt, Instant retrievedAtUtc, String sourceMode, String freshness, String location,
 			Instant effectiveFrom, Instant effectiveUntil, String previousValue, String currentValue,
-			String activityCompatibility, String locationCompatibility, String timeCompatibility) { }
+			String activityCompatibility, String locationCompatibility, String timeCompatibility, String vesselImo) { }
 }
