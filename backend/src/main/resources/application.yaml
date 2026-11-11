@@ -147,6 +147,9 @@ app:
     # Exact curated evidence IDs require their own documented source-use approval. A source
     # type allowlist alone is intentionally insufficient for external transmission.
     authentic-retrospective-evidence-ids-approved: ${MARITIME_AI_AUTHENTIC_RETROSPECTIVE_EVIDENCE_IDS_APPROVED:}
+    # Exact live evidence IDs, empty unless a project owner approves a collected fingerprint.
+    # A retrospective ID does not approve a live record. A new fingerprint needs its own entry.
+    live-evidence-ids-approved: ${MARITIME_AI_LIVE_EVIDENCE_IDS_APPROVED:}
     # Explicit bounds apply to every configured provider request.  The feature
     # remains disabled unless both this flag and provider configuration are set.
     timeout-seconds: ${MARITIME_AI_TIMEOUT_SECONDS:20}
