@@ -284,6 +284,10 @@ describe('CDG-246 maritime-context API', () => {
     expect(await getMaritimeContext('token', '9')).toEqual(wire);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+  it('preserves LIVE provenance for persisted source context and NEA evidence', () => {
+    const wire = { ...contextWire(), sourceMode: 'LIVE', evidence: [{ ...evidence, sourceType: 'NEA_WEATHER', sourceMode: 'LIVE' }] };
+    expect(decodeMaritimeContext(wire)).toEqual(wire);
+  });
   const badContextFields: [string, (wire: any) => void][] = [
     ['unknown source', v => { v.evidence[0].sourceType = 'INVENTED_SOURCE'; }],
     ['unknown mode', v => { v.evidence[0].sourceMode = 'AUTHENTIC'; }],
