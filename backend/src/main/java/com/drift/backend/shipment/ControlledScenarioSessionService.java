@@ -5,14 +5,17 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,21 +59,32 @@ public class ControlledScenarioSessionService {
 	private final MaritimeContextService maritimeContext;
 	private final ControlledScenarioProperties properties;
 	private final Clock clock;
+	private final ControlledScenarioEmailProperties emailProperties;
+	private final ApplicationEventPublisher events;
 	private final ConcurrentMap<UUID, Session> sessions = new ConcurrentHashMap<>();
 
 	@Autowired
 	public ControlledScenarioSessionService(UserAccountRepository users, ShipmentService shipmentService,
 			ShipmentRepository shipmentRepository, ShipmentConnectionRisk connectionRisk,
 			MaritimeContextService maritimeContext, ControlledScenarioProperties properties,
+			ControlledScenarioEmailProperties emailProperties, ApplicationEventPublisher events,
 			ObjectProvider<Clock> clocks) {
 		this(users, shipmentService, shipmentRepository, connectionRisk, maritimeContext, properties,
-				clocks.getIfAvailable(Clock::systemUTC), SyntheticDisruptionScenarioFixture.create("Api"));
+				clocks.getIfAvailable(Clock::systemUTC), SyntheticDisruptionScenarioFixture.create("Api"), emailProperties, events);
 	}
 
 	ControlledScenarioSessionService(UserAccountRepository users, ShipmentService shipmentService,
 			ShipmentRepository shipmentRepository, ShipmentConnectionRisk connectionRisk,
 			MaritimeContextService maritimeContext, ControlledScenarioProperties properties, Clock clock,
 			Scenario scenario) {
+		this(users, shipmentService, shipmentRepository, connectionRisk, maritimeContext, properties, clock, scenario,
+				new ControlledScenarioEmailProperties(), event -> { });
+	}
+
+	ControlledScenarioSessionService(UserAccountRepository users, ShipmentService shipmentService,
+			ShipmentRepository shipmentRepository, ShipmentConnectionRisk connectionRisk,
+			MaritimeContextService maritimeContext, ControlledScenarioProperties properties, Clock clock,
+			Scenario scenario, ControlledScenarioEmailProperties emailProperties, ApplicationEventPublisher events) {
 		if (scenario == null) throw new IllegalStateException("The controlled scenario fixture is unavailable.");
 		this.scenario = scenario.validate();
 		if (this.scenario.shipments().size() != 2 || this.scenario.stages().size() != 3) {
@@ -83,6 +97,8 @@ public class ControlledScenarioSessionService {
 		this.maritimeContext = Objects.requireNonNull(maritimeContext);
 		this.properties = Objects.requireNonNull(properties);
 		this.clock = Objects.requireNonNull(clock);
+		this.emailProperties = Objects.requireNonNull(emailProperties);
+		this.events = Objects.requireNonNull(events);
 	}
 
 	/** Creates an unstarted session anchored to one configured portfolio shipment. */
@@ -140,7 +156,8 @@ public class ControlledScenarioSessionService {
 
 	public ControlledScenarioSessionResponse next(AuthenticatedUser principal, UUID sessionId,
 			ControlledScenarioCommandRequest request, String commandKey) {
-		return command(principal, sessionId, request, commandKey, "NEXT", session -> {
+		AtomicReference<ControlledScenarioWorsenedEvent> triggered = new AtomicReference<>();
+		ControlledScenarioSessionResponse response = command(principal, sessionId, request, commandKey, "NEXT", session -> {
 			if (session.state == ControlledScenarioSessionState.UNSTARTED) {
 				throw conflict("SCENARIO_NOT_STARTED", "Start the scenario before advancing it.");
 			}
@@ -155,8 +172,45 @@ public class ControlledScenarioSessionService {
 			session.state = nextOrder == scenario.stages().size() - 1
 					? ControlledScenarioSessionState.COMPLETE : ControlledScenarioSessionState.ACTIVE;
 			session.snapshot = snapshot;
+			if (nextOrder == 2) {
+				ControlledScenarioEmailStatus status = !emailProperties.isEnabled()
+						? ControlledScenarioEmailStatus.DISABLED
+						: emailProperties.approvedRecipients().isEmpty()
+								? ControlledScenarioEmailStatus.NO_APPROVED_RECIPIENTS
+								: ControlledScenarioEmailStatus.SUBMISSION_PENDING;
+				session.emailSubmissions.put(session.epochId, new EmailSubmission(revision, status));
+				if (status == ControlledScenarioEmailStatus.SUBMISSION_PENDING) {
+					triggered.set(new ControlledScenarioWorsenedEvent(sessionId, session.epochId, revision, snapshot));
+				}
+			}
 			return response(sessionId, session);
 		});
+		ControlledScenarioWorsenedEvent pending = triggered.get();
+		if (pending != null) events.publishEvent(pending);
+		return response;
+	}
+
+	boolean claimEmailSubmission(UUID sessionId, UUID epochId, long revision) {
+		Session session = sessions.get(sessionId);
+		if (session == null) return false;
+		synchronized (session) {
+			EmailSubmission current = session.emailSubmissions.get(epochId);
+			if (current == null || current.revision() != revision
+					|| current.status() != ControlledScenarioEmailStatus.SUBMISSION_PENDING) return false;
+			session.emailSubmissions.put(epochId, new EmailSubmission(revision, ControlledScenarioEmailStatus.SUBMITTING));
+			return true;
+		}
+	}
+
+	void recordEmailSubmissionOutcome(UUID sessionId, UUID epochId, long revision, ControlledScenarioEmailStatus status) {
+		Session session = sessions.get(sessionId);
+		if (session == null) return;
+		synchronized (session) {
+			EmailSubmission current = session.emailSubmissions.get(epochId);
+			if (current != null && current.revision() == revision && current.status() == ControlledScenarioEmailStatus.SUBMITTING) {
+				session.emailSubmissions.put(epochId, new EmailSubmission(revision, status));
+			}
+		}
 	}
 
 	public ControlledScenarioSessionResponse reset(AuthenticatedUser principal, UUID sessionId,
@@ -311,7 +365,8 @@ public class ControlledScenarioSessionService {
 		return new ControlledScenarioSessionResponse(API_VERSION, sessionId, scenario.scenarioId(),
 				scenario.contractVersion(), session.state, session.epochId, session.revision,
 				new ControlledScenarioCapabilities(true, canStart, canAdvance, canReset, false),
-				session.shipments, session.snapshot);
+			session.shipments, session.snapshot, session.emailSubmissions.containsKey(session.epochId)
+				? session.emailSubmissions.get(session.epochId).status() : ControlledScenarioEmailStatus.NOT_TRIGGERED);
 	}
 
 	private ControlledScenarioSnapshot createSnapshot(Session session, int stageOrder, long revision) {
@@ -368,6 +423,7 @@ public class ControlledScenarioSessionService {
 		private final Long anchorShipmentId;
 		private final List<ShipmentBinding> shipments;
 		private final Map<String, CommandOutcome> commandResults = new java.util.LinkedHashMap<>();
+		private final Map<UUID, EmailSubmission> emailSubmissions = new LinkedHashMap<>();
 		private UUID epochId = UUID.randomUUID();
 		private long revision;
 		private int stageOrder = -1;
@@ -384,6 +440,8 @@ public class ControlledScenarioSessionService {
 			this.lastAccessedAt = createdAt;
 		}
 	}
+
+	private record EmailSubmission(long revision, ControlledScenarioEmailStatus status) { }
 
 	private record CommandOutcome(String fingerprint, ControlledScenarioSessionResponse response,
 			String conflictCode, String conflictMessage) {

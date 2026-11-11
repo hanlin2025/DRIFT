@@ -14,7 +14,8 @@ public record ControlledScenarioSessionResponse(
 		long revision,
 		ControlledScenarioCapabilities capabilities,
 		List<ShipmentBinding> shipments,
-		ControlledScenarioSnapshot snapshot) {
+		ControlledScenarioSnapshot snapshot,
+		ControlledScenarioEmailStatus emailNotificationStatus) {
 
 	public ControlledScenarioSessionResponse {
 		shipments = List.copyOf(shipments);

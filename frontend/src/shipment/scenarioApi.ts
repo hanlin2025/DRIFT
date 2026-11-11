@@ -74,6 +74,7 @@ type ScenarioSessionMetadata = Readonly<{
   revision: number;
   capabilities: ScenarioCapabilities;
   shipments: readonly ScenarioShipmentBinding[];
+  emailNotificationStatus?: 'NOT_TRIGGERED' | 'SUBMISSION_PENDING' | 'SUBMITTING' | 'SUBMITTED' | 'FAILED' | 'PARTIAL_FAILURE' | 'DISABLED' | 'NO_APPROVED_RECIPIENTS';
 }>;
 
 export type ScenarioSessionEnvelope = ScenarioSessionMetadata & (
@@ -314,7 +315,8 @@ function isSession(value: unknown): value is ScenarioSessionEnvelope {
     || !['canRead', 'canStart', 'canAdvance', 'canReset'].every(key => typeof (value.capabilities as Record<string, unknown>)[key] === 'boolean')
     || !Array.isArray(value.shipments) || value.shipments.length !== 2 || !value.shipments.every(isBinding)
     || new Set(value.shipments.map(binding => binding.scenarioShipmentKey)).size !== 2
-    || new Set(value.shipments.map(binding => binding.shipmentId)).size !== 2) return false;
+    || new Set(value.shipments.map(binding => binding.shipmentId)).size !== 2
+    || (value.emailNotificationStatus !== undefined && !['NOT_TRIGGERED', 'SUBMISSION_PENDING', 'SUBMITTING', 'SUBMITTED', 'FAILED', 'PARTIAL_FAILURE', 'DISABLED', 'NO_APPROVED_RECIPIENTS'].includes(value.emailNotificationStatus as string))) return false;
   if (value.state === 'UNSTARTED') return value.snapshot === null && value.revision === 0;
   if (value.state !== 'ACTIVE' && value.state !== 'COMPLETE') return false;
   const snapshot = value.snapshot;

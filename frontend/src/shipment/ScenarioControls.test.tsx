@@ -80,6 +80,11 @@ describe('ScenarioControls', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
   });
+  it('shows backend synthetic-email delivery outcome only at WORSENED', () => {
+    const final = { ...session('WORSENED'), emailNotificationStatus: 'FAILED' as const };
+    render(<ScenarioControls controller={controller(final)} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Synthetic email submission failed. The WORSENED scenario remains complete.');
+  });
   it('explains read-only capabilities without granting controls', () => {
     const readOnly = session('BASELINE');
     render(<ScenarioControls controller={controller({ ...readOnly, capabilities: {

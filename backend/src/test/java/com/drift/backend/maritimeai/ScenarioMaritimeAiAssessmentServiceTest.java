@@ -32,6 +32,7 @@ import com.drift.backend.shipment.ArrivalEstimate;
 import com.drift.backend.shipment.ConnectionWindow;
 import com.drift.backend.shipment.ConnectionWindowCalculation;
 import com.drift.backend.shipment.ControlledScenarioCapabilities;
+import com.drift.backend.shipment.ControlledScenarioEmailStatus;
 import com.drift.backend.shipment.ControlledScenarioSessionResponse;
 import com.drift.backend.shipment.ControlledScenarioSessionService;
 import com.drift.backend.shipment.ControlledScenarioSessionState;
@@ -271,7 +272,8 @@ verify(ai, never()).generateScenarioTransient(any(), anyBoolean());
 				ControlledScenarioSessionState.ACTIVE, EPOCH_ID, snapshot.revision(),
 				new ControlledScenarioCapabilities(true, false, true, true, false), List.of(
 					new ControlledScenarioSessionResponse.ShipmentBinding("A", 100L, "ANCHOR-A", "SYNTH-A"),
-					new ControlledScenarioSessionResponse.ShipmentBinding("B", 200L, "ANCHOR-B", "SYNTH-B")), snapshot);
+					new ControlledScenarioSessionResponse.ShipmentBinding("B", 200L, "ANCHOR-B", "SYNTH-B")), snapshot,
+				ControlledScenarioEmailStatus.NOT_TRIGGERED);
 	}
 
 	private static ControlledScenarioSnapshot snapshot(long revision, String deadline, DelayComparison.Outcome outcome,

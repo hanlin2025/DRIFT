@@ -4,6 +4,16 @@ import type { ScenarioSnapshotController } from './useScenarioSnapshot';
 export type ScenarioControlsProps = Readonly<{ controller: ScenarioSnapshotController }>;
 
 const SCENARIO_STAGES = ['BASELINE', 'CHANGE', 'WORSENED'] as const;
+const EMAIL_STATUS_LABELS = {
+  NOT_TRIGGERED: 'No synthetic email was triggered.',
+  SUBMISSION_PENDING: 'Synthetic email submission is pending.',
+  SUBMITTING: 'Synthetic email is being submitted to the approved demo recipient list.',
+  SUBMITTED: 'Synthetic email submitted to the approved demo recipient list.',
+  FAILED: 'Synthetic email submission failed. The WORSENED scenario remains complete.',
+  PARTIAL_FAILURE: 'Synthetic email submission partially failed. The WORSENED scenario remains complete.',
+  DISABLED: 'Synthetic email is disabled by configuration.',
+  NO_APPROVED_RECIPIENTS: 'No valid approved synthetic email recipients are configured.',
+} as const;
 
 /** Presentation only. Capabilities and confirmed facts come from the coordinator. */
 export function ScenarioControls({ controller }: ScenarioControlsProps) {
@@ -19,6 +29,8 @@ export function ScenarioControls({ controller }: ScenarioControlsProps) {
       <div role="status" aria-live="polite" aria-atomic="true">
         <p>Last confirmed state: {current}</p>
         {snapshot && <p>Snapshot cutoff (UTC): <time dateTime={snapshot.simulationCutoffUtc}>{snapshot.simulationCutoffUtc}</time></p>}
+        {snapshot?.stage === 'WORSENED' && session?.emailNotificationStatus
+          && <p>Synthetic email status: {EMAIL_STATUS_LABELS[session.emailNotificationStatus]}</p>}
         {status === 'refreshing' && <p>Refreshing scenario…</p>}
         {status === 'loading' && <p>Loading scenario…</p>}
         {status === 'command' && <p>Confirming {pendingAction}…</p>}
