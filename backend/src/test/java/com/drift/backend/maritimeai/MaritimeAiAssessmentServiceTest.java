@@ -71,6 +71,36 @@ class MaritimeAiAssessmentServiceTest {
 	}
 
 	@Test
+	void authenticRejectionPrecedesLiveRejectionForAMixedBundle() throws Exception {
+		MaritimeEvidence live = liveEvidence("unapproved-live-fingerprint");
+		AssessmentResult result = runAssessment(true, "", rejectingClient(), live, authenticEvidence("unapproved-authentic"));
+
+		assertThat(result.response().validationStatus()).isEqualTo("UNAPPROVED_AUTHENTIC_EVIDENCE");
+		assertThat(result.providerCalled()).isFalse();
+		assertThat(result.persisted().getOutputJson()).doesNotContain(live.evidenceId(), "unapproved-authentic");
+	}
+
+	@Test
+	void ineligibleCompanionsAreFilteredWithoutReorderingProviderInput() throws Exception {
+		MaritimeEvidence first = liveEvidence("approved-live-one");
+		MaritimeEvidence second = liveEvidence("approved-live-two");
+		MaritimeEvidence incompatible = new MaritimeEvidence("MPA_ETA_REVISION", "LIVE", "incompatible-live",
+				"Persisted MPA expected arrival", "mpa:9351048:identity", "", "citation", null, null,
+				"2026-11-11T03:00:00Z", "APPLICABLE", null, "arrival=new", null, "INCOMPATIBLE",
+				"INCOMPATIBLE", "UNKNOWN", "INCOMPATIBLE", true, true, "UNVERIFIED_IMO_ONLY",
+				"Location is not the shipment port.", "9351048", "MOTHER", "EXPECTED_ARRIVAL", "VESSEL_OBSERVATION");
+		AtomicReference<MaritimeAiEvidencePackage> seen = new AtomicReference<>();
+		AssessmentResult result = runAssessment(false, "approved-live-one,approved-live-two", input -> {
+			seen.set(input);
+			return MaritimeAiClient.MaritimeAiClientResult.unavailable("offline test");
+		}, first, incompatible, second);
+
+		assertThat(result.response().validationStatus()).isEqualTo("MODEL_UNAVAILABLE");
+		assertThat(seen.get().evidence()).extracting(MaritimeEvidence::evidenceId)
+				.containsExactly("approved-live-one", "approved-live-two");
+	}
+
+	@Test
 	void approvedLiveEvidenceReachesTheProviderAndAPersistedValueCannotGroundADuration() throws Exception {
 		MaritimeEvidence approved = liveEvidence("mpa-eta:identity:fingerprint-1");
 		AtomicReference<MaritimeAiEvidencePackage> seen = new AtomicReference<>();

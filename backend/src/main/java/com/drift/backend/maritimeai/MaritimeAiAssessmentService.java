@@ -87,30 +87,22 @@ public class MaritimeAiAssessmentService {
 		if (!enabled) return recheckShipmentAccess(user, shipmentId,
 				transientResponse(fullInput, MaritimeAiGenerationState.ABSTAINED, "FEATURE_DISABLED", null,
 						"AI generation is disabled for this environment."));
-		// Recorded replay, live, and unknown source modes never reach a provider. Authentic
-		// retrospective sources require global, source-type, and exact curated-record approvals.
-		if (hasUnapprovedAuthenticEvidence(bundle.evidence(), authenticRetrospectiveInferenceApproved,
-				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds)) {
+		MaritimeAiEvidenceEligibility.Decision decision = MaritimeAiEvidenceEligibility.ordinary(bundle.evidence(),
+				authenticRetrospectiveInferenceApproved, approvedAuthenticSourceTypes,
+				approvedAuthenticEvidenceIds, approvedLiveEvidenceIds);
+		if (decision.reason() == MaritimeAiEvidenceEligibility.Reason.UNAPPROVED_AUTHENTIC_EVIDENCE
+				|| decision.reason() == MaritimeAiEvidenceEligibility.Reason.UNAPPROVED_LIVE_EVIDENCE) {
 			MaritimeAiEvidencePackage blocked = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
 					bundle.shipmentAssociationConfidence(), shipmentContext, List.of());
+			boolean authentic = decision.reason() == MaritimeAiEvidenceEligibility.Reason.UNAPPROVED_AUTHENTIC_EVIDENCE;
 			return recheckShipmentAccess(user, shipmentId, persist(detail, blocked, now, MaritimeAiClient.MaritimeAiClientResult.unavailable(
-					"An authentic evidence record is not approved for external processing."),
-				MaritimeAiGenerationState.ABSTAINED, "UNAPPROVED_AUTHENTIC_EVIDENCE", null));
+					authentic ? "An authentic evidence record is not approved for external processing."
+							: "A live evidence record is not approved for external processing."),
+				MaritimeAiGenerationState.ABSTAINED, decision.reason().name(), null));
 		}
-		// A sufficient live record needs its own exact id. Historical retrospective ids do not approve it.
-		// A mixed live bundle abstains before a provider call rather than dropping the unapproved record.
-		if (hasUnapprovedLiveEvidence(bundle.evidence(), approvedLiveEvidenceIds)) {
-			MaritimeAiEvidencePackage blocked = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
-					bundle.shipmentAssociationConfidence(), shipmentContext, List.of());
-			return recheckShipmentAccess(user, shipmentId, persist(detail, blocked, now, MaritimeAiClient.MaritimeAiClientResult.unavailable(
-					"A live evidence record is not approved for external processing."),
-				MaritimeAiGenerationState.ABSTAINED, "UNAPPROVED_LIVE_EVIDENCE", null));
-		}
-		List<MaritimeEvidence> eligible = eligibleForInference(bundle.evidence(), authenticRetrospectiveInferenceApproved,
-				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds, approvedLiveEvidenceIds);
 		MaritimeAiEvidencePackage input = new MaritimeAiEvidencePackage(bundle.contractVersion(), bundle.assessmentCutoffUtc(),
-				bundle.shipmentAssociationConfidence(), shipmentContext, eligible);
-		if (input.evidence().isEmpty()) {
+				bundle.shipmentAssociationConfidence(), shipmentContext, decision.eligibleEvidence());
+		if (decision.reason() == MaritimeAiEvidenceEligibility.Reason.INSUFFICIENT_EVIDENCE) {
 			return recheckShipmentAccess(user, shipmentId, persist(detail, input, now,
 					MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved evidence."),
 					MaritimeAiGenerationState.ABSTAINED, "INSUFFICIENT_EVIDENCE", null));
@@ -155,14 +147,15 @@ public class MaritimeAiAssessmentService {
 		if (!(client instanceof ConfiguredMaritimeAiClient) && !explicitOfflineScenarioStub) return scenarioResult(
 				MaritimeAiGenerationState.ABSTAINED, "REAL_PROVIDER_REQUIRED", null,
 				"A configured inference provider or the explicitly enabled controlled scenario stub is required.");
-		if (input.evidence().stream().anyMatch(item -> !"SYNTHETIC_DEMONSTRATION".equals(item.sourceMode()))) {
+		MaritimeAiEvidenceEligibility.Decision decision = MaritimeAiEvidenceEligibility.scenario(input.evidence());
+		if (decision.reason() == MaritimeAiEvidenceEligibility.Reason.SYNTHETIC_EVIDENCE_REQUIRED) {
 			return scenarioResult(MaritimeAiGenerationState.ABSTAINED, "SYNTHETIC_EVIDENCE_REQUIRED", null,
 					"Only synthetic scenario evidence can be sent for this interpretation.");
 		}
-		List<MaritimeEvidence> eligible = eligibleForInference(input.evidence(), false, Set.of(), Set.of());
+		List<MaritimeEvidence> eligible = decision.eligibleEvidence();
 		MaritimeAiEvidencePackage eligibleInput = new MaritimeAiEvidencePackage(input.bundleVersion(),
 				input.assessmentCutoffUtc(), input.shipmentAssociationConfidence(), input.shipmentContext(), eligible);
-		if (eligible.isEmpty()) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
+		if (decision.reason() == MaritimeAiEvidenceEligibility.Reason.INSUFFICIENT_EVIDENCE) return scenarioResult(MaritimeAiGenerationState.ABSTAINED,
 				"INSUFFICIENT_EVIDENCE", MaritimeAiClient.MaritimeAiClientResult.unavailable("No sufficient approved evidence."),
 				"No sufficient, current synthetic evidence is available for inference.");
 		if (explicitOfflineScenarioStub
@@ -356,15 +349,8 @@ public class MaritimeAiAssessmentService {
 	static List<MaritimeEvidence> eligibleForInference(List<MaritimeEvidence> evidence,
 			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
 			Set<String> approvedAuthenticEvidenceIds, Set<String> approvedLiveEvidenceIds) {
-		return evidence.stream()
-				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
-						&& !"STALE".equals(item.freshness()))
-				.filter(item -> "SYNTHETIC_DEMONSTRATION".equals(item.sourceMode())
-						|| (authenticRetrospectiveInferenceApproved && "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode())
-								&& approvedAuthenticSourceTypes.contains(item.sourceType())
-								&& approvedAuthenticEvidenceIds.contains(item.evidenceId()))
-						|| ("LIVE".equals(item.sourceMode()) && approvedLiveEvidenceIds.contains(item.evidenceId())))
-				.toList();
+		return MaritimeAiEvidenceEligibility.ordinary(evidence, authenticRetrospectiveInferenceApproved,
+				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds, approvedLiveEvidenceIds).eligibleEvidence();
 	}
 
 	/**
@@ -374,12 +360,8 @@ public class MaritimeAiAssessmentService {
 	static boolean hasUnapprovedAuthenticEvidence(List<MaritimeEvidence> evidence,
 			boolean authenticRetrospectiveInferenceApproved, Set<String> approvedAuthenticSourceTypes,
 			Set<String> approvedAuthenticEvidenceIds) {
-		return evidence.stream()
-				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
-						&& !"STALE".equals(item.freshness()) && "RETROSPECTIVE_ANALYSIS".equals(item.sourceMode()))
-				.anyMatch(item -> !authenticRetrospectiveInferenceApproved
-						|| !approvedAuthenticSourceTypes.contains(item.sourceType())
-						|| !approvedAuthenticEvidenceIds.contains(item.evidenceId()));
+		return MaritimeAiEvidenceEligibility.ordinary(evidence, authenticRetrospectiveInferenceApproved,
+				approvedAuthenticSourceTypes, approvedAuthenticEvidenceIds, Set.of()).hasUnapprovedAuthenticEvidence();
 	}
 
 	/**
@@ -387,10 +369,8 @@ public class MaritimeAiAssessmentService {
 	 * provider call, and they do not block an otherwise approved bundle.
 	 */
 	static boolean hasUnapprovedLiveEvidence(List<MaritimeEvidence> evidence, Set<String> approvedLiveEvidenceIds) {
-		return evidence.stream()
-				.filter(item -> item.evidenceSufficient() && !"INCOMPATIBLE".equals(item.compatibilityState())
-						&& !"STALE".equals(item.freshness()) && "LIVE".equals(item.sourceMode()))
-				.anyMatch(item -> !approvedLiveEvidenceIds.contains(item.evidenceId()));
+		return MaritimeAiEvidenceEligibility.ordinary(evidence, false, Set.of(), Set.of(),
+				approvedLiveEvidenceIds).hasUnapprovedLiveEvidence();
 	}
 
 	// History authorization takes a PostgreSQL row lock so importer reassignment serializes after the read.
