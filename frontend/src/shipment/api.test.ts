@@ -28,6 +28,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('shipment API reachability', () => {
+  it('retries a shipment read once when the first request does not connect', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json([shipment])));
+
+    await expect(listShipments('token')).resolves.toHaveLength(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a status change that does not connect', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    await expect(archiveShipment('token', 9)).rejects.toMatchObject({ status: 0 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('shipment importer API', () => {
   it('reads a shipment list that has no importer field', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json([shipment])));

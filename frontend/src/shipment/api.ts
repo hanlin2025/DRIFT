@@ -791,14 +791,30 @@ export async function getShipmentImportErrors(token: string, jobId: string): Pro
   return errors as ShipmentImportError[];
 }
 
+// The hosted API can stay silent while Render wakes, and one shipment page repeats a heavy vessel lookup.
+// Giving up at 15 seconds is what shows "We could not reach DRIFT" on the shipment page.
+const READ_TIMEOUT_MS = 45000;
+
 async function send(path: string, token: string, init: RequestInit = {}): Promise<unknown> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  try {
+    return await sendOnce(path, token, init);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 0 && (method === 'GET' || method === 'HEAD')) {
+      return await sendOnce(path, token, init);
+    }
+    throw error;
+  }
+}
+
+async function sendOnce(path: string, token: string, init: RequestInit): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, {
       ...init,
       credentials: token ? init.credentials : 'include',
       headers: { ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : { 'X-DRIFT-Request': '1' }) },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(READ_TIMEOUT_MS),
       cache: 'no-store',
     });
   } catch (error) {

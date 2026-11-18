@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,9 @@ public class LatestAisPositions {
 	private final ShipmentRiskAlertActivationStore activation;
 	private final ConcurrentHashMap<String, AisPosition> byMmsi = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, String> mmsiByVesselName = new ConcurrentHashMap<>();
+	/** Name lookups scan every vessel. Opening one shipment repeats that scan, so reuse a result until the next write. */
+	private final ConcurrentHashMap<String, CachedName> nameReads = new ConcurrentHashMap<>();
+	private final AtomicInteger nameReadsGeneration = new AtomicInteger();
 
 	@Autowired
 	public LatestAisPositions(VesselObservationRepository observations, ShipmentRiskAlertActivationStore activation) {
@@ -38,6 +42,7 @@ public class LatestAisPositions {
 
 	@Transactional
 	public void record(AisPosition position) {
+		invalidateNameReads();
 		if (activation != null) {
 			activation.lockForRiskInput();
 		}
@@ -69,8 +74,16 @@ public class LatestAisPositions {
 			return Optional.empty();
 		}
 		String normalized = normalize(vesselName);
-		return newest(indexedPosition(normalized), observations.findLatestByNormalizedVesselName(normalized)
+		int generation = nameReadsGeneration.get();
+		CachedName cached = nameReads.get(normalized);
+		if (cached != null && cached.generation == generation) {
+			return cached.position;
+		}
+		Optional<AisPosition> found = newest(indexedPosition(normalized), observations.findLatestByNormalizedVesselName(normalized)
 				.map(VesselObservation::toAisPosition));
+		nameReads.compute(normalized, (key, existing) -> nameReadsGeneration.get() == generation
+				? new CachedName(generation, found) : existing);
+		return found;
 	}
 
 	/**
@@ -197,8 +210,17 @@ public class LatestAisPositions {
 	}
 
 	public void clear() {
+		invalidateNameReads();
 		byMmsi.clear();
 		mmsiByVesselName.clear();
+	}
+
+	private void invalidateNameReads() {
+		nameReadsGeneration.incrementAndGet();
+		nameReads.clear();
+	}
+
+	private record CachedName(int generation, Optional<AisPosition> position) {
 	}
 
 	static String normalize(String vesselName) {
