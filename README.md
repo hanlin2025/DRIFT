@@ -1,92 +1,76 @@
 # DRIFT
 
-DRIFT is a transshipment connection risk engine. This repository is a monorepo containing the backend and frontend.
+DRIFT helps freight forwarders, importers, logistics managers, and administrators manage
+transshipment shipments and understand connection risk. It is a Java/Spring Boot API, a
+React/TypeScript web app, and a PostgreSQL database managed with Flyway.
 
-## Prerequisites
+The core connection-risk calculation is deterministic: it uses shipment schedules and,
+when a usable AIS position is available, an estimated mother-vessel arrival. It is not an
+AI prediction. Optional maritime assessments can interpret eligible source evidence, but
+they are advisory and do not set the core risk level or make operational decisions.
 
-Before you run the project, install:
+## What the app includes
 
-- **Git**
-- **JDK 25** (required by `backend/pom.xml`)
-- **Docker Desktop** (includes Docker Compose)
-- **Node.js 22.12+** (Node 24 LTS recommended) for the frontend
-- **Python 3** for the local invitation helper
-- Optional: IntelliJ IDEA or VS Code
+- Company accounts with administrator, freight-forwarder, importer, and logistics-manager
+  roles, plus company and shipment access controls.
+- Company signup with email verification, invitations to join an existing company, profile
+  and account administration, and password reset.
+- Shipment registration and CSV import, importer linking, shipment history, and importer
+  delivery deadlines.
+- Shipment lists and details with connection windows, risk explanations, vessel tracking,
+  recorded AIS track history, and delay comparisons.
+- Optional AIS ingestion, maritime source collection and context, persisted evidence-bounded
+  AI assessments, and risk-alert email workflows. These integrations have separate
+  configuration and approval gates and are off by default.
+- Controlled synthetic disruption scenarios for isolated rehearsals. Synthetic evidence
+  and stub assessments are not live source data or real model output.
 
-You do **not** need to install Maven or PostgreSQL separately. The project uses the Maven Wrapper and Docker Compose.
+## Run locally
 
-## Project Structure
+### Prerequisites
 
-```
-DRIFT/
-├── backend/                 # Spring Boot backend
-│   ├── mvnw                 # Maven Wrapper (Mac/Linux)
-│   ├── mvnw.cmd             # Maven Wrapper (Windows)
-│   └── src/main/resources/
-│       ├── application.yaml
-│       └── db/migration/    # Flyway migrations go here
-├── frontend/                # React + TypeScript signup interface
-├── docker-compose.yml       # Local PostgreSQL and Mailpit
-└── README.md
-```
+- Git
+- JDK 25
+- Docker with Docker Compose
+- Node.js 22.22.2 or newer and npm (Node 24 LTS recommended)
+- Python 3 only if using the local invitation helper or maritime collector tools
 
-## Local Setup (WSL / Linux)
+The Maven Wrapper is included; a separate Maven installation is not needed. Use one
+operating system's Java and Node installations for a checkout. For WSL, keep the repository
+and runtimes inside WSL rather than running Windows Node against a WSL network path.
 
-Use WSL terminals for a repository stored under `/home/...`. Node, npm and Java must
-run inside WSL. Windows npm cannot run this project from a `\\wsl.localhost\...` path.
+### 1. Start PostgreSQL and Mailpit
 
-### Check your runtimes
-
-```bash
-java -version
-node --version
-node -p 'process.platform'
-command -v npm
-```
-
-Java must be 25, Node must be 22.12+ (24 LTS recommended), and the platform must be
-`linux`. The npm path must not point into `/mnt/c/Program Files/nodejs`.
-Install Node inside WSL if these checks fail, then open a new WSL terminal. On the
-current development machine, Linux Node is installed in `~/.local/share/drift-node`;
-existing terminals can activate it with:
-
-```bash
-export PATH="$HOME/.local/share/drift-node/bin:$PATH"
-hash -r
-```
-
-### Terminal 1: database and backend
-
-Start in the repository root (`DRIFT/`). Keep Docker Desktop running with WSL integration
-for your Ubuntu distribution enabled.
+From the repository root:
 
 ```bash
 docker compose up -d postgres mailpit
 docker compose exec -T postgres pg_isready -U drift -d drift
 ```
 
-Wait until PostgreSQL reports `accepting connections`. Docker creates the `drift`
-database on first initialisation. The backend already uses it in `application.yaml`;
-no datasource environment variable is needed. The credentials are username `drift`,
-password `drift`, port `5432`.
+Wait for `accepting connections`. The local database is `drift` with username and password
+`drift`. Mailpit accepts SMTP on port `1025` and displays messages at
+<http://localhost:8025>.
 
-Login sessions are signed with `JWT_SECRET`. Set it in the same terminal before
-starting the backend. Use at least 32 bytes, and do not commit the value. The
-backend does not start when it is missing.
+### 2. Start the backend
+
+In a terminal at the repository root, set a private local signing secret and start Spring
+Boot:
 
 ```bash
-export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
+export JWT_SECRET="$(openssl rand -hex 32)"
 cd backend
 bash ./mvnw spring-boot:run
 ```
 
-Keep this terminal running. Wait for `Started BackendApplication`; the API uses
-http://localhost:8080. Opening the API root in a browser is not a frontend test and may
-return 401 because only the registration and login endpoints are public.
+Keep this terminal open. The backend uses `http://localhost:8080`, connects to the local
+`drift` database by default, and applies schema migrations through Flyway. Do not commit
+the generated secret. In PowerShell, set `$env:JWT_SECRET` before running
+`./mvnw.cmd spring-boot:run`.
 
-### Terminal 2: frontend
+### 3. Start the frontend
 
-Open another WSL terminal in the repository root:
+In a second terminal at the repository root:
 
 ```bash
 cd frontend
@@ -94,147 +78,126 @@ npm ci
 npm run dev
 ```
 
-Keep this terminal running. Open http://localhost:5173/signup. Vite forwards `/api`
-requests to the backend on port 8080. Do not start another copy if these ports are already
-in use; stop the previous development process with Ctrl+C in its terminal first.
+Open <http://localhost:5173/signup>. You can register a new company and its first
+administrator, or join an existing company with an invitation. New company accounts must
+verify their email; open the message in Mailpit. Then sign in at
+<http://localhost:5173/login>.
 
-### Terminal 3: create a local invitation
+An operator can instead use the one-time `/setup` flow to create the first administrator
+for an active organisation. This requires setting `DRIFT_SETUP_TOKEN` (at least 32 bytes)
+in the backend environment; leave it unset when setup is not being performed. See
+[first administrator setup](docs/first-administrator.md).
 
-From the repository root, after the backend has started:
+The Vite development server forwards `/api` calls to the backend on port 8080. If either
+port is already in use, use the running server or stop it before starting another. Avoid
+`docker compose down -v` unless you intend to delete the local database volume.
 
-```bash
-python3 scripts/create-invitation.py --email alex@example.com --company HARBOURLINE_DEMO --role FREIGHT_FORWARDER
-```
+## Hosted demo and local development
 
-Open the printed signup link. A plain `/signup` URL asks for an invitation code.
-The helper does not send email. See [registration setup](docs/registration.md) for details.
+The initial hosted DRIFT login page is available at
+<https://drift-seven-red.vercel.app/login>. The checkout's Vercel routing configuration in
+[`frontend/vercel.json`](frontend/vercel.json) sends `/api` requests to its configured
+Render backend. In local development, Vite sends `/api` requests to the backend at
+`http://localhost:8080`.
 
-### Tests, coverage, and shutdown
+Local development runs Vite at `http://localhost:5173`, Spring Boot at
+`http://localhost:8080`, PostgreSQL in Docker (`drift`), and Mailpit at
+`http://localhost:8025`. Local accounts, shipment data, and test emails stay in that local
+environment; they are not shared with the hosted site. Local code changes also do not
+change the hosted site. The checked-in [`render.yaml`](render.yaml) is a review-only
+blueprint; it does not provision or deploy services. See the
+[deployment runbook](docs/cdg290-vercel-render-deployment-runbook.md) for hosting status
+and controls. Treat the hosted site as an initial demo, not a production workspace.
 
-From the repository root, `bash scripts/test-backend.sh` starts PostgreSQL and runs tests
-against the separate `drift_test` test database with Maven's `verify` goal. JaCoCo writes
-the backend HTML report to `backend/target/site/jacoco/index.html`. In `frontend/`, run
-`npm test` for tests or `npm run coverage` to generate a Vitest V8 HTML report at
-`frontend/coverage/index.html` (plus text and LCOV reports). Coverage reports are local
-build artifacts and are not committed. Playwright is optional for running the app.
+## Tests and coverage
 
-Stop frontend and backend with Ctrl+C in their respective terminals. Only after stopping
-them, use `docker compose down` if you also want to stop PostgreSQL and Mailpit. Do not add `-v`
-unless you intend to delete the database volume.
-
-### Native Windows development
-
-For a clone stored on a Windows drive (not a WSL network path), use Windows Java/Node and
-PowerShell. After starting PostgreSQL, run in `backend/`:
-
-```powershell
-$env:JWT_SECRET = 'replace-with-a-local-secret-at-least-32-bytes'
-.\mvnw.cmd spring-boot:run
-```
-
-Use a separate PowerShell terminal in `frontend/` for `npm ci` and `npm run dev`.
-Do not mix Windows and Linux Node installations for the same `node_modules` directory.
-
-## Database Migrations
-
-All schema changes must go through Flyway.
-
-- Put SQL migration files in `backend/src/main/resources/db/migration/`.
-- Use the naming convention `V1__description.sql`, `V2__description.sql`, etc.
-- Do **not** change `spring.jpa.hibernate.ddl-auto` from `validate`. Hibernate should only validate the schema, not create it.
-
-## Branching
-
-- `main` is the stable branch. Do not push directly to `main`.
-- Create a feature branch for each Jira story or task:
-  - `feature/DRIFT-2-register`
-  - `feature/DRIFT-3-login`
-  - `chore/update-readme`
-- Open a pull request when your work is ready for review.
-
-## Troubleshooting
-
-- **`UNC paths are not supported` / `'vite' is not recognized`**: Windows npm is running
-  inside WSL. Activate/install Linux Node, confirm `node -p 'process.platform'` prints
-  `linux`, then rerun `npm ci` and `npm run dev` in `frontend/`.
-- **Flyway `Migration checksum mismatch for migration version 1`**: the database was
-  created by an older version of V1. See the one-time local database reset in
-  [registration setup](docs/registration.md#existing-development-databases). It keeps
-  the database name `drift` and deletes that database's existing data.
-- **`Port 5173 is already in use` / `Port 8080 was already in use`**: another development
-  server is running. Use that instance or stop it before starting a second one.
-- **Database connection refused**: start Docker Desktop and PostgreSQL, then wait for
-  `pg_isready` to report `accepting connections`.
-- **`./mvnw: Permission denied`**: use `bash ./mvnw ...` in `backend/`.
-- **PowerShell does not recognise `mvnw.cmd`**: use `.\mvnw.cmd` in `backend/`.
-
-## Risk-alert email
-
-The shipment-risk email is the message CDG-49 already sends. It stays off until this terminal turns it on. Mailpit is the mailbox started with Postgres above: SMTP port `1025`, which `spring.mail` already uses, and a web view at http://localhost:8025.
-
-`MAIL_FROM_ADDRESS` defaults to `noreply@localhost` and is shared by invitation, password-reset, and risk-alert mail. `FRONTEND_BASE_URL` defaults to `http://localhost:5173` and is shared as the link origin. `RISK_ALERTS_FRONTEND_BASE_URL` remains an optional override. Production SMTP setup is documented in [Gmail SMTP production email](docs/gmail-smtp-production-email.md). Do not commit provider credentials.
-
-`RISK_ALERTS_ACTIVATION_COMMAND` is the one-time activation command. Run it once, in its own process, before the server you want to keep. Do not leave it set on that server. The command baselines the current connection risk of every active shipment, suppresses unsent deliveries from an older generation with "Suppressed during risk-alert activation", sets the activation generation to 1, and then the process exits. A normal startup does not create a generation. A delivery recorded under another generation is suppressed as "Risk alert delivery predates the active activation generation" and is not sent. Turning the mail switches on does not activate the gate.
+Frontend commands, from `frontend/`:
 
 ```bash
-export JWT_SECRET='replace-with-a-local-secret-at-least-32-bytes'
-export RISK_ALERTS_ACTIVATION_COMMAND=true
-cd backend
-bash ./mvnw spring-boot:run
+npm test
+npm run coverage
+npm run build
 ```
 
-Wait until that process exits. Then start the server with the mail switches and the evaluation switch together:
+`npm run coverage` runs the Vitest suite with V8 instrumentation. Open
+`frontend/coverage/index.html` for the HTML report; the command also prints summary
+percentages and writes Clover and JSON reports. Coverage files are generated build output
+and are gitignored.
+
+Backend tests, from the repository root:
 
 ```bash
-unset RISK_ALERTS_ACTIVATION_COMMAND
-export RISK_ALERTS_MAIL_ENABLED=true
-export RISK_ALERTS_DISPATCH_ENABLED=true
-export RISK_ALERTS_EVALUATION_ENABLED=true
-bash ./mvnw spring-boot:run
+bash scripts/test-backend.sh
 ```
 
-With the mail switches unset, a due delivery is suppressed as "Risk alert mail is disabled" and is not retried. Dispatch disabled does not open an SMTP connection.
+The helper starts PostgreSQL if needed and runs Maven's `verify` lifecycle against the
+separate `drift_test` test database. JaCoCo writes the HTML report to
+`backend/target/site/jacoco/index.html`. The CI workflow also generates backend and frontend
+coverage reports. The backend integration suite uses PostgreSQL; do not point test or
+migration commands at a persistent database.
 
-`RISK_ALERTS_EVALUATION_ENABLED` stays unset on a server that should not sweep. The 15-minute sweep runs only when that switch is set and the activation gate is already active. Creating a shipment, importing one, or changing the planned arrival or feeder departure still evaluates after the write commits. An AIS position does not start an evaluation.
+Playwright browser tests are separate from the standard frontend unit suite. See
+[frontend testing notes](frontend/README.md) for browser-test commands and database
+requirements. See [CI documentation](docs/ci.md) for the pipeline and locally reproducible
+checks.
 
-On Windows, set the same switches with `$env:RISK_ALERTS_MAIL_ENABLED = 'true'`, `$env:RISK_ALERTS_DISPATCH_ENABLED = 'true'`, and `$env:RISK_ALERTS_EVALUATION_ENABLED = 'true'`, and clear the activation command with `Remove-Item Env:RISK_ALERTS_ACTIVATION_COMMAND` before the server you want to keep.
+## Configuration boundaries
 
-## Account Registration
+Optional data collection and model features are deliberately controlled:
 
-See [registration setup](docs/registration.md) for preset companies, local invitation links,
-API details, database migration notes, and registration integration tests.
+- AIS streaming is disabled unless `AIS_ENABLED=true` and its credentials and geographic
+  bounds are configured.
+- Scheduled MPA/NEA source collection requires provider-specific configuration and access
+  described in [the collection runbook](docs/cdg358-scheduled-maritime-collection.md).
+  Source observations retain their provenance, timing, compatibility, and uncertainty;
+  context records do not automatically alter core shipment risk.
+- Maritime AI assessment is disabled by default. Enabling a provider requires explicit
+  configuration and the external-request approval gate. Assessments are advisory,
+  evidence-bounded, persisted, and subject to human review.
+- Risk-alert evaluation and email dispatch are off by default. Activation, evaluation, and
+  mail delivery have separate operator-controlled gates; see
+  [continuous risk monitoring](docs/cdg198-continuous-risk-monitoring.md) and
+  [Gmail SMTP setup](docs/gmail-smtp-production-email.md).
+- `render.yaml` describes a review-only hosting blueprint. It does not provision resources
+  or authorize a deployment. See the [deployment runbook](docs/cdg290-vercel-render-deployment-runbook.md)
+  for the current boundaries.
 
-## First administrator
+Do not put API keys, passwords, customer data, or generated secrets in source control. Do
+not enable live collectors, external model requests, production email, or hosting changes
+without the corresponding provider access and approval.
 
-A new installation does not have an administrator until an operator creates one. Set
-`DRIFT_SETUP_TOKEN` to a private value of at least 32 bytes, start the backend, and open
-http://localhost:5173/setup. The credential is not stored in the repository or the browser.
-After that one administrator exists, setup refuses a second account. Colleagues still join
-by invitation. See [first administrator setup](docs/first-administrator.md).
-An administrator then invites a colleague from User management. See [administrator invitations](docs/admin-invitation.md).
-A signed-in browser stays signed in across tabs for eight hours, until sign-out. See [browser sessions](docs/browser-session.md).
+## Repository layout
 
-## Frontend
-
-In a second terminal, run `cd frontend`, `npm ci`, then `npm run dev`.
-Open http://localhost:5173/signup using a link from the invitation helper.
-See [frontend setup](frontend/README.md) for tests and login-route scope.
-
-## Optional AIS Stream Connection
-
-CDG-64 can open a backend-only connection to AIS Stream when it is explicitly enabled. Create an AIS Stream API key, then set the key and the two corners of a focused geographic bounding box in the same terminal as the backend:
-
-```bash
-export AIS_ENABLED=true
-export AISSTREAM_API_KEY='your-ais-stream-key'
-export AIS_SOUTHWEST_LATITUDE='your-southwest-latitude'
-export AIS_SOUTHWEST_LONGITUDE='your-southwest-longitude'
-export AIS_NORTHEAST_LATITUDE='your-northeast-latitude'
-export AIS_NORTHEAST_LONGITUDE='your-northeast-longitude'
+```text
+backend/       Spring Boot API, domain logic, tests, and Flyway migrations
+frontend/      React + TypeScript app, Vitest tests, and Playwright specs
+scripts/       Local setup, guarded integration-test, and operational helpers
+tools/         Standalone source collectors and offline evaluation tools
+docs/          Feature contracts, setup guides, runbooks, and CI documentation
+fixtures/      Explicitly synthetic or recorded test/rehearsal data
 ```
 
-The connector subscribes only to `PositionReport` messages. It remains disabled by default. While the backend is running with AIS enabled, each valid report is kept in memory and can be read by MMSI or vessel name through `LatestAisPositions`. Shipment detail reads that set for the mother vessel and the feeder vessel. `GET /api/shipments/{id}/tracking` returns the same latest fix for each vessel, including coordinates, speed, course, heading, and ingestion time, and leaves a position null when none is retained. A stored name with an `MV` or `M/V` prefix also matches the AIS name without that prefix. The planned connection window stays the gap in the stored schedule. Shipment detail also returns the remaining connection window, the planned feeder departure minus the mother vessel's estimated arrival, when that estimate has an arrival time and is not possibly outdated. It is calculated when the shipment is read and is not stored. The shipment detail page shows it beside the planned connection window. Risk uses that remaining window when it is present and otherwise the planned window. The shipment list does not include it. Each valid report is also stored in the `vessel_observations` table with its MMSI, coordinates, speed, course, heading, ingestion time and `source`. Reports from the livestream are stored as `AIS_STREAM`; `SEEDED` marks seeded or synthetic observations. A report that cannot be stored is logged and skipped without closing the stream. A vessel name keeps the newest fix for the MMSI that currently reports that name. A later report that omits the name stays with that vessel, and a renamed vessel no longer answers for its previous name. After a restart, a lookup reads the newest observation for each MMSI from `vessel_observations` and matches the name that vessel currently reports.
+## Useful documentation
 
-For candidate selection and bounded export of real provider observations, see the [CDG-285 AIS vessel selection and capture runbook](docs/cdg285-ais-vessel-selection-and-capture.md).
+- [Registration and invitations](docs/registration.md)
+- [Administrator invitations](docs/admin-invitation.md)
+- [Shipment CSV format](docs/shipment-import-csv.md)
+- [AIS vessel capture](docs/cdg285-ais-vessel-selection-and-capture.md)
+- [Recorded AIS track playback](docs/cdg286-recorded-ais-track-playback.md)
+- [Maritime AI interpretation and evidence limits](docs/cdg247-ai-maritime-interpretation.md)
+- [Scheduled maritime collection](docs/cdg358-scheduled-maritime-collection.md)
+- [Risk-alert monitoring and activation](docs/cdg198-continuous-risk-monitoring.md)
+- [GitHub Actions CI](docs/ci.md)
 
-`GET /api/shipments/{id}/track-history` returns the recent track of one vessel on a visible shipment, built from `vessel_observations` in time order. Each point carries its observation `id`, which stays unique when two reports share a timestamp; ties are ordered by that id. `vessel` is `MOTHER` (default) or `FEEDER`, and `hours` is one of the preset windows `6`, `24` (default) or `72`; any other value returns 400. An optional ISO-8601 `cutoff` uses DRIFT receipt time, not AIS event time. Cutoff playback without `captureId` is limited to `SEEDED` rehearsal observations; authentic `AIS_STREAM` playback requires an accepted CDG-285 capture manifest, matching shipment IMO/MMSI, approved replay permission, and unexpired retention. Invalid positions are omitted, ties are preserved, no gaps are interpolated, and responses cap at 500 points. The response includes provenance and availability metadata. See the [CDG-286 recorded track runbook](docs/cdg286-recorded-ais-track-playback.md) for the capture checks and full contract. A shipment the company may not view returns 404.
+## Database changes
+
+Add schema changes as Flyway migrations under
+`backend/src/main/resources/db/migration/`, using the repository's
+`V<number>__description.sql` naming convention. Hibernate is configured to validate the
+schema; do not change it to create or update tables automatically.
+
+## Contributing
+
+`main` is the stable branch. Make focused changes on a feature or chore branch and open a
+pull request for review. Ticketed work should follow the project's Jira-linked branch
+conventions. Do not merge or deploy unless explicitly requested.
