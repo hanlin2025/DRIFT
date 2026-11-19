@@ -139,4 +139,4 @@ export DRIFT_CDG289_DB_USERNAME=drift
 export DRIFT_CDG289_DB_PASSWORD=drift
 
 cd "$backend_dir"
-bash ./mvnw -B -ntp clean test
+bash ./mvnw -B -ntp clean verify

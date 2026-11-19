@@ -17,4 +17,4 @@ SELECT 'CREATE DATABASE drift_test OWNER drift'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'drift_test')\gexec
 SQL
 cd backend
-bash ./mvnw test "$@"
+bash ./mvnw verify "$@"
