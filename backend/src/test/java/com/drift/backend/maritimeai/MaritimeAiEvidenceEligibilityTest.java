@@ -89,6 +89,45 @@ class MaritimeAiEvidenceEligibilityTest {
 				java.util.Set.of(), java.util.Set.of(), java.util.Set.of(incompatible.evidenceId(), insufficient.evidenceId()))).isEmpty();
 	}
 
+	@Test
+	void staleAndIncompatibleRecordsDoNotBlockAnOtherwiseEligibleBundle() {
+		MaritimeEvidence synthetic = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", true, "FRESH");
+		MaritimeEvidence staleAuthentic = new MaritimeEvidence("MPA_ETA_REVISION", "RETROSPECTIVE_ANALYSIS", "stale-authentic",
+				"Historical revision", "MPA", "", "citation", null, null, null, "STALE", "old", "new", "change",
+				"COMPATIBLE", "COMPATIBLE", "COMPATIBLE", "COMPATIBLE", true, true,
+				"UNVERIFIED_IMO_ONLY", "Historical context only");
+		MaritimeEvidence incompatibleLive = liveEvidence("unapproved-live", true, "INCOMPATIBLE");
+
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedAuthenticEvidence(List.of(staleAuthentic, synthetic),
+				false, java.util.Set.of(), java.util.Set.of())).isFalse();
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedLiveEvidence(List.of(incompatibleLive, synthetic),
+				java.util.Set.of())).isFalse();
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(staleAuthentic, incompatibleLive, synthetic)))
+				.containsExactly(synthetic);
+	}
+
+	@Test
+	void retrospectiveApprovalNeverApprovesTheSameIdInLiveMode() {
+		MaritimeEvidence live = liveEvidence("shared-id");
+		assertThat(MaritimeAiAssessmentService.eligibleForInference(List.of(live), true,
+				java.util.Set.of("MPA_ETA_REVISION"), java.util.Set.of("shared-id"), java.util.Set.of())).isEmpty();
+		assertThat(MaritimeAiAssessmentService.hasUnapprovedLiveEvidence(List.of(live), java.util.Set.of())).isTrue();
+	}
+
+	@Test
+	void scenarioRejectsEveryNonSyntheticModeBeforeFilteringStaleRecords() {
+		MaritimeEvidence synthetic = evidence("SYNTHETIC_DEMONSTRATION", "COMPATIBLE", true, "FRESH");
+		MaritimeEvidence staleReplay = evidence("RECORDED_REPLAY", "COMPATIBLE", true, "STALE");
+
+		assertThat(MaritimeAiEvidenceEligibility.scenario(List.of(synthetic, staleReplay)).reason())
+				.isEqualTo(MaritimeAiEvidenceEligibility.Reason.SYNTHETIC_EVIDENCE_REQUIRED);
+		assertThat(MaritimeAiEvidenceEligibility.scenario(List.of(synthetic, staleReplay)).eligibleEvidence()).isEmpty();
+		assertThat(MaritimeAiEvidenceEligibility.scenario(List.of(synthetic)).eligibleEvidence())
+				.containsExactly(synthetic);
+		assertThat(MaritimeAiEvidenceEligibility.scenario(List.of(staleReplay)).reason())
+				.isEqualTo(MaritimeAiEvidenceEligibility.Reason.SYNTHETIC_EVIDENCE_REQUIRED);
+	}
+
 	private static MaritimeEvidence authenticEvidence(String sourceType, String evidenceId, boolean sufficient, String compatibility) {
 		return new MaritimeEvidence(sourceType, "RETROSPECTIVE_ANALYSIS", evidenceId, "Authentic item", "authentic", "", "citation",
 				null, null, null, "HISTORICAL_REPLAY", "old", "new", "change", compatibility, compatibility, compatibility,
