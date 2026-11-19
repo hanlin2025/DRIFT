@@ -23,7 +23,11 @@ to obtain a link with the assigned company, email and role.
 ```bash
 npm run build
 npm test
+npm run coverage
 ```
+
+`npm run coverage` runs the Vitest suite with V8 instrumentation and writes HTML, text,
+and LCOV reports under `coverage/`.
 
 For deployment, serve the frontend and `/api` under the same origin and configure the
 web server to return `index.html` for client routes such as `/signup` and `/login`.

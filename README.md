@@ -109,11 +109,14 @@ python3 scripts/create-invitation.py --email alex@example.com --company HARBOURL
 Open the printed signup link. A plain `/signup` URL asks for an invitation code.
 The helper does not send email. See [registration setup](docs/registration.md) for details.
 
-### Tests and shutdown
+### Tests, coverage, and shutdown
 
 From the repository root, `bash scripts/test-backend.sh` starts PostgreSQL and runs tests
-against the separate `drift_test` database. In `frontend/`, run `npm test` and
-`npm run build`. Playwright is optional for running the app.
+against the separate `drift_test` test database with Maven's `verify` goal. JaCoCo writes
+the backend HTML report to `backend/target/site/jacoco/index.html`. In `frontend/`, run
+`npm test` for tests or `npm run coverage` to generate a Vitest V8 HTML report at
+`frontend/coverage/index.html` (plus text and LCOV reports). Coverage reports are local
+build artifacts and are not committed. Playwright is optional for running the app.
 
 Stop frontend and backend with Ctrl+C in their respective terminals. Only after stopping
 them, use `docker compose down` if you also want to stop PostgreSQL and Mailpit. Do not add `-v`
